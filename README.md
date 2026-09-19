@@ -1,9 +1,7 @@
 # Aipo
 
-Aipo is a small, general-purpose, dynamically and strongly typed programming language
-with optional signature contracts. Rust-first implementation: source compiles to
-bytecode executed by a stack VM, with a JavaScript (ESM) backend proving parity over
-the same conformance corpus.
+> **TL;DR:** Aipo is a small programming language. It runs on a bytecode VM written
+> in Rust, and also compiles to JavaScript. Both backends must produce identical output.
 
 ```aipo
 fn greet(name)
@@ -13,87 +11,108 @@ end
 io.println(greet("world"))
 ```
 
-## Quickstart
+## Start here (30 seconds)
 
-Prerequisites: Rust 1.85+ (see `rust-version` in `Cargo.toml`) and Node ≥ 20 for the
-JavaScript backend tests.
+You need: Rust 1.85+ and Node 20+.
 
-```bash
-cargo build -p aipo-cli
-cargo run -q -p aipo-cli -- run examples/01_fizzbuzz.aipo
-cargo run -q -p aipo-cli -- check path/to/program.aipo
-cargo run -q -p aipo-cli -- build path/to/program.aipo --out dist && node dist/app.js
-cargo run -q -p aipo-cli -- fmt path/to/program.aipo [--check]
-```
+1. Build it:
+   ```bash
+   cargo build -p aipo-cli
+   ```
+2. Run a program:
+   ```bash
+   cargo run -q -p aipo-cli -- run examples/01_fizzbuzz.aipo
+   ```
+3. Done. To learn the commands, see the table below.
 
-Exit codes are contractual: `0` success, `1` language failure (diagnostic, runtime
-fault, uncaught `Failure`, formatting drift), `2` usage error. Machine-readable
-diagnostics: `--message-format=jsonl`. Full reference: `docs/reference/cli.md`.
+## Commands
 
-## Language highlights
+| What you want | Command |
+|---|---|
+| Run a program | `aipo run <file.aipo>` |
+| Check for errors (no execution) | `aipo check <file.aipo>` |
+| Build a JavaScript bundle | `aipo build <file.aipo> --out dist` then `node dist/app.js` |
+| Format code | `aipo fmt <files...> [--check]` |
+| Machine-readable errors | Add `--message-format=jsonl` |
+| Version / help | `aipo --version`, `aipo --help` |
 
-- Literals: `none`, `Bool`, `Int` (±(2^53−1)), finite `Float`, `Byte`, NFC `String`
-  (`"…"`, `f"…"`, `r"…"`, `fr"…"`, `"""…"""`)
-- `let`/`var`, closures with shared `var` capture, local `fn`, default/named args,
-  trailing `do … end` blocks, pipelines (`|>`)
-- `struct` with `fixed` fields, `init` + `invariant()` hooks, `impl` methods
-- Ordered `List`/`Dict`, `Bytes(count)`, ranges and tolerant slicing
-- Two error channels, never mixed: recoverable `Failure` (`fail`, `or_else`,
-  `attempt … failed … end`) vs. runtime faults (contracts, bounds, overflow)
-- Signature contracts (`name: Type`, `name!: Type`, `-> T`, `T?`) checked statically
-  when provable and at runtime otherwise; structural interfaces + `satisfy`
-- Modules: one file = one module, `import`/`export`, acyclic, init-once
-- Minimal stdlib: Prelude (`len`, `copy`, `same`, `some`, `fail`, conversions),
-  `math`, `string`, `io`
+Exit codes: `0` = ok. `1` = language error. `2` = wrong command usage.
 
-The executable definition of the language is the conformance corpus under
-`docs/conformance/` (programs + snapshots, diagnostics + codes, formatter goldens,
-module cases). Divergence between the VM and JS backends is a bug.
+Full reference: [`docs/reference/cli.md`](docs/reference/cli.md).
 
-## Repository layout
+## What is Aipo?
 
-```text
-crates/            # workspace crates (compiler pipeline, VM, stdlib, CLI, JS backend)
-  aipo-source, aipo-diagnostics, aipo-lexer, aipo-ast, aipo-syntax,
-  aipo-hir, aipo-sema, aipo-ir, aipo-bytecode,
-  aipo-vm, aipo-runtime, aipo-stdlib,
-  aipo-formatter, aipo-cli, aipo-js
-docs/              # canonical documentation
-  canon/           # language authority (Language Reference, Syntax, Specs…)
-  conformance/     # executable corpus (the language referee)
-  waves/           # wave plans and exit gates
-  evidence/        # per-goal proof records
-  adp/             # architecture decision records
-  reference/       # CLI reference, diagnostics catalog
-examples/          # sample programs
-```
+Short version, one idea per line:
 
-The project is governed by **Prumo v0.6** (human-agent collaboration with Lean
-Progressive Context): `prumo.json` is the canonical manifest, `ENTRYPOINT.md` the
-context router, `PROJECT_STATE.md` the operational state. See `CONTRIBUTING.md`
-before opening a change.
+- Small and general-purpose.
+- Dynamically typed, but types are checked (strongly typed).
+- Optional contracts on functions: `fn add(a: Int, b: Int) -> Int`.
+- Safe strings: always valid Unicode, normalized.
+- Two error channels, never mixed:
+  - Recoverable problems → `Failure` (you catch with `attempt`).
+  - Programming bugs → faults (they stop the program).
+- Modules: one file = one module.
+- Small standard library: Prelude, `math`, `string`, `io`.
 
-## Testing
+<details>
+<summary>More detail (types, structs, errors)</summary>
+
+- Literals: `none`, `true`/`false`, `Int` (±(2^53−1)), finite `Float`, `Byte`, strings (`"…"`, `f"…"`, `r"…"`, `fr"…"`, `"""…"""`).
+- `let`/`var`, closures, local functions, default and named arguments, `do … end` blocks, `|>` pipelines.
+- `struct` with `fixed` fields, `init` and `invariant()` hooks, `impl` methods.
+- Ordered `List`/`Dict`, `Bytes(count)`, ranges, tolerant slicing.
+- Interfaces are structural, checked with `satisfy`.
+- The executable definition of all of the above is the corpus in [`docs/conformance/`](docs/conformance/).
+- If the VM and the JS backend disagree on any program, that is a bug.
+
+</details>
+
+## Where things live
+
+| Path | What it is |
+|---|---|
+| `crates/` | The implementation (compiler, VM, stdlib, CLI, JS backend) |
+| `docs/conformance/` | The test corpus — the language referee |
+| `docs/canon/` | The language rules (what wins arguments) |
+| `docs/waves/` | Plans per delivery wave |
+| `docs/evidence/` | Proof that each goal was done |
+| `docs/reference/cli.md` | Command manual |
+| `examples/` | Sample programs |
+
+## Contributing and governance
+
+**To contribute, read [`CONTRIBUTING.md`](CONTRIBUTING.md) first.** The short rules:
+
+1. No code without an explicit Goal.
+2. Never guess language semantics — open questions become written decisions (ADPs).
+3. Keep all quality gates green (see below).
+4. Update docs together with code.
+
+This project is governed by **Prumo v0.6** (human-agent collaboration with lean
+context). The local entry points are:
+
+- [`prumo.json`](prumo.json) — project manifest.
+- [`ENTRYPOINT.md`](ENTRYPOINT.md) — context router.
+- [`PROJECT_STATE.md`](PROJECT_STATE.md) — current state.
+- [`docs/PRUMO.md`](docs/PRUMO.md) — documentation map.
+
+> Prumo framework: [github.com/raillen/prumo](https://github.com/raillen/prumo).
+
+## Quality gates
+
+Run all of these. All must be green.
 
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace          # unit + conformance + differential + fuzz (needs Node ≥ 20)
+cargo test --workspace
 cargo doc --workspace --no-deps
 prumo validate . && prumo doctor .
 ```
 
-## Contributing
-
-Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) — it covers the goal-driven workflow,
-the no-invention policy (open ADPs, don't guess semantics), quality gates, and the
-documentation delta rules.
-
 ## License
 
-Licensed under either of
+Dual license, your choice:
 
-- MIT license ([LICENSE-MIT](LICENSE-MIT))
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-
-at your option.
+- MIT — [`LICENSE-MIT`](LICENSE-MIT)
+- Apache 2.0 — [`LICENSE-APACHE`](LICENSE-APACHE)
