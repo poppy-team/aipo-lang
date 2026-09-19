@@ -1,0 +1,54 @@
+# Canon: contracts are optional and restricted to function/interface signatures —
+# `name: Type` restricts a parameter, `name!: Type` also grants mutation, `-> T`
+# restricts the return value, and `T?` accepts exactly `T` or `none`.
+# A mismatch provable before execution is a diagnostic; one discovered only while
+# running is a contract fault at the call boundary.
+
+fn double(x: Int) -> Int
+    return x * 2
+end
+
+# `T?` accepts `none` in addition to `T`.
+fn labelled(value: Int?) -> String
+    if value is Int
+        return "value: " + String(value)
+    end
+    return "value: none"
+end
+
+# A defaulted parameter is checked too, and the default is evaluated by the callee.
+fn describe(prefix: String, count: Int = 1) -> String
+    return prefix + " x" + String(count)
+end
+
+# The simple `Function` contract only requires the value to be callable.
+fn apply(f: Function, n: Int) -> Int
+    return f(n)
+end
+
+fn square(n: Int) -> Int
+    return n * n
+end
+
+struct Point
+    x
+    y
+end
+
+# A mutable parameter carries both permissions: `!` allows mutation and `: Type`
+# restricts the value; the struct name is checked against the instance's type.
+fn shift(p!: Point, dx: Int) -> Int
+    p.x = p.x + dx
+    return p.x
+end
+
+io.println(String(double(4)))
+io.println(labelled(7))
+io.println(labelled(none))
+io.println(describe("item"))
+io.println(describe("item", count = 3))
+io.println(String(apply(square, 5)))
+
+let p = Point{x = 1, y = 2}
+io.println(String(shift(p, 4)))
+io.println(String(p.x))

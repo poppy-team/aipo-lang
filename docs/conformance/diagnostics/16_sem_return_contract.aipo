@@ -1,0 +1,10 @@
+# Canon: the same rule applies to `-> T`. A literal returned against a different core
+# category is provable at the `return`, so it is reported before the program runs.
+fn pick(flag) -> Int
+    if flag
+        return "not an Int"
+    end
+    return 1
+end
+
+io.println(String(pick(true)))

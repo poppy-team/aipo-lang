@@ -1,0 +1,135 @@
+{
+  "acceptance": [
+    "invariant() is re-evaluated at guarded mutation points following canon's candidate -> provisional apply -> verify -> commit rule, and the field's previous value is preserved when the verification fails",
+    "The module records, per struct type, how to reach its compiled invariant predicate so SetField can invoke it without a second expression evaluator",
+    "Signature contracts (name: Type, name!: Type, -> T, T?) are checked at runtime call boundaries, with T? accepting none",
+    "Each closed gap is recorded in docs/conformance/ as a runnable pass/fail fixture, and docs/adp/ADP-002 is updated to mark G2b and G3 resolved",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-15T22:16:21.329480802Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "invariant() is re-evaluated at guarded mutation points following canon's candidate -> provisional apply -> verify -> commit rule, and the field's previous value is preserved when the verification fails",
+          "The module records, per struct type, how to reach its compiled invariant predicate so SetField can invoke it without a second expression evaluator",
+          "Signature contracts (name: Type, name!: Type, -> T, T?) are checked at runtime call boundaries, with T? accepting none",
+          "Each closed gap is recorded in docs/conformance/ as a runnable pass/fail fixture, and docs/adp/ADP-002 is updated to mark G2b and G3 resolved",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+        ],
+        "non_goals": [
+          "Bytes packing APIs (read_i32/write_f32 and friends) beyond construction, indexing and slicing",
+          "Resolving ADP-001 Q3 (inverted clamp bounds), Q4 (slice saturation) and Q5 (NFC construction boundaries)",
+          "Deep mutable state observation by invariants (canon excludes aliased List/Dict/struct internals in V1)",
+          "VM versus JavaScript differential testing (Wave 2)"
+        ]
+      },
+      "digest": "143991103703f766b0474adfdd168875179487c3ec3d0e4b1f8b4ee08f1734a9",
+      "goal_id": "P00-G14",
+      "id": "AMD-002",
+      "reason": "Record objective acceptance criteria and explicit non-goals for runtime contract enforcement",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "cargo test --workspace: 141 passed, 0 failed. New certification: docs/conformance/programs/14_signature_contracts.aipo (parameter, checked default, T?, Function, struct contract, mutable receiver and return), docs/conformance/programs/15_invariant_on_mutation.aipo (commit, rollback at a method boundary, rollback at a direct assignment, rollback of two participating instances), docs/conformance/diagnostics/12_runtime_contract_violation.aipo and 13_runtime_return_contract.aipo (contract faults) and 14_runtime_invariant_mutation_uncaught.aipo (uncaught recoverable Failure). At the VM layer: test_guarded_mutation_rolls_back_at_boundary, test_signature_contract_violation_is_a_fault and test_nullable_contract_accepts_none in crates/aipo-vm/tests/data_and_errors.rs, plus the emitter/verifier/disassembler round trip for AssertContract, CheckMutations and AssertInvariant in crates/aipo-bytecode/src/lib.rs",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check (exit 0), cargo clippy --workspace --all-targets -- -D warnings (zero warnings), cargo test --workspace (141 passed, 0 failed) and cargo doc --workspace --no-deps (no warnings) are all green; full output in docs/evidence/P00-G14-runtime-contract-enforcement.md",
+      "kind": "gate"
+    },
+    {
+      "description": "Decisions taken from canon instead of invented: an invariant on a published instance is re-validated at stable mutable boundaries with a per-frame mutation journal, restoring the direct fields of every participating instance and producing a recoverable Failure (Interludio - Chamadas, Construcao, Impl e Modulos, section 3); a signature contract violation discovered at runtime is a contract fault, not capturable by attempt (Language Reference section 4); T? means exactly T or none; the module's Type.invariant function entry is the predicate the runtime invokes, so no second expression evaluator exists. Recorded in docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md, now resolved with G2b and G3 closed; the residual limits (interfaces are not checked at runtime, sema does not use the annotations before execution) are recorded there and in the evidence record instead of being hidden",
+      "kind": "gate"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T22:16:12.577838504Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T22:16:21.315957791Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T22:16:21.324103948Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T22:16:21.329480802Z",
+      "event": "amended",
+      "reason": "Record objective acceptance criteria and explicit non-goals for runtime contract enforcement",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-16T02:47:23.445117722Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-16T02:47:23.526293226Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-16T02:47:23.828331829Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-16T02:47:36.694036188Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G14",
+  "lock": {
+    "digest": "143991103703f766b0474adfdd168875179487c3ec3d0e4b1f8b4ee08f1734a9",
+    "locked_at": "2026-09-15T22:16:21.329480802Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "Bytes packing APIs (read_i32/write_f32 and friends) beyond construction, indexing and slicing",
+    "Resolving ADP-001 Q3 (inverted clamp bounds), Q4 (slice saturation) and Q5 (NFC construction boundaries)",
+    "Deep mutable state observation by invariants (canon excludes aliased List/Dict/struct internals in V1)",
+    "VM versus JavaScript differential testing (Wave 2)"
+  ],
+  "objective": "Close the two remaining MVP gaps: re-evaluate invariant() at guarded mutation points with the candidate->apply->verify->commit rule, and check signature contracts (name: Type, name!: Type, -> T, T?) at runtime call boundaries",
+  "phase": "P00",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Runtime contract enforcement: invariant at mutation points and signature contracts"
+}

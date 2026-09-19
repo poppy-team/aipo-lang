@@ -1,0 +1,7 @@
+# leading comment
+let x = 1
+
+# spaced comment
+let y = 2
+
+io.println(x + y)

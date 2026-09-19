@@ -1,0 +1,24 @@
+[package]
+name = "aipo-stdlib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Canonical standard library and Prelude V1 for Aipo"
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-runtime = { path = "../aipo-runtime" }
+aipo-vm = { path = "../aipo-vm" }
+serde = { workspace = true }
+# Canon-preferred Unicode providers (see docs/canon/Aipo — Stdlib V1 …: segmentation + NFC).
+unicode-normalization = { workspace = true }
+unicode-segmentation = { workspace = true }
+
+[dev-dependencies]
+aipo-bytecode = { path = "../aipo-bytecode" }

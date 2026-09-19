@@ -1,0 +1,50 @@
+struct Task
+    fixed id
+    title
+    done = false
+end
+
+impl Task
+    fn complete(self!)
+        self.done = true
+    end
+
+    fn label(self)
+        if self.done
+            return f"[x] {self.title}"
+        end
+        return f"[ ] {self.title}"
+    end
+end
+
+fn describe(count)
+    match count
+    when 0
+        return "empty"
+    when 1
+        return "one task"
+    else
+        return f"{count} tasks"
+    end
+end
+
+var tasks = []
+tasks.add(Task{id = 1, title = "write parser"})
+tasks.add(Task{id = 2, title = "write tests"})
+
+io.println(describe(len(tasks)))
+
+tasks[0].complete()
+each task in tasks
+    io.println(task.label())
+end
+
+let pending = tasks.filter(fn (t) return not t.done end)
+io.println(describe(len(pending)))
+
+attempt
+    let broken = Int("not a number")
+    io.println(broken)
+failed err
+    io.println(f"caught: {err.message}")
+end

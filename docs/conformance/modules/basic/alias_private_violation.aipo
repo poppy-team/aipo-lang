@@ -1,0 +1,3 @@
+import util as u
+
+io.println(String(u.secret()))

@@ -1,0 +1,150 @@
+{
+  "acceptance": [
+    "Every Wave 1 exit criterion in docs/waves/wave-1-mvp.md is classified as certified, partially certified or not delivered, each with the command or fixture that proves the classification",
+    "The five gauntlet gates in docs/conformance/README.md carry a score with the exact command that produced it, and the corpus inventory matches the files on disk",
+    "What the MVP genuinely does not deliver (Bytes packing APIs, the aipo-js backend, Set/Sequence, LSP and REPL) is recorded as explicit non-delivery in the MVP subset and the evidence record, so no later slice inherits a hidden gap",
+    "A single evidence record under docs/evidence/ publishes the hand-off: the certified baseline, the non-delivery list and the recommended next slice",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-19T21:04:45.372117487Z",
+      "approved_by": "human",
+      "changes": {},
+      "digest": "de73155dfed5656601bd9b2ccc1275d77c93ebe9c6e9dfad93ff00e292180601",
+      "goal_id": "P00-G16",
+      "id": "TR-004",
+      "reason": "Formal amendment",
+      "revision": 2
+    },
+    {
+      "approved_at": "2026-09-19T21:04:54.956002373Z",
+      "approved_by": "human",
+      "changes": {},
+      "digest": "de73155dfed5656601bd9b2ccc1275d77c93ebe9c6e9dfad93ff00e292180601",
+      "goal_id": "P00-G16",
+      "id": "AMD-003",
+      "reason": "Formal amendment",
+      "revision": 3
+    },
+    {
+      "approved_at": "2026-09-19T21:05:15.15528757Z",
+      "approved_by": "human",
+      "changes": {
+        "evidence": [
+          {
+            "description": "cargo test --workspace: 146 passed, 0 failed; conformance 13/13, formatter 11/11, fuzz_smoke 3/3. New certification: programs/19_local_functions and 20_module_scope. See docs/evidence/P00-G16-wave-1-exit-review.md",
+            "kind": "test"
+          },
+          {
+            "description": "cargo fmt --all -- --check (exit 0), cargo clippy --workspace --all-targets -- -D warnings (zero warnings), cargo test --workspace (146 passed) and cargo doc --workspace --no-deps clean; prumo validate/doctor green; gauntlet 100%",
+            "kind": "gate"
+          },
+          {
+            "description": "docs/evidence/P00-G16-wave-1-exit-review.md publishes certified baseline, non-delivery list (Bytes packing, aipo-js, Set/Sequence, LSP/REPL) and next slice; docs/conformance/README.md scores, docs/stdlib/mvp-subset.md deferred, docs/PRUMO.md, CHANGELOG.md, PROJECT_STATE.md updated",
+            "kind": "doc"
+          }
+        ]
+      },
+      "digest": "de73155dfed5656601bd9b2ccc1275d77c93ebe9c6e9dfad93ff00e292180601",
+      "goal_id": "P00-G16",
+      "id": "AMD-004",
+      "reason": "Attach P00-G16 hand-off evidence: corpus audit, gauntlet 100%, non-delivery list",
+      "revision": 4
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-16T03:38:07.418014926Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-16T03:38:57.137455877Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-16T03:38:57.142574617Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-19T21:04:11.060737751Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-19T21:04:14.56005909Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-19T21:04:14.566902801Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-19T21:04:45.372117487Z",
+      "event": "amended",
+      "reason": "Formal amendment",
+      "revision": 2
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-19T21:04:54.956002373Z",
+      "event": "amended",
+      "reason": "Formal amendment",
+      "revision": 3
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-19T21:05:15.15528757Z",
+      "event": "amended",
+      "reason": "Attach P00-G16 hand-off evidence: corpus audit, gauntlet 100%, non-delivery list",
+      "revision": 4
+    }
+  ],
+  "id": "P00-G16",
+  "lock": {
+    "digest": "de73155dfed5656601bd9b2ccc1275d77c93ebe9c6e9dfad93ff00e292180601",
+    "locked_at": "2026-09-19T21:05:15.15528757Z",
+    "revision": 4
+  },
+  "non_goals": [
+    "Implementing Bytes packing APIs, the aipo-js backend, Set, Sequence, LSP or REPL",
+    "Re-opening resolved ADP decisions (ADP-001 Q1-Q5 and ADP-002 G1, G2, G2b, G3, G4)",
+    "Starting Wave 2 or changing the canonical documents under docs/canon/",
+    "Changing the language surface: this goal audits and publishes, it does not add syntax"
+  ],
+  "objective": "Audit the Wave 1 exit criteria in docs/waves/wave-1-mvp.md against the executable corpus now that both ADPs are resolved: score the five gauntlet gates with reproducible commands, record what the MVP genuinely does not deliver (Bytes packing APIs, the aipo-js backend, Set/Sequence, LSP/REPL) as explicit non-delivery instead of an open gap, and publish the hand-off so a new slice can start from a certified baseline.",
+  "phase": "P00",
+  "revision": 4,
+  "state": "REVIEWING",
+  "title": "Wave 1 exit review: audit the certified MVP subset against the exit criteria and hand it over with a gauntlet score"
+}

@@ -1,0 +1,17 @@
+[package]
+name = "aipo-formatter"
+description = "Canonical formatter for the Aipo programming language"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-lexer = { path = "../aipo-lexer" }
+aipo-source = { path = "../aipo-source" }
+
+[lints]
+workspace = true

@@ -1,0 +1,69 @@
+{
+  "context_aware_routing": true,
+  "cross_provider_review": true,
+  "roles": {
+    "architect": {
+      "fallback": [],
+      "preferred": [
+        "\u003cnil\u003e"
+      ]
+    },
+    "debugger": {
+      "fallback": [],
+      "preferred": [
+        "\u003cnil\u003e"
+      ]
+    },
+    "documentation-maintainer": {
+      "fallback": [],
+      "preferred": [
+        "\u003cnil\u003e"
+      ]
+    },
+    "implementer": {
+      "fallback": [],
+      "preferred": [
+        "\u003cnil\u003e"
+      ]
+    },
+    "release-verifier": {
+      "fallback": [],
+      "preferred": [
+        "\u003cnil\u003e"
+      ]
+    },
+    "reviewer": {
+      "fallback": [],
+      "preferred": [
+        "\u003cnil\u003e"
+      ]
+    },
+    "security-reviewer": {
+      "fallback": [],
+      "preferred": [
+        "\u003cnil\u003e"
+      ]
+    },
+    "tester": {
+      "fallback": [],
+      "preferred": [
+        "\u003cnil\u003e"
+      ]
+    },
+    "ux-reviewer": {
+      "fallback": [],
+      "preferred": [
+        "\u003cnil\u003e"
+      ]
+    }
+  },
+  "roster": [
+    {
+      "enabled": true,
+      "id": "\u003cnil\u003e",
+      "provider": "z-ai"
+    }
+  ],
+  "selection_rule": "cheapest-reliable-model-that-passes-gates",
+  "version": 2
+}

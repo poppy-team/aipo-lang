@@ -1,0 +1,141 @@
+{
+  "acceptance": [
+    "docs/conformance/ holds the shared corpus: 11 runnable programs with committed stdout snapshots, 10 diagnostic fixtures with committed expected codes, 8 formatter golden pairs and 3 module cases",
+    "The aipo-cli conformance suite runs every fixture through the real pipeline: programs and module entries match their committed stdout, each failure fixture reports its committed diagnostic code (and no unrelated code), and fmt --check never rewrites a file",
+    "The fuzz-smoke suite proves no input panics the pipeline: random bytes, mutated programs and truncated programs each yield a diagnostic and exit code 1 or 2",
+    "The formatter golden suite proves determinism and idempotency over the corpus, and canonical sources report no drift",
+    "docs/conformance/README.md documents the layout, fixture invariants, snapshot matrix, regeneration workflow and the gauntlet rubric; the gate outcome is recorded in docs/evidence/P00-G12-conformance-and-mvp-gate.md",
+    "The four canon/implementation gaps the corpus found are recorded, with a minimal demonstrating program each, in docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md and carried as acceptance criteria of P00-G13, so the MVP gate is scored as partial rather than silently closed",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-15T21:59:47.349766925Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "docs/conformance/ holds the shared corpus: 11 runnable programs with committed stdout snapshots, 10 diagnostic fixtures with committed expected codes, 8 formatter golden pairs and 3 module cases",
+          "The aipo-cli conformance suite runs every fixture through the real pipeline: programs and module entries match their committed stdout, each failure fixture reports its committed diagnostic code (and no unrelated code), and fmt --check never rewrites a file",
+          "The fuzz-smoke suite proves no input panics the pipeline: random bytes, mutated programs and truncated programs each yield a diagnostic and exit code 1 or 2",
+          "The formatter golden suite proves determinism and idempotency over the corpus, and canonical sources report no drift",
+          "docs/conformance/README.md documents the layout, fixture invariants, snapshot matrix, regeneration workflow and the gauntlet rubric; the gate outcome is recorded in docs/evidence/P00-G12-conformance-and-mvp-gate.md",
+          "The four canon/implementation gaps the corpus found are recorded, with a minimal demonstrating program each, in docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md and carried as acceptance criteria of P00-G13, so the MVP gate is scored as partial rather than silently closed",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+        ],
+        "non_goals": [
+          "Implementing the four verified MVP gaps (init, invariant, runtime contracts, Bytes construction) — assigned to P00-G13",
+          "VM versus JavaScript differential testing (Wave 2)",
+          "Cross-host (Poppy) conformance and performance benchmarking beyond the gate commands"
+        ]
+      },
+      "digest": "e02ba885b3f7aef26f9972b0420b944c6164dde2d1c76182c843c8aa04729764",
+      "goal_id": "P00-G12",
+      "id": "AMD-002",
+      "reason": "Record objective acceptance criteria and explicit non-goals for slice S11 (conformance hardening)",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-cli --test conformance: 13 passed, 0 failed (program and module snapshots, failure fixtures with committed codes, formatter drift, exit codes, JSONL); cargo test -p aipo-cli --test fuzz_smoke: 3 passed; cargo test -p aipo-formatter: 6+4+1 passed",
+      "kind": "test"
+    },
+    {
+      "description": "Gauntlet rubric scored pass on all five gates (Executable MVP 30%, Diagnostic discipline 20%, Determinism 20%, Robustness 15%, Repository gates 15%); rubric and commands in docs/conformance/README.md, score in docs/evidence/P00-G12-conformance-and-mvp-gate.md",
+      "kind": "gate"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo check --workspace --all-targets, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace (136 passed) and cargo doc --workspace --no-deps all green",
+      "kind": "gate"
+    },
+    {
+      "description": "Eight fixtures and three module cases certify the gate; four canon/implementation gaps (init construction hook, invariant evaluation, runtime signature contracts, Bytes construction) are recorded with minimal demonstrating programs in docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md and assigned to P00-G13, so the MVP gate is documented as partial rather than closed",
+      "kind": "gate"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T19:04:31.824501302Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T21:59:47.251862339Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T21:59:47.289225084Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T21:59:47.30568593Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T21:59:47.349766925Z",
+      "event": "amended",
+      "reason": "Record objective acceptance criteria and explicit non-goals for slice S11 (conformance hardening)",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-15T21:59:47.38434Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T21:59:47.406160297Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T21:59:53.71928746Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G12",
+  "lock": {
+    "digest": "e02ba885b3f7aef26f9972b0420b944c6164dde2d1c76182c843c8aa04729764",
+    "locked_at": "2026-09-15T21:59:47.349766925Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "Implementing the four verified MVP gaps (init, invariant, runtime contracts, Bytes construction) — assigned to P00-G13",
+    "VM versus JavaScript differential testing (Wave 2)",
+    "Cross-host (Poppy) conformance and performance benchmarking beyond the gate commands"
+  ],
+  "objective": "Deliver the S11 conformance suite: pass/fail fixtures, snapshot matrix, fuzz smoke, gauntlet rubric and the Wave 1 MVP exit gate evidence",
+  "phase": "P00",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Conformance hardening: fixtures, snapshots, gauntlet and MVP gate"
+}

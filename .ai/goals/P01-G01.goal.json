@@ -1,0 +1,73 @@
+{
+  "acceptance": [
+    "Replace this placeholder with objective acceptance criteria."
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-19T21:22:03.387732294Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-19T21:22:06.363662093Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-19T21:22:06.371866329Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-19T21:22:06.381033627Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-19T22:04:04.839540011Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-19T22:04:04.849235415Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    }
+  ],
+  "id": "P01-G01",
+  "lock": {
+    "digest": "5e6ab32db3fd25df45bb84f8d07ce7571325aa34e5ac3a2106735b458fe30d1b",
+    "locked_at": "2026-09-19T21:22:06.371861846Z",
+    "revision": 1
+  },
+  "non_goals": [],
+  "objective": "Ship aipo-js emitter (ESM + versioned shim + ECMA-426 source maps) and aipo build with a VM-vs-JS differential suite green over conformance programs 01-20; diagnostics and modules fail at build time with the same codes; no language surface change",
+  "phase": "P01",
+  "revision": 1,
+  "state": "REVIEWING",
+  "title": "JS parity for the full MVP subset"
+}

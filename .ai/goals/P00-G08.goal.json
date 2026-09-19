@@ -1,0 +1,87 @@
+{
+  "acceptance": [
+    "Replace this placeholder with objective acceptance criteria."
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [
+    "P00-G07"
+  ],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-vm passed with 24 automated tests covering structs with fixed immutability and invariants, List and Dict collections, negative indexing, Failure Model B propagation, attempt/failed recovery, and runtime faults",
+      "kind": "test"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T17:00:32.464068463Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T17:01:40.150363857Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T17:01:40.159175704Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T17:01:40.166550741Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-15T17:02:12.39588127Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T17:02:12.406504539Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T17:03:16.01784598Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G08",
+  "lock": {
+    "digest": "c4836537f266a2bc46bcc161ed2cc39a920372d142cae74621a94c53d32f7761",
+    "locked_at": "2026-09-15T17:01:40.159170639Z",
+    "revision": 1
+  },
+  "non_goals": [],
+  "objective": "Complete aipo-vm data collections, struct fixed immutability and invariants, Model B failure propagation, and runtime faults",
+  "phase": "P00",
+  "revision": 1,
+  "state": "DONE",
+  "title": "Data \u0026 Errors: Structs, List/Dict operations, Failure propagation, and faults"
+}

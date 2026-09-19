@@ -1,0 +1,65 @@
+# Contratos de assinatura escritos nas fronteiras: parâmetros (`name: Type`,
+# `name!: Type`), retorno (`-> T`) e opcionalidade (`T?`). O sema reprova o que é
+# provável antes de executar; o resto vira contract fault em runtime, não `Failure`.
+interface Greeter
+    fn greet(self) -> String
+end
+
+struct Robot
+    name
+end
+
+impl Robot
+    fn greet(self) -> String
+        return "beep " + self.name
+    end
+end
+
+satisfy Robot: Greeter
+
+# O parâmetro declara a interface; a conferência é estrutural em runtime.
+fn announce(who: Greeter) -> String
+    return who.greet()
+end
+
+# `T?` aceita `none` além de um valor conforme.
+fn maybe_announce(who: Greeter?) -> String
+    if who == none
+        return "nobody to greet"
+    end
+    return announce(who)
+end
+
+# `invariant()` é verificado na fronteira mutável estável; violar produz `Failure`
+# recuperável com rollback dos campos.
+struct Account
+    owner
+    balance
+end
+
+impl Account
+    invariant()
+        return self.balance >= 0
+    end
+
+    fn withdraw(self!, amount: Int)
+        self.balance = self.balance - amount
+        return self.balance
+    end
+end
+
+let robot = Robot{name = "r2"}
+io.println(announce(robot))
+io.println(maybe_announce(robot))
+io.println(maybe_announce(none))
+
+let account = Account{owner = "ana", balance = 10}
+account.withdraw(4)
+io.println(f"balance: {account.balance}")
+
+attempt
+    account.withdraw(100)
+failed err
+    io.println(f"refused: {err.message}")
+end
+io.println(f"balance after rollback: {account.balance}")

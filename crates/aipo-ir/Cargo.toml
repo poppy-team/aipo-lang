@@ -1,0 +1,23 @@
+[package]
+name = "aipo-ir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Target-neutral Core Intermediate Representation for the Aipo compiler"
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-source = { path = "../aipo-source" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-ast = { path = "../aipo-ast" }
+aipo-hir = { path = "../aipo-hir" }
+aipo-sema = { path = "../aipo-sema" }
+serde = { workspace = true }
+
+[dev-dependencies]
+aipo-syntax = { path = "../aipo-syntax" }

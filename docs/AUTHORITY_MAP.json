@@ -1,0 +1,25 @@
+{
+  "current_version": "0.6.0",
+  "documents": [
+    {
+      "path": "README.md",
+      "role": "canonical"
+    },
+    {
+      "path": "ENTRYPOINT.md",
+      "role": "canonical"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "role": "canonical"
+    },
+    {
+      "path": "PROJECT_STATE.md",
+      "role": "canonical"
+    },
+    {
+      "path": "docs/**",
+      "role": "canonical"
+    }
+  ]
+}

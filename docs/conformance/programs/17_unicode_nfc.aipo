@@ -1,0 +1,36 @@
+# Canon: `String` is UTF-8 normalized to NFC, and normalization belongs to the construction
+# boundaries — literal decoding, conversion, concatenation/interpolation and every operation
+# that can join a base character with a combining mark. `len` counts code points, so it sees
+# the composed character; `==` stays plain structural equality over the stored values.
+
+let escaped = "e\u{0301}"
+io.println(escaped)
+io.println(string.len(escaped))
+io.println(string.byte_len(escaped))
+
+let concatenated = "e" + "\u{0301}"
+io.println(concatenated)
+io.println(string.len(concatenated))
+
+let mark = "\u{0301}"
+io.println(string.len(f"e{mark}"))
+
+io.println(string.len(string.join("", ["e", "\u{0301}"])))
+
+let replaced = string.replace("e.", ".", "\u{0301}")
+io.println(replaced)
+io.println(string.len(replaced))
+
+let formatted = string.format("e{v}", {"v": mark})
+io.println(formatted)
+io.println(string.len(formatted))
+
+io.println(string.upper(escaped))
+io.println(string.len(string.upper(escaped)))
+
+io.println(string.len(string.reverse("e\u{0301}té")))
+io.println(string.reverse("e\u{0301}té"))
+
+# A mark with no precomposed form survives normalization, so the count stays at three.
+io.println(string.capitalize("é\u{0301}x"))
+io.println(string.len(string.capitalize("é\u{0301}x")))

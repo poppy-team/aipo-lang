@@ -1,0 +1,18 @@
+[package]
+name = "aipo-lexer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Token classification, Unicode normalization, and lexing for the Aipo language"
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-source = { path = "../aipo-source" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+serde = { workspace = true }
+unicode-normalization = { workspace = true }

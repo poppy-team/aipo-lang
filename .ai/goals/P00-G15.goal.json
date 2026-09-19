@@ -1,0 +1,137 @@
+{
+  "acceptance": [
+    "aipo-sema uses the written signature contracts for a pre-execution report: a provable mismatch (literal argument against a written parameter contract) is reported as AIPO_SEM_CONTRACT_VIOLATION_STATIC before the program runs, while a mismatch the analyzer cannot prove stays a runtime contract fault",
+    "An interface written as a signature contract is checked at runtime by structural conformance (the value exposes the operations the interface declares), so a non-conforming value is a contract fault instead of being accepted blindly",
+    "The remaining ADP-001 questions are resolved or explicitly re-scoped from canon, each with a decision recorded: inverted clamp bounds, slice saturation and NFC construction boundaries",
+    "Every closed behaviour is certified by a runnable pass/fail fixture under docs/conformance/, and docs/adp/ADP-001 and docs/adp/ADP-002 record what was decided and what remains out of scope",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-16T02:48:20.071838037Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "aipo-sema uses the written signature contracts for a pre-execution report: a provable mismatch (literal argument against a written parameter contract) is reported as AIPO_SEM_CONTRACT_VIOLATION_STATIC before the program runs, while a mismatch the analyzer cannot prove stays a runtime contract fault",
+          "An interface written as a signature contract is checked at runtime by structural conformance (the value exposes the operations the interface declares), so a non-conforming value is a contract fault instead of being accepted blindly",
+          "The remaining ADP-001 questions are resolved or explicitly re-scoped from canon, each with a decision recorded: inverted clamp bounds, slice saturation and NFC construction boundaries",
+          "Every closed behaviour is certified by a runnable pass/fail fixture under docs/conformance/, and docs/adp/ADP-001 and docs/adp/ADP-002 record what was decided and what remains out of scope",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+        ],
+        "non_goals": [
+          "Deep or generic contracts (List[T], Dict[K, V], user generics) — outside V1",
+          "Interface inheritance, interface defaults, interface state or interface init/invariant — canon excludes them in V1",
+          "Bytes packing APIs (read_i32/write_f32 and friends) beyond construction, indexing and slicing",
+          "VM versus JavaScript differential testing (Wave 2)",
+          "Replacing the runtime contract fault with a recoverable Failure: canon classifies a contract violation discovered at runtime as a programming fault"
+        ]
+      },
+      "digest": "21c88a2141de841080fc9a736c1fb35e517da987c9026313a665b2abcf56ba6a",
+      "goal_id": "P00-G15",
+      "id": "AMD-002",
+      "reason": "Record objective acceptance criteria and explicit non-goals for the residual contract limits left open by P00-G14",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "cargo test --workspace: 146 passed, 0 failed. New certification: docs/conformance/diagnostics/15_sem_contract_violation.aipo and 16_sem_return_contract.aipo (a provable mismatch is AIPO_SEM_CONTRACT_VIOLATION_STATIC before execution, while 12/13 keep the unprovable ones as runtime contract faults), docs/conformance/programs/16_interface_contracts.aipo and diagnostics/17_runtime_interface_contract.aipo and 18_runtime_interface_arity.aipo (structural conformance for an interface contract, checked by caller-visible arity and naming the struct in the fault), docs/conformance/programs/17_unicode_nfc.aipo (NFC at the literal, concatenation, interpolation, join, replace, format, case mapping and reverse boundaries), docs/conformance/programs/18_tolerant_slices_and_clamp.aipo and diagnostics/19_runtime_clamp_inverted_bounds.aipo (tolerant slices for List/String/Bytes, recoverable inverted clamp bounds). At the unit level: test_string_literals_are_nfc_normalized in crates/aipo-lexer/src/lib.rs, test_string_operations_preserve_nfc in crates/aipo-stdlib/tests/stdlib_tests.rs, and test_string_concatenation_preserves_nfc, test_interface_contract_accepts_a_conforming_operation and test_interface_contract_names_the_failing_struct in crates/aipo-vm/tests/data_and_errors.rs",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check (exit 0), cargo clippy --workspace --all-targets -- -D warnings (zero warnings), cargo test --workspace (146 passed, 0 failed) and cargo doc --workspace --no-deps (no warnings) are all green; prumo validate, prumo doctor and prumo docs verify/authority/contradictions/audit are clean; full output in docs/evidence/P00-G15-static-contracts-and-interface-conformance.md",
+      "kind": "gate"
+    },
+    {
+      "description": "Decisions taken from canon instead of invented: a provable contract mismatch is reported before execution while an unprovable one stays a contract fault at the boundary (Language Reference section 4); an interface is structural, so using it as a contract asks whether the value exposes the declared operations (Sintaxe Canonica, Interfaces e satisfy); inverted clamp bounds are a value outside a valid range and therefore a recoverable Failure, unlike an index outside a range, which is a fault (Language Reference section 4 vs 16); slices are tolerant/clamped while exact indices fault (Aipo Language - Especificacao Viva, List model); NFC belongs to the String construction boundaries. All recorded in docs/adp/ADP-001-byte-and-core-types-as-values.md (now resolved: Q1/Q2 by P00-G10, Q3/Q4/Q5 here) and in docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md, which also records the interface arity defect this goal found and corrected and the residual limits (name+arity is not a full signature check; normalizing the constant pool is deliberately out of scope) instead of hiding them",
+      "kind": "gate"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-16T02:47:45.110446606Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-16T02:47:51.333945759Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-16T02:48:13.469115671Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-16T02:48:20.071838037Z",
+      "event": "amended",
+      "reason": "Record objective acceptance criteria and explicit non-goals for the residual contract limits left open by P00-G14",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-16T02:53:22.497636424Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-16T03:36:09.215796114Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-16T03:36:09.227003028Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-16T03:37:41.673574686Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G15",
+  "lock": {
+    "digest": "21c88a2141de841080fc9a736c1fb35e517da987c9026313a665b2abcf56ba6a",
+    "locked_at": "2026-09-16T02:48:20.071838037Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "Deep or generic contracts (List[T], Dict[K, V], user generics) — outside V1",
+    "Interface inheritance, interface defaults, interface state or interface init/invariant — canon excludes them in V1",
+    "Bytes packing APIs (read_i32/write_f32 and friends) beyond construction, indexing and slicing",
+    "VM versus JavaScript differential testing (Wave 2)",
+    "Replacing the runtime contract fault with a recoverable Failure: canon classifies a contract violation discovered at runtime as a programming fault"
+  ],
+  "objective": "Close the residual limits recorded by P00-G14: make aipo-sema use the written signature contracts for a pre-execution diagnostic, give interface contracts a runtime structural conformance check so they stop being accepted blindly, and resolve the remaining ADP-001 questions (inverted clamp bounds, slice saturation, NFC construction boundaries)",
+  "phase": "P00",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Static contract reporting and interface conformance: use the written annotations before execution and check interfaces at runtime"
+}

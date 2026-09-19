@@ -1,0 +1,19 @@
+[package]
+name = "aipo-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Lossless syntax tree, Pratt parser, and error recovery for the Aipo language"
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-source = { path = "../aipo-source" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-lexer = { path = "../aipo-lexer" }
+aipo-ast = { path = "../aipo-ast" }
+serde = { workspace = true }

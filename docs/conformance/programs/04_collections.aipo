@@ -1,0 +1,39 @@
+var numbers = [3, 1, 2]
+io.println(len(numbers))
+io.println(numbers.len())
+io.println(numbers.is_empty())
+
+numbers.add(9)
+numbers.insert(0, 5)
+io.println(numbers)
+io.println(numbers.first())
+io.println(numbers.last())
+io.println(numbers.contains(2))
+io.println(numbers.count(3))
+io.println(numbers.find(9))
+
+io.println(numbers.transform(fn (x) return x * 2 end))
+io.println(numbers.filter(fn (x) return x > 2 end))
+io.println(numbers.sort())
+io.println(numbers.sort_by(fn (x) return 0 - x end))
+io.println(numbers.reverse())
+
+numbers.remove(3)
+io.println(numbers)
+numbers.remove_at(0)
+io.println(numbers)
+numbers.remove_last()
+io.println(numbers)
+
+let scores = {"alice": 10, "bob": 20}
+io.println(len(scores))
+io.println(scores.has("alice"))
+io.println(scores.keys())
+io.println(scores.values())
+io.println(scores["bob"])
+scores.remove("bob")
+io.println(scores.is_empty())
+
+var cleared = [1, 2, 3]
+cleared.clear()
+io.println(cleared.is_empty())

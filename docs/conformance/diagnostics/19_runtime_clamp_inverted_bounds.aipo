@@ -1,0 +1,6 @@
+# Canon: `clamp` constrains a number to an inclusive interval, and inverted bounds leave no
+# interval. That is a *value* outside a valid range, which canon treats as a recoverable
+# `Failure` (like `Int(value)`/`Byte(value)` out of range), not a programming fault — so an
+# unhandled one ends the program as an uncaught recoverable failure.
+io.println(math.clamp(5, 0, 3))
+io.println(math.clamp(5, 3, 0))

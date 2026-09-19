@@ -1,0 +1,7 @@
+# Canon: a contract mismatch that is provable before execution is a diagnostic rather than a
+# runtime fault. A literal argument has a known category, so the call site is provable.
+fn double(x: Int) -> Int
+    return x * 2
+end
+
+io.println(String(double("no")))

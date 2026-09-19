@@ -1,0 +1,7 @@
+fn greet(name)
+return "hello " + name
+end
+
+if true
+io.println(greet("aipo"))
+end

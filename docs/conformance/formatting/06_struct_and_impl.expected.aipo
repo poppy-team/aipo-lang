@@ -1,0 +1,11 @@
+struct Point
+    fixed id
+    x
+    y
+end
+
+impl Point
+    fn total(self)
+        return self.x + self.y
+    end
+end

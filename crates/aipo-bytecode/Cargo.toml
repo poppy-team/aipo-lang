@@ -1,0 +1,23 @@
+[package]
+name = "aipo-bytecode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Compact bytecode module format, instruction set, emitter, verifier, and disassembler for Aipo"
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-source = { path = "../aipo-source" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-ir = { path = "../aipo-ir" }
+serde = { workspace = true }
+byteorder = "1.5"
+
+[dev-dependencies]
+aipo-syntax = { path = "../aipo-syntax" }
+aipo-hir = { path = "../aipo-hir" }

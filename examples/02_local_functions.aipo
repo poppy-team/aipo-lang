@@ -1,0 +1,41 @@
+# Escopo e funções locais, seguindo o canon ("Funções locais e closures — decidido"):
+# o binding local existe quando a execução alcança a declaração, o nome é visível no
+# próprio corpo para autorrecursão e um `var` capturado é compartilhado entre as
+# chamadas da closure.
+fn make_counter(label)
+    var count = 0
+
+    fn bump()
+        count += 1
+        return count
+    end
+
+    fn describe()
+        return f"{label}: {count}"
+    end
+
+    return {"bump": bump, "describe": describe}
+end
+
+let counter = make_counter("hits")
+counter["bump"]()
+counter["bump"]()
+io.println(counter["describe"]())
+
+# Autorrecursão: `helper` chama `helper` dentro do próprio corpo.
+fn fact(n)
+    fn helper(k, acc)
+        if k <= 1
+            return acc
+        end
+        return helper(k - 1, acc * k)
+    end
+    return helper(n, 1)
+end
+io.println(f"fact 5 = {fact(5)}")
+
+# O mesmo `make_counter` executado duas vezes cria ambientes capturados independentes.
+let other = make_counter("other")
+other["bump"]()
+io.println(other["describe"]())
+io.println(counter["describe"]())

@@ -1,0 +1,72 @@
+# Canon: a guarded field update follows `candidate -> provisional apply -> verify ->
+# commit`, and validation happens at stable mutable boundaries — never after each
+# internal assignment, so an operation may pass through a transiently invalid state.
+# When validation fails, the direct fields of the participating instances return to
+# their entry values and the operation produces a recoverable `Failure`.
+
+struct Bounds
+    lo
+    hi
+end
+
+impl Bounds
+    init(lo, hi)
+        self.lo = lo
+        self.hi = hi
+    end
+
+    invariant()
+        self.lo < self.hi
+    end
+
+    # The mutable receiver makes this call a stable boundary: the assignment inside it
+    # is provisional until the method returns successfully.
+    fn widen(self!, by)
+        self.hi = self.hi + by
+    end
+
+    fn collapse(self!, by)
+        self.hi = self.hi - by
+    end
+end
+
+let r = Bounds{lo = 1, hi = 5}
+
+r.widen(3)
+io.println(String(r.hi))
+
+# A failed validation preserves the value the operation started from.
+attempt
+    r.collapse(20)
+failed error
+    io.println("rejected: " + error.message)
+end
+io.println(String(r.hi))
+
+# A direct assignment in the entry script is a boundary of its own.
+attempt
+    r.hi = 0
+failed error
+    io.println("rejected")
+end
+io.println(String(r.hi))
+
+# The state is still mutable while the invariant holds.
+r.hi = 12
+io.println(String(r.hi))
+
+# One operation may receive two mutable instances: canon validates them together before
+# the logical commit, and a failure restores the direct fields of both.
+fn transfer(mover!: Bounds, holder!: Bounds, amount)
+    mover.hi = mover.hi - amount
+    holder.hi = holder.hi + amount
+end
+
+let mover = Bounds{lo = 0, hi = 10}
+let holder = Bounds{lo = 0, hi = 10}
+attempt
+    transfer(mover, holder, 40)
+failed error
+    io.println("rejected: " + error.message)
+end
+io.println(String(mover.hi) + " " + String(holder.hi))

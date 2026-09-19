@@ -1,0 +1,30 @@
+[package]
+name = "aipo-cli"
+description = "Command-line interface for the Aipo programming language"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "aipo"
+path = "src/main.rs"
+
+[dependencies]
+aipo-bytecode = { path = "../aipo-bytecode" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-formatter = { path = "../aipo-formatter" }
+aipo-hir = { path = "../aipo-hir" }
+aipo-ir = { path = "../aipo-ir" }
+aipo-js = { path = "../aipo-js" }
+aipo-runtime = { path = "../aipo-runtime" }
+aipo-sema = { path = "../aipo-sema" }
+aipo-source = { path = "../aipo-source" }
+aipo-stdlib = { path = "../aipo-stdlib" }
+aipo-syntax = { path = "../aipo-syntax" }
+aipo-vm = { path = "../aipo-vm" }
+
+[lints]
+workspace = true

@@ -1,0 +1,97 @@
+{
+  "acceptance": [
+    "Crate aipo-lexer implemented according to crate contract.",
+    "Complete token classification: keywords, identifiers (Unicode NFC), numbers (_ separators, bases), strings (regular, f, r, fr, multiline), operators, delimiters, newlines, comments.",
+    "Lexical diagnostics emitted without panic (unterminated string, invalid escapes, unexpected characters).",
+    "Pass exhaustive unit tests and token snapshot fixtures.",
+    "CI quality gates green (fmt, check, clippy, doc, test)."
+  ],
+  "constraints": [
+    "Safe Rust only (unsafe_code = 'forbid').",
+    "No numeric evaluation in lexer: classification only.",
+    "Never panics on any input."
+  ],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [
+    "P00-G01"
+  ],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-lexer: 5 tests passed covering keywords, numbers, string prefixes, and lexical diagnostics",
+      "kind": "test"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T11:06:52Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T14:07:45.836443307Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T14:07:45.849112177Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T14:07:45.858523521Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-15T14:11:11.675151576Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T14:11:11.684309399Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T14:11:11.699477955Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G02",
+  "lock": {
+    "digest": "301b94a4040b25b8626073c473c7d7bb1562dc379937343cd2546fe845bd3835",
+    "locked_at": "2026-09-15T14:07:45.849105608Z",
+    "revision": 1
+  },
+  "non_goals": [
+    "Syntactic parsing or AST construction (reserved for S3)."
+  ],
+  "objective": "Implement aipo-lexer with full token classification, Unicode NFC, string prefixes, and snapshots",
+  "phase": "P00",
+  "revision": 1,
+  "state": "DONE",
+  "title": "Lexer Core: Tokens, string prefixes, and lexical diagnostics"
+}

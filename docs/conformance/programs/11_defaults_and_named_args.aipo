@@ -1,0 +1,41 @@
+fn greet(name, greeting = "hello")
+    return greeting + ", " + name
+end
+
+fn scale(x, factor = 2)
+    return x * factor
+end
+
+fn chain(start, step = 1, count = 3)
+    var total = start
+    repeat count as i
+        total += step
+    end
+    return total
+end
+
+fn remember(value, into = [])
+    into.add(value)
+    return len(into)
+end
+
+fn label(name = "anon", tag = name)
+    return name + "/" + tag
+end
+
+io.println(greet("ana"))
+io.println(greet("ana", "oi"))
+io.println(greet("ana", greeting = "olá"))
+io.println(String(scale(3)))
+io.println(String(scale(3, 10)))
+io.println(String(scale(factor = 5, x = 4)))
+io.println(String(chain(10)))
+io.println(String(chain(10, step = 5)))
+io.println(String(chain(10, count = 1)))
+io.println(String(chain(count = 2, start = 0, step = 3)))
+io.println(String(remember(1)))
+io.println(String(remember(2)))
+io.println(label())
+io.println(label("z"))
+io.println(label(tag = "t"))
+io.println(String([1, 2, 3, 4] |> len()))

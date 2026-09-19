@@ -1,0 +1,54 @@
+# Canon: interfaces are structural and `satisfy Type: Interface` is an explicit
+# promise/verification, not inheritance. Naming an interface in a written contract asks at
+# runtime whether the value exposes the operations the interface declares, so a
+# non-conforming value is a contract fault instead of being accepted blindly. The receiver
+# is not an argument at a call site, so the declared arity is the caller-visible one.
+
+interface Drawable
+    fn draw(self) -> String
+end
+
+interface Damageable
+    fn damage(self!, amount: Int) -> String
+end
+
+struct Player
+    name
+    hp
+end
+
+impl Player
+    fn draw(self) -> String
+        return "player " + self.name
+    end
+
+    fn damage(self!, amount: Int) -> String
+        self.hp = self.hp - amount
+        return self.name + " hp " + String(self.hp)
+    end
+end
+
+satisfy Player: Drawable, Damageable
+
+fn render(item: Drawable) -> String
+    return item.draw()
+end
+
+fn hit(target: Damageable, amount: Int) -> String
+    return target.damage(amount)
+end
+
+# `T?` accepts `none` in addition to a conforming value, which is exactly what `T?` means; the
+# structural check runs only when a value is present.
+fn maybe_render(item: Drawable?) -> String
+    if item == none
+        return "nothing to draw"
+    end
+    return render(item)
+end
+
+let player = Player{name = "ana", hp = 10}
+io.println(render(player))
+io.println(hit(player, 4))
+io.println(maybe_render(player))
+io.println(maybe_render(none))

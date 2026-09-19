@@ -1,0 +1,7 @@
+# Módulo de entrada: importa a biblioteca vizinha. O grafo é acíclico e cada
+# módulo inicializa uma única vez, na ordem topológica.
+import budget: format_cents, to_cents, stats
+
+io.println(format_cents(to_cents(12.5)))
+io.println(format_cents(to_cents(0.99)))
+io.println(stats())

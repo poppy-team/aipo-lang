@@ -1,0 +1,9 @@
+
+# Prumo derived/runtime state
+.prumo/runtime/
+.prumo/cache/
+
+# Rust build artifacts
+target/
+**/*.rs.bk
+

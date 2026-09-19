@@ -1,0 +1,170 @@
+{
+  "acceptance": [
+    "Type{...} construction invokes the init hook when the type declares one and falls back to canonical automatic construction when it does not; the parser injects the implicit `self!` receiver, so `init(id, name)` (canon form) and `init(self!, id)` both work",
+    "init parameter defaults are evaluated per construction by the existing callee-side prologue, including defaults that reference earlier parameters, and construction arguments are aligned to the init declaration (positional then named, omitted defaulted parameters left to the prologue)",
+    "fixed fields may receive their value during construction (including from init) and become immutable only after the instance is published (StructInstance::under_construction + the SealStruct opcode)",
+    "invariant() is lowered to a \u003cType\u003e.invariant(self) -\u003e Bool predicate whose lines are combined with `and`, and is verified at the end of construction; a violated invariant is a contract runtime fault (VmFault::InvariantViolation), which follows the MVP error model",
+    "Bytes has the canonical construction form Bytes(count: Int) producing a zero-filled mutable block, with byte indexing yielding Byte, len, slicing, and a recoverable Failure outside the provisional allocation cap",
+    "The three closed gaps are recorded in docs/conformance/ (programs/12_bytes, programs/13_init_and_invariant, diagnostics/11_runtime_invariant_violation) and docs/adp/ADP-002 marks G1, G2 and G4 resolved",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-15T22:00:05.495563643Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "Type{...} construction invokes the init hook when the type declares one, and falls back to canonical automatic construction when it does not; the defaults of init parameters are evaluated per construction",
+          "invariant() is evaluated on publication and a violated invariant produces the recorded error channel (to be decided in ADP-002 G2)",
+          "Signature contracts (name: Type, name!: Type, -\u003e T, T?) are checked at runtime call boundaries, with T? accepting none",
+          "Bytes has a canonical construction form (to be decided in ADP-002 G4) with indexing and len preserved",
+          "Each closed gap is recorded in docs/conformance/ as a runnable pass/fail fixture, and docs/adp/ADP-002 is updated to mark the resolved gaps",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+        ],
+        "non_goals": [
+          "Bytes packing APIs beyond construction and indexing",
+          "Resolving ADP-001 Q3 (inverted clamp bounds), Q4 (slice saturation) and Q5 (NFC construction boundaries)",
+          "VM versus JavaScript differential testing (Wave 2)"
+        ]
+      },
+      "digest": "6dd6d933c56bcd713719161cfea0f0552b732efc297331d5e0884eca0842270c",
+      "goal_id": "P00-G13",
+      "id": "AMD-002",
+      "reason": "Record objective acceptance criteria and explicit non-goals for the MVP contract closure goal",
+      "revision": 2
+    },
+    {
+      "approved_at": "2026-09-15T22:16:31.693636036Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "Type{...} construction invokes the init hook when the type declares one and falls back to canonical automatic construction when it does not; the parser injects the implicit `self!` receiver, so `init(id, name)` (canon form) and `init(self!, id)` both work",
+          "init parameter defaults are evaluated per construction by the existing callee-side prologue, including defaults that reference earlier parameters, and construction arguments are aligned to the init declaration (positional then named, omitted defaulted parameters left to the prologue)",
+          "fixed fields may receive their value during construction (including from init) and become immutable only after the instance is published (StructInstance::under_construction + the SealStruct opcode)",
+          "invariant() is lowered to a \u003cType\u003e.invariant(self) -\u003e Bool predicate whose lines are combined with `and`, and is verified at the end of construction; a violated invariant is a contract runtime fault (VmFault::InvariantViolation), which follows the MVP error model",
+          "Bytes has the canonical construction form Bytes(count: Int) producing a zero-filled mutable block, with byte indexing yielding Byte, len, slicing, and a recoverable Failure outside the provisional allocation cap",
+          "The three closed gaps are recorded in docs/conformance/ (programs/12_bytes, programs/13_init_and_invariant, diagnostics/11_runtime_invariant_violation) and docs/adp/ADP-002 marks G1, G2 and G4 resolved",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+        ],
+        "non_goals": [
+          "invariant() re-evaluation at guarded mutation points (candidate -\u003e apply -\u003e verify -\u003e commit): verified gap G2b, recorded in ADP-002 and assigned to P00-G14",
+          "Signature contracts (name: Type, name!: Type, -\u003e T, T?) checked at runtime call boundaries: verified gap G3, recorded in ADP-002 and assigned to P00-G14",
+          "Bytes packing APIs (read_i32/write_f32 and friends) and String.encode()/Bytes.decode()",
+          "Resolving ADP-001 Q3 (inverted clamp bounds), Q4 (slice saturation) and Q5 (NFC construction boundaries)"
+        ]
+      },
+      "digest": "0fad363797bcdba1bc66c957aa20d7ebf6f6b72709335f600a6dc0be0269f912",
+      "goal_id": "P00-G13",
+      "id": "AMD-003",
+      "reason": "Record the resolved implementation decisions and the achieved scope of P00-G13",
+      "revision": 3
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "cargo test --workspace: 137 passed, 0 failed. New certification: programs/13_init_and_invariant.aipo (init with defaults, fixed assignment during construction, default referencing an earlier parameter, invariant at end of construction), diagnostics/11_runtime_invariant_violation.aipo (AIPO_RT_TYPE_MISMATCH), programs/12_bytes.aipo (Bytes(4), byte indexing, len, slicing, Bytes(0)) and aipo-stdlib::test_convert_bytes",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check (exit 0), cargo check --workspace --all-targets, cargo clippy --workspace --all-targets -- -D warnings (zero warnings) and cargo doc --workspace --no-deps all green; full output in docs/evidence/P00-G13-construction-hooks-and-bytes.md",
+      "kind": "gate"
+    },
+    {
+      "description": "Decisions grounded in canon instead of invented: init invoked by Type{...} (Canonical Syntax), invariant verified at the end of construction with lines combined by and (Canonical Syntax), and Bytes(count) as the canonical construction form (Language Reference section 6). The contract-violation error channel (runtime fault) was already fixed by the MVP error model in docs/stdlib/mvp-subset.md. Recorded in docs/adp/ADP-002, which marks G1/G2/G4 resolved and delegates G2b (invariant at mutation points) and G3 (signature contracts at runtime) to P00-G14",
+      "kind": "gate"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T21:57:35.45023962Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T22:00:05.413755479Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T22:00:05.460391218Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T22:00:05.495563643Z",
+      "event": "amended",
+      "reason": "Record objective acceptance criteria and explicit non-goals for the MVP contract closure goal",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-15T22:02:53.310970767Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-15T22:16:21.309784411Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T22:16:31.693636036Z",
+      "event": "amended",
+      "reason": "Record the resolved implementation decisions and the achieved scope of P00-G13",
+      "revision": 3
+    },
+    {
+      "at": "2026-09-15T22:16:46.847140245Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T22:16:46.919672964Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G13",
+  "lock": {
+    "digest": "0fad363797bcdba1bc66c957aa20d7ebf6f6b72709335f600a6dc0be0269f912",
+    "locked_at": "2026-09-15T22:16:31.693636036Z",
+    "revision": 3
+  },
+  "non_goals": [
+    "invariant() re-evaluation at guarded mutation points (candidate -\u003e apply -\u003e verify -\u003e commit): verified gap G2b, recorded in ADP-002 and assigned to P00-G14",
+    "Signature contracts (name: Type, name!: Type, -\u003e T, T?) checked at runtime call boundaries: verified gap G3, recorded in ADP-002 and assigned to P00-G14",
+    "Bytes packing APIs (read_i32/write_f32 and friends) and String.encode()/Bytes.decode()",
+    "Resolving ADP-001 Q3 (inverted clamp bounds), Q4 (slice saturation) and Q5 (NFC construction boundaries)"
+  ],
+  "objective": "Close the four MVP gaps verified by the S11 corpus: Type{...} construction invokes init when declared, invariant() is evaluated on publication, signature contracts are checked at runtime boundaries, and Bytes has a canonical construction form",
+  "phase": "P00",
+  "revision": 3,
+  "state": "DONE",
+  "title": "MVP contract closure: init, invariant, runtime contracts and Bytes construction"
+}

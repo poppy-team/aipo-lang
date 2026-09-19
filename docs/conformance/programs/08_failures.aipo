@@ -1,0 +1,31 @@
+fn parse_positive(text)
+    let value = Int(text) or_else -1
+    if value < 0
+        return fail(f"not a positive number: {text}")
+    end
+    return value
+end
+
+io.println(parse_positive("42"))
+
+attempt
+    let value = parse_positive("nope")
+    io.println(value)
+failed err
+    io.println(f"caught: {err.message}")
+end
+
+fn risky()
+    return fail("boom")
+end
+
+let fallback = risky() or_else 99
+io.println(fallback)
+
+attempt
+    io.println("before")
+    let _ = risky()
+    io.println("after")
+failed _
+    io.println("recovered without binding")
+end

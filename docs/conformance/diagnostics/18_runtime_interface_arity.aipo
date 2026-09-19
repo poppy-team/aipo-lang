@@ -1,0 +1,23 @@
+# Canon: the structural check compares the *caller-visible* arity, because the receiver is not
+# an argument at the call site. `Odd` exposes a `draw` of the wrong arity, so the operation the
+# interface declares is not the one the value provides: a contract fault, not a recoverable
+# `Failure`.
+interface Drawable
+    fn draw(self) -> String
+end
+
+struct Odd
+    n
+end
+
+impl Odd
+    fn draw(self, extra: Int) -> String
+        return "odd " + String(extra)
+    end
+end
+
+fn render(item: Drawable) -> String
+    return "never reached"
+end
+
+io.println(render(Odd{n = 1}))

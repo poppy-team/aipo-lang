@@ -1,0 +1,176 @@
+{
+  "acceptance": [
+    "aipo-runtime exposes ModuleGraph with a deterministic topological initialization order (dependencies before dependents, lexicographic canonical-path tie-break), acyclic verification surfaced as AIPO_SEM_IMPORT_CYCLE, missing dependencies as AIPO_SEM_UNKNOWN_MODULE, and a NativeRegistry catalog of Prelude and built-in module functions",
+    "aipo-stdlib::register_stdlib installs Prelude V1 (values none/true/false; functions len/copy/same/some/fail; explicit conversions Int/Float/Byte/String) and the math, string and io module dictionaries into both the VM globals and the NativeRegistry metadata",
+    "Every cataloged native function returns Result and no Rust panic escapes as an Aipo error: domain problems produce recoverable Failure values (Model B) while programming violations produce VmFault",
+    "Canon argument rules are enforced and covered by tests: split and replace reject empty patterns, join rejects non-String elements without implicit coercion, round halves away from zero, reverse preserves extended grapheme clusters and re-normalizes its result to NFC, and Int/Float/Byte/String conversions follow the documented Failure-vs-fault split",
+    "docs/stdlib/mvp-subset.md documents the implemented closed surface and docs/adp/ADP-001-byte-and-core-types-as-values.md records the Byte/Bytes/first-class-type representation gaps instead of inventing semantics",
+    "cargo fmt --all --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-15T18:52:56.200615668Z",
+      "approved_by": "human",
+      "changes": {},
+      "digest": "228c313b064eeeec5d5c56beeaa04e7eaad509e999b404be7b630f40c69b4c22",
+      "goal_id": "P00-G09",
+      "id": "AMD-002",
+      "reason": "Formal amendment",
+      "revision": 2
+    },
+    {
+      "approved_at": "2026-09-15T18:53:10.159379355Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "aipo-runtime exposes ModuleGraph with a deterministic topological initialization order (dependencies before dependents, lexicographic canonical-path tie-break), acyclic verification surfaced as AIPO_SEM_IMPORT_CYCLE, missing dependencies as AIPO_SEM_UNKNOWN_MODULE, and a NativeRegistry catalog of Prelude and built-in module functions",
+          "aipo-stdlib::register_stdlib installs Prelude V1 (values none/true/false; functions len/copy/same/some/fail; explicit conversions Int/Float/Byte/String) and the math, string and io module dictionaries into both the VM globals and the NativeRegistry metadata",
+          "Every cataloged native function returns Result and no Rust panic escapes as an Aipo error: domain problems produce recoverable Failure values (Model B) while programming violations produce VmFault",
+          "Canon argument rules are enforced and covered by tests: split and replace reject empty patterns, join rejects non-String elements without implicit coercion, round halves away from zero, reverse preserves extended grapheme clusters and re-normalizes its result to NFC, and Int/Float/Byte/String conversions follow the documented Failure-vs-fault split",
+          "docs/stdlib/mvp-subset.md documents the implemented closed surface and docs/adp/ADP-001-byte-and-core-types-as-values.md records the Byte/Bytes/first-class-type representation gaps instead of inventing semantics",
+          "cargo fmt --all --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+        ],
+        "non_goals": [
+          "Wiring import/export/init-once execution inside the VM: S9 delivers the module registry, ordering guarantees and the stdlib surface",
+          "Adding a dedicated Byte runtime value kind or first-class type values for List/Dict/Bytes (open questions recorded in ADP-001)",
+          "VM versus JavaScript differential testing (Wave 2)"
+        ]
+      },
+      "digest": "9a7b738146944b53a1d229af89e06c8a2b3ec42087f1828aab445c8d92d372a5",
+      "goal_id": "P00-G09",
+      "id": "AMD-003",
+      "reason": "Record objective acceptance criteria and explicit non-goals for slice S9",
+      "revision": 3
+    },
+    {
+      "approved_at": "2026-09-15T18:54:13.390305758Z",
+      "approved_by": "human",
+      "changes": {
+        "evidence": [
+          {
+            "description": "cargo test --workspace: 109 passed, 0 failed (aipo-stdlib 30 covering Prelude V1, Int/Float/Byte/String conversions, math abs/min/max/floor/ceil/round/truncate/sqrt/pow/clamp, string len/byte_len/contains/starts_with/ends_with/find/lower/upper/capitalize/reverse/trim/split/join/replace/slice/format, io capture, canon argument rules and two end-to-end VM executions; aipo-runtime 10 covering topological order, cycle detection and lifecycle; aipo-vm 24 regression)",
+            "kind": "test"
+          },
+          {
+            "description": "cargo fmt --all --check, cargo check --workspace --all-targets, cargo clippy --workspace --all-targets (no warnings), cargo doc --workspace --no-deps and prumo validate / prumo docs verify all green; full outputs in docs/evidence/P00-G09-slice-s9.md",
+            "kind": "gate"
+          }
+        ]
+      },
+      "digest": "9a7b738146944b53a1d229af89e06c8a2b3ec42087f1828aab445c8d92d372a5",
+      "goal_id": "P00-G09",
+      "id": "AMD-004",
+      "reason": "Attach slice S9 gate evidence",
+      "revision": 4
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "cargo test --workspace: 109 passed, 0 failed (aipo-stdlib 30 covering Prelude V1; Int/Float/Byte/String conversions; math abs/min/max/floor/ceil/round/truncate/sqrt/pow/clamp; string len/byte_len/contains/starts_with/ends_with/find/lower/upper/capitalize/reverse/trim/split/join/replace/slice/format; io capture sink; canon argument rules and two end-to-end VM executions through bytecode; aipo-runtime 10 covering topological init order, cycle detection and module lifecycle; aipo-vm 24 regression)",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all --check, cargo check --workspace --all-targets, cargo clippy --workspace --all-targets (zero warnings under deny workspace lints), cargo doc --workspace --no-deps (zero warnings) and prumo validate / prumo docs verify all green; full reproducible outputs in docs/evidence/P00-G09-slice-s9.md",
+      "kind": "gate"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T17:43:20.145495183Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T17:43:34.901627222Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T17:43:34.925216592Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T17:43:34.944695725Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T18:52:56.200615668Z",
+      "event": "amended",
+      "reason": "Formal amendment",
+      "revision": 2
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T18:53:10.159379355Z",
+      "event": "amended",
+      "reason": "Record objective acceptance criteria and explicit non-goals for slice S9",
+      "revision": 3
+    },
+    {
+      "at": "2026-09-15T18:53:48.897987599Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T18:53:48.908895876Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T18:54:13.390305758Z",
+      "event": "amended",
+      "reason": "Attach slice S9 gate evidence",
+      "revision": 4
+    },
+    {
+      "at": "2026-09-15T18:54:26.13639593Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G09",
+  "lock": {
+    "digest": "9a7b738146944b53a1d229af89e06c8a2b3ec42087f1828aab445c8d92d372a5",
+    "locked_at": "2026-09-15T18:54:13.390305758Z",
+    "revision": 4
+  },
+  "non_goals": [
+    "Wiring import/export/init-once execution inside the VM: S9 delivers the module registry, ordering guarantees and the stdlib surface",
+    "Adding a dedicated Byte runtime value kind or first-class type values for List/Dict/Bytes (open questions recorded in ADP-001)",
+    "VM versus JavaScript differential testing (Wave 2)"
+  ],
+  "objective": "Implement aipo-runtime and aipo-stdlib with module registry, topological init order, Prelude V1, and core stdlib modules (math, string, io)",
+  "phase": "P00",
+  "revision": 4,
+  "state": "DONE",
+  "title": "Runtime \u0026 Minimum Stdlib: Module registry, initialization order, Prelude V1, and native stdlib modules"
+}

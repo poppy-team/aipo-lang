@@ -1,0 +1,100 @@
+{
+  "acceptance": [
+    "Crate aipo-hir implemented with High-Level IR data structures representing desugared syntax.",
+    "Lowering pass for trailing blocks: convert callee(args) do params ... end into callee(args, FunctionLiteral).",
+    "Lowering pass for pipeline: convert a |\u003e f(b) into f(a, b).",
+    "Lowering pass for comparison ellipses: expand a \u003c b \u003c c / x \u003e= 0 and \u003c= 100 with temporary synthetic bindings.",
+    "Lowering pass for binding destructuring: expand [a, b] and {x, y} into indexed/property bindings.",
+    "Semantics and source span preservation verified through automated unit tests.",
+    "Zero unsafe code (unsafe_code = 'forbid') and quality gates clean."
+  ],
+  "constraints": [
+    "Safe Rust only (unsafe_code = 'forbid').",
+    "Preserve source spans on all lowered and synthesized nodes.",
+    "Lowering is deterministic and semantics-preserving."
+  ],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [
+    "P00-G03"
+  ],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-hir passed with 4 automated tests verifying trailing block lowering to closure argument, pipeline desugaring into direct call, array destructuring into synthetic indexed bindings, and struct destructuring into property projections",
+      "kind": "test"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T14:53:46.57019811Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T14:54:46.343296341Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T14:54:46.353244482Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T14:54:46.363079944Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-15T15:09:19.034180599Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T15:09:19.045535995Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T15:09:19.05289925Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G04",
+  "lock": {
+    "digest": "d30d074d2eaf5c3bb5fc5528e3cfeade401830805f90c056dac96ebb22fb7e57",
+    "locked_at": "2026-09-15T14:54:46.353239765Z",
+    "revision": 1
+  },
+  "non_goals": [
+    "Semantic type checking or scope resolution (reserved for S5 aipo-sema).",
+    "Bytecode generation (reserved for S6 aipo-bytecode)."
+  ],
+  "objective": "Implement aipo-hir with semantics-preserving lowering from AST to HIR",
+  "phase": "P00",
+  "revision": 1,
+  "state": "DONE",
+  "title": "HIR Lowering: Desugaring trailing blocks, pipelines, destructuring, and comparison ellipses"
+}

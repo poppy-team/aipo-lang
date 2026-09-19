@@ -1,0 +1,5 @@
+let items=[3, 1, 2]
+items.transform do (v)
+return v+1
+end
+io.println(items)

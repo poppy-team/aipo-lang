@@ -1,0 +1,25 @@
+fn counter()
+    var n = 0
+    return fn ()
+        n = n + 1
+        return n
+    end
+end
+
+let next = counter()
+io.println(next())
+io.println(next())
+io.println(next())
+
+let offsets = []
+each i in 0..3
+    offsets.add(fn () return i * 10 end)
+end
+io.println(offsets[0]())
+io.println(offsets[1]())
+io.println(offsets[2]())
+
+fn apply_twice(f, value)
+    return f(f(value))
+end
+io.println(apply_twice(fn (x) return x + 1 end, 40))

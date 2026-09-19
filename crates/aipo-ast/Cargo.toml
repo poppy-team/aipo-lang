@@ -1,0 +1,16 @@
+[package]
+name = "aipo-ast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Typed Abstract Syntax Tree (AST) node representations for the Aipo language"
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-source = { path = "../aipo-source" }
+serde = { workspace = true }

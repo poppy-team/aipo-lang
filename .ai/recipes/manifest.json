@@ -1,0 +1,13 @@
+{
+  "generated_by": {
+    "prumo": "0.2.0"
+  },
+  "recipes": [
+    "documentation-refactor"
+  ],
+  "reasons": {
+    "documentation-refactor": [
+      "skill-match"
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+import util: double, greet, total
+
+io.println(String(double(21)))
+io.println(greet("aipo"))
+io.println(String(total))

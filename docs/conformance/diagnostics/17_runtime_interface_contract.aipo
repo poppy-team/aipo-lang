@@ -1,0 +1,27 @@
+# Canon: an interface used as a written contract promises the value exposes the operations the
+# interface declares. `Blank` has no `draw`, so the mismatch is discoverable only at runtime
+# and is a contract fault (not a recoverable `Failure`).
+interface Drawable
+    fn draw(self) -> String
+end
+
+struct Circle
+    r
+end
+
+impl Circle
+    fn draw(self) -> String
+        return "circle " + String(self.r)
+    end
+end
+
+struct Blank
+    n
+end
+
+fn render(item: Drawable) -> String
+    return item.draw()
+end
+
+io.println(render(Circle{r = 3}))
+io.println(render(Blank{n = 1}))

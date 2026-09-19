@@ -1,0 +1,31 @@
+struct Point
+    fixed id
+    x
+    y
+end
+
+impl Point
+    fn dist(self)
+        return math.sqrt(self.x * self.x + self.y * self.y)
+    end
+
+    fn shifted(self!, dx, dy)
+        self.x = self.x + dx
+        self.y = self.y + dy
+    end
+end
+
+let p = Point{id = 1, x = 3, y = 4}
+io.println(p.id)
+io.println(p.x)
+io.println(p.dist())
+
+p.shifted(1, 1)
+io.println(p.x)
+io.println(p.y)
+io.println(p.dist())
+
+let q = Point{y = 2, x = 1, id = 7}
+io.println(q.id)
+io.println(q.x)
+io.println(q.y)

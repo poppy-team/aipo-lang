@@ -1,0 +1,49 @@
+# Canon: Type{...} uses init when it exists, and invariant() is verified at the
+# end of construction. `init` may assign fixed fields before the instance is published.
+struct Player
+    fixed id
+    name
+    health
+end
+
+impl Player
+    init(id, name, health = 100)
+        self.id = id
+        self.name = name
+        self.health = health
+    end
+
+    invariant()
+        self.name != ""
+        self.health >= 0
+        self.health <= 100
+    end
+
+    fn alive(self)
+        return self.health > 0
+    end
+end
+
+let defaulted = Player{id = 1, name = "ana"}
+io.println(defaulted.id)
+io.println(defaulted.name)
+io.println(defaulted.health)
+io.println(defaulted.alive())
+
+let explicit = Player{name = "bo", id = 2, health = 7}
+io.println(explicit.id)
+io.println(explicit.health)
+
+# A default may reference an earlier parameter.
+struct Box
+    value
+end
+
+impl Box
+    init(value, mirror = value)
+        self.value = value
+    end
+end
+
+let box = Box{value = 5}
+io.println(box.value)

@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/aipo-source",
+    "crates/aipo-diagnostics",
+    "crates/aipo-lexer",
+    "crates/aipo-ast",
+    "crates/aipo-syntax",
+    "crates/aipo-hir",
+    "crates/aipo-sema",
+    "crates/aipo-ir",
+    "crates/aipo-bytecode",
+    "crates/aipo-vm",
+    "crates/aipo-runtime",
+    "crates/aipo-stdlib",
+    "crates/aipo-formatter",
+    "crates/aipo-cli",
+    "crates/aipo-js",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Aipo Contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/aipo-lang/aipo"
+rust-version = "1.85"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+unicode-segmentation = "1.12"
+unicode-normalization = "0.1"

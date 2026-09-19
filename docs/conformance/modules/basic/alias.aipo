@@ -1,0 +1,4 @@
+import util as u
+
+io.println(String(u.double(4)))
+io.println(u.greet("namespace"))

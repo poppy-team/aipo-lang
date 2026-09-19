@@ -1,0 +1,1 @@
+io.println(1 div 0)

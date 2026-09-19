@@ -1,0 +1,11 @@
+# Canon: `-> T` restricts the value a function produces, so violating it at the return
+# boundary is a contract fault when the analyzer cannot prove the mismatch before execution.
+fn pick(flag) -> Int
+    var chosen = 1
+    if flag
+        chosen = "not an Int"
+    end
+    return chosen
+end
+
+io.println(String(pick(true)))

@@ -1,0 +1,6 @@
+fn greet(name)
+    return f"Hello, {name}!"
+end
+
+io.println(greet("world"))
+io.println(greet("aipo"))

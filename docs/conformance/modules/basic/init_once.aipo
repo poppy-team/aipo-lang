@@ -1,0 +1,6 @@
+
+import util as first
+import util as second
+
+io.println(String(first.total))
+io.println(String(second.total))

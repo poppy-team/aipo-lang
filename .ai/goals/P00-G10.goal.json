@@ -1,0 +1,215 @@
+{
+  "acceptance": [
+    "aipo run executes the MVP language subset end-to-end through source -\u003e lexer -\u003e parser -\u003e HIR -\u003e sema -\u003e Core IR -\u003e bytecode -\u003e VM: functions with real locals and parameters, default parameters evaluated per call (including defaults referencing earlier parameters), named arguments in any order, closures with upvalues and per-iteration capture in loops",
+    "List and Dict core methods are bound to the VM and dispatched by the receiver, including the higher-order transform, filter and sort_by, which invoke the Aipo callable through the VM so closures, failures and faults behave as at any other call site",
+    "Ranges a..b, list/string/Bytes slicing with negative and omitted bounds, first-class Byte/Bytes/type values (Value::Byte, Value::Bytes, Value::Type over a TypeTag), and the inconditional runtime fault AIPO_RT_MUTATION_DURING_ITERATION are implemented and exercised by the conformance corpus",
+    "import/export execute with a deterministic topological initialization order, init-once semantics under repeated import, privacy enforced by name resolution, and AIPO_SEM_IMPORT_CYCLE / AIPO_SEM_UNKNOWN_MODULE reported as diagnostics rather than runtime faults",
+    "docs/stdlib/mvp-subset.md documents the implemented surface (including the List/Dict methods), docs/adp/ADP-001 records the resolution of Q1 (Byte runtime kind) and Q2 (first-class type values) while leaving Q3-Q5 open, and docs/evidence/P00-G10-backend-completion.md attaches the gate output",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-15T21:57:54.226256959Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "aipo run executes the MVP language subset end-to-end through source -\u003e lexer -\u003e parser -\u003e HIR -\u003e sema -\u003e Core IR -\u003e bytecode -\u003e VM: functions with real locals and parameters, default parameters evaluated per call (including defaults referencing earlier parameters), named arguments in any order, closures with upvalues and per-iteration capture in loops",
+          "List and Dict core methods are bound to the VM and dispatched by the receiver, including the higher-order transform, filter and sort_by, which invoke the Aipo callable through the VM so closures, failures and faults behave as at any other call site",
+          "Ranges a..b, list/string/Bytes slicing with negative and omitted bounds, first-class Byte/Bytes/type values (Value::Byte, Value::Bytes, Value::Type over a TypeTag), and the inconditional runtime fault AIPO_RT_MUTATION_DURING_ITERATION are implemented and exercised by the conformance corpus",
+          "import/export execute with a deterministic topological initialization order, init-once semantics under repeated import, privacy enforced by name resolution, and AIPO_SEM_IMPORT_CYCLE / AIPO_SEM_UNKNOWN_MODULE reported as diagnostics rather than runtime faults",
+          "docs/stdlib/mvp-subset.md documents the implemented surface (including the List/Dict methods), docs/adp/ADP-001 records the resolution of Q1 (Byte runtime kind) and Q2 (first-class type values) while leaving Q3-Q5 open, and docs/evidence/P00-G10-backend-completion.md attaches the gate output",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+        ],
+        "non_goals": [
+          "Construction hooks: init invoked by Type{...} and invariant() evaluated on publication (verified gap, recorded in ADP-002, assigned to P00-G13)",
+          "Signature contracts (name: Type, -\u003e T, T?) checked at runtime call boundaries (verified gap, recorded in ADP-002, assigned to P00-G13)",
+          "A canonical construction form for Bytes (verified gap, recorded in ADP-002, assigned to P00-G13)",
+          "Bytes packing APIs beyond construction and indexing",
+          "VM versus JavaScript differential testing (Wave 2)"
+        ]
+      },
+      "digest": "5f4eb6f45524343cdc39f205283ba756e08ea6aec0b94c55b185b2270851766d",
+      "goal_id": "P00-G10",
+      "id": "AMD-002",
+      "reason": "Record objective acceptance criteria and explicit non-goals for backend completion (P00-G10)",
+      "revision": 2
+    },
+    {
+      "approved_at": "2026-09-15T21:58:01.967399267Z",
+      "approved_by": "human",
+      "changes": {
+        "evidence": [
+          {
+            "description": "cargo test --workspace: 136 passed, 0 failed (aipo-cli 16 including the 13-test conformance suite over programs/diagnostics/formatting/modules and 3 fuzz-smoke tests; aipo-formatter 11; aipo-stdlib 30; aipo-vm 24; aipo-runtime 10; aipo-syntax 13; aipo-sema 8; aipo-hir/source/lexer/diagnostics/bytecode/ir/ast remainder). Full per-crate breakdown in docs/evidence/P00-G10-backend-completion.md",
+            "kind": "test"
+          },
+          {
+            "description": "Every closed gap is pinned by a runnable conformance fixture rather than a unit test alone: programs 02_recursion and 11_defaults_and_named_args (functions, defaults, named args), 06_closures (capture and per-iteration capture), 04_collections (List/Dict methods including higher-order transform/filter/sort_by), 09_slicing (ranges and negative bounds), 07_strings_and_math (Byte(255)), diagnostics/08_runtime_mutation_during_iteration (AIPO_RT_MUTATION_DURING_ITERATION) and modules/{basic,cycle,missing} (import/export execution, init-once, privacy, cycle and missing-module diagnostics)",
+            "kind": "test"
+          },
+          {
+            "description": "cargo fmt --all -- --check, cargo check --workspace --all-targets, cargo clippy --workspace --all-targets -- -D warnings and cargo doc --workspace --no-deps all green; documentation delta recorded in docs/stdlib/mvp-subset.md, docs/adp/ADP-001 (Q1/Q2 resolved) and docs/evidence/P00-G10-backend-completion.md",
+            "kind": "gate"
+          }
+        ]
+      },
+      "digest": "5f4eb6f45524343cdc39f205283ba756e08ea6aec0b94c55b185b2270851766d",
+      "goal_id": "P00-G10",
+      "id": "AMD-003",
+      "reason": "Attach backend-completion (P00-G10) gate evidence",
+      "revision": 3
+    },
+    {
+      "approved_at": "2026-09-15T21:58:15.157571071Z",
+      "approved_by": "human",
+      "changes": {},
+      "digest": "5f4eb6f45524343cdc39f205283ba756e08ea6aec0b94c55b185b2270851766d",
+      "goal_id": "P00-G10",
+      "id": "AMD-004",
+      "reason": "Attach backend-completion (P00-G10) gate evidence",
+      "revision": 4
+    },
+    {
+      "approved_at": "2026-09-15T21:58:51.067111927Z",
+      "approved_by": "human",
+      "changes": {
+        "evidence": [
+          {
+            "description": "cargo test --workspace: 136 passed, 0 failed. Full per-crate breakdown in docs/evidence/P00-G10-backend-completion.md",
+            "id": "ev-1",
+            "kind": "test",
+            "path": "docs/evidence/P00-G10-backend-completion.md",
+            "type": "test"
+          }
+        ]
+      },
+      "digest": "5f4eb6f45524343cdc39f205283ba756e08ea6aec0b94c55b185b2270851766d",
+      "goal_id": "P00-G10",
+      "id": "AMD-005",
+      "reason": "Attach backend-completion (P00-G10) gate evidence",
+      "revision": 5
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "cargo test --workspace: 136 passed, 0 failed (aipo-cli 16 incl. the 13-test conformance suite and 3 fuzz-smoke tests; aipo-formatter 11; aipo-stdlib 30; aipo-vm 24; aipo-runtime 10; aipo-syntax 13; aipo-sema 8). Per-crate breakdown in docs/evidence/P00-G10-backend-completion.md",
+      "kind": "test"
+    },
+    {
+      "description": "Every closed gap pinned by a runnable conformance fixture: 02_recursion, 11_defaults_and_named_args, 06_closures, 04_collections, 09_slicing, 07_strings_and_math (Byte(255)), diagnostics/08_runtime_mutation_during_iteration, modules/{basic,cycle,missing}",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings and cargo doc --workspace --no-deps all green; documentation delta in docs/stdlib/mvp-subset.md, docs/adp/ADP-001 and docs/evidence/P00-G10-backend-completion.md",
+      "kind": "gate"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T19:04:31.807601005Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T21:57:54.182510294Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T21:57:54.200589469Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T21:57:54.216798353Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T21:57:54.226256959Z",
+      "event": "amended",
+      "reason": "Record objective acceptance criteria and explicit non-goals for backend completion (P00-G10)",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-15T21:58:01.947171185Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T21:58:01.960546515Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T21:58:01.967399267Z",
+      "event": "amended",
+      "reason": "Attach backend-completion (P00-G10) gate evidence",
+      "revision": 3
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T21:58:15.157571071Z",
+      "event": "amended",
+      "reason": "Attach backend-completion (P00-G10) gate evidence",
+      "revision": 4
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T21:58:51.067111927Z",
+      "event": "amended",
+      "reason": "Attach backend-completion (P00-G10) gate evidence",
+      "revision": 5
+    },
+    {
+      "at": "2026-09-15T21:59:21.199040368Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G10",
+  "lock": {
+    "digest": "5f4eb6f45524343cdc39f205283ba756e08ea6aec0b94c55b185b2270851766d",
+    "locked_at": "2026-09-15T21:58:51.067111927Z",
+    "revision": 5
+  },
+  "non_goals": [
+    "Construction hooks: init invoked by Type{...} and invariant() evaluated on publication (verified gap, recorded in ADP-002, assigned to P00-G13)",
+    "Signature contracts (name: Type, -\u003e T, T?) checked at runtime call boundaries (verified gap, recorded in ADP-002, assigned to P00-G13)",
+    "A canonical construction form for Bytes (verified gap, recorded in ADP-002, assigned to P00-G13)",
+    "Bytes packing APIs beyond construction and indexing",
+    "VM versus JavaScript differential testing (Wave 2)"
+  ],
+  "objective": "Complete the gaps inside slices S1-S9: emit and call functions with real locals/params, closures with upvalues, List/Dict core APIs including higher-order filter/transform/sort_by, Slice and Range, Byte kind and type values, MutationDuringIteration fault, and import/export init-once module execution",
+  "phase": "P00",
+  "revision": 5,
+  "state": "DONE",
+  "title": "Backend Completion: functions, closures, collections, Byte/Range/slice, and module execution"
+}

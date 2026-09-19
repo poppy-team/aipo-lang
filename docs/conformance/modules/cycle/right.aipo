@@ -1,0 +1,7 @@
+export right_fn
+
+import left
+
+fn right_fn()
+    return 2
+end

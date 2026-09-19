@@ -1,0 +1,54 @@
+fn classify(n)
+    if n < 0
+        return "negative"
+    elif n == 0
+        return "zero"
+    else
+        return "positive"
+    end
+end
+
+each n in -1..2
+    io.println(classify(n))
+end
+
+var total = 0
+var items = ["a", "b", "c"]
+each index, item in items
+    total = total + index
+    io.println(f"{index}:{item}")
+end
+io.println(total)
+
+var repeated = ""
+repeat 4 as i
+    repeated = repeated + String(i)
+end
+io.println(repeated)
+
+var countdown = 3
+loop
+    if countdown == 0
+        break
+    end
+    countdown = countdown - 1
+end
+io.println(countdown)
+
+var skipped = 0
+each i in 0..6
+    if i == 3
+        continue
+    end
+    skipped = skipped + i
+end
+io.println(skipped)
+
+match "ready"
+when "loading"
+    io.println("loading")
+when "ready", "done"
+    io.println("ready")
+else
+    io.println("unknown")
+end

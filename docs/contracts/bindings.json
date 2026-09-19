@@ -1,0 +1,45 @@
+[
+  {
+    "contract_id": "architecture.system",
+    "sources": [
+      "docs/architecture/overview.md",
+      "docs/crates/crate-contracts.md"
+    ]
+  },
+  {
+    "contract_id": "cli.reference",
+    "sources": [
+      "docs/reference/cli.md"
+    ]
+  },
+  {
+    "contract_id": "installation.lifecycle",
+    "sources": [
+      "docs/installation/lifecycle.md"
+    ]
+  },
+  {
+    "contract_id": "product.vision",
+    "sources": [
+      "docs/product/vision.md"
+    ]
+  },
+  {
+    "contract_id": "project.scope",
+    "sources": [
+      "docs/product/scope.md"
+    ]
+  },
+  {
+    "contract_id": "security.trust",
+    "sources": [
+      "docs/security/security-contract.md"
+    ]
+  },
+  {
+    "contract_id": "testing.strategy",
+    "sources": [
+      "docs/development/testing-strategy.md"
+    ]
+  }
+]

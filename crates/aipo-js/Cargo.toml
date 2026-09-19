@@ -1,0 +1,29 @@
+[package]
+name = "aipo-js"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "JavaScript backend for Aipo: Core IR to ESM emitter, versioned runtime shim and source maps"
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-ir = { path = "../aipo-ir" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+aipo-source = { path = "../aipo-source" }
+aipo-syntax = { path = "../aipo-syntax" }
+aipo-hir = { path = "../aipo-hir" }
+aipo-sema = { path = "../aipo-sema" }
+aipo-bytecode = { path = "../aipo-bytecode" }
+aipo-vm = { path = "../aipo-vm" }
+aipo-stdlib = { path = "../aipo-stdlib" }
+aipo-runtime = { path = "../aipo-runtime" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+serde_json = { workspace = true }

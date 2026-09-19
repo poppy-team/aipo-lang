@@ -1,0 +1,17 @@
+var total = 0
+
+fn add(n)
+    total += n
+    return total
+end
+
+add(2)
+add(3)
+io.println(f"total: {total}")
+
+let scale = 10
+
+fn scaled(v)
+    return v * scale
+end
+io.println(scaled(4))

@@ -1,0 +1,87 @@
+{
+  "acceptance": [
+    "Replace this placeholder with objective acceptance criteria."
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [
+    "P00-G06"
+  ],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-vm passed with 24 automated tests covering VM Core stack machine, call frames, value model, opcode dispatch, integer safe bounds, float finiteness, div by zero faults, and end-to-end execution",
+      "kind": "test"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T16:08:14.839380272Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T16:10:04.611523897Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T16:10:04.630816592Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T16:10:04.643624913Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-15T16:50:28.811446942Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T16:50:28.823820605Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T17:00:03.990050522Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G07",
+  "lock": {
+    "digest": "1a98d63b613da843570be956d2ffeb6bea5776464f3637b97f6349c9b1b65069",
+    "locked_at": "2026-09-15T16:10:04.630811713Z",
+    "revision": 1
+  },
+  "non_goals": [],
+  "objective": "Implement aipo-vm with stack machine, call frames, value model, opcode dispatch loop, and integer/float range faults",
+  "phase": "P00",
+  "revision": 1,
+  "state": "DONE",
+  "title": "VM Core: Stack machine, call frames, value model, and opcode dispatch"
+}

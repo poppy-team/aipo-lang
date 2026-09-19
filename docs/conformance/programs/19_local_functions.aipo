@@ -1,0 +1,38 @@
+fn make_counter()
+    var count = 0
+
+    fn bump()
+        count += 1
+        return count
+    end
+
+    return bump
+end
+
+let tick = make_counter()
+tick()
+tick()
+io.println(tick())
+
+fn fact(n)
+    fn helper(k, acc)
+        if k <= 1
+            return acc
+        end
+        return helper(k - 1, acc * k)
+    end
+    return helper(n, 1)
+end
+io.println(fact(5))
+
+fn classify(n)
+    fn small()
+        return n < 10
+    end
+    if small()
+        return "small"
+    end
+    return "large"
+end
+io.println(classify(4))
+io.println(classify(42))

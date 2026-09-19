@@ -1,0 +1,98 @@
+{
+  "acceptance": [
+    "Crate aipo-ir implemented with target-neutral Core IR data structures and lowering from HIR+sema.",
+    "Crate aipo-bytecode implemented with instruction set, constant pool, binary module format (AIBC v1), bytecode emitter, structural verifier, and disassembler.",
+    "Bytecode verifier guarantees stack effect and valid jump target invariants before load.",
+    "Disassembler produces deterministic text listings for snapshots.",
+    "Round-trip emit -\u003e verify -\u003e disassemble tests pass.",
+    "Zero unsafe code (unsafe_code = 'forbid') and all quality gates green."
+  ],
+  "constraints": [
+    "Safe Rust only (unsafe_code = 'forbid').",
+    "Bytecode verifier strictly rejects malformed modules and invalid jump offsets.",
+    "Deterministic output across executions."
+  ],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [
+    "P00-G05"
+  ],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-ir -p aipo-bytecode passed with 6 automated tests covering Core IR lowering, bytecode emission, opcode execution invariants, AIBC binary format verification, and disassembly listing",
+      "kind": "test"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T15:19:47Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T15:20:38.987020016Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T15:20:39.003800781Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T15:20:39.01509994Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-15T15:37:16.239576099Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T15:37:16.245711918Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T15:37:16.25516302Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G06",
+  "lock": {
+    "digest": "a8e193dd271d4e3cc7b78213b25e5d5cf57d392a8b62f7061f741d54d3071216",
+    "locked_at": "2026-09-15T15:20:39.003795615Z",
+    "revision": 1
+  },
+  "non_goals": [
+    "VM execution engine or runtime GC (reserved for Wave 1 Slice S7 aipo-vm)."
+  ],
+  "objective": "Implement aipo-ir and aipo-bytecode with target-neutral Core IR, compact bytecode module, verifier, and disassembler",
+  "phase": "P00",
+  "revision": 1,
+  "state": "DONE",
+  "title": "Core IR \u0026 Bytecode: Lowering, instruction encoding, verifier, and disassembler"
+}

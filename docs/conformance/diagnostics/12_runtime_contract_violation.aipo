@@ -1,0 +1,8 @@
+# Canon: a contract mismatch the analyzer cannot prove is discovered at the call boundary and
+# reported as a programming fault there — never capturable by `attempt`.
+fn double(x: Int) -> Int
+    return x * 2
+end
+
+let text = "no"
+io.println(String(double(text)))

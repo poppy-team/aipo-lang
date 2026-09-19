@@ -1,0 +1,118 @@
+{
+  "debt": [],
+  "summary": {
+    "cached_tokens": 0,
+    "direct_cost": 0,
+    "input_tokens": 0,
+    "intermediate_output_tokens": 0,
+    "output_tokens": 0,
+    "tasks": 5
+  },
+  "tasks": [
+    {
+      "id": "TR-001"
+    },
+    {
+      "evidence": [
+        {
+          "description": "cargo test --workspace: 109 passed, 0 failed (aipo-stdlib 30, aipo-runtime 10, aipo-vm 24)",
+          "kind": "test"
+        },
+        {
+          "description": "cargo fmt --all --check, cargo clippy --workspace --all-targets, cargo doc --workspace --no-deps and prumo validate/docs verify all green; see docs/evidence/P00-G09-slice-s9.md",
+          "kind": "gate"
+        }
+      ],
+      "files_changed": 12,
+      "goal": "P00-G09",
+      "id": "TR-002",
+      "kind": "implementation",
+      "status": "done",
+      "tests": {
+        "failed": 0,
+        "passed": 109
+      },
+      "title": "Slice S9 — Runtime \u0026 minimum stdlib"
+    },
+    {
+      "evidence": [
+        {
+          "description": "cargo test --workspace: 136 passed, 0 failed (aipo-cli 16 including the 13-test conformance suite over programs/diagnostics/formatting/modules and 3 fuzz-smoke tests; aipo-formatter 11; aipo-stdlib 30; aipo-vm 24; aipo-runtime 10; aipo-syntax 13; aipo-sema 8). Per-crate breakdown in docs/evidence/P00-G10-backend-completion.md",
+          "kind": "test"
+        },
+        {
+          "description": "Every closed gap is pinned by a runnable conformance fixture: programs 02_recursion and 11_defaults_and_named_args (functions, defaults, named args), 06_closures (capture and per-iteration capture), 04_collections (List/Dict methods incl. higher-order transform/filter/sort_by), 09_slicing (ranges and negative bounds), 07_strings_and_math (Byte(255)); diagnostics/08_runtime_mutation_during_iteration; modules/{basic,cycle,missing} (import/export execution, init-once, privacy, cycle and missing-module diagnostics)",
+          "kind": "test"
+        },
+        {
+          "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings and cargo doc --workspace --no-deps all green; documentation delta in docs/stdlib/mvp-subset.md, docs/adp/ADP-001 (Q1/Q2 resolved) and docs/evidence/P00-G10-backend-completion.md",
+          "kind": "gate"
+        }
+      ],
+      "files_changed": 26,
+      "goal": "P00-G10",
+      "id": "TR-003",
+      "kind": "implementation",
+      "status": "done",
+      "tests": {
+        "failed": 0,
+        "passed": 136
+      },
+      "title": "Backend completion — functions, closures, collections, Byte/Range/slice, module execution"
+    },
+    {
+      "evidence": [
+        {
+          "description": "cargo test --workspace: 146 passed, 0 failed; conformance 13/13, formatter 11/11, fuzz_smoke 3/3. See docs/evidence/P00-G16-wave-1-exit-review.md",
+          "kind": "test"
+        },
+        {
+          "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo doc --workspace --no-deps and prumo validate/doctor all green; gauntlet 100%",
+          "kind": "gate"
+        },
+        {
+          "description": "docs/evidence/P00-G16-wave-1-exit-review.md publishes certified baseline (20 programs, 19 diagnostics, 8 formatting, 3 modules), non-delivery list and next slice",
+          "kind": "doc"
+        }
+      ],
+      "files_changed": 6,
+      "goal": "P00-G16",
+      "id": "TR-004",
+      "kind": "implementation",
+      "status": "done",
+      "tests": {
+        "failed": 0,
+        "passed": 146
+      },
+      "title": "Wave 1 exit review: certified MVP subset hand-off"
+    },
+    {
+      "evidence": [
+        {
+          "description": "cargo test --workspace: 152 passed, 0 failed; differential 2/2 over 20 programs (VM==JS==snapshot); js_build 3/3 (bundle+node, 19 diagnostics, modules). See docs/evidence/P01-G01-js-parity-mvp-subset.md",
+          "kind": "test"
+        },
+        {
+          "description": "cargo fmt --check, clippy -D warnings, doc --no-deps and prumo validate/doctor all green; Node v24.18.0",
+          "kind": "gate"
+        },
+        {
+          "description": "docs/waves/wave-2-js-parity.md new; cli.md build stable; crate-contracts aipo-js delivered; evidence P01-G01 new",
+          "kind": "doc"
+        }
+      ],
+      "files_changed": 12,
+      "goal": "P01-G01",
+      "id": "TR-005",
+      "kind": "implementation",
+      "status": "done",
+      "tests": {
+        "failed": 0,
+        "passed": 152
+      },
+      "title": "JS parity for the full MVP subset"
+    }
+  ],
+  "updated_at": "2026-09-19T22:04:04.829434576Z",
+  "version": 1
+}

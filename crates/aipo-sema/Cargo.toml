@@ -1,0 +1,22 @@
+[package]
+name = "aipo-sema"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Semantic analysis, symbol resolution, mutability paths, and contract checking for Aipo"
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-source = { path = "../aipo-source" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-ast = { path = "../aipo-ast" }
+aipo-hir = { path = "../aipo-hir" }
+serde = { workspace = true }
+
+[dev-dependencies]
+aipo-syntax = { path = "../aipo-syntax" }

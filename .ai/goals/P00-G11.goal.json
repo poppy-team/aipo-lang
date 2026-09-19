@@ -1,0 +1,137 @@
+{
+  "acceptance": [
+    "aipo-formatter renders a source file deterministically from its token stream (four-space indentation, end alignment, canonical operator spacing, comment and blank-line preservation) and is idempotent: formatting a canonical file is a no-op",
+    "aipo fmt --check reports drift with exit code 1 and never rewrites the file; formatting without --check writes the canonical rendering in place",
+    "aipo-cli exposes the stable surface aipo run \u003cpath\u003e, aipo check \u003cpath\u003e, aipo fmt \u003cpaths...\u003e [--check], aipo --version and aipo --help, with exit codes 0 (success), 1 (language failure) and 2 (usage error), and --message-format=human|jsonl on run and check",
+    "aipo run orchestrates source -\u003e lexer -\u003e parser -\u003e HIR -\u003e sema -\u003e Core IR -\u003e bytecode -\u003e VM in-process and reports every stage's diagnostics; aipo check stops before execution",
+    "docs/reference/cli.md documents exactly that surface and every documented command, flag and exit code is backed by a test in crates/aipo-cli/tests/conformance.rs; docs/conformance/formatting/ holds the formatter golden corpus",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-15T21:59:31.1453883Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "aipo-formatter renders a source file deterministically from its token stream (four-space indentation, end alignment, canonical operator spacing, comment and blank-line preservation) and is idempotent: formatting a canonical file is a no-op",
+          "aipo fmt --check reports drift with exit code 1 and never rewrites the file; formatting without --check writes the canonical rendering in place",
+          "aipo-cli exposes the stable surface aipo run \u003cpath\u003e, aipo check \u003cpath\u003e, aipo fmt \u003cpaths...\u003e [--check], aipo --version and aipo --help, with exit codes 0 (success), 1 (language failure) and 2 (usage error), and --message-format=human|jsonl on run and check",
+          "aipo run orchestrates source -\u003e lexer -\u003e parser -\u003e HIR -\u003e sema -\u003e Core IR -\u003e bytecode -\u003e VM in-process and reports every stage's diagnostics; aipo check stops before execution",
+          "docs/reference/cli.md documents exactly that surface and every documented command, flag and exit code is backed by a test in crates/aipo-cli/tests/conformance.rs; docs/conformance/formatting/ holds the formatter golden corpus",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets, cargo test --workspace and cargo doc --workspace --no-deps are all green"
+        ],
+        "non_goals": [
+          "aipo fmt over a directory or *.aipo glob beyond the paths given on the command line",
+          "Source rewriting beyond whitespace/indentation normalization (no syntax reordering)",
+          "Language Server Protocol, REPL, packages/registry and hot reload",
+          "VM versus JavaScript differential testing (Wave 2)"
+        ]
+      },
+      "digest": "808c1a2388a4db832acc081a2a3641e87c2ec6d94104439b8bde54eb135070ca",
+      "goal_id": "P00-G11",
+      "id": "AMD-002",
+      "reason": "Record objective acceptance criteria and explicit non-goals for slice S10 (CLI + formatter)",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "cargo test --workspace: 136 passed, 0 failed. S10-owned suites: aipo-cli/tests/conformance.rs 13 (program snapshots, failure fixtures, formatter drift, exit codes, JSONL, module cases), aipo-cli/tests/fuzz_smoke.rs 3, aipo-formatter lib 6 + golden 4 + doctest 1. Full output in docs/evidence/P00-G11-cli-and-formatter.md",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check (exit 0), cargo check --workspace --all-targets, cargo clippy --workspace --all-targets -- -D warnings (zero warnings) and cargo doc --workspace --no-deps all green",
+      "kind": "gate"
+    },
+    {
+      "description": "Every command, flag and exit code documented in docs/reference/cli.md is exercised by a test: run/check/fmt/--version/--help, --message-format=jsonl, and the 0/1/2 exit-code contract (test_usage_errors_use_the_usage_exit_code, test_run_reports_jsonl_diagnostics, test_formatting_corpus_reports_drift_with_check)",
+      "kind": "test"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T19:04:31.816781119Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T21:59:31.084938802Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T21:59:31.1072493Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T21:59:31.128174747Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-15T21:59:31.1453883Z",
+      "event": "amended",
+      "reason": "Record objective acceptance criteria and explicit non-goals for slice S10 (CLI + formatter)",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-15T21:59:31.160657789Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T21:59:31.179975508Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T21:59:37.164156751Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G11",
+  "lock": {
+    "digest": "808c1a2388a4db832acc081a2a3641e87c2ec6d94104439b8bde54eb135070ca",
+    "locked_at": "2026-09-15T21:59:31.1453883Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "aipo fmt over a directory or *.aipo glob beyond the paths given on the command line",
+    "Source rewriting beyond whitespace/indentation normalization (no syntax reordering)",
+    "Language Server Protocol, REPL, packages/registry and hot reload",
+    "VM versus JavaScript differential testing (Wave 2)"
+  ],
+  "objective": "Implement aipo-formatter (deterministic idempotent formatting) and aipo-cli (aipo run/check/fmt, exit codes, human and jsonl diagnostics) wiring the full pipeline source-to-VM",
+  "phase": "P00",
+  "revision": 2,
+  "state": "DONE",
+  "title": "CLI and Formatter: aipo run, check, fmt"
+}

@@ -1,0 +1,13 @@
+# Canon: Bytes(32) builds a managed, mutable zero-filled binary block.
+# Indexing works by byte and yields Byte; len reports the byte count.
+let data = Bytes(4)
+io.println(len(data))
+io.println(data[0])
+io.println(data[3])
+io.println(String(data[0]))
+
+let empty = Bytes(0)
+io.println(len(empty))
+
+let window = data[1..3]
+io.println(len(window))

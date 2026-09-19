@@ -1,0 +1,97 @@
+{
+  "acceptance": [
+    "Cargo workspace configured with Rust Edition 2024 and workspace lints (forbid unsafe_code, clippy::all deny).",
+    "Crate aipo-source implemented: Source, SourceMap, SourceSpan with byte offsets, line/column translation, UTF-8 validation, BOM handling, LF/CRLF normalization.",
+    "Crate aipo-diagnostics implemented: Diagnostic, DiagnosticCode stable catalog, Severity, Label, and JSONL emitter.",
+    "Baseline test suite passes with cargo test --workspace.",
+    "Quality gates pass: cargo fmt --all -- --check, cargo check --workspace, cargo clippy --workspace --all-targets --all-features -- -D warnings, cargo doc --workspace --no-deps.",
+    "Prumo validate and doctor green."
+  ],
+  "constraints": [
+    "Safe Rust only (unsafe_code = 'forbid').",
+    "Result-based error handling: no panics carrying Aipo user errors.",
+    "No clone() as borrow-checker workaround."
+  ],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "Cargo workspace tests pass with 8 green tests and clean quality gates",
+      "kind": "test"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T09:29:54.37998731Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T09:32:41.19269542Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T09:32:41.207559821Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T09:32:58.416654611Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-15T09:59:26.385790474Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T09:59:48.541372721Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T10:03:53.02902433Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G01",
+  "lock": {
+    "digest": "ca8fd5359ae4cdf98229b14798c6fe163588698a29f02531120d1e1ef81f4f75",
+    "locked_at": "2026-09-15T09:32:41.207554079Z",
+    "revision": 1
+  },
+  "non_goals": [
+    "Lexer or parser implementation (scheduled for S2/S3).",
+    "VM or runtime implementation (scheduled for S6/S7)."
+  ],
+  "objective": "Establish Cargo workspace with Edition 2024, strict lints, aipo-source, aipo-diagnostics, and quality gates",
+  "phase": "P00",
+  "revision": 1,
+  "state": "DONE",
+  "title": "Foundation: Workspace, diagnostics and source abstraction"
+}

@@ -1,0 +1,25 @@
+[package]
+name = "aipo-vm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Stack-based virtual machine, call frames, value model, and opcode dispatch for Aipo"
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-source = { path = "../aipo-source" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-bytecode = { path = "../aipo-bytecode" }
+serde = { workspace = true }
+byteorder = "1.5"
+unicode-normalization = { workspace = true }
+
+[dev-dependencies]
+aipo-syntax = { path = "../aipo-syntax" }
+aipo-hir = { path = "../aipo-hir" }
+aipo-ir = { path = "../aipo-ir" }

@@ -1,0 +1,8 @@
+match status
+when "a"
+io.println(1)
+when "b", "c"
+io.println(2)
+else
+io.println(3)
+end

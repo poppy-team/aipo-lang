@@ -1,0 +1,17 @@
+[package]
+name = "aipo-diagnostics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Diagnostic representation, stable codes catalog, and JSONL emission for the Aipo language"
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-source = { path = "../aipo-source" }
+serde = { workspace = true }
+serde_json = { workspace = true }

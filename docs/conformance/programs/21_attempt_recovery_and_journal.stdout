@@ -1,0 +1,4 @@
+caught: boom
+caught
+outer caught: invariant() of R did not hold after mutation
+2

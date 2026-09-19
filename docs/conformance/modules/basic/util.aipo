@@ -1,0 +1,17 @@
+export double, greet, total
+
+fn secret()
+    return 99
+end
+
+fn double(x)
+    return x * 2
+end
+
+fn greet(name)
+    return "hi " + name
+end
+
+var total = 0
+total = total + 1
+io.println("util initialized")

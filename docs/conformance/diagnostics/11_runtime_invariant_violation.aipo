@@ -1,0 +1,21 @@
+# Canon: invariant() is verified at the end of construction, so an instance
+# whose fields violate the invariant is a contract fault, never published.
+struct Player
+    name
+    health
+end
+
+impl Player
+    init(name, health)
+        self.name = name
+        self.health = health
+    end
+
+    invariant()
+        self.health >= 0
+        self.health <= 100
+    end
+end
+
+let invalid = Player{name = "z", health = 500}
+io.println(invalid.health)

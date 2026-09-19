@@ -1,0 +1,96 @@
+{
+  "acceptance": [
+    "Crate aipo-ast implemented with typed AST nodes for all items, statements, and expressions.",
+    "Crate aipo-syntax implemented with Pratt expression parsing and recursive descent statement parsing.",
+    "Robust error recovery without panics on malformed input.",
+    "Support for trailing blocks, pipelines, destructuring bindings, and match statements.",
+    "Exhaustive tests passing with quality gates green."
+  ],
+  "constraints": [
+    "Safe Rust only (unsafe_code = 'forbid').",
+    "Parser never panics on any token sequence."
+  ],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [
+    "P00-G02"
+  ],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-ast -p aipo-syntax passed with 14 automated tests (1 ast, 13 syntax) covering expressions, statements, structs, impls, traits, patterns, and error recovery",
+      "kind": "test"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T11:11:33Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T14:12:15.63248022Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T14:12:15.645551794Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T14:12:15.659988761Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-15T14:52:38.93212504Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T14:52:38.940709008Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T14:52:38.949799615Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G03",
+  "lock": {
+    "digest": "4c14b53feb9c427ba5bcf2e01e2d01a23569f942717ea2f2ba88e062f04f0285",
+    "locked_at": "2026-09-15T14:12:15.645546466Z",
+    "revision": 1
+  },
+  "non_goals": [
+    "HIR lowering or semantic analysis (reserved for S4/S5)."
+  ],
+  "objective": "Implement aipo-syntax and aipo-ast with recursive descent and Pratt parsing for all statements and expressions",
+  "phase": "P00",
+  "revision": 1,
+  "state": "DONE",
+  "title": "Parser Core: Lossless syntax and typed AST"
+}

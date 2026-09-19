@@ -1,0 +1,7 @@
+each row in [1, 2, 3]
+    if row > 1
+        io.println(row)
+    else
+        io.println(0)
+    end
+end

@@ -1,0 +1,100 @@
+{
+  "acceptance": [
+    "Crate aipo-sema implemented with lexical scope hierarchy and symbol table.",
+    "Name resolution supporting global items, local variables, parameters, and shadowing rules.",
+    "Detection of redeclarations within the same lexical scope (AIPO_SEM_REDECLARED_IN_SCOPE).",
+    "Detection of mutations to read-only bindings (let / immutable params) (AIPO_SEM_READONLY_MUTATION).",
+    "Arity validation for known function calls with required vs optional parameters (AIPO_SEM_ARITY_MISMATCH).",
+    "Structural interface satisfaction validation for satisfy declarations.",
+    "Exhaustive pass/fail tests verifying diagnostic emissions and semantic facts.",
+    "Zero unsafe code (unsafe_code = 'forbid') and quality gates clean."
+  ],
+  "constraints": [
+    "Safe Rust only (unsafe_code = 'forbid').",
+    "No invention: unresolved questions remain ADPs.",
+    "Compiler never panics; all semantic violations emit structured diagnostics."
+  ],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [
+    "P00-G04"
+  ],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-sema passed with 8 automated tests covering scope resolution, redeclaration checks, immutable let/param mutation prevention, function call arity checks, and interface satisfaction verification",
+      "kind": "test"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-15T15:10:28Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-15T15:11:11.956848069Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-15T15:11:11.962664033Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-15T15:11:11.989947649Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-15T15:18:05.313190716Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-15T15:18:05.320355143Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-15T15:18:05.3280002Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P00-G05",
+  "lock": {
+    "digest": "4b6ced64c8dc05b1753ba9d55900bd3aefac6e3b53eac99fd813e79d114c5348",
+    "locked_at": "2026-09-15T15:11:11.962659242Z",
+    "revision": 1
+  },
+  "non_goals": [
+    "Core IR generation or bytecode emission (reserved for S6)."
+  ],
+  "objective": "Implement aipo-sema for lexical resolution, mutability checking, and contract verification",
+  "phase": "P00",
+  "revision": 1,
+  "state": "DONE",
+  "title": "Semantic Analysis: Scopes, mutability paths, signature contracts, and interface conformance"
+}
