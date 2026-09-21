@@ -2,6 +2,7 @@
 
 use crate::fault::{VmError, VmFault};
 use crate::frame::{CallFrame, HandlerFrame};
+use crate::host::HostContext;
 use crate::value::{GroupId, StructInstance, TaskId, Value};
 use aipo_bytecode::BytecodeModule;
 use std::cell::RefCell;
@@ -120,6 +121,9 @@ pub struct Vm {
     /// Reentrancy depth of [`Vm::invoke`]: blocking operations fault instead of
     /// suspending while positive, because the host Rust stack cannot resume.
     invoke_depth: usize,
+    /// Host services this profile granted, plus the objects behind their handles and the
+    /// scopes a host callback opened.
+    host: HostContext,
 }
 
 impl Default for Vm {
@@ -160,7 +164,48 @@ impl Vm {
             tick: 0,
             main_outcome: None,
             invoke_depth: 0,
+            host: HostContext::denied(),
         }
+    }
+
+    /// The host services of this run, for the embedder that owns them.
+    ///
+    /// Capabilities are granted here, host values are handed out here, and a scoped callback
+    /// opens and closes its scope here — the VM only ever *checks* against what the host
+    /// decided, which keeps the trust boundary in one place.
+    pub fn host_context(&mut self) -> &mut HostContext {
+        &mut self.host
+    }
+
+    /// The host services of this run, read-only.
+    #[must_use]
+    pub fn host(&self) -> &HostContext {
+        &self.host
+    }
+
+    /// Enforces the scoped-escape rule at one heap-publication point.
+    ///
+    /// The check is skipped while no scope has closed, so the ordinary path pays a single
+    /// boolean test: the rule only becomes reachable once a host callback ended holding
+    /// bindings it minted, which is exactly when a leak is possible. The site is built only
+    /// when the check actually runs.
+    ///
+    /// # Errors
+    ///
+    /// [`VmFault::ScopeEscape`] when a value about to become heap-reachable carries a handle
+    /// from a scope that has closed.
+    pub(crate) fn publish_check(
+        &self,
+        value: &Value,
+        site: impl FnOnce() -> String,
+    ) -> Result<(), VmError> {
+        if !self.host.has_escapes() {
+            return Ok(());
+        }
+        let site = site();
+        self.host
+            .ensure_publishable(value, &site)
+            .map_err(VmError::from)
     }
 
     /// Registers a receiver-first native method for a type (for example `String.len`).

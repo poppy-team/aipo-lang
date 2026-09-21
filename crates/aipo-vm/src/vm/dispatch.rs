@@ -128,6 +128,8 @@ impl Vm {
                         reason: format!("name index {idx} out of bounds"),
                     })?;
                 let val = self.pop()?;
+                // Publication point: a global outlives the scope that minted any handle in it.
+                self.publish_check(&val, || format!("global '{name}'"))?;
                 self.globals.insert(name.clone(), val);
             }
             OpCode::Add => {
@@ -256,6 +258,9 @@ impl Vm {
                     self.pop()?
                 };
 
+                // Publication point: a returned value becomes reachable in the caller's frame,
+                // which is outside the scope a host callback ran in.
+                self.publish_check(&ret_val, || "a return value".to_string())?;
                 if let Some(frame) = self.frames.pop() {
                     self.upvalue_frames.pop();
                     self.mutation_journal.truncate(frame.journal_start);
@@ -372,6 +377,8 @@ impl Vm {
 
                 let new_val = self.pop()?;
                 let target = self.pop()?;
+                // Publication point: the field outlives the assignment's scope.
+                self.publish_check(&new_val, || format!("field '{field_name}'"))?;
 
                 if let Value::Struct(inst) = &target {
                     let type_name = inst.borrow().type_name.clone();
@@ -535,6 +542,8 @@ impl Vm {
                     self.push(new_val)?;
                     return Ok(false);
                 }
+                // Publication point: the stored element outlives the assignment's scope.
+                self.publish_check(&new_val, || "an indexed element".to_string())?;
 
                 match (&target, &index) {
                     (Value::List(l), Value::Int(i)) => {
@@ -589,6 +598,11 @@ impl Vm {
                     items.push(self.pop()?);
                 }
                 items.reverse();
+                // Publication point: a handle smuggled into a list literal has already left its
+                // scope, even if the list itself is never stored anywhere.
+                for item in &items {
+                    self.publish_check(item, || "a list element".to_string())?;
+                }
                 self.push(Value::List(Rc::new(RefCell::new(items))))?;
             }
             OpCode::BuildDict => {
@@ -600,6 +614,11 @@ impl Vm {
                     pairs.push((k, v));
                 }
                 pairs.reverse();
+                // Publication point: same rule as a list literal, for both halves of the entry.
+                for (key, value) in &pairs {
+                    self.publish_check(key, || "a dict key".to_string())?;
+                    self.publish_check(value, || "a dict entry".to_string())?;
+                }
                 self.push(Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(
                     pairs,
                 )))))?;

@@ -123,7 +123,9 @@ pub enum VmFault {
     /// A binding created inside a scoped host callback reached a heap-publication point
     /// outside the scope it belongs to.
     ScopeEscape {
-        /// The binding that tried to escape.
+        /// The host handle that tried to escape.
+        handle: String,
+        /// The publication site it was headed for (`global 'x'`, `field 'y'`, ...).
         binding: String,
     },
     /// Corrupted bytecode instruction encountered.
@@ -300,10 +302,10 @@ impl fmt::Display for VmFault {
                     "runtime fault [AIPO_RT_STALE_HANDLE]: {handle} is stale: the host object it referenced was released"
                 )
             }
-            Self::ScopeEscape { binding } => {
+            Self::ScopeEscape { handle, binding } => {
                 write!(
                     f,
-                    "runtime fault [AIPO_RT_SCOPE_ESCAPE]: binding '{binding}' was created in a scoped host callback and cannot leave it"
+                    "runtime fault [AIPO_RT_SCOPE_ESCAPE]: host binding {handle} was created in a scoped host callback and cannot leave it (attempted publication as {binding})"
                 )
             }
         }

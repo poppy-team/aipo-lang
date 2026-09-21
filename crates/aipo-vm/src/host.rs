@@ -18,6 +18,7 @@
 //!   [`HostContext::require`] first, so a missing capability is always the same fault.
 
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use aipo_host::{Capability, CapabilitySet, Handle, HandleTable, HostFault, HostValue};
@@ -82,7 +83,8 @@ pub fn host_fault_to_vm_fault(fault: &HostFault) -> VmFault {
         HostFault::StaleHandle { handle } => VmFault::StaleHandle {
             handle: handle.to_string(),
         },
-        HostFault::ScopeEscape { binding } => VmFault::ScopeEscape {
+        HostFault::ScopeEscape { handle, binding } => VmFault::ScopeEscape {
+            handle: handle.to_string(),
             binding: binding.clone(),
         },
         // A host value that cannot satisfy its contract and a rejected host surface are both
@@ -102,6 +104,22 @@ pub fn host_fault_to_vm_fault(fault: &HostFault) -> VmFault {
     }
 }
 
+/// Identifier of one open host scope.
+///
+/// A scope is the region a host callback runs in. Handles minted while it is open belong to
+/// it, which is how canon's rule — a binding created inside a scoped callback cannot leave
+/// it — becomes something the host cannot widen by accident.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ScopeId(u64);
+
+impl ScopeId {
+    /// The scope's ordinal, for diagnostics and tests.
+    #[must_use]
+    pub fn as_u64(self) -> u64 {
+        self.0
+    }
+}
+
 /// The host services a running VM may reach.
 ///
 /// Holds what the profile granted and the host objects those services hand out. A host object
@@ -111,6 +129,15 @@ pub fn host_fault_to_vm_fault(fault: &HostFault) -> VmFault {
 pub struct HostContext {
     granted: CapabilitySet,
     objects: HandleTable<HostValue>,
+    /// Open scopes, innermost last.
+    open_scopes: Vec<ScopeId>,
+    /// Handles each scope minted, so closing it can release exactly those.
+    minted: HashMap<ScopeId, Vec<Handle>>,
+    /// Handles released by closing a scope: remembered so a publication attempt can report the
+    /// specific fault canon names instead of a plain stale read.
+    escaped: HashSet<Handle>,
+    /// Next scope ordinal.
+    next_scope: u64,
 }
 
 impl HostContext {
@@ -126,6 +153,10 @@ impl HostContext {
         Self {
             granted,
             objects: HandleTable::new(),
+            open_scopes: Vec::new(),
+            minted: HashMap::new(),
+            escaped: HashSet::new(),
+            next_scope: 1,
         }
     }
 
@@ -158,8 +189,15 @@ impl HostContext {
     }
 
     /// Gives the script ownership of a host value and returns its handle.
+    ///
+    /// A handle minted while a scope is open belongs to that scope; with no scope open it is
+    /// unconstrained, which is what a host that hands out a value outside any callback intends.
     pub fn hand_out(&mut self, value: HostValue) -> Handle {
-        self.objects.insert(value)
+        let handle = self.objects.insert(value);
+        if let Some(scope) = self.open_scopes.last().copied() {
+            self.minted.entry(scope).or_default().push(handle);
+        }
+        handle
     }
 
     /// The value behind a handle, or `None` when the handle is stale.
@@ -189,14 +227,128 @@ impl HostContext {
     pub fn live_objects(&self) -> usize {
         self.objects.len()
     }
+
+    /// Opens a host scope and returns its identifier.
+    pub fn open_scope(&mut self) -> ScopeId {
+        let scope = ScopeId(self.next_scope);
+        self.next_scope += 1;
+        self.open_scopes.push(scope);
+        scope
+    }
+
+    /// Whether a scope is still open.
+    #[must_use]
+    pub fn scope_is_open(&self, scope: ScopeId) -> bool {
+        self.open_scopes.contains(&scope)
+    }
+
+    /// Closes a host scope, releasing everything it minted.
+    ///
+    /// The handles go through the table, so each slot's generation advances and none of them
+    /// can resolve to host memory again — the same rule a manual release follows. Remembering
+    /// them separately is what lets a later publication attempt report the escape specifically
+    /// instead of a generic stale read.
+    pub fn close_scope(&mut self, scope: ScopeId) {
+        let Some(handles) = self.minted.remove(&scope) else {
+            return;
+        };
+        self.open_scopes.retain(|open| *open != scope);
+        for handle in handles {
+            self.objects.remove(handle);
+            self.escaped.insert(handle);
+        }
+    }
+
+    /// Whether any scope has closed, and so whether a publication check can possibly fail.
+    ///
+    /// A publication point consults this first: with no closed scope there is nothing to catch
+    /// and the walk is skipped entirely.
+    #[must_use]
+    pub fn has_escapes(&self) -> bool {
+        !self.escaped.is_empty()
+    }
+
+    /// Checks one handle that is about to become reachable outside the scope it was minted in.
+    ///
+    /// # Errors
+    ///
+    /// [`VmFault::ScopeEscape`] when the handle belonged to a scope that has since closed.
+    pub fn check_publication(&self, handle: Handle, binding: &str) -> Result<(), VmFault> {
+        if self.escaped.contains(&handle) {
+            return Err(host_fault_to_vm_fault(&HostFault::ScopeEscape {
+                handle,
+                binding: binding.to_string(),
+            }));
+        }
+        Ok(())
+    }
+
+    /// Checks every handle a value carries, at the point the value becomes heap-reachable.
+    ///
+    /// Containers are walked because canon names `BuildList` and `BuildDict` as publication
+    /// points: a handle smuggled into a list literal has already left its scope even if the
+    /// list is never stored anywhere. The walk tracks visited containers so a self-referential
+    /// value terminates instead of recursing forever.
+    ///
+    /// # Errors
+    ///
+    /// [`VmFault::ScopeEscape`] when any reached handle escaped a closed scope.
+    pub fn ensure_publishable(&self, value: &Value, site: &str) -> Result<(), VmFault> {
+        let mut visited: HashSet<usize> = HashSet::new();
+        self.walk(value, site, &mut visited)
+    }
+
+    fn walk(&self, value: &Value, site: &str, visited: &mut HashSet<usize>) -> Result<(), VmFault> {
+        match value {
+            Value::HostHandle(handle) => self.check_publication(*handle, site),
+            Value::List(items) | Value::Set(items) => {
+                if !visited.insert(Rc::as_ptr(items) as usize) {
+                    return Ok(());
+                }
+                items
+                    .borrow()
+                    .iter()
+                    .try_for_each(|item| self.walk(item, site, visited))
+            }
+            Value::Dict(entries) => {
+                if !visited.insert(Rc::as_ptr(entries) as usize) {
+                    return Ok(());
+                }
+                for (key, entry) in entries.borrow().entries() {
+                    self.walk(key, site, visited)?;
+                    self.walk(entry, site, visited)?;
+                }
+                Ok(())
+            }
+            Value::Struct(instance) => {
+                if !visited.insert(Rc::as_ptr(instance) as usize) {
+                    return Ok(());
+                }
+                for (_, field) in &instance.borrow().fields {
+                    self.walk(field, site, visited)?;
+                }
+                Ok(())
+            }
+            // Everything else is a plain value, a callable or an opaque host-owned kind that
+            // cannot hold a handle.
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::value::{DictMap, StructInstance};
 
     fn capability(path: &str) -> Capability {
         Capability::parse(path).expect("test capability is valid")
+    }
+
+    /// A handle that addresses nothing, for the tests that only need the identity.
+    fn escaped_handle() -> Handle {
+        let mut table: HandleTable<HostValue> = HandleTable::new();
+        table.insert(HostValue::None)
     }
 
     #[test]
@@ -287,6 +439,123 @@ mod tests {
     }
 
     #[test]
+    fn test_closing_a_scope_releases_its_handles() {
+        let mut context = HostContext::denied();
+        let scope = context.open_scope();
+        let handle = context.hand_out(HostValue::string("entity"));
+        assert!(context.scope_is_open(scope));
+        assert_eq!(context.live_objects(), 1);
+
+        context.close_scope(scope);
+        assert!(!context.scope_is_open(scope));
+        // Released through the table, so the slot's generation advanced: this handle can never
+        // resolve to host memory again, which is the use-after-free the table exists to stop.
+        assert_eq!(context.live_objects(), 0);
+        let fault = context.resolve(handle).expect_err("no longer resolvable");
+        assert_eq!(
+            fault.diagnostic_code(),
+            aipo_diagnostics::DiagnosticCode::AIPO_RT_STALE_HANDLE
+        );
+    }
+
+    #[test]
+    fn test_a_handle_minted_in_a_closed_scope_cannot_be_published() {
+        let mut context = HostContext::denied();
+        let scope = context.open_scope();
+        let handle = context.hand_out(HostValue::string("entity"));
+        context.close_scope(scope);
+
+        let fault = context
+            .check_publication(handle, "global 'held'")
+            .expect_err("escaped");
+        assert_eq!(
+            fault.diagnostic_code(),
+            aipo_diagnostics::DiagnosticCode::AIPO_RT_SCOPE_ESCAPE
+        );
+        let rendered = fault.to_string();
+        assert!(rendered.contains("global 'held'"), "{rendered}");
+    }
+
+    #[test]
+    fn test_a_live_scoped_handle_is_publishable_while_the_scope_is_open() {
+        // Canon constrains a binding that *leaves* the scope, not one used inside it.
+        let mut context = HostContext::denied();
+        let scope = context.open_scope();
+        let handle = context.hand_out(HostValue::Int(7));
+        assert!(context.check_publication(handle, "field 'x'").is_ok());
+        context.close_scope(scope);
+    }
+
+    #[test]
+    fn test_a_handle_inside_a_container_is_caught_at_the_container_site() {
+        let mut context = HostContext::denied();
+        let scope = context.open_scope();
+        let handle = context.hand_out(HostValue::string("entity"));
+        context.close_scope(scope);
+
+        let list = Value::List(Rc::new(RefCell::new(vec![
+            Value::Int(1),
+            Value::HostHandle(handle),
+        ])));
+        let fault = context
+            .ensure_publishable(&list, "list element")
+            .expect_err("escaped through the list");
+        assert_eq!(
+            fault.diagnostic_code(),
+            aipo_diagnostics::DiagnosticCode::AIPO_RT_SCOPE_ESCAPE
+        );
+
+        // The same handle behind a dict value is caught too.
+        let dict = Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(vec![(
+            Value::String(Rc::new("held".to_string())),
+            Value::HostHandle(handle),
+        )]))));
+        assert!(context.ensure_publishable(&dict, "dict entry").is_err());
+    }
+
+    #[test]
+    fn test_a_handle_buried_in_a_struct_field_is_caught() {
+        let mut context = HostContext::denied();
+        let scope = context.open_scope();
+        let handle = context.hand_out(HostValue::string("entity"));
+        context.close_scope(scope);
+
+        let instance = StructInstance {
+            type_name: "Holder".to_string(),
+            fields: vec![("held".to_string(), Value::HostHandle(handle))],
+            fixed_fields: HashSet::new(),
+            under_construction: false,
+        };
+        let value = Value::Struct(Rc::new(RefCell::new(instance)));
+        assert!(context.ensure_publishable(&value, "field 'held'").is_err());
+    }
+
+    #[test]
+    fn test_a_container_without_handles_is_publishable() {
+        let context = HostContext::denied();
+        let value = Value::List(Rc::new(RefCell::new(vec![
+            Value::Int(1),
+            Value::String(Rc::new("text".to_string())),
+        ])));
+        assert!(context.ensure_publishable(&value, "global 'items'").is_ok());
+    }
+
+    #[test]
+    fn test_a_self_referential_container_terminates() {
+        // `List.add(l, l)` is legal, so the escape walk must not depend on the value being a
+        // tree. Visiting each container once is what bounds it.
+        let context = HostContext::denied();
+        let inner: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(Vec::new()));
+        let snapshot = Value::List(Rc::clone(&inner));
+        inner.borrow_mut().push(snapshot);
+        assert!(
+            context
+                .ensure_publishable(&Value::List(inner), "global 'loop'")
+                .is_ok()
+        );
+    }
+
+    #[test]
     fn test_host_faults_map_onto_the_vm_fault_model() {
         let cases = [
             (
@@ -298,6 +567,7 @@ mod tests {
             ),
             (
                 HostFault::ScopeEscape {
+                    handle: escaped_handle(),
                     binding: "held".to_string(),
                 },
                 aipo_diagnostics::DiagnosticCode::AIPO_RT_SCOPE_ESCAPE,

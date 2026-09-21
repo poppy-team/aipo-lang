@@ -32,7 +32,9 @@ pub enum HostFault {
     /// A binding created inside a scoped callback reached a heap-publication point outside
     /// the scope it belongs to.
     ScopeEscape {
-        /// The binding that tried to escape.
+        /// The handle that tried to escape.
+        handle: Handle,
+        /// The binding name or publication site the host knows it by.
         binding: String,
     },
     /// A value offered at the boundary cannot satisfy the contract it is crossing.
@@ -106,8 +108,8 @@ impl HostFault {
             Self::StaleHandle { handle } => format!(
                 "{handle} is stale: the host object it referenced was released, so it may not be used"
             ),
-            Self::ScopeEscape { binding } => format!(
-                "binding '{binding}' was created in a scoped host callback and cannot leave it"
+            Self::ScopeEscape { handle, binding } => format!(
+                "{handle} (binding '{binding}') was created in a scoped host callback and cannot leave it"
             ),
             Self::InvalidHostValue { detail } => {
                 format!("host value does not satisfy its contract: {detail}")
@@ -136,6 +138,12 @@ impl std::error::Error for HostFault {}
 mod tests {
     use super::*;
 
+    /// A handle that addresses a real slot, for the tests that only need the identity.
+    fn sample_handle() -> Handle {
+        let mut table: crate::HandleTable<u8> = crate::HandleTable::new();
+        table.insert(1)
+    }
+
     #[test]
     fn test_capability_denial_carries_operation_and_capability() {
         let fault = HostFault::CapabilityDenied {
@@ -151,6 +159,7 @@ mod tests {
     #[test]
     fn test_display_includes_the_code() {
         let fault = HostFault::ScopeEscape {
+            handle: sample_handle(),
             binding: "held".to_string(),
         };
         let rendered = fault.to_string();
