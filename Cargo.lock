@@ -219,6 +219,7 @@ dependencies = [
  "aipo-bytecode",
  "aipo-diagnostics",
  "aipo-hir",
+ "aipo-host",
  "aipo-ir",
  "aipo-runtime",
  "aipo-source",

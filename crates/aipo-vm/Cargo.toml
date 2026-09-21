@@ -16,6 +16,7 @@ workspace = true
 aipo-source = { path = "../aipo-source" }
 aipo-diagnostics = { path = "../aipo-diagnostics" }
 aipo-bytecode = { path = "../aipo-bytecode" }
+aipo-host = { path = "../aipo-host" }
 serde = { workspace = true }
 byteorder = "1.5"
 unicode-normalization = { workspace = true }

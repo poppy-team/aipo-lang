@@ -102,6 +102,30 @@ pub enum VmFault {
         /// Which blocking operation was attempted.
         operation: String,
     },
+    /// Host operation attempted without the capability it requires.
+    ///
+    /// Canon: capabilities are deny-by-default for a sandboxed host and a denial is a
+    /// fault, not a recoverable `Failure`, so it is not capturable by `attempt`.
+    CapabilityDenied {
+        /// The capability that was required, as a dotted path.
+        capability: String,
+        /// The host operation that required it.
+        operation: String,
+    },
+    /// Host handle addressed after its slot was released or reused.
+    ///
+    /// Canon forbids using freed host state, and the declared contract decides whether a
+    /// stale handle is `none` or this fault; the fault path is not capturable.
+    StaleHandle {
+        /// The handle that no longer addresses a live host object.
+        handle: String,
+    },
+    /// A binding created inside a scoped host callback reached a heap-publication point
+    /// outside the scope it belongs to.
+    ScopeEscape {
+        /// The binding that tried to escape.
+        binding: String,
+    },
     /// Corrupted bytecode instruction encountered.
     CorruptedBytecode {
         /// Offset where error occurred.
@@ -134,6 +158,9 @@ impl VmFault {
             Self::Cancelled { .. } => DiagnosticCode::AIPO_RT_CANCELLED,
             Self::AwaitCycle { .. } => DiagnosticCode::AIPO_RT_AWAIT_CYCLE,
             Self::AwaitInCallback { .. } => DiagnosticCode::AIPO_RT_AWAIT_IN_CALLBACK,
+            Self::CapabilityDenied { .. } => DiagnosticCode::AIPO_RT_CAPABILITY_DENIED,
+            Self::StaleHandle { .. } => DiagnosticCode::AIPO_RT_STALE_HANDLE,
+            Self::ScopeEscape { .. } => DiagnosticCode::AIPO_RT_SCOPE_ESCAPE,
         }
     }
 }
@@ -256,6 +283,27 @@ impl fmt::Display for VmFault {
                 write!(
                     f,
                     "runtime fault [AIPO_RT_AWAIT_IN_CALLBACK]: {operation} inside a synchronous callback cannot suspend; await outside the callback"
+                )
+            }
+            Self::CapabilityDenied {
+                capability,
+                operation,
+            } => {
+                write!(
+                    f,
+                    "runtime fault [AIPO_RT_CAPABILITY_DENIED]: operation '{operation}' requires capability '{capability}', which this host does not grant"
+                )
+            }
+            Self::StaleHandle { handle } => {
+                write!(
+                    f,
+                    "runtime fault [AIPO_RT_STALE_HANDLE]: {handle} is stale: the host object it referenced was released"
+                )
+            }
+            Self::ScopeEscape { binding } => {
+                write!(
+                    f,
+                    "runtime fault [AIPO_RT_SCOPE_ESCAPE]: binding '{binding}' was created in a scoped host callback and cannot leave it"
                 )
             }
         }

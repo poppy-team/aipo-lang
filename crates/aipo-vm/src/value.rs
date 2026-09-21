@@ -2,6 +2,7 @@
 
 use crate::convert::TypeTag;
 use crate::fault::VmFault;
+use aipo_host::Handle;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -454,6 +455,12 @@ pub enum Value {
     Group(GroupId),
     /// Pure time span in seconds (finite float, may be negative as a value).
     Duration(f64),
+    /// Reference to an object owned by the host, addressable only through [`Handle`].
+    ///
+    /// Canon keeps external identity with the host: a script may copy, pass and return the
+    /// handle, but only the host resolves the slot behind it, and a released generation
+    /// resolves to stale rather than to whatever reuses that slot (see `crate::host`).
+    HostHandle(Handle),
     /// Internal sentinel standing for a defaulted parameter the caller omitted.
     ///
     /// Canon evaluates parameter defaults inside the callee, so the value travels from the
@@ -506,6 +513,7 @@ impl Value {
             Self::Sequence(_) => "Sequence",
             Self::Task(_) => "Task",
             Self::Group(_) => "Group",
+            Self::HostHandle(_) => "Handle",
             Self::Duration(_) => "Duration",
             // Internal sentinel: never observable from Aipo, so the name only ever
             // appears in an invariant-violation message.
@@ -987,6 +995,7 @@ impl PartialEq for Value {
             (Self::Sequence(a), Self::Sequence(b)) => Rc::ptr_eq(a, b),
             (Self::Task(a), Self::Task(b)) => a == b,
             (Self::Group(a), Self::Group(b)) => a == b,
+            (Self::HostHandle(a), Self::HostHandle(b)) => a == b,
             (Self::Duration(a), Self::Duration(b)) => a == b,
             (
                 Self::BoundMethod {
@@ -1067,6 +1076,7 @@ impl fmt::Debug for Value {
                 write!(f, "<method {name} arity={arity}>")
             }
             Self::Failure(err) => write!(f, "failure({:?})", err.message),
+            Self::HostHandle(handle) => write!(f, "HostHandle({handle})"),
             Self::Unset => write!(f, "<unset>"),
         }
     }
@@ -1149,6 +1159,7 @@ impl fmt::Display for Value {
             }
             Self::BoundMethod { name, .. } => write!(f, "<fn {name}>"),
             Self::Failure(err) => write!(f, "fail(\"{}\")", err.message),
+            Self::HostHandle(handle) => write!(f, "<{handle}>"),
             Self::Unset => write!(f, "<unset>"),
         }
     }

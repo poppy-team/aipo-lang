@@ -130,7 +130,7 @@ Related ADPs.**
 ### aipo-vm (MVP)
 - **Responsibility:** stack-based bytecode interpreter: value model, frames, call stack, closures/upvalues, collections (List/Dict ordered), structs with fixed/invariant, Failure propagation (Model B), runtime faults, iteration safety (structural mutation during each = fault). Shared mutable values (`List`, `Dict`, struct instances, upvalue cells) use `Rc<RefCell<…>>`.
 - **Owns:** interpreter loop, call frames, upvalues, builtins glue, runtime object representations, operand-stack depth limit. Instruction/fuel budgets, memory accounting and interruption are **not** implemented — see `docs/adp/ADP-003-execution-budgets.md` (draft).
-- **Allowed deps:** aipo-bytecode, aipo-runtime.
+- **Allowed deps:** aipo-bytecode, aipo-runtime, and aipo-host — the host adapter (`crate::host`) is the single place that converts host values, maps host faults onto `VmFault` and gates privileged operations on a capability.
 - **Forbidden:** parser/frontend crates (loads verified bytecode only), host-specific modules, Poppy.
 - **Invariants:** `Int` range ±(2^53−1) enforced semantically; `Float` finite-only (NaN/Inf are faults); no silent wraparound; conditions require Bool; `div`/`%`/`/` semantics per Language Reference; no Rust panic escapes as Aipo error (all VM errors are `Result`).
 - **Error model:** recoverable `Failure` values + runtime faults as distinct internal variants surfaced through the CLI without panics.

@@ -3,6 +3,7 @@
 pub mod convert;
 pub mod fault;
 pub mod frame;
+pub mod host;
 pub mod value;
 pub mod vm;
 
@@ -12,6 +13,7 @@ pub use convert::{
 };
 pub use fault::{VmError, VmFault};
 pub use frame::{CallFrame, HandlerFrame};
+pub use host::{HostContext, host_fault_to_vm_fault, host_value_to_value, value_to_host_value};
 pub use value::{
     DictMap, FailureValue, GroupId, MAX_SAFE_INT, MIN_SAFE_INT, MethodKind, SeqOp,
     SequencePipeline, SequenceSource, StructInstance, TaskId, Value, check_finite_float,

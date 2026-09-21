@@ -60,7 +60,7 @@ struct Slot<T> {
 /// When a slot's generation space is exhausted the slot is left out of the reuse list instead
 /// of wrapping, because a wrapped generation would let an ancient handle address the slot
 /// again. Reaching that point takes 2^32 releases of one slot.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct HandleTable<T> {
     /// Live and reusable slots, addressed by index. `None` marks a slot that must never be
     /// reused (generation exhausted).
@@ -69,6 +69,13 @@ pub struct HandleTable<T> {
     free: Vec<usize>,
     /// Number of live values.
     live: usize,
+}
+
+/// An empty table, written by hand so an empty table does not require `T: Default`.
+impl<T> Default for HandleTable<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T> HandleTable<T> {
