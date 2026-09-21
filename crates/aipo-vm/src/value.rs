@@ -473,6 +473,8 @@ pub enum MethodKind {
         entry_ip: usize,
         /// Parameter count including the receiver.
         total_arity: usize,
+        /// `true` for an `async fn` method: calling produces a `Task` instead of running.
+        is_async: bool,
     },
     /// Higher-order method the VM executes itself so it can call back into Aipo code.
     HigherOrder,

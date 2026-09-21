@@ -1,0 +1,7 @@
+# Calling an `async fn` produces a `Task`; discarding it means the work was
+# started and will never be observed, which canon makes a static diagnostic.
+async fn worker()
+    return 1
+end
+
+worker()

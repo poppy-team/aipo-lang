@@ -678,11 +678,30 @@ impl<'a> SemanticAnalyzer<'a> {
     /// Walks an expression in statement, initializer or return position, where
     /// one top-level `await` is legal. Anything nested stays strict.
     fn analyze_expr_top(&mut self, expr: &HirExpr) {
-        if let HirExpr::Await(inner, _) = expr {
+        if let HirExpr::Await(inner, span) = expr {
+            self.check_await_contract(inner, *span);
             self.analyze_expr(inner);
         } else {
             self.analyze_expr(expr);
         }
+    }
+
+    /// Reports an `await` operand that provably cannot be a `Task`.
+    ///
+    /// ADP-006 §G: a `Task` is only ever produced by an `async fn` call or a
+    /// combinator, so a literal operand is a provable contract violation and a
+    /// pre-execution report — not something to leave to the runtime fault.
+    fn check_await_contract(&mut self, inner: &HirExpr, span: aipo_source::SourceSpan) {
+        if !matches!(inner, HirExpr::Literal(_, _)) {
+            return;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC,
+                "`await` operand is a literal, which is never a `Task`; await an `async fn` call or a task handle",
+            )
+            .with_primary_span(self.source, inner.span().merge(span)),
+        );
     }
 
     /// Reports a known-`Task` value discarded by an expression statement.

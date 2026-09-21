@@ -5,14 +5,19 @@
 #![warn(missing_docs)]
 
 pub mod lexer;
+pub mod number;
 pub mod token;
 
 pub use lexer::Lexer;
+pub use number::{
+    number_is_well_formed, parse_float_literal, parse_int_literal, strip_base_prefix,
+};
 pub use token::{StringPrefix, Token, TokenKind};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aipo_diagnostics::DiagnosticCode;
     use aipo_source::{Source, SourceId};
 
     #[test]
@@ -98,6 +103,38 @@ mod tests {
                 TokenKind::Eof,
             ]
         );
+    }
+
+    /// Canon keeps number handling lexical, so a malformed literal is reported by the lexer
+    /// and never reaches a later stage as a plausible number.
+    #[test]
+    fn test_malformed_numbers_report_invalid_number() {
+        for code in [
+            "0x", "0b102", "0o8", "1_", "1__0", "1e", "1e_5", "0x_FF", "1_.5",
+        ] {
+            let source = Source::new(SourceId(1), "test.aipo", code);
+            let (_, diags) = Lexer::new(&source).tokenize();
+            assert!(
+                diags
+                    .iter()
+                    .any(|d| d.code == DiagnosticCode::AIPO_LEX_INVALID_NUMBER),
+                "'{code}' must report AIPO_LEX_INVALID_NUMBER, got {diags:?}"
+            );
+        }
+        for code in [
+            "0xFF",
+            "0b1010",
+            "0o17",
+            "1_000_000",
+            "1.5e-3",
+            "0xFF_FF",
+            "1_0.0_1",
+            "1..10",
+        ] {
+            let source = Source::new(SourceId(1), "test.aipo", code);
+            let (_, diags) = Lexer::new(&source).tokenize();
+            assert!(diags.is_empty(), "'{code}' must lex cleanly, got {diags:?}");
+        }
     }
 
     #[test]

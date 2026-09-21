@@ -1,0 +1,4 @@
+# A magnitude no integer representation holds (10^20) is still a well-formed
+# literal; it must fault when loaded instead of collapsing to `0` because the
+# compiler could not parse it.
+io.println(99999999999999999999)

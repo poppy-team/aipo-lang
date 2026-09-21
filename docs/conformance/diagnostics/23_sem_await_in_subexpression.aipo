@@ -1,0 +1,8 @@
+# `await` suspends the enclosing path, so canon allows it only as a statement, an
+# initializer or a return value — never as a subexpression argument.
+async fn worker()
+    return 21
+end
+
+let t = worker()
+io.println(await t)

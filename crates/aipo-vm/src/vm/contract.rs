@@ -11,7 +11,8 @@ impl Vm {
     pub(super) fn operation_arity(&self, value: &Value, name: &str) -> Option<usize> {
         if let Value::Struct(instance) = value {
             let type_name = instance.borrow().type_name.clone();
-            if let Some((_, total_arity)) = self.struct_methods.get(&(type_name, name.to_string()))
+            if let Some((_, total_arity, _)) =
+                self.struct_methods.get(&(type_name, name.to_string()))
             {
                 return Some(total_arity.saturating_sub(1));
             }

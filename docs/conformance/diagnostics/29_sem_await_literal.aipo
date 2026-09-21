@@ -1,0 +1,4 @@
+# A `Task` is only produced by an `async fn` call or a combinator, so awaiting a
+# literal is provable before execution and reported statically (ADP-006 §G).
+let value = await 41
+io.println(value)

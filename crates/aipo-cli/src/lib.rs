@@ -468,7 +468,13 @@ fn execute_module(module: &aipo_bytecode::BytecodeModule) -> Result<(), VmError>
         if let Some((type_name, method)) = function.name.split_once('.') {
             // `self` is parameter 0 and arrives as the receiver, so the total arity the
             // frame expects equals the declared parameter count.
-            vm.register_struct_method(type_name, method, function.entry_ip, function.params);
+            vm.register_struct_method(
+                type_name,
+                method,
+                function.entry_ip,
+                function.params,
+                function.is_async,
+            );
         }
     }
     vm.run(module).map(|_| ())

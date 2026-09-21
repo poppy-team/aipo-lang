@@ -485,6 +485,7 @@ impl<'a> Parser<'a> {
         matches!(
             self.peek(),
             TokenKind::Fn
+                | TokenKind::Async
                 | TokenKind::Struct
                 | TokenKind::Impl
                 | TokenKind::Interface
@@ -1402,7 +1403,7 @@ impl<'a> Parser<'a> {
 
     /// Parses `async fn(...) ... end` as an anonymous function value.
     fn parse_async_fn_expr(&mut self) -> Option<Expr> {
-        self.advance(); // 'async'
+        let async_start = self.advance().span; // 'async'
         if !self.check(&TokenKind::Fn) {
             let span = self
                 .peek_token()
@@ -1417,8 +1418,9 @@ impl<'a> Parser<'a> {
             );
             return None;
         }
-        let async_span = self.tokens[self.cursor - 1].span;
-        self.parse_fn_expr_rest(async_span, true)
+        self.advance(); // 'fn'
+        // The expression spans the whole `async fn ... end` form, so it starts at `async`.
+        self.parse_fn_expr_rest(async_start, true)
     }
 
     /// Rejects parametric `Name[Args]` contracts: the language has no generics
@@ -1449,10 +1451,12 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::RBracket => {
                     self.advance();
+                    // The bracket that opened the skipped section closes it, so
+                    // recovery stops before the caller's own `)` / `]`.
+                    depth = depth.saturating_sub(1);
                     if depth == 0 {
                         break;
                     }
-                    depth -= 1;
                 }
                 _ => {
                     self.advance();

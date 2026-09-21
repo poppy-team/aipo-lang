@@ -81,8 +81,9 @@ pub struct Vm {
     pub upvalue_frames: Vec<UpvalueFrame>,
     /// Receiver-first native methods registered by the standard library.
     pub method_natives: HashMap<(String, String), (usize, MethodNative)>,
-    /// User methods registered per struct type: (type, method) -> (entry ip, total arity).
-    pub struct_methods: HashMap<(String, String), (usize, usize)>,
+    /// User methods registered per struct type: (type, method) -> (entry ip, total arity,
+    /// is async).
+    pub struct_methods: HashMap<(String, String), (usize, usize, bool)>,
     /// Identities of collections currently under an active `each` iteration (stack order).
     active_iterations: Vec<usize>,
     /// Failure that ended the program because nothing was left to handle it.
@@ -175,16 +176,20 @@ impl Vm {
     }
 
     /// Registers a user-defined method of a struct type.
+    ///
+    /// `is_async` mirrors the method's declaration: an `async fn` method called through the
+    /// receiver yields a `Task` instead of running, exactly like a free `async fn`.
     pub fn register_struct_method(
         &mut self,
         type_name: &str,
         method: &str,
         entry_ip: usize,
         total_arity: usize,
+        is_async: bool,
     ) {
         self.struct_methods.insert(
             (type_name.to_string(), method.to_string()),
-            (entry_ip, total_arity),
+            (entry_ip, total_arity, is_async),
         );
     }
 
@@ -309,13 +314,23 @@ impl Vm {
                 }
                 Err(other) => {
                     if self.current.is_some() && self.current != Some(task::MAIN_TASK) {
-                        // Faults inside a driven task fail that task; waiters
-                        // observe the failure value through `await`/joins and
-                        // Model B propagation continues from there.
-                        let message = other.to_string();
-                        self.complete_current(task::TaskOutcome::Failed(Value::Failure(Rc::new(
-                            crate::value::FailureValue { message },
-                        ))));
+                        let id = self.current.unwrap_or(task::MAIN_TASK);
+                        let cancelled = matches!(
+                            self.tasks.get(&id).map(|state| state.status),
+                            Some(task::TaskStatus::Cancelled)
+                        );
+                        if cancelled {
+                            // Cancellation is a task *state*, not a recoverable failure: the
+                            // task ends cancelled, and whoever awaits it faults with
+                            // `AIPO_RT_CANCELLED` (canon keeps cancellation and `Failure`
+                            // apart, so it is never capturable by `attempt`).
+                            self.complete_current(task::TaskOutcome::Cancelled);
+                        } else {
+                            // Every other fault is non-recoverable by canon (ADP-006 F): it
+                            // keeps its own code and aborts the program, wherever it was
+                            // raised, instead of being downgraded to a captured `Failure`.
+                            return Err(other);
+                        }
                     } else {
                         return Err(other);
                     }

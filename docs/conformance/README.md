@@ -7,9 +7,11 @@
 
 ## Purpose
 
-The corpus is the shared, executable definition of the Wave 1 MVP subset. It is the artifact
-that the CLI, the formatter and the language agree on: everything the MVP claims is either
-run here with a committed output, or rejected here with a committed diagnostic code.
+The corpus is the shared, executable definition of the delivered language surface — Wave 1
+MVP subset plus the Wave 2 JS-parity and Wave 3 async/collection deliveries certified below.
+It is the artifact that the CLI, the formatter and the language agree on: everything the
+language claims is either run here with a committed output, or rejected here with a committed
+diagnostic code.
 
 Nothing in this directory is generated at build time except the `.stdout` snapshots, and the
 snapshot for a program is only ever rewritten on request (see *Regeneration*).
@@ -63,6 +65,10 @@ snapshot for a program is only ever rewritten on request (see *Regeneration*).
 | `21_attempt_recovery_and_journal` | `return fail(…)` propagating to the caller's `attempt` boundary, and recovery releasing pre-handler journal entries (only post-handler mutations roll back) |
 | `22_signed_zero` | IEEE signed zero: `-0.0` observable in `Float` display, `Int` arithmetic never producing negative zero (normalized on the JS backend) |
 | `23_init_in_parameterized_fn` | construction with `init` inside a parameterized function (fuzz-found IR builder panic regression) |
+| `24_async_functions_and_await` | `async fn` as a call protocol (calling spawns eagerly, `await` explicit everywhere), task values bound/passed/joined, `task.spawn`, `await` as statement/initializer/return, anonymous `async fn` closure and an `async fn` `impl` method with the receiver as argument 0 |
+| `25_await_do` | `await do … end` sequential sugar over several tasks and a local `fn` that awaits inside the block |
+| `26_async_combinators` | `task.all`/`race`/`timeout`/`cancel`/`sleep`/`group` composed in one program with deterministic ordering |
+| `27_numeric_literal_bases` | decimal/hex/binary/octal integer literals, separators, float literal forms and `i64`-range boundaries |
 
 | Diagnostic fixture | Code asserted |
 |---|---|
@@ -85,6 +91,16 @@ snapshot for a program is only ever rewritten on request (see *Regeneration*).
 | `17_runtime_interface_contract` | `AIPO_RT_TYPE_MISMATCH` (a value without the operation an interface declares) |
 | `18_runtime_interface_arity` | `AIPO_RT_TYPE_MISMATCH` (a same-named operation of the wrong caller-visible arity) |
 | `19_runtime_clamp_inverted_bounds` | `AIPO_RT_FAILURE_UNCAUGHT` (unhandled inverted `clamp` bounds) |
+| `20_lex_invalid_number` | `AIPO_LEX_INVALID_NUMBER` (malformed numeric literal) |
+| `21_runtime_overflow_literal` | `AIPO_RT_OVERFLOW` (literal above the safe-integer range) |
+| `22_runtime_overflow_unrepresentable` | `AIPO_RT_OVERFLOW` (numeric value with no representable `Int`) |
+| `23_sem_await_in_subexpression` | `AIPO_SEM_AWAIT_IN_SUBEXPRESSION` |
+| `24_sem_forgotten_task` | `AIPO_SEM_FORGOTTEN_TASK` |
+| `25_sem_nested_await_do` | `AIPO_SEM_NESTED_AWAIT_DO` |
+| `26_runtime_uncaught_failure_through_await` | `AIPO_RT_FAILURE_UNCAUGHT` (failure surfacing out of an awaited task) |
+| `27_runtime_await_cycle` | `AIPO_RT_AWAIT_CYCLE` |
+| `28_runtime_await_cancelled` | `AIPO_RT_CANCELLED` |
+| `29_sem_await_literal` | `AIPO_SEM_CONTRACT_VIOLATION_STATIC` (await operand provably not a `Task`) |
 
 | Module case | Covers |
 |---|---|
@@ -174,6 +190,21 @@ The three residual limits `P00-G14` left open were closed by `P00-G15` and are c
 
 What the MVP subset declares but the implementation still does not deliver is explicit
 non-delivery, not an open gap (see `docs/evidence/P00-G16-wave-1-exit-review.md` and
-`docs/stdlib/mvp-subset.md` Deferred): `Bytes` packing APIs, the Wave 2 backend (`aipo-js`),
-`Set`/`Sequence`, LSP/REPL, async/await, host ABI/Poppy, packages/registry, regex/json/fs/http,
-`graphemes` and hot reload.
+`docs/stdlib/mvp-subset.md` Deferred): LSP/REPL, host ABI/Poppy, packages/registry,
+regex/json/fs/http, `graphemes` and hot reload. The Wave 1 deferrals the later waves closed are
+recorded below.
+
+### Wave 2 and Wave 3 deliveries certified here
+
+| Delivery | Wave | Certified by |
+|---|---|---|
+| Wave 2 backend `aipo-js` | `P01-G01` | `crates/aipo-js/tests/differential.rs` (VM = Node on stdout, codes and status) |
+| `Set`, `Sequence`, `Bytes` packing, `Duration`, `Task`/`Group` handles | `P02-G01` | `docs/evidence/P02-G01-wave3-types-and-values.md` |
+| Cooperative scheduler and async combinators (`task.spawn`/`sleep`/`all`/`race`/`timeout`/`cancel`/`group`) | `P02-G02` | `docs/evidence/P02-G02-wave3-stdlib-async.md` |
+| `async fn` call protocol, anonymous/local `async fn`, `await do`, static async diagnostics, await-cycle/cancellation faults, numeric-literal hardening | `P02-G03` | `programs/24`–`programs/27`, `diagnostics/20`–`diagnostics/28`, `docs/evidence/P02-G03-wave3-async-syntax-and-diagnostics.md` |
+
+### Inventory after `P02-G03` (verified on disk)
+
+`programs/` 27 `.aipo` + 27 `.stdout`, `diagnostics/` 29 `.aipo` + 29 `.code`,
+`formatting/` 8 `.input.aipo` + 8 `.expected.aipo`, `modules/` 3 entry points
+(`basic`, `cycle`, `missing`).

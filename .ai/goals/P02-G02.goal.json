@@ -1,6 +1,49 @@
 {
   "acceptance": [
-    "Replace this placeholder with objective acceptance criteria."
+    "A deterministic, single-threaded cooperative scheduler with virtual time exists identically in the Rust VM and the JavaScript runtime: depth-first await driving, FIFO run queue, and a clock that only advances at sleep/deadline points",
+    "task.spawn, task.sleep, task.all, task.race, task.timeout, task.cancel and task.group behave as recorded in ADP-006 section E, including fail-fast joins, order-deterministic race, deadline cancellation and group wait",
+    "The await opcode resolves completed tasks inline, suspends a waiter with its operand stack and instruction pointer intact, faults on an await cycle with AIPO_RT_AWAIT_CYCLE, faults when driving a cancelled task with AIPO_RT_CANCELLED, and rejects blocking inside a synchronous host callback with AIPO_RT_AWAIT_IN_CALLBACK",
+    "VM and JS produce identical stdout, diagnostic codes and exit status over the conformance corpus and the Wave 3 async programs (differential suite green)",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-21T05:04:01.842316955Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "A deterministic, single-threaded cooperative scheduler with virtual time exists identically in the Rust VM and the JavaScript runtime: depth-first await driving, FIFO run queue, and a clock that only advances at sleep/deadline points",
+          "task.spawn, task.sleep, task.all, task.race, task.timeout, task.cancel and task.group behave as recorded in ADP-006 section E, including fail-fast joins, order-deterministic race, deadline cancellation and group wait",
+          "The await opcode resolves completed tasks inline, suspends a waiter with its operand stack and instruction pointer intact, faults on an await cycle with AIPO_RT_AWAIT_CYCLE, faults when driving a cancelled task with AIPO_RT_CANCELLED, and rejects blocking inside a synchronous host callback with AIPO_RT_AWAIT_IN_CALLBACK",
+          "VM and JS produce identical stdout, diagnostic codes and exit status over the conformance corpus and the Wave 3 async programs (differential suite green)",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets and cargo doc --workspace --no-deps are all green"
+        ],
+        "evidence": [
+          {
+            "description": "cargo test -p aipo-vm --test wave3_pipeline: 10 passed (spawn_and_await, all_and_race, group, sleep_and_timeout, timeout_expires, cancel, plus the P02-G01 type pipelines); cargo test -p aipo-js --test differential: 8 passed including the five Wave 3 async differential cases; node crates/aipo-js/runtime/selftest.mjs: all assertions passed (group equality/formatting and async execution via runModule)",
+            "kind": "test"
+          },
+          {
+            "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo test --workspace --all-targets green, cargo doc --workspace --no-deps zero warnings; full output in docs/evidence/P02-G02-wave3-stdlib-async.md",
+            "kind": "gate"
+          },
+          {
+            "description": "docs/evidence/P02-G02-wave3-stdlib-async.md documents the scheduler, every combinator decision, the await opcode state machine and the VM/JS parity inventory; ADP-006 section E records the combinator signatures; CHANGELOG.md and PROJECT_STATE.md updated",
+            "kind": "doc"
+          }
+        ],
+        "non_goals": [
+          "Changing the Wave 3 value layer certified by P02-G01 (Set, Sequence, Bytes packing, Duration, Task/Group values)",
+          "Introducing parallelism, threads, real wall-clock timers or a second async machine for await do",
+          "Implementing the Wave 4 host ABI or the Poppy adapter"
+        ]
+      },
+      "digest": "8cfee6a658ba3bdd5a46b5519c006a55f1257d3cea4b73debc33faaa301167f2",
+      "goal_id": "P02-G02",
+      "id": "AMD-002",
+      "reason": "Record objective acceptance criteria and explicit non-goals for the Wave 3 async scheduler and combinators before closing the goal",
+      "revision": 2
+    }
   ],
   "constraints": [],
   "context": {
@@ -8,7 +51,20 @@
     "max_delegation_depth": 1
   },
   "dependencies": [],
-  "evidence": [],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-vm --test wave3_pipeline: 10 passed (spawn_and_await, all_and_race, group, sleep_and_timeout, timeout_expires, cancel, plus the P02-G01 type pipelines); cargo test -p aipo-js --test differential: 8 passed including the five Wave 3 async differential cases; node crates/aipo-js/runtime/selftest.mjs: all assertions passed (group equality/formatting and async execution via runModule)",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo test --workspace --all-targets green, cargo doc --workspace --no-deps zero warnings; full output in docs/evidence/P02-G02-wave3-stdlib-async.md",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/evidence/P02-G02-wave3-stdlib-async.md documents the scheduler, every combinator decision, the await opcode state machine and the VM/JS parity inventory; ADP-006 section E records the combinator signatures; CHANGELOG.md and PROJECT_STATE.md updated",
+      "kind": "doc"
+    }
+  ],
   "gates": {
     "build": "required",
     "documentation_impact": "required",
@@ -56,18 +112,36 @@
       "from": "VERIFYING",
       "reason": "",
       "to": "REVIEWING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-21T05:04:01.842316955Z",
+      "event": "amended",
+      "reason": "Record objective acceptance criteria and explicit non-goals for the Wave 3 async scheduler and combinators before closing the goal",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-21T05:04:06.346475212Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
     }
   ],
   "id": "P02-G02",
   "lock": {
-    "digest": "b8441609b623858c1a2d6d0bf1781e4020529ff4d0629d56a7a21a8076a0d3a3",
-    "locked_at": "2026-09-20T22:29:26.00269959Z",
-    "revision": 1
+    "digest": "8cfee6a658ba3bdd5a46b5519c006a55f1257d3cea4b73debc33faaa301167f2",
+    "locked_at": "2026-09-21T05:04:01.842316955Z",
+    "revision": 2
   },
-  "non_goals": [],
+  "non_goals": [
+    "Changing the Wave 3 value layer certified by P02-G01 (Set, Sequence, Bytes packing, Duration, Task/Group values)",
+    "Introducing parallelism, threads, real wall-clock timers or a second async machine for await do",
+    "Implementing the Wave 4 host ABI or the Poppy adapter"
+  ],
   "objective": "Implementar e certificar combinadores assíncronos (task.spawn, task.sleep, task.all, task.race, task.timeout, task.cancel, task.group) com tempo virtual determinístico e paridade VM↔JS.",
   "phase": "P02",
-  "revision": 1,
-  "state": "REVIEWING",
+  "revision": 2,
+  "state": "DONE",
   "title": "Wave 3 stdlib: combinadores assíncronos e operações de task"
 }

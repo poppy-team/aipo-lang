@@ -160,6 +160,7 @@ impl Vm {
                     MethodKind::Function {
                         entry_ip,
                         total_arity,
+                        is_async,
                     } => {
                         if arg_count + 1 != total_arity {
                             return Err(VmFault::TypeMismatch {
@@ -167,6 +168,26 @@ impl Vm {
                                 actual: format!("{arg_count} arguments"),
                             }
                             .into());
+                        }
+                        if is_async {
+                            // An `async fn` method is an `async fn`: calling it yields a
+                            // `Task` whose body carries the receiver as argument 0.
+                            let callee = Value::Function {
+                                entry_ip,
+                                arity: total_arity,
+                                is_async,
+                            };
+                            let mut args = Vec::with_capacity(total_arity);
+                            args.push((*receiver).clone());
+                            args.extend(
+                                self.stack[callee_idx + 1..callee_idx + 1 + arg_count]
+                                    .iter()
+                                    .cloned(),
+                            );
+                            let id = self.spawn_task(callee, args, None)?;
+                            self.stack.truncate(callee_idx);
+                            self.push(Value::Task(id))?;
+                            return Ok(());
                         }
                         // The receiver takes the callee slot and becomes argument 0.
                         self.stack[callee_idx] = (*receiver).clone();

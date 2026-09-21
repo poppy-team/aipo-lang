@@ -59,6 +59,10 @@
 | AIPO_SEM_UNKNOWN_MODULE | error | import path not resolvable |
 | AIPO_SEM_EXPORT_UNKNOWN | error | exported name does not exist |
 | AIPO_SEM_CONTRACT_VIOLATION_STATIC | error | provable contract violation at call site |
+| AIPO_SEM_AWAIT_IN_SUBEXPRESSION | error | explicit `await` outside a statement, initializer or return value (Wave 3) |
+| AIPO_SEM_FORGOTTEN_TASK | error | known-`Task` value discarded without `await`, binding or combinator (Wave 3) |
+| AIPO_SEM_NESTED_AWAIT_DO | error | `await do` nested inside another `await do` (Wave 3) |
+| AIPO_SEM_PARAMETRIC_CONTRACT | error | parametric `Name[Args]` contract written before parametric contracts exist (Wave 3) |
 
 ### Runtime fault (AIPO_RT_*)
 | Code | Severity | Trigger |
@@ -71,6 +75,9 @@
 | AIPO_RT_NOT_CALLABLE | fault | calling a non-function |
 | AIPO_RT_MUTATION_DURING_ITERATION | fault | structural mutation of the iterated collection |
 | AIPO_RT_TYPE_MISMATCH | fault | operator/condition/contract runtime violation |
+| AIPO_RT_CANCELLED | fault | a cancelled `Task` is awaited or driven (Wave 3) |
+| AIPO_RT_AWAIT_CYCLE | fault | a task awaits itself directly or transitively (Wave 3) |
+| AIPO_RT_AWAIT_IN_CALLBACK | fault | `await`/`sleep`/join inside a synchronous `invoke` callback, which cannot suspend (Wave 3) |
 
 ### Runtime failure (AIPO_RT_FAILURE_*)
 | Code | Severity | Trigger |

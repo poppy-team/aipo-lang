@@ -75,4 +75,47 @@ mod tests {
         assert_eq!(ir.functions[0].name, "square");
         assert_eq!(ir.functions[0].params, vec!["n"]);
     }
+
+    fn first_constant(text: &str) -> CoreConstant {
+        let src = Source::new(SourceId::next(), "test.aipo", text);
+        let (ast, diags) = parse(&src);
+        assert!(diags.is_empty(), "parse diagnostics: {diags:?}");
+        let ir = lower_to_ir(&lower(ast));
+        match &ir.top_level.instructions[0] {
+            CoreInst::Constant(value, _) => value.clone(),
+            other => panic!("first instruction is not a constant: {other:?}"),
+        }
+    }
+
+    /// Literal text is classified once, in `aipo-lexer`: bases and `_` separators must reach
+    /// the constant pool as their numeric value, never as `0`.
+    #[test]
+    fn test_literal_bases_and_separators_lower_to_values() {
+        assert_eq!(first_constant("0xFF"), CoreConstant::Int(255));
+        assert_eq!(first_constant("0b1010"), CoreConstant::Int(10));
+        assert_eq!(first_constant("0o17"), CoreConstant::Int(15));
+        assert_eq!(first_constant("1_000_000"), CoreConstant::Int(1_000_000));
+        assert_eq!(first_constant("1_0.5"), CoreConstant::Float(10.5));
+        assert_eq!(first_constant("1.5e-3"), CoreConstant::Float(0.0015));
+    }
+
+    /// A literal outside `Int`'s range is never coerced: it becomes a sentinel the VM and the
+    /// JS shim both reject with `AIPO_RT_OVERFLOW` when the constant is loaded. An overflowing
+    /// float parses to infinity, which `AIPO_RT_NON_FINITE_FLOAT` rejects — again on both
+    /// backends. The old `unwrap_or(0)`/`unwrap_or(0.0)` produced a bogus zero instead.
+    #[test]
+    fn test_literals_outside_the_value_range_are_rejected_at_load() {
+        assert_eq!(
+            first_constant("99999999999999999999"),
+            CoreConstant::Int(i64::MAX)
+        );
+        assert_eq!(
+            first_constant("0xFFFFFFFFFFFFFFFFFF"),
+            CoreConstant::Int(i64::MAX)
+        );
+        assert!(matches!(
+            first_constant("1e999"),
+            CoreConstant::Float(f) if f.is_infinite()
+        ));
+    }
 }

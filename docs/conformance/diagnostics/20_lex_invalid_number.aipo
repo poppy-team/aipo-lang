@@ -1,0 +1,3 @@
+# `0b102` is not a binary literal: the digit set must match the declared base,
+# so it is a lexical error rather than a number the runtime guesses at.
+io.println(0b102)

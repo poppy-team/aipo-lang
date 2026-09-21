@@ -16,7 +16,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use aipo_ir::{CoreFunction, CoreInst, CoreModule};
+use aipo_ir::{CoreConstant, CoreFunction, CoreInst, CoreModule};
 use serde_json::{Value as Json, json};
 
 /// Version of the emitted runtime shim.
@@ -82,6 +82,9 @@ fn function_to_json(func: &CoreFunction) -> Json {
     let code: Vec<Json> = func.instructions.iter().map(inst_to_json).collect();
     json!({
         "name": func.name,
+        // `async` is call protocol, not syntax: the shim must know which callees
+        // produce a `Task` instead of running, exactly like the VM's function table.
+        "async": func.is_async,
         "params": func.params,
         "locals": func.locals,
         "upvalues": func.upvalues,
@@ -92,9 +95,7 @@ fn function_to_json(func: &CoreFunction) -> Json {
 /// Maps one Core IR instruction to its compact JSON form.
 fn inst_to_json(inst: &CoreInst) -> Json {
     match inst {
-        CoreInst::Constant(c, _) => {
-            json!({"op":"Constant","value": serde_json::to_value(c).unwrap_or(Json::Null)})
-        }
+        CoreInst::Constant(c, _) => json!({"op":"Constant","value": constant_to_json(c)}),
         CoreInst::Load(n, _) => json!({"op":"Load","name": n}),
         CoreInst::Store(n, _) => json!({"op":"Store","name": n}),
         CoreInst::GetUpvalue(n, _) => json!({"op":"GetUpvalue","name": n}),
@@ -159,6 +160,19 @@ fn inst_to_json(inst: &CoreInst) -> Json {
         CoreInst::JumpIfSetLocal { slot, target, .. } => {
             json!({"op":"JumpIfSetLocal","slot": slot, "t": target_usize(*target)})
         }
+    }
+}
+
+/// Serializes a constant for the shim.
+///
+/// `serde_json` writes a non-finite float as `null`, which would erase the reason the value
+/// is unusable. The wire form stays `null` (the shim already reports
+/// `AIPO_RT_NON_FINITE_FLOAT` for it, matching the VM's fault for the same constant), but the
+/// intent is stated here instead of resting on the serializer's default.
+fn constant_to_json(value: &CoreConstant) -> Json {
+    match value {
+        CoreConstant::Float(f) if !f.is_finite() => Json::Null,
+        other => serde_json::to_value(other).unwrap_or(Json::Null),
     }
 }
 

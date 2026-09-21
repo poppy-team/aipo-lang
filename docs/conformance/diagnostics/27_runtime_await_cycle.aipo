@@ -1,0 +1,20 @@
+# Two tasks awaiting each other's handle: the scheduler detects the cycle and
+# faults. Canon keeps a cycle a fault (`AIPO_RT_AWAIT_CYCLE`), never a hang and
+# never a capturable `Failure`.
+var first_holder = 0
+var second_holder = 0
+
+async fn first()
+    let other = await second_holder
+    return other
+end
+
+async fn second()
+    let other = await first_holder
+    return other
+end
+
+first_holder = first()
+second_holder = second()
+let done = await first_holder
+io.println(done)

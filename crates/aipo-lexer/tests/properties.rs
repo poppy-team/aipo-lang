@@ -6,7 +6,8 @@
 
 #![forbid(unsafe_code)]
 
-use aipo_lexer::{Lexer, TokenKind};
+use aipo_diagnostics::DiagnosticCode;
+use aipo_lexer::{Lexer, TokenKind, number_is_well_formed};
 use aipo_source::{Source, SourceId};
 
 fn lex(text: &str) -> (Vec<aipo_lexer::Token>, Vec<aipo_diagnostics::Diagnostic>) {
@@ -75,6 +76,39 @@ fn test_arbitrary_bytes_never_panic_and_terminate() {
             tokens.last().map(|t| &t.kind),
             Some(TokenKind::Eof)
         ));
+    }
+}
+
+/// Every numeric token is either well formed under the shared rule or accompanied by
+/// `AIPO_LEX_INVALID_NUMBER` — a literal cannot slip past the lexer and later be read as a
+/// number the author did not write (the rule itself is `aipo-lexer`'s `number` module).
+#[test]
+fn test_numeric_tokens_agree_with_the_well_formedness_rule() {
+    let texts = [
+        "0xFF 0b1010 0o17 1_000_000 1.5e-3 1_0.0_1\n",
+        "0x 0b102 0o8 1_ 1__0 1e 1e_5 0x_FF\n",
+        "let x = 1..10\nlet y = 1_0.5\n",
+        "io.println(99999999999999999999)\n",
+    ];
+    for text in texts {
+        let (tokens, diagnostics) = lex(text);
+        let reported = diagnostics
+            .iter()
+            .any(|d| d.code == DiagnosticCode::AIPO_LEX_INVALID_NUMBER);
+        let mut malformed = false;
+        for token in &tokens {
+            let raw = match &token.kind {
+                TokenKind::IntLiteral(raw) | TokenKind::FloatLiteral(raw) => raw,
+                _ => continue,
+            };
+            if !number_is_well_formed(raw) {
+                malformed = true;
+            }
+        }
+        assert_eq!(
+            malformed, reported,
+            "{text:?}: malformed={malformed} but reported={reported}"
+        );
     }
 }
 

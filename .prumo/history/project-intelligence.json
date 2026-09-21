@@ -6,7 +6,7 @@
     "input_tokens": 0,
     "intermediate_output_tokens": 0,
     "output_tokens": 0,
-    "tasks": 6
+    "tasks": 8
   },
   "tasks": [
     {
@@ -89,32 +89,6 @@
     {
       "evidence": [
         {
-          "description": "cargo test --workspace: 152 passed, 0 failed; differential 2/2 over 20 programs (VM==JS==snapshot); js_build 3/3 (bundle+node, 19 diagnostics, modules). See docs/evidence/P01-G01-js-parity-mvp-subset.md",
-          "kind": "test"
-        },
-        {
-          "description": "cargo fmt --check, clippy -D warnings, doc --no-deps and prumo validate/doctor all green; Node v24.18.0",
-          "kind": "gate"
-        },
-        {
-          "description": "docs/waves/wave-2-js-parity.md new; cli.md build stable; crate-contracts aipo-js delivered; evidence P01-G01 new",
-          "kind": "doc"
-        }
-      ],
-      "files_changed": 12,
-      "goal": "P01-G01",
-      "id": "TR-005",
-      "kind": "implementation",
-      "status": "done",
-      "tests": {
-        "failed": 0,
-        "passed": 152
-      },
-      "title": "JS parity for the full MVP subset"
-    },
-    {
-      "evidence": [
-        {
           "description": "cargo test --workspace --all-targets: 253 passed, 0 failed, 46 suites. See docs/evidence/P01-G02-deep-quality-gauntlet.md",
           "kind": "test"
         },
@@ -137,8 +111,78 @@
         "passed": 253
       },
       "title": "Deep quality gauntlet: performance, security, conformance, accessibility"
+    },
+    {
+      "evidence": [
+        {
+          "description": "cargo test --workspace --all-targets: 301 passed, 0 failed; conformance 13/13 over 27 programs and 29 diagnostics; aipo-js differential 8/8; node runtime/selftest.mjs all assertions passed. Suites added: aipo-lexer numeric tables and properties, aipo-ir literal round-trip, aipo-sema static async diagnostics plus the static await contract, aipo-vm tests/wave3_async_semantics.rs",
+          "kind": "test"
+        },
+        {
+          "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo doc --workspace --no-deps zero warnings. prumo validate/doctor unavailable in this environment (local prumo install missing framework schemas), independent of the repository",
+          "kind": "gate"
+        },
+        {
+          "description": "docs/evidence/P02-G03-wave3-async-syntax-and-diagnostics.md publishes the certification; docs/diagnostics/catalog.md registers 4 semantic and 3 runtime codes; docs/adp/ADP-006 section G records the static await certification; docs/conformance/README.md gains programs 24-27, diagnostics 20-29 and the post-P02-G03 inventory; docs/stdlib/mvp-subset.md and docs/product/scope.md drop the stale async deferral; CHANGELOG.md, PROJECT_STATE.md updated",
+          "kind": "doc"
+        }
+      ],
+      "files_changed": 48,
+      "goal": "P02-G03",
+      "id": "TR-005",
+      "kind": "implementation",
+      "status": "done",
+      "tests": {
+        "failed": 0,
+        "passed": 301
+      },
+      "title": "Wave 3 infra: async fn syntax, await do desugaring and static diagnostics"
+    },
+    {
+      "evidence": [
+        {
+          "description": "cargo test -p aipo-vm --test wave3_pipeline: 10 passed; cargo test -p aipo-js --test differential: 8 passed including the five Wave 3 async differential cases; node crates/aipo-js/runtime/selftest.mjs all assertions passed",
+          "kind": "test"
+        },
+        {
+          "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo test --workspace --all-targets green, cargo doc --workspace --no-deps zero warnings; see docs/evidence/P02-G02-wave3-stdlib-async.md",
+          "kind": "gate"
+        }
+      ],
+      "files_changed": 14,
+      "goal": "P02-G02",
+      "id": "TR-007",
+      "kind": "implementation",
+      "status": "done",
+      "tests": {
+        "failed": 0,
+        "passed": 301
+      },
+      "title": "Wave 3 stdlib: async combinators and task operations"
+    },
+    {
+      "evidence": [
+        {
+          "description": "cargo test -p aipo-stdlib --test wave3_types: 8 passed; cargo test -p aipo-vm --test wave3_pipeline: 10 passed; cargo test -p aipo-js --test differential green; node crates/aipo-js/runtime/selftest.mjs all assertions passed",
+          "kind": "test"
+        },
+        {
+          "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo test --workspace --all-targets green, cargo doc --workspace --no-deps zero warnings; see docs/evidence/P02-G01-wave3-types-and-values.md",
+          "kind": "gate"
+        }
+      ],
+      "files_changed": 16,
+      "goal": "P02-G01",
+      "id": "TR-008",
+      "kind": "implementation",
+      "status": "done",
+      "tests": {
+        "failed": 0,
+        "passed": 301
+      },
+      "title": "Wave 3 types and values: Set, Sequence, Bytes packing, Task, Duration"
     }
   ],
-  "updated_at": "2026-09-20T02:56:24.735504211Z",
+  "updated_at": "2026-09-21T05:04:23.438114386Z",
   "version": 1
 }

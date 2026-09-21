@@ -1,0 +1,17 @@
+# `await do` is already a sequential-await block, so nesting one inside another
+# adds no suspension point: canon asks for a diagnostic instead of silent sugar.
+async fn one()
+    return 1
+end
+
+async fn outer()
+    await do
+        await do
+            let value = await one()
+            io.println(value)
+        end
+    end
+end
+
+let t = outer()
+await t

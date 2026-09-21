@@ -49,13 +49,7 @@ fn compile_to_ir(path: &Path) -> (String, aipo_ir::CoreModule) {
         path.display()
     );
     let hir = aipo_hir::lower(program);
-    let mut surface = aipo_sema::PreludeSurface::fundamental();
-    for name in [
-        "io", "math", "string", "len", "copy", "same", "some", "fail", "Int", "Float", "Byte",
-        "String", "Bool", "List", "Dict", "Bytes",
-    ] {
-        surface.add_variable(name);
-    }
+    let surface = prelude_surface();
     let (_, sema_diagnostics) = aipo_sema::check_with_prelude(&source, &hir, &surface);
     assert!(
         sema_diagnostics
@@ -65,6 +59,24 @@ fn compile_to_ir(path: &Path) -> (String, aipo_ir::CoreModule) {
         path.display()
     );
     (text, aipo_ir::lower_to_ir(&hir))
+}
+
+/// Semantic surface derived from the registered standard library.
+///
+/// Deriving it keeps these properties honest as the stdlib grows: a module added to the
+/// runtime is visible here without a second hand-maintained list to drift.
+fn prelude_surface() -> aipo_sema::PreludeSurface {
+    let mut vm = aipo_vm::Vm::new();
+    let mut registry = aipo_runtime::NativeRegistry::new();
+    aipo_stdlib::register_stdlib(&mut vm, &mut registry);
+    let mut surface = aipo_sema::PreludeSurface::fundamental();
+    for name in vm.globals.keys() {
+        match registry.get(None, name) {
+            Some(meta) => surface.add_function(name, meta.arity, meta.arity),
+            None => surface.add_variable(name),
+        }
+    }
+    surface
 }
 
 /// Mapping coherence is asserted through `aipo_testkit::js::decode_mappings`.

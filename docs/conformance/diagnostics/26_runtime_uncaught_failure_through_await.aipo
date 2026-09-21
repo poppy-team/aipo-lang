@@ -1,0 +1,9 @@
+# A recoverable `Failure` produced inside a task travels out through `await`: with
+# no `attempt` in the path, the program ends as an uncaught failure (Model B).
+async fn risky()
+    return fail("boom")
+end
+
+let t = risky()
+let value = await t
+io.println(value)

@@ -18,8 +18,23 @@
 use crate::ir::*;
 use aipo_ast::{BinaryOp, Literal, TypeAnnotation};
 use aipo_hir::*;
+use aipo_lexer::{parse_float_literal, parse_int_literal};
 use aipo_source::SourceSpan;
 use std::collections::{HashMap, HashSet};
+
+/// Sentinel used when an integer literal does not fit in `i64`.
+///
+/// Such a literal is lexically well formed but outside `Int`'s `±(2^53 - 1)` range, so it
+/// must never be coerced silently (the old `unwrap_or(0)` produced a bogus `0`). `i64::MAX`
+/// is itself outside that range, so the constant faults with `AIPO_RT_OVERFLOW` when it is
+/// loaded — on both backends, by construction.
+const OUT_OF_RANGE_INT: i64 = i64::MAX;
+
+/// Sentinel used when a float literal cannot be parsed at all.
+///
+/// `NaN` is not a legal `Float`, so the constant faults with `AIPO_RT_NON_FINITE_FLOAT`
+/// instead of silently becoming `0.0`.
+const MALFORMED_FLOAT: f64 = f64::NAN;
 
 /// Loop bookkeeping for `break`/`continue` patching.
 #[derive(Default)]
@@ -1467,11 +1482,14 @@ impl IrBuilder {
                     Literal::None => CoreConstant::None,
                     Literal::Bool(b) => CoreConstant::Bool(*b),
                     Literal::Int(raw) => {
-                        let val = raw.replace('_', "").parse::<i64>().unwrap_or(0);
+                        // Literal text is classified once, in `aipo-lexer`: the builder parses
+                        // exactly what the lexer accepted, so what lexes and what executes
+                        // cannot drift apart.
+                        let val = parse_int_literal(raw).unwrap_or(OUT_OF_RANGE_INT);
                         CoreConstant::Int(val)
                     }
                     Literal::Float(raw) => {
-                        let val = raw.replace('_', "").parse::<f64>().unwrap_or(0.0);
+                        let val = parse_float_literal(raw).unwrap_or(MALFORMED_FLOAT);
                         CoreConstant::Float(val)
                     }
                     Literal::String(s, _) => CoreConstant::String(s.clone()),

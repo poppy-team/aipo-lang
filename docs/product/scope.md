@@ -16,15 +16,19 @@
 - JavaScript backend (Wave 2, slice W2-1 delivered): Core IR → ESM bundle
   (`app.js` + versioned runtime shim + source map) with VM↔JS differential
   parity over the conformance corpus (see `docs/evidence/P01-G01-js-parity-mvp-subset.md`).
+- Wave 3 delivered: `Set`, lazy `Sequence`, `Bytes` packing APIs, `Duration` and the async
+  surface — `Task`/`Group` values, a deterministic cooperative scheduler with virtual time,
+  `task.spawn`/`sleep`/`all`/`race`/`timeout`/`cancel`/`group`, `async fn`, `await`, `await do`
+  and the static async diagnostics (see `docs/evidence/P02-G02-wave3-stdlib-async.md` and
+  `docs/evidence/P02-G03-wave3-async-syntax-and-diagnostics.md`).
 
 ## Non-goals and what is explicitly out of scope
 
-What remains out of scope after Wave 2 slice W2-1:
-- Async/await and concurrency primitives (deferred to Wave 3).
+What remains out of scope after Wave 3:
 - Host embedding ABI, Poppy game engine adapter, and sandboxing (deferred to Wave 4).
 - Language Server Protocol (LSP) and REPL (deferred to Wave 5).
 - Package manager, registry, and hot reload (deferred to Wave 6).
-- `Bytes` packing APIs, `Set`, lazy `Sequence`, regex/json/fs/http modules.
+- regex/json/fs/http modules.
 - Experimental optimizations: JIT, Cranelift, NaN-boxing, custom allocators.
 
 ## Compatibility constraints

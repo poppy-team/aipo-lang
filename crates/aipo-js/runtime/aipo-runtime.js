@@ -1405,11 +1405,18 @@ function beginCall(m, argc) {
     fn.params.forEach((p, i) => { v[p] = args[i]; });
     m.frames.push({ fn, ip: 0, vars: v, cells, base: calleeIdx, journalStart: m.journal.length });
   };
-  if (callee.t === 'func') {
-    callFn(callee.idx, {}, null);
-    m.stack.length = calleeIdx + 1 + argc;
-  } else if (callee.t === 'closure') {
-    callFn(callee.idx, {}, callee.cells);
+  const isAsyncCallee = (idx) => {
+    const fn = m.module.functions[idx];
+    return !!(fn && fn.async);
+  };
+  if (callee.t === 'func' || callee.t === 'closure') {
+    // Canon: calling an `async fn` never runs the body inline — the call spawns
+    // the task eagerly and its result is the `Task` handle, awaited explicitly.
+    if (isAsyncCallee(callee.idx)) {
+      asyncCall(m, callee, args, calleeIdx);
+      return;
+    }
+    callFn(callee.idx, {}, callee.t === 'closure' ? callee.cells : null);
     m.stack.length = calleeIdx + 1 + argc;
   } else if (callee.t === 'native') {
     checkArity(argc, callee.arity);
@@ -1437,6 +1444,12 @@ function beginCall(m, argc) {
       mPush(m, r);
     } else if (callee.kind === 'ufunc') {
       if (argc + 1 !== callee.total) fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected ${callee.total - 1} arguments for ${callee.name}, got ${argc}`);
+      if (isAsyncCallee(callee.idx)) {
+        // An `async fn` method is an `async fn`: the receiver is argument 0 of the
+        // spawned task body, matching the VM's method call protocol.
+        asyncCall(m, { t: 'func', idx: callee.idx, arity: callee.total }, [callee.recv, ...args], calleeIdx);
+        return;
+      }
       m.stack[calleeIdx] = callee.recv;
       const fn = m.module.functions[callee.idx];
       const v = {};
@@ -2133,6 +2146,12 @@ function resolveCall(m, calleeIdx, value) {
   mPush(m, value);
 }
 
+// Spawns `callee(args)` as a task and leaves its `Task` handle as the call result.
+function asyncCall(m, callee, args, calleeIdx) {
+  const id = spawnTask(m, callee, args, null);
+  resolveCall(m, calleeIdx, vTask(id));
+}
+
 function taskCall(m, name, calleeIdx, args) {
   for (const arg of args) {
     if (isFailure(arg)) {
@@ -2814,8 +2833,23 @@ export function runModule(module) {
           continue;
         }
         if (m.current !== null && m.current !== 0) {
-          const msg = e instanceof AipoFault ? e.message : (e && e.uncaught !== undefined ? String(e.uncaught) : String(e && e.message ? e.message : e));
-          completeCurrent(m, { t: 'failed', v: vFail(msg) });
+          // The machine was mid-task. Discard that task's frames before settling it:
+          // an abandoned frame would otherwise keep running as the entry script.
+          m.frames.length = 0;
+          m.stack.length = 0;
+          m.handlers.length = 0;
+          m.journal.length = 0;
+          m.active.length = 0;
+          const state = m.tasks.get(m.current);
+          if (state && state.status && state.status.t === 'cancelled') {
+            // Cancellation is a task state, not a recoverable failure: the task ends
+            // cancelled and whoever awaits it faults with `AIPO_RT_CANCELLED`.
+            completeCurrent(m, { t: 'cancelled' });
+          } else {
+            // Every other fault is non-recoverable by canon (ADP-006 F): it keeps its
+            // code and aborts the program, wherever it was raised.
+            throw e;
+          }
         } else {
           throw e;
         }

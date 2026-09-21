@@ -555,7 +555,7 @@ fn test_interface_contract_accepts_a_conforming_operation() {
     let mut vm = Vm::new();
     vm.register_struct("Thing", vec![("n", false)]);
     // `total_arity` counts the receiver, so a `fn draw(self)` method is arity 1.
-    vm.register_struct_method("Thing", "draw", 0, 1);
+    vm.register_struct_method("Thing", "draw", 0, 1, false);
 
     let result = vm
         .run(&module)

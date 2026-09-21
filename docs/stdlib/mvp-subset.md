@@ -229,7 +229,12 @@ Unicode normalization, `Set`, lazy `Sequence`, regex/json/fs/http and every capa
 module. Wave 1 non-delivery that Wave 2 slice W2-1 has since closed (see
 `docs/evidence/P01-G01-js-parity-mvp-subset.md`): the `aipo-js` backend now ships
 the MVP subset with differential parity (CLI is `run`/`check`/`build`/`fmt`).
-Still explicitly deferred: LSP and REPL, async/await, host
-ABI/Poppy, packages/registry and hot reload. Type values for `List`/`Dict`/`Bytes` and a
+Wave 3 has since closed `Set`, lazy `Sequence`, the `Bytes` packing APIs
+(`read_i32`/`write_f32`/…, `String.encode`/`Bytes.decode`), `Duration` and the whole async
+surface (`Task`/`Group` values, a cooperative scheduler, `async fn`/`await`/`await do` and the
+`task.*` combinators) — see `docs/evidence/P02-G01-wave3-types-and-values.md`.
+
+Still explicitly deferred: LSP and REPL, host ABI/Poppy, packages/registry, regex/json/fs/http
+and hot reload. Type values for `List`/`Dict`/`Bytes` and a
 dedicated `Byte` runtime kind were listed here previously and are now delivered — see
 `docs/evidence/P00-G10-backend-completion.md`.

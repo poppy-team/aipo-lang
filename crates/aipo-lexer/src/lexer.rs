@@ -4,6 +4,7 @@ use aipo_diagnostics::{Diagnostic, DiagnosticCode};
 use aipo_source::{Source, SourceSpan};
 use unicode_normalization::UnicodeNormalization;
 
+use crate::number::number_is_well_formed;
 use crate::token::{StringPrefix, Token, TokenKind};
 
 /// Lexer state scanning over an immutable Aipo source.
@@ -384,6 +385,9 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     let end = self.current_offset();
+                    if !number_is_well_formed(&raw) {
+                        self.record_invalid_number(start, &raw);
+                    }
                     return Token::new(TokenKind::IntLiteral(raw), SourceSpan::new(start, end));
                 }
             }
@@ -441,6 +445,10 @@ impl<'a> Lexer<'a> {
 
         let end = self.current_offset();
         let span = SourceSpan::new(start, end);
+
+        if !number_is_well_formed(&raw) {
+            self.record_invalid_number(start, &raw);
+        }
 
         if is_float || is_float_exp {
             Token::new(TokenKind::FloatLiteral(raw), span)
@@ -605,6 +613,17 @@ impl<'a> Lexer<'a> {
         self.diagnostics.push(
             Diagnostic::error(DiagnosticCode::AIPO_LEX_UNEXPECTED_CHARACTER, msg)
                 .with_primary_span(self.source, SourceSpan::new(start, end)),
+        );
+    }
+
+    fn record_invalid_number(&mut self, start: usize, raw: &str) {
+        let end = self.current_offset();
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::AIPO_LEX_INVALID_NUMBER,
+                format!("malformed numeric literal '{raw}'"),
+            )
+            .with_primary_span(self.source, SourceSpan::new(start, end)),
         );
     }
 }

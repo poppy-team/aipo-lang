@@ -1,0 +1,57 @@
+# `await do ... end` is sugar for sequential awaits: one block, explicit order,
+# no closure, no parallelism, and `return` returns from the enclosing function.
+async fn one()
+    return 1
+end
+
+async fn two()
+    return 2
+end
+
+async fn sum()
+    await do
+        let a = await one()
+        let b = await two()
+        return a + b
+    end
+end
+let sum_value = await sum()
+io.println(sum_value)
+
+# Recovery keeps its usual meaning inside the block: `attempt` captures the
+# recoverable `Failure` and nothing else.
+async fn risky()
+    return fail("boom")
+end
+
+async fn guarded()
+    await do
+        var outcome = "pending"
+        attempt
+            let value = await risky()
+            outcome = String(value)
+        failed err
+            outcome = f"caught: {err.message}"
+        end
+        return outcome
+    end
+end
+let guarded_value = await guarded()
+io.println(guarded_value)
+
+# Sequential order is observable, so the block also tames ordering: mutations
+# happen in the order they are written.
+async fn accumulate()
+    var total = 0
+    await do
+        let first = await one()
+        total += first
+        let second = await two()
+        total += second
+        let third = await one()
+        total += third
+    end
+    return total
+end
+let accumulated = await accumulate()
+io.println(accumulated)

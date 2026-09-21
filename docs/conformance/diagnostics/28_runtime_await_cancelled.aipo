@@ -1,0 +1,11 @@
+# Cancellation is a fault, not a `Failure`: driving a cancelled task reports
+# `AIPO_RT_CANCELLED` and `attempt` cannot capture it.
+async fn worker()
+    task.sleep(5)
+    return 1
+end
+
+let t = worker()
+task.cancel(t)
+let value = await t
+io.println(value)

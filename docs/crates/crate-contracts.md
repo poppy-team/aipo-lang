@@ -9,8 +9,9 @@
 The canonical baseline lists 18 crates. **Wave 1 implements only the crates required by
 the MVP pipeline** (marked MVP below). The remaining crates are declared here so the
 dependency direction is fixed before they exist; their contracts are activated when their
-wave starts (Wave 2: `aipo-js`; Wave 3: async parts of `aipo-vm`/`aipo-runtime`;
-Wave 4: `aipo-host`, `aipo-poppy`; Wave 5: `aipo-lsp`; Wave 6: packages in `aipo-cli`/`aipo-stdlib`).
+wave starts. Wave 2 (`aipo-js`) and Wave 3 (async parts of `aipo-vm`/`aipo-runtime`) are
+activated and their waves closed; still pending are Wave 4 (`aipo-host`, `aipo-poppy`),
+Wave 5 (`aipo-lsp`) and Wave 6 (packages in `aipo-cli`/`aipo-stdlib`).
 
 Common fields for every crate: **Responsibility / Owned concepts / Inputs / Outputs /
 Public API / Allowed dependencies / Forbidden dependencies / Invariants / Error model /
@@ -65,7 +66,7 @@ Related ADPs.**
 - **Outputs:** tokens + lex-time diagnostics (unknown escape, unterminated string, invalid byte).
 - **Allowed deps:** aipo-source, aipo-diagnostics.
 - **Forbidden:** AST/parser knowledge, VM.
-- **Invariants:** lexer never converts numeric text to values (classification only); identifiers normalize NFC for identity while spans keep original bytes; `_` alone is discard marker; keywords only when the full name matches.
+- **Invariants:** the lexer stage never converts numeric text to values (classification only); the crate still owns the numeric-literal rules for the whole pipeline and exposes the matching conversion (`number_is_well_formed` plus `parse_int_literal`/`parse_float_literal`) so a stage that must materialize a literal parses exactly what the lexer accepted; identifiers normalize NFC for identity while spans keep original bytes; `_` alone is discard marker; keywords only when the full name matches.
 - **Error model:** recovery tokens + diagnostics; lexer never panics on any input.
 - **Testing:** unit tests; property test (token spans re-slice exactly to source text); fuzz target.
 - **Related ADPs:** none.
@@ -111,15 +112,15 @@ Related ADPs.**
 ### aipo-ir (MVP)
 - **Responsibility:** target-neutral Core IR construction from validated HIR+sema facts; failure/fault distinction materialized; constant pool-ready literal model.
 - **Owns:** `CoreIr` module/function/instruction-level structures, `IrId`s.
-- **Allowed deps:** aipo-source, aipo-diagnostics, aipo-hir, aipo-sema (consumes facts).
-- **Forbidden:** bytecode format details, VM internals, JS emission.
+- **Allowed deps:** aipo-source, aipo-diagnostics, aipo-hir, aipo-sema (consumes facts), and aipo-lexer **for the numeric-literal rules only** (a literal must mean the same thing at the layer that accepted it and the layer that materializes it; the direct edge shortcuts the existing `Core IR → Sema → HIR → AST → Syntax → Lexer` path, it does not add a cycle).
+- **Forbidden:** bytecode format details, VM internals, JS emission; any other use of the lexer crate (tokens, scanning, spans).
 - **Invariants:** IR never references source text for lost facts; stable IDs survive to bytecode for diagnostics/source maps.
 - **Testing:** IR snapshot tests per feature fixture.
 - **Related ADPs:** none.
 
 ### aipo-bytecode (MVP)
 - **Responsibility:** compact instruction encoding + constant pool + symbol interning; emitter Core IR → bytecode; verifier (structure, jump targets, stack effects) before load.
-- **Owns:** instruction set (`docs/architecture/bytecode.md`), `aibc` module format, verifier.
+- **Owns:** instruction set (`crates/aipo-bytecode/README.md` and the `opcode` module), `aibc` module format, verifier.
 - **Allowed deps:** aipo-ir, aipo-diagnostics.
 - **Forbidden:** Poppy concepts, host capabilities, JS specifics.
 - **Invariants:** bytecode is loadable only if verifier passes; encoding is versioned; every instruction has deterministic stack effect documented.

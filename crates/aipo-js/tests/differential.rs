@@ -129,7 +129,13 @@ fn run_vm(compiled: &Compiled) -> String {
     }
     for function in &compiled.bytecode.functions {
         if let Some((type_name, method)) = function.name.split_once('.') {
-            vm.register_struct_method(type_name, method, function.entry_ip, function.params);
+            vm.register_struct_method(
+                type_name,
+                method,
+                function.entry_ip,
+                function.params,
+                function.is_async,
+            );
         }
     }
     vm.run(&compiled.bytecode).expect("vm runs fixture");

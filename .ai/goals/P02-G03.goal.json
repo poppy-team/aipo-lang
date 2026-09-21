@@ -1,6 +1,90 @@
 {
   "acceptance": [
-    "Replace this placeholder with objective acceptance criteria."
+    "`async fn` is a call protocol in every declaration position: top-level item, local statement, anonymous `async fn(...)` value and `impl` method, where the receiver travels as argument 0 of the spawned body",
+    "`await do ... end` desugars to sequential awaits; explicit `await` is accepted only as a statement, an initializer or a return value, and rejected elsewhere with AIPO_SEM_AWAIT_IN_SUBEXPRESSION",
+    "A known-`Task` value discarded without `await`, binding or combinator reports AIPO_SEM_FORGOTTEN_TASK, while a bound or returned task stays silent",
+    "A nested `await do` block reports AIPO_SEM_NESTED_AWAIT_DO",
+    "Awaiting a task that awaits itself faults with AIPO_RT_AWAIT_CYCLE and awaiting a cancelled task faults with AIPO_RT_CANCELLED, with identical behavior on the VM and the JS backend",
+    "Numeric literals are classified by a single shared module (aipo-lexer::number) used by both the lexer and the IR builder: malformed forms report AIPO_LEX_INVALID_NUMBER and literals outside the representable range fault with AIPO_RT_OVERFLOW",
+    "The conformance corpus grows by programs 24-27 and diagnostics 20-28, and every fixture is exercised by the CLI conformance suite and the VM/JS differential suite",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-21T04:48:10.624655008Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "`async fn` is a call protocol in every declaration position: top-level item, local statement, anonymous `async fn(...)` value and `impl` method, where the receiver travels as argument 0 of the spawned body",
+          "`await do ... end` desugars to sequential awaits; explicit `await` is accepted only as a statement, an initializer or a return value, and rejected elsewhere with AIPO_SEM_AWAIT_IN_SUBEXPRESSION",
+          "A known-`Task` value discarded without `await`, binding or combinator reports AIPO_SEM_FORGOTTEN_TASK, while a bound or returned task stays silent",
+          "A nested `await do` block reports AIPO_SEM_NESTED_AWAIT_DO",
+          "Awaiting a task that awaits itself faults with AIPO_RT_AWAIT_CYCLE and awaiting a cancelled task faults with AIPO_RT_CANCELLED, with identical behavior on the VM and the JS backend",
+          "Numeric literals are classified by a single shared module (aipo-lexer::number) used by both the lexer and the IR builder: malformed forms report AIPO_LEX_INVALID_NUMBER and literals outside the representable range fault with AIPO_RT_OVERFLOW",
+          "The conformance corpus grows by programs 24-27 and diagnostics 20-28, and every fixture is exercised by the CLI conformance suite and the VM/JS differential suite",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets and cargo doc --workspace --no-deps are all green"
+        ],
+        "evidence": [
+          {
+            "description": "cargo test --workspace --all-targets: 299 passed, 0 failed; conformance 13/13 over 27 programs and 28 diagnostics; aipo-js differential 8/8; node runtime/selftest.mjs all assertions passed. New suites: aipo-lexer numeric tables and properties, aipo-ir literal round-trip, aipo-sema static async diagnostics, aipo-vm tests/wave3_async_semantics.rs",
+            "kind": "test"
+          },
+          {
+            "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo doc --workspace --no-deps zero warnings. prumo validate/doctor unavailable in this environment (local prumo install missing framework schemas: open schemas / missing prumo.schema.json), independent of the repository",
+            "kind": "gate"
+          },
+          {
+            "description": "docs/evidence/P02-G03-wave3-async-syntax-and-diagnostics.md publishes the certification; docs/diagnostics/catalog.md registers 4 semantic and 3 runtime codes; docs/conformance/README.md gains programs 24-27, diagnostics 20-28 and the post-P02-G03 inventory; CHANGELOG.md, PROJECT_STATE.md updated",
+            "kind": "doc"
+          }
+        ],
+        "non_goals": [
+          "Changing the cooperative scheduler or the task combinators certified by P02-G02",
+          "Implementing the Wave 4 host ABI or the Poppy adapter",
+          "Re-opening the canon decisions in docs/waves/wave-3-async.md"
+        ]
+      },
+      "digest": "7bb2b4cec5ca7d3db007c2cf4591e9f23009caa3096d6ef528a9163c53c60bee",
+      "goal_id": "P02-G03",
+      "id": "AMD-002",
+      "reason": "Attach objective acceptance criteria, non-goals and P02-G03 evidence after Wave 3 async syntax and diagnostics certification",
+      "revision": 2
+    },
+    {
+      "approved_at": "2026-09-21T04:52:33.866169801Z",
+      "approved_by": "human",
+      "changes": {
+        "evidence": [
+          {
+            "description": "cargo test --workspace --all-targets: 301 passed, 0 failed; conformance 13/13 over 27 programs and 29 diagnostics; aipo-js differential 8/8; node runtime/selftest.mjs all assertions passed. Suites added: aipo-lexer numeric tables and properties, aipo-ir literal round-trip, aipo-sema static async diagnostics plus the static await contract, aipo-vm tests/wave3_async_semantics.rs",
+            "kind": "test"
+          },
+          {
+            "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo doc --workspace --no-deps zero warnings. prumo validate/doctor unavailable in this environment (local prumo install missing framework schemas: open schemas / missing prumo.schema.json), independent of the repository",
+            "kind": "gate"
+          },
+          {
+            "description": "docs/evidence/P02-G03-wave3-async-syntax-and-diagnostics.md publishes the certification; docs/diagnostics/catalog.md registers 4 semantic and 3 runtime codes; docs/adp/ADP-006 section G records the static await certification; docs/conformance/README.md gains programs 24-27, diagnostics 20-29 and the post-P02-G03 inventory; docs/stdlib/mvp-subset.md and docs/product/scope.md drop the stale async deferral; CHANGELOG.md, PROJECT_STATE.md updated",
+            "kind": "doc"
+          }
+        ]
+      },
+      "digest": "7bb2b4cec5ca7d3db007c2cf4591e9f23009caa3096d6ef528a9163c53c60bee",
+      "goal_id": "P02-G03",
+      "id": "AMD-003",
+      "reason": "Finalize P02-G03 evidence after adding the static await contract (29th diagnostic fixture), the parametric-contract recovery fix and the final gate run",
+      "revision": 3
+    },
+    {
+      "approved_at": "2026-09-21T05:02:44.461927431Z",
+      "approved_by": "human",
+      "changes": {},
+      "digest": "7bb2b4cec5ca7d3db007c2cf4591e9f23009caa3096d6ef528a9163c53c60bee",
+      "goal_id": "P02-G03",
+      "id": "AMD-004",
+      "reason": "Attach P02-G03 evidence to the goal so it can be marked DONE",
+      "revision": 4
+    }
   ],
   "constraints": [],
   "context": {
@@ -8,7 +92,20 @@
     "max_delegation_depth": 1
   },
   "dependencies": [],
-  "evidence": [],
+  "evidence": [
+    {
+      "description": "cargo test --workspace --all-targets: 301 passed, 0 failed; conformance 13/13 over 27 programs and 29 diagnostics; aipo-js differential 8/8; node runtime/selftest.mjs all assertions passed. Suites added: aipo-lexer numeric tables and properties, aipo-ir literal round-trip, aipo-sema static async diagnostics plus the static await contract, aipo-vm tests/wave3_async_semantics.rs",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo doc --workspace --no-deps zero warnings. prumo validate/doctor unavailable in this environment (local prumo install missing framework schemas: open schemas / missing prumo.schema.json), independent of the repository",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/evidence/P02-G03-wave3-async-syntax-and-diagnostics.md publishes the certification; docs/diagnostics/catalog.md registers 4 semantic and 3 runtime codes; docs/adp/ADP-006 section G records the static await certification; docs/conformance/README.md gains programs 24-27, diagnostics 20-29 and the post-P02-G03 inventory; docs/stdlib/mvp-subset.md and docs/product/scope.md drop the stale async deferral; CHANGELOG.md, PROJECT_STATE.md updated",
+      "kind": "doc"
+    }
+  ],
   "gates": {
     "build": "required",
     "documentation_impact": "required",
@@ -42,18 +139,64 @@
       "from": "LOCKED",
       "reason": "",
       "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-21T04:48:10.624655008Z",
+      "event": "amended",
+      "reason": "Attach objective acceptance criteria, non-goals and P02-G03 evidence after Wave 3 async syntax and diagnostics certification",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-21T04:48:13.551318494Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-21T04:48:13.554563288Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-21T04:52:33.866169801Z",
+      "event": "amended",
+      "reason": "Finalize P02-G03 evidence after adding the static await contract (29th diagnostic fixture), the parametric-contract recovery fix and the final gate run",
+      "revision": 3
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-21T05:02:44.461927431Z",
+      "event": "amended",
+      "reason": "Attach P02-G03 evidence to the goal so it can be marked DONE",
+      "revision": 4
+    },
+    {
+      "at": "2026-09-21T05:03:12.462564961Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
     }
   ],
   "id": "P02-G03",
   "lock": {
-    "digest": "ee366a3d28cd88b99614473d456931181761ce635ef2a25ed24a45ba9cf9e39c",
-    "locked_at": "2026-09-20T23:05:58.383484611Z",
-    "revision": 1
+    "digest": "7bb2b4cec5ca7d3db007c2cf4591e9f23009caa3096d6ef528a9163c53c60bee",
+    "locked_at": "2026-09-21T05:02:44.461927431Z",
+    "revision": 4
   },
-  "non_goals": [],
+  "non_goals": [
+    "Changing the cooperative scheduler or the task combinators certified by P02-G02",
+    "Implementing the Wave 4 host ABI or the Poppy adapter",
+    "Re-opening the canon decisions in docs/waves/wave-3-async.md"
+  ],
   "objective": "Implementar e certificar sintaxe async fn, desugaring de await do, diagnósticos estáticos (AIPO_SEM_AWAIT_IN_SUBEXPRESSION, AIPO_SEM_FORGOTTEN_TASK, AIPO_SEM_NESTED_AWAIT_DO), com testes e conformance.",
   "phase": "P02",
-  "revision": 1,
-  "state": "EXECUTING",
+  "revision": 4,
+  "state": "DONE",
   "title": "Wave 3 infra: sintaxe async fn, await do e diagnósticos estáticos"
 }

@@ -124,7 +124,13 @@ fn run_module(module: &BytecodeModule) -> Result<aipo_vm::Value, VmError> {
     }
     for function in &module.functions {
         if let Some((type_name, method)) = function.name.split_once('.') {
-            vm.register_struct_method(type_name, method, function.entry_ip, function.params);
+            vm.register_struct_method(
+                type_name,
+                method,
+                function.entry_ip,
+                function.params,
+                function.is_async,
+            );
         }
     }
     vm.run(module).map(|_| aipo_vm::Value::None)

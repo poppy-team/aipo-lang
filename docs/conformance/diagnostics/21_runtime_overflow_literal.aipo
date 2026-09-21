@@ -1,0 +1,3 @@
+# `2^53` is one past the largest `Int`, so the literal does not fit the language's
+# value range: loading it is an overflow fault on both backends, never a wrap.
+io.println(9007199254740992)

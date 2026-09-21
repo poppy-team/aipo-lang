@@ -1,0 +1,34 @@
+# The scheduler is cooperative and deterministic: `sleep` advances virtual time
+# in ticks (1s = 1000), so combinators resolve in an order the source decides,
+# never in an order the host happens to produce.
+async fn quick()
+    task.sleep(1)
+    return "quick"
+end
+
+async fn slow()
+    task.sleep(3)
+    return "slow"
+end
+
+# `race` takes the first completion in deterministic scheduler order.
+io.println(task.race([task.spawn(slow, []), task.spawn(quick, [])]))
+
+# `timeout` yields the value in time, or a `Failure("timeout")` and cancels the
+# task that ran late; the failure is consumed by `or_else` like any other.
+io.println(task.timeout(task.spawn(slow, []), 2) or_else "timed out")
+
+# `all` keeps the member order it was given, whatever order they finish in.
+io.println(task.all([task.spawn(slow, []), task.spawn(quick, [])]))
+
+# A group is a structured scope: every member is awaited by `wait`.
+let group = task.group()
+group.spawn(quick, [])
+group.spawn(slow, [])
+io.println(group.wait())
+
+# Cancellation is a fault when a cancelled task is awaited, so a cancelled task
+# is simply not awaited (its result is unavailable by construction).
+let abandoned = task.spawn(slow, [])
+task.cancel(abandoned)
+io.println("cancelled")

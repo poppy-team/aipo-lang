@@ -1,5 +1,6 @@
 //! Failure recovery: handler dispatch and frame-unwinding propagation (Model B).
 use super::Vm;
+use super::task::{MAIN_TASK, TaskOutcome};
 use crate::fault::VmError;
 use crate::value::Value;
 impl Vm {
@@ -18,6 +19,15 @@ impl Vm {
             self.upvalue_frames.pop();
             self.stack.truncate(frame.result_base());
             self.mutation_journal.truncate(frame.journal_start);
+            // Unwinding past the last frame of a *driven* task ends the task with the
+            // failure, exactly like `Return` ends it with a value. Falling through to
+            // `frame.return_ip` (0 for a task's base frame) would restart the module
+            // entry script inside the task, which is a live-lock, not recovery.
+            if self.frames.is_empty() && self.current.is_some_and(|current| current != MAIN_TASK) {
+                self.stack.clear();
+                self.complete_current(TaskOutcome::Failed(failure));
+                return Ok(());
+            }
             self.push(failure)?;
             self.ip = frame.return_ip;
             Ok(())

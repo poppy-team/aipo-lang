@@ -97,6 +97,7 @@ dependencies = [
  "aipo-ast",
  "aipo-diagnostics",
  "aipo-hir",
+ "aipo-lexer",
  "aipo-sema",
  "aipo-source",
  "aipo-syntax",

@@ -1,0 +1,12 @@
+# Literals are classified lexically: `0x`/`0b`/`0o` bases, `_` separators between
+# digits, and the decimal/exponent float form. Values outside the `Int` range
+# ±(2^53 − 1) are rejected when loaded, never silently coerced.
+io.println(0xFF)
+io.println(0b1010)
+io.println(0o17)
+io.println(0xFF_FF)
+io.println(1_000_000)
+io.println(9_007_199_254_740_991)
+io.println(1.5e-3)
+io.println(1_0.0_1)
+io.println(2.5e2)

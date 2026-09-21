@@ -1,6 +1,54 @@
 {
   "acceptance": [
-    "Replace this placeholder with objective acceptance criteria."
+    "Set is a value with insertion order preserved, set-theoretic equality and the methods has/add/remove/clear/is_empty/len/to_list/lazy; the Set(list) conversion deduplicates in first-occurrence order (ADP-006 section A)",
+    "Sequence is an immutable lazy pipeline over List, Dict values and Set with the vocabulary recorded in ADP-006 section B (map/filter/flat_map/find/any/all/count/reduce/take/skip/group_by/distinct/zip/chain/chunk/window/enumerate/collect), and take short-circuits so it stays bounded",
+    "Bytes is a mutable buffer whose read_* and write_* methods pack i8..f64 little-endian, with String.encode() and Bytes.decode() (recoverable Failure on invalid UTF-8) and deterministic faults on exact-index violations",
+    "Duration(seconds) accepts Int or Float and supports +, -, relational comparison, equality and total_seconds()",
+    "Task and Group are value-level handles registered as contract types and type tags without colliding with user structs of the same name, and the task module exposes spawn/sleep/all/race/timeout/cancel/group",
+    "Every new type, method and tag behaves identically on the Rust VM and the JavaScript runtime (differential suite and shim selftest green)",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets and cargo doc --workspace --no-deps are all green"
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-21T05:04:17.336584469Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "Set is a value with insertion order preserved, set-theoretic equality and the methods has/add/remove/clear/is_empty/len/to_list/lazy; the Set(list) conversion deduplicates in first-occurrence order (ADP-006 section A)",
+          "Sequence is an immutable lazy pipeline over List, Dict values and Set with the vocabulary recorded in ADP-006 section B (map/filter/flat_map/find/any/all/count/reduce/take/skip/group_by/distinct/zip/chain/chunk/window/enumerate/collect), and take short-circuits so it stays bounded",
+          "Bytes is a mutable buffer whose read_* and write_* methods pack i8..f64 little-endian, with String.encode() and Bytes.decode() (recoverable Failure on invalid UTF-8) and deterministic faults on exact-index violations",
+          "Duration(seconds) accepts Int or Float and supports +, -, relational comparison, equality and total_seconds()",
+          "Task and Group are value-level handles registered as contract types and type tags without colliding with user structs of the same name, and the task module exposes spawn/sleep/all/race/timeout/cancel/group",
+          "Every new type, method and tag behaves identically on the Rust VM and the JavaScript runtime (differential suite and shim selftest green)",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets and cargo doc --workspace --no-deps are all green"
+        ],
+        "evidence": [
+          {
+            "description": "cargo test -p aipo-stdlib --test wave3_types: 8 passed (Set mutation and deduplication, lazy Sequence chains, little-endian packing across i8..f64, String UTF-8 encode/decode, Duration arithmetic); cargo test -p aipo-vm --test wave3_pipeline: 10 passed over the Wave 3 type pipelines; cargo test -p aipo-js --test differential green; node crates/aipo-js/runtime/selftest.mjs all assertions passed",
+            "kind": "test"
+          },
+          {
+            "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo test --workspace --all-targets green, cargo doc --workspace --no-deps zero warnings; full output in docs/evidence/P02-G01-wave3-types-and-values.md",
+            "kind": "gate"
+          },
+          {
+            "description": "docs/evidence/P02-G01-wave3-types-and-values.md documents every type, method and conversion decision; ADP-006 sections A-D record the construction, vocabulary, packing and Duration choices; CHANGELOG.md and PROJECT_STATE.md updated",
+            "kind": "doc"
+          }
+        ],
+        "non_goals": [
+          "Async syntax, await do desugaring and the static async diagnostics (certified separately by P02-G03)",
+          "Parametric contracts such as Task[T] — outside V1 per ADP-006 section G",
+          "Date, TimeOfDay and DateTime — deferred to the Wave 6 timezone package per ADP-006 section D",
+          "Wall-clock timers: scheduler time is virtual and deterministic"
+        ]
+      },
+      "digest": "e30b7f6c8de51c4d4bb3d15116a81dbb01eb5a043684122a063e1834672b9f04",
+      "goal_id": "P02-G01",
+      "id": "AMD-002",
+      "reason": "Record objective acceptance criteria and explicit non-goals for the Wave 3 type and value layer before closing the goal",
+      "revision": 2
+    }
   ],
   "constraints": [],
   "context": {
@@ -8,7 +56,20 @@
     "max_delegation_depth": 1
   },
   "dependencies": [],
-  "evidence": [],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-stdlib --test wave3_types: 8 passed (Set mutation and deduplication, lazy Sequence chains, little-endian packing across i8..f64, String UTF-8 encode/decode, Duration arithmetic); cargo test -p aipo-vm --test wave3_pipeline: 10 passed over the Wave 3 type pipelines; cargo test -p aipo-js --test differential green; node crates/aipo-js/runtime/selftest.mjs all assertions passed",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo test --workspace --all-targets green, cargo doc --workspace --no-deps zero warnings; full output in docs/evidence/P02-G01-wave3-types-and-values.md",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/evidence/P02-G01-wave3-types-and-values.md documents every type, method and conversion decision; ADP-006 sections A-D record the construction, vocabulary, packing and Duration choices; CHANGELOG.md and PROJECT_STATE.md updated",
+      "kind": "doc"
+    }
+  ],
   "gates": {
     "build": "required",
     "documentation_impact": "required",
@@ -56,18 +117,37 @@
       "from": "VERIFYING",
       "reason": "",
       "to": "REVIEWING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-21T05:04:17.336584469Z",
+      "event": "amended",
+      "reason": "Record objective acceptance criteria and explicit non-goals for the Wave 3 type and value layer before closing the goal",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-21T05:04:17.356579413Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
     }
   ],
   "id": "P02-G01",
   "lock": {
-    "digest": "b0eb8533e6584718d0b8642a2e5ed5b3b1ead790a5af053b39770b0843bb8818",
-    "locked_at": "2026-09-20T04:04:22.968290737Z",
-    "revision": 1
+    "digest": "e30b7f6c8de51c4d4bb3d15116a81dbb01eb5a043684122a063e1834672b9f04",
+    "locked_at": "2026-09-21T05:04:17.336584469Z",
+    "revision": 2
   },
-  "non_goals": [],
+  "non_goals": [
+    "Async syntax, await do desugaring and the static async diagnostics (certified separately by P02-G03)",
+    "Parametric contracts such as Task[T] — outside V1 per ADP-006 section G",
+    "Date, TimeOfDay and DateTime — deferred to the Wave 6 timezone package per ADP-006 section D",
+    "Wall-clock timers: scheduler time is virtual and deterministic"
+  ],
   "objective": "Implementar os tipos/valores da Wave 3 (Set com ordem de inserção, Sequence lazy, packing de Bytes little-endian, Task como valor, Duration) com tags, prelude, display/igualdade e testes, sem mudar semântica existente.",
   "phase": "P02",
-  "revision": 1,
-  "state": "REVIEWING",
+  "revision": 2,
+  "state": "DONE",
   "title": "Wave 3 tipos/valores: Set, Sequence, Bytes packing, Task, Duration"
 }

@@ -72,8 +72,11 @@ directly or transitively).
 Canon calls `Task[T]` a built-in contract but the language has no generics
 (backlog: user generics out of V1). Decision: bare `Task` matches any Task
 value at runtime; `Task[X]` in contract position is a dedicated diagnostic
-pointing here. Awaiting a provably non-Task literal is a static contract
-violation; awaiting a non-Task at runtime is a contract fault.
+pointing here (`AIPO_SEM_PARAMETRIC_CONTRACT`). Awaiting a provably non-Task
+literal is a static contract violation (`AIPO_SEM_CONTRACT_VIOLATION_STATIC`,
+certified by `docs/conformance/diagnostics/29_sem_await_literal.aipo`);
+awaiting a non-Task at runtime is a contract fault
+(`AIPO_RT_TYPE_MISMATCH`).
 
 ## H. Race/deadlock hazards closed by construction
 

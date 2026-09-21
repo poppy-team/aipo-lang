@@ -305,12 +305,13 @@ impl Vm {
                             self.push(val)?;
                         } else {
                             let type_name = inst.borrow().type_name.clone();
-                            if let Some((entry_ip, total_arity)) = self
+                            if let Some((entry_ip, total_arity, is_async)) = self
                                 .struct_methods
                                 .get(&(type_name.clone(), field_name.clone()))
                             {
                                 let entry_ip = *entry_ip;
                                 let total_arity = *total_arity;
+                                let is_async = *is_async;
                                 self.push(Value::BoundMethod {
                                     name: format!("{type_name}.{field_name}"),
                                     arity: total_arity.saturating_sub(1),
@@ -318,6 +319,7 @@ impl Vm {
                                     kind: MethodKind::Function {
                                         entry_ip,
                                         total_arity,
+                                        is_async,
                                     },
                                 })?;
                             } else {
