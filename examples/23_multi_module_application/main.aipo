@@ -1,0 +1,8 @@
+# Three small modules cooperating: `main` imports names selectively from
+# `wallet` (mutable state) and `prices` (a lookup function).
+import wallet: total, spend
+import prices: price
+
+io.println(total)
+io.println(spend(total, price("book")))
+io.println(price("pen"))

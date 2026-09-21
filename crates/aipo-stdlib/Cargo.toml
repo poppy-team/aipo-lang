@@ -7,6 +7,7 @@ repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Canonical standard library and Prelude V1 for Aipo"
+publish = false
 
 [lints]
 workspace = true

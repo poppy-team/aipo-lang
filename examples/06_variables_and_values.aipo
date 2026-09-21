@@ -1,0 +1,10 @@
+# Variables hold values; `var` allows reassignment, `let` does not.
+let name = "ana"
+var score = 10
+score = score + 5
+io.println(name)
+io.println(score)
+io.println(none)
+io.println(true)
+io.println(2.5)
+io.println(Byte(65))

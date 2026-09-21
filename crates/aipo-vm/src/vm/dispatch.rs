@@ -22,7 +22,7 @@ impl Vm {
     /// Returns `VmError` on runtime fault or invalid instruction.
     pub fn step(&mut self, module: &BytecodeModule) -> Result<bool, VmError> {
         if self.ip >= module.code.len() || self.halted_with.is_some() {
-            return Ok(true);
+            return Ok(self.finish_current());
         }
 
         let opcode_byte = module.code[self.ip];
@@ -244,6 +244,11 @@ impl Vm {
                 let arg_count = self.read_u8(module)? as usize;
                 self.begin_call(module, arg_count)?;
             }
+            OpCode::Await => {
+                // No operands: rewinding resumes by re-executing this opcode.
+                let await_ip = self.ip - 1;
+                self.op_await(await_ip)?;
+            }
             OpCode::Return => {
                 let ret_val = if self.stack.is_empty() {
                     Value::None
@@ -253,15 +258,23 @@ impl Vm {
 
                 if let Some(frame) = self.frames.pop() {
                     self.upvalue_frames.pop();
+                    self.mutation_journal.truncate(frame.journal_start);
+                    if self.frames.is_empty()
+                        && self.current.is_some()
+                        && self.current != Some(super::task::MAIN_TASK)
+                    {
+                        self.stack.clear();
+                        return Ok(
+                            self.complete_current(super::task::TaskOutcome::from_value(ret_val))
+                        );
+                    }
                     self.stack.truncate(frame.result_base());
                     self.push(ret_val)?;
                     self.ip = frame.return_ip;
-                    // A returning frame releases its provisional mutations: the boundary
-                    // marker already verified or rolled them back.
-                    self.mutation_journal.truncate(frame.journal_start);
                 } else {
-                    self.push(ret_val)?;
-                    return Ok(true);
+                    // Top-level return completes the loaded task (or the entry
+                    // script): waiters and joins resolve from there.
+                    return Ok(self.complete_current(super::task::TaskOutcome::from_value(ret_val)));
                 }
             }
             OpCode::GetField => {
@@ -407,8 +420,11 @@ impl Vm {
                         self.push(Value::String(Rc::new(slice)))?;
                     }
                     (Value::Bytes(b), Value::Range { start, end }) => {
-                        let (from, to) = normalize_range(*start, *end, b.len());
-                        self.push(Value::Bytes(Rc::new(b[from..to].to_vec())))?;
+                        let bytes = b.borrow();
+                        let (from, to) = normalize_range(*start, *end, bytes.len());
+                        self.push(Value::Bytes(Rc::new(RefCell::new(
+                            bytes[from..to].to_vec(),
+                        ))))?;
                     }
                     (Value::Range { start, end }, Value::Int(i)) => {
                         // Positional access into a half-open range, which is what makes
@@ -426,12 +442,13 @@ impl Vm {
                         self.push(Value::Int(start + offset))?;
                     }
                     (Value::Bytes(b), Value::Int(i)) => {
-                        let len = b.len();
+                        let bytes = b.borrow();
+                        let len = bytes.len();
                         #[allow(clippy::cast_possible_wrap)]
                         let actual_idx = if *i < 0 { (len as i64) + *i } else { *i };
                         let idx_usize = usize::try_from(actual_idx)
                             .map_err(|_| VmFault::IndexOutOfRange { index: *i, len })?;
-                        let byte = *b
+                        let byte = *bytes
                             .get(idx_usize)
                             .ok_or(VmFault::IndexOutOfRange { index: *i, len })?;
                         self.push(Value::Byte(byte))?;
@@ -446,6 +463,21 @@ impl Vm {
                             return Err(VmFault::IndexOutOfRange { index: *i, len }.into());
                         }
                         let val = l.borrow()[idx_usize].clone();
+                        self.push(val)?;
+                    }
+                    (Value::Sequence(pipeline), Value::Int(i)) => {
+                        // Indexing drains (memoized), so `each` over a
+                        // sequence evaluates element callbacks exactly once.
+                        let items = self.sequence_items(module, pipeline)?;
+                        let len = items.len();
+                        #[allow(clippy::cast_possible_wrap)]
+                        let actual_idx = if *i < 0 { (len as i64) + *i } else { *i };
+                        let idx_usize = usize::try_from(actual_idx)
+                            .map_err(|_| VmFault::IndexOutOfRange { index: *i, len })?;
+                        let val = items
+                            .get(idx_usize)
+                            .cloned()
+                            .ok_or(VmFault::IndexOutOfRange { index: *i, len })?;
                         self.push(val)?;
                     }
                     (Value::Dict(d), _) => {
@@ -516,6 +548,28 @@ impl Vm {
                     }
                     (Value::Dict(d), _) => {
                         d.borrow_mut().upsert(index, new_val);
+                    }
+                    (Value::Bytes(b), Value::Int(i)) => {
+                        let len = b.borrow().len();
+                        #[allow(clippy::cast_possible_wrap)]
+                        let actual_idx = if *i < 0 { (len as i64) + *i } else { *i };
+                        let idx_usize = usize::try_from(actual_idx)
+                            .map_err(|_| VmFault::IndexOutOfRange { index: *i, len })?;
+                        if idx_usize >= len {
+                            return Err(VmFault::IndexOutOfRange { index: *i, len }.into());
+                        }
+                        let byte_val = match &new_val {
+                            Value::Byte(byte) => *byte,
+                            Value::Int(n) if (0..=255).contains(n) => *n as u8,
+                            other => {
+                                return Err(VmFault::TypeMismatch {
+                                    expected: "Byte or Int in 0..=255".to_string(),
+                                    actual: other.type_name().to_string(),
+                                }
+                                .into());
+                            }
+                        };
+                        b.borrow_mut()[idx_usize] = byte_val;
                     }
                     _ => {
                         return Err(VmFault::TypeMismatch {
@@ -757,7 +811,12 @@ impl Vm {
                         })?;
                 let entry_ip = info.entry_ip;
                 let arity = info.params;
-                self.push(Value::Function { entry_ip, arity })?;
+                let is_async = info.is_async;
+                self.push(Value::Function {
+                    entry_ip,
+                    arity,
+                    is_async,
+                })?;
             }
             OpCode::MakeClosure => {
                 let fn_idx = self.read_u16(module)? as usize;
@@ -772,6 +831,7 @@ impl Vm {
                         })?;
                 let entry_ip = info.entry_ip;
                 let arity = info.params;
+                let is_async = info.is_async;
                 let mut upvalues = Vec::with_capacity(upvalue_count);
                 for _ in 0..upvalue_count {
                     upvalues.push(Rc::new(RefCell::new(self.pop()?)));
@@ -781,6 +841,7 @@ impl Vm {
                     entry_ip,
                     arity,
                     upvalues,
+                    is_async,
                 })?;
             }
             OpCode::GetUpvalue => {
@@ -821,6 +882,14 @@ impl Vm {
                 let value = self.pop()?;
                 if value.is_failure() {
                     self.push(value)?;
+                } else if let Value::Sequence(pipeline) = &value {
+                    // Sequences drain (memoized) for `each` and friends;
+                    // the global `len()` stays strict and rejects them.
+                    let pipeline = Rc::clone(pipeline);
+                    let items = self.sequence_items(module, &pipeline)?;
+                    #[allow(clippy::cast_possible_wrap)]
+                    let len = Value::Int(check_safe_int(items.len() as i64)?);
+                    self.push(len)?;
                 } else {
                     let len = length_of(&value)?;
                     self.push(len)?;

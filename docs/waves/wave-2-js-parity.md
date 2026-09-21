@@ -1,6 +1,7 @@
 # Aipo — Wave 2 Plan: JavaScript Parity
 
-**Status:** normative (process level)
+**Status:** normative (process level) — slice W2-1 DONE, see
+`docs/evidence/P01-G01-js-parity-mvp-subset.md`; remaining slices open
 **Authority:** implements `docs/canon/Aipo — Waves, Vertical Slices, Gauntlet Loops …md` (Wave 2) and `docs/canon/Aipo — Fechamento Arquitetural 10 10…` (§10)
 **Scope:** Wave 2 objective, slices, exit gate
 **Update Triggers:** slice decomposition change, gate criteria change

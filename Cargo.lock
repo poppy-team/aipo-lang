@@ -11,6 +11,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "aipo-bench"
+version = "0.1.0"
+dependencies = [
+ "aipo-bytecode",
+ "aipo-formatter",
+ "aipo-hir",
+ "aipo-ir",
+ "aipo-js",
+ "aipo-lexer",
+ "aipo-sema",
+ "aipo-source",
+ "aipo-syntax",
+ "aipo-testkit",
+]
+
+[[package]]
 name = "aipo-bytecode"
 version = "0.1.0"
 dependencies = [
@@ -19,6 +35,7 @@ dependencies = [
  "aipo-ir",
  "aipo-source",
  "aipo-syntax",
+ "aipo-vm",
  "byteorder",
  "serde",
 ]
@@ -33,11 +50,13 @@ dependencies = [
  "aipo-hir",
  "aipo-ir",
  "aipo-js",
+ "aipo-lexer",
  "aipo-runtime",
  "aipo-sema",
  "aipo-source",
  "aipo-stdlib",
  "aipo-syntax",
+ "aipo-testkit",
  "aipo-vm",
 ]
 
@@ -46,6 +65,7 @@ name = "aipo-diagnostics"
 version = "0.1.0"
 dependencies = [
  "aipo-source",
+ "aipo-syntax",
  "serde",
  "serde_json",
 ]
@@ -96,6 +116,7 @@ dependencies = [
  "aipo-source",
  "aipo-stdlib",
  "aipo-syntax",
+ "aipo-testkit",
  "aipo-vm",
  "serde_json",
 ]
@@ -163,6 +184,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aipo-testkit"
+version = "0.1.0"
+dependencies = [
+ "aipo-ast",
+ "aipo-bytecode",
+ "aipo-diagnostics",
+ "aipo-hir",
+ "aipo-ir",
+ "aipo-js",
+ "aipo-lexer",
+ "aipo-runtime",
+ "aipo-sema",
+ "aipo-source",
+ "aipo-stdlib",
+ "aipo-syntax",
+ "aipo-vm",
+]
+
+[[package]]
 name = "aipo-vm"
 version = "0.1.0"
 dependencies = [
@@ -170,7 +210,9 @@ dependencies = [
  "aipo-diagnostics",
  "aipo-hir",
  "aipo-ir",
+ "aipo-runtime",
  "aipo-source",
+ "aipo-stdlib",
  "aipo-syntax",
  "byteorder",
  "serde",

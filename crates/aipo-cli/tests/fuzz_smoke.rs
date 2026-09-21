@@ -360,13 +360,17 @@ fn test_grammar_mutations_never_panic_static_paths() {
     let _ = std::fs::remove_file(&scratch);
 }
 
-/// Executes mutated seeds in a subprocess under `timeout` so a mutated infinite
-/// loop fails the test (exit 124) instead of hanging it. Asserts the VM never
-/// panics (a panic prints `thread 'main' panicked` on stderr) and the exit code
-/// is a contract code (0/1/2).
+/// Executes mutated seeds in a subprocess under the portable watchdog
+/// (`aipo_testkit::proc::run_bounded`) so a mutated infinite loop fails the
+/// test instead of hanging it — on every platform, with no external `timeout`
+/// command. Asserts the VM never panics (a panic prints `thread 'main'
+/// panicked` on stderr) and the exit code is a contract code (0/1/2).
 #[test]
 fn test_mutated_programs_never_panic_at_run() {
+    use std::time::Duration;
+
     let binary = env!("CARGO_BIN_EXE_aipo");
+    let dir = std::env::temp_dir();
     let seeds = seed_programs();
     let seed = 0x9E57_0000_u64 ^ 0xE1EC ^ 0x1234;
 
@@ -390,22 +394,26 @@ fn test_mutated_programs_never_panic_at_run() {
         }
         let source = String::from_utf8_lossy(&bytes).into_owned();
         std::fs::write(&scratch, &source).expect("scratch file is writable");
-        let output = std::process::Command::new("timeout")
-            .arg("10")
-            .arg(binary)
-            .arg("run")
-            .arg(&scratch)
-            .output()
-            .expect("timeout runs the binary");
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            !stderr.contains("panicked"),
-            "VM panic at run (seed {seed}, iteration {iteration}):\n{stderr}\ninput:\n{source}"
+        let output = aipo_testkit::proc::run_bounded(
+            binary,
+            &["run", &scratch.to_string_lossy()],
+            &dir,
+            Duration::from_secs(10),
         );
         assert!(
-            output.status.success() || output.status.code().is_some_and(|c| c <= 2),
-            "seed {seed}, iteration {iteration} exited with {:?}:\n{stderr}\ninput:\n{source}",
-            output.status.code()
+            !output.timed_out,
+            "mutated program hung (seed {seed}, iteration {iteration}):\ninput:\n{source}"
+        );
+        assert!(
+            !output.stderr.contains("panicked"),
+            "VM panic at run (seed {seed}, iteration {iteration}):\n{}\ninput:\n{source}",
+            output.stderr
+        );
+        assert!(
+            output.code.is_some_and(|c| c <= 2),
+            "seed {seed}, iteration {iteration} exited with {:?}:\n{}\ninput:\n{source}",
+            output.code,
+            output.stderr
         );
     }
 

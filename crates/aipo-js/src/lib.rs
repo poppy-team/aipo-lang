@@ -106,6 +106,7 @@ fn inst_to_json(inst: &CoreInst) -> Json {
             json!({"op":"Unary","op2": serde_json::to_value(op).unwrap_or(Json::Null)})
         }
         CoreInst::Call { arg_count, .. } => json!({"op":"Call","argc": arg_count}),
+        CoreInst::Await(_) => json!({"op":"Await"}),
         CoreInst::Return { has_value, .. } => json!({"op":"Return","has": has_value}),
         CoreInst::Jump(t, _) => json!({"op":"Jump","t": target_usize(*t)}),
         CoreInst::JumpIfFalse(t, _) => json!({"op":"JumpIfFalse","t": target_usize(*t)}),
@@ -231,6 +232,7 @@ mod tests {
             functions: vec![],
             top_level: CoreFunction {
                 name: "__top_level__".to_string(),
+                is_async: false,
                 params: vec![],
                 locals: vec![],
                 upvalues: vec![],

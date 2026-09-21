@@ -1,0 +1,1 @@
+{"code":"AIPO_SEM_UNKNOWN_NAME","severity":"error","message":"unknown identifier 'missing_variable'","primary_span":{"file":"../../docs/conformance/diagnostics/04_sem_unknown_name.aipo","start":11,"end":27,"line":1,"column":12},"notes":[],"suggestions":[]}

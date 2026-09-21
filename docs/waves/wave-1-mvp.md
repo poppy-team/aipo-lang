@@ -1,6 +1,7 @@
 # Aipo — Wave 1 Plan: MVP executável
 
-**Status:** normative (process level)
+**Status:** closed — exit gate met, see `docs/evidence/P00-G16-wave-1-exit-review.md`
+(historical plan; the exit criteria below are the certified record, not open work)
 **Authority:** implements `docs/canon/Aipo — Waves, Vertical Slices, Gauntlet Loops …md`
 **Scope:** Wave 1 objective, slices, exit gate
 **Update Triggers:** slice decomposition change, gate criteria change

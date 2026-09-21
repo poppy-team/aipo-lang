@@ -161,6 +161,10 @@ pub struct IrBuilder {
     /// Canon evaluates the hook at the end of every construction, so the call site needs to
     /// know the type has one before it emits the check.
     invariant_hooks: HashSet<String>,
+    /// Names of declared `async fn` functions (plain and `Type.method`): calling
+    /// one produces a `Task`. Collected before any body is lowered so forward
+    /// references resolve, backing the known-Task analysis.
+    async_fns: HashSet<String>,
 }
 
 /// Parameter layout of a declared function.
@@ -218,6 +222,9 @@ impl IrBuilder {
         // hook no matter where in the file it is declared.
         for item in &program.items {
             if let HirItem::Fn(f) = item {
+                if f.is_async {
+                    self.async_fns.insert(f.name.clone());
+                }
                 self.signatures.insert(
                     f.name.clone(),
                     DeclaredSignature {
@@ -244,6 +251,10 @@ impl IrBuilder {
             if let HirItem::Impl(imp) = item {
                 if imp.invariant.is_some() {
                     self.invariant_hooks.insert(imp.target.clone());
+                }
+                for method in imp.methods.iter().filter(|m| m.is_async) {
+                    self.async_fns
+                        .insert(format!("{}.{}", imp.target, method.name));
                 }
                 if let Some(init) = &imp.init {
                     // Canon's construction surface is `Type{...}`: the implicit `self` receiver
@@ -322,6 +333,7 @@ impl IrBuilder {
 
         let top_level = CoreFunction {
             name: "__top_level__".to_string(),
+            is_async: false,
             params: top_ctx.params,
             locals: top_ctx.locals,
             upvalues: top_ctx.upvalues,
@@ -362,6 +374,7 @@ impl IrBuilder {
 
         CoreFunction {
             name,
+            is_async: f.is_async,
             params: ctx.params,
             locals: ctx.locals,
             upvalues: ctx.upvalues,
@@ -405,14 +418,7 @@ impl IrBuilder {
         out: &mut Vec<CoreInst>,
     ) {
         let receiver = self.hidden_local("init_self");
-        let receiver_name = self
-            .fn_stack
-            .last()
-            .expect("a function context is always active")
-            .locals
-            .get(receiver)
-            .cloned()
-            .expect("the hidden receiver local was just declared");
+        let receiver_name = self.hidden_name(receiver);
 
         out.push(CoreInst::Store(receiver_name.clone(), span));
         out.push(CoreInst::Load(receiver_name.clone(), span));
@@ -465,14 +471,7 @@ impl IrBuilder {
         out: &mut Vec<CoreInst>,
     ) {
         let holder = self.hidden_local("invariant_self");
-        let holder_name = self
-            .fn_stack
-            .last()
-            .expect("a function context is always active")
-            .locals
-            .get(holder)
-            .cloned()
-            .expect("the hidden invariant local was just declared");
+        let holder_name = self.hidden_name(holder);
 
         out.push(CoreInst::Store(holder_name.clone(), span));
         out.push(CoreInst::Load(holder_name.clone(), span));
@@ -743,6 +742,7 @@ impl IrBuilder {
 
         self.functions.push(CoreFunction {
             name: name.clone(),
+            is_async: f.is_async,
             params: ctx.params,
             locals: ctx.locals,
             upvalues: ctx.upvalues,
@@ -831,6 +831,7 @@ impl IrBuilder {
                 // `FillSelfCapture` rewrites with the newly created closure.
                 let self_capture = f.name.clone();
                 let fn_expr = HirFunctionExpr {
+                    is_async: f.is_async,
                     params: f.params.to_vec(),
                     return_type: f.return_type.clone(),
                     body: f.body.clone(),
@@ -1293,11 +1294,94 @@ impl IrBuilder {
                 let end_target = out.len() as isize;
                 out[jump_end_idx] = CoreInst::Jump(end_target, s.span);
             }
+            HirStmt::AwaitDo(body, span) => {
+                for stmt in &Self::desugar_await_do(body, &self.async_fns) {
+                    self.build_stmt(stmt, out);
+                }
+                let _ = span;
+            }
             HirStmt::Expr(expr) => {
                 self.build_value(expr, out);
                 out.push(CoreInst::Pop(expr.span()));
             }
         }
+    }
+
+    /// Desugars `await do ... end` into explicit awaits (canon: sugar for
+    /// sequential awaits, never a second async machine). Statements whose whole
+    /// value is a known `Task` are awaited; `if`/`each`/`match` bodies recurse;
+    /// function, lambda and trailing-callback bodies are never entered.
+    fn desugar_await_do(body: &[HirStmt], async_fns: &HashSet<String>) -> Vec<HirStmt> {
+        fn is_task_producing(expr: &HirExpr, async_fns: &HashSet<String>) -> bool {
+            match expr {
+                HirExpr::Call(callee, _, _) => match &**callee {
+                    HirExpr::Identifier(name, _) => async_fns.contains(name),
+                    HirExpr::Dot(target, member, _) => {
+                        matches!(&**target, HirExpr::Identifier(name, _) if name == "task")
+                            && matches!(member.as_str(), "spawn" | "all" | "race")
+                    }
+                    _ => false,
+                },
+                _ => false,
+            }
+        }
+        fn await_expr(expr: HirExpr) -> HirExpr {
+            let span = expr.span();
+            HirExpr::Await(Box::new(expr), span)
+        }
+        fn desugar_block(body: &[HirStmt], async_fns: &HashSet<String>) -> Vec<HirStmt> {
+            body.iter()
+                .map(|stmt| desugar_stmt(stmt, async_fns))
+                .collect()
+        }
+        fn desugar_stmt(stmt: &HirStmt, async_fns: &HashSet<String>) -> HirStmt {
+            match stmt {
+                HirStmt::Let(name, expr, span) if is_task_producing(expr, async_fns) => {
+                    HirStmt::Let(name.clone(), await_expr(expr.clone()), *span)
+                }
+                HirStmt::Var(name, expr, span) if is_task_producing(expr, async_fns) => {
+                    HirStmt::Var(name.clone(), await_expr(expr.clone()), *span)
+                }
+                HirStmt::Expr(expr) if is_task_producing(expr, async_fns) => {
+                    HirStmt::Expr(await_expr(expr.clone()))
+                }
+                HirStmt::If(s) => HirStmt::If(HirIfStmt {
+                    condition: s.condition.clone(),
+                    then_branch: desugar_block(&s.then_branch, async_fns),
+                    elif_branches: s
+                        .elif_branches
+                        .iter()
+                        .map(|(cond, body)| (cond.clone(), desugar_block(body, async_fns)))
+                        .collect(),
+                    else_branch: s
+                        .else_branch
+                        .as_ref()
+                        .map(|body| desugar_block(body, async_fns)),
+                    span: s.span,
+                }),
+                HirStmt::Match(s) => HirStmt::Match(HirMatchStmt {
+                    target: s.target.clone(),
+                    when_arms: s
+                        .when_arms
+                        .iter()
+                        .map(|(patterns, body)| (patterns.clone(), desugar_block(body, async_fns)))
+                        .collect(),
+                    else_arm: s
+                        .else_arm
+                        .as_ref()
+                        .map(|body| desugar_block(body, async_fns)),
+                    span: s.span,
+                }),
+                HirStmt::Each(vars, iter, body, span) => HirStmt::Each(
+                    vars.clone(),
+                    iter.clone(),
+                    desugar_block(body, async_fns),
+                    *span,
+                ),
+                other => other.clone(),
+            }
+        }
+        desugar_block(body, async_fns)
     }
 
     fn build_block(&mut self, stmts: &[HirStmt], out: &mut Vec<CoreInst>) {
@@ -1575,6 +1659,10 @@ impl IrBuilder {
                 self.build_expr(right, out);
                 out.push(CoreInst::Binary(BinaryOp::OrElse, *span));
             }
+            HirExpr::Await(inner, span) => {
+                self.build_expr(inner, out);
+                out.push(CoreInst::Await(*span));
+            }
             HirExpr::Fn(f) => {
                 let captures = self.enclosing_captures(f);
                 let name = self.build_closure(f, &captures, None);
@@ -1667,6 +1755,11 @@ fn collect_free_stmt(stmt: &HirStmt, seen: &mut HashSet<String>, out: &mut Vec<S
             }
         }
         HirStmt::Fail(expr, _) | HirStmt::Expr(expr) => collect_free_expr(expr, seen, out),
+        HirStmt::AwaitDo(body, _) => {
+            for stmt in body {
+                collect_free_stmt(stmt, seen, out);
+            }
+        }
         HirStmt::FnDecl(_) => {
             // A nested local function declares its own name; its body is collected when the
             // closure itself is built, not as free references of the enclosing frame.
@@ -1699,6 +1792,7 @@ fn collect_free_expr(expr: &HirExpr, seen: &mut HashSet<String>, out: &mut Vec<S
             collect_free_expr(l, seen, out);
             collect_free_expr(r, seen, out);
         }
+        HirExpr::Await(inner, _) => collect_free_expr(inner, seen, out),
         HirExpr::Call(callee, args, _) => {
             collect_free_expr(callee, seen, out);
             for arg in args {

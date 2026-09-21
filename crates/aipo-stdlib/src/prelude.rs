@@ -42,20 +42,23 @@ pub fn native_len(args: &[Value]) -> Result<Value, VmFault> {
         }
         Value::Bytes(b) => {
             #[allow(clippy::cast_possible_wrap)]
-            let count = b.len() as i64;
+            let count = b.borrow().len() as i64;
+            check_safe_int(count).map(Value::Int)
+        }
+        Value::Set(s) => {
+            #[allow(clippy::cast_possible_wrap)]
+            let count = s.borrow().len() as i64;
             check_safe_int(count).map(Value::Int)
         }
         Value::Failure(f) => Ok(Value::Failure(Rc::clone(f))),
         other => Err(VmFault::TypeMismatch {
-            expected: "String, List, Dict, or Bytes".to_string(),
+            expected: "String, List, Dict, Bytes, or Set".to_string(),
             actual: other.type_name().to_string(),
         }),
     }
 }
 
-/// Creates a shallow copy of a collection or struct.
-///
-/// Immutable scalars are returned unchanged.
+/// Shallow copies a collection or struct.
 ///
 /// # Errors
 /// Returns `VmFault::TypeMismatch` if argument count is not 1.
@@ -76,6 +79,14 @@ pub fn native_copy(args: &[Value]) -> Result<Value, VmFault> {
             let cloned = d.borrow().clone();
             Ok(Value::Dict(Rc::new(RefCell::new(cloned))))
         }
+        Value::Bytes(b) => {
+            let cloned = b.borrow().clone();
+            Ok(Value::Bytes(Rc::new(RefCell::new(cloned))))
+        }
+        Value::Set(s) => {
+            let cloned = s.borrow().clone();
+            Ok(Value::Set(Rc::new(RefCell::new(cloned))))
+        }
         Value::Struct(s) => {
             let inner = s.borrow();
             let new_inst = StructInstance {
@@ -92,7 +103,7 @@ pub fn native_copy(args: &[Value]) -> Result<Value, VmFault> {
 
 /// Checks identity comparison between two values.
 ///
-/// Reference types (`List`, `Dict`, `Struct`) compare identity (`Rc::ptr_eq`).
+/// Reference types (`List`, `Dict`, `Struct`, `Bytes`, `Set`) compare identity (`Rc::ptr_eq`).
 /// Primitives compare by equality.
 ///
 /// # Errors
@@ -111,6 +122,8 @@ pub fn native_same(args: &[Value]) -> Result<Value, VmFault> {
     let same = match (a, b) {
         (Value::List(l1), Value::List(l2)) => Rc::ptr_eq(l1, l2),
         (Value::Dict(d1), Value::Dict(d2)) => Rc::ptr_eq(d1, d2),
+        (Value::Bytes(b1), Value::Bytes(b2)) => Rc::ptr_eq(b1, b2),
+        (Value::Set(s1), Value::Set(s2)) => Rc::ptr_eq(s1, s2),
         (Value::Struct(s1), Value::Struct(s2)) => Rc::ptr_eq(s1, s2),
         (Value::String(s1), Value::String(s2)) => Rc::ptr_eq(s1, s2) || s1 == s2,
         (v1, v2) => v1 == v2,

@@ -23,7 +23,7 @@ pub enum HirItem {
     /// Struct declaration.
     Struct(HirStructDecl),
     /// Impl block.
-    Impl(HirImplBlock),
+    Impl(Box<HirImplBlock>),
     /// Interface declaration.
     Interface(HirInterfaceDecl),
     /// Interface satisfaction.
@@ -39,6 +39,8 @@ pub enum HirItem {
 pub struct HirFunctionDecl {
     /// Function name.
     pub name: String,
+    /// `true` for `async fn`: calling returns a `Task` instead of running.
+    pub is_async: bool,
     /// Parameters.
     pub params: Vec<HirParam>,
     /// Optional return type contract.
@@ -193,6 +195,8 @@ pub enum HirStmt {
     /// visible inside the function's own body for recursion, and captures enclosing lexical
     /// bindings automatically.
     FnDecl(HirFunctionDecl),
+    /// Sequential-await block: `await do ... end` (sugar, desugared before execution).
+    AwaitDo(Vec<HirStmt>, SourceSpan),
     /// Expression statement.
     Expr(HirExpr),
 }
@@ -269,6 +273,8 @@ pub enum HirExpr {
     If(Box<HirExpr>, Box<HirExpr>, Box<HirExpr>, SourceSpan),
     /// Failure fallback: `expr or_else fallback`.
     OrElse(Box<HirExpr>, Box<HirExpr>, SourceSpan),
+    /// Suspension point: `await task` drives a `Task` to its value.
+    Await(Box<HirExpr>, SourceSpan),
 }
 
 /// Argument in an HIR call.
@@ -285,6 +291,8 @@ pub struct HirCallArg {
 /// HIR anonymous function expression.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HirFunctionExpr {
+    /// `true` for `async fn(...)`: calling returns a `Task`.
+    pub is_async: bool,
     /// Parameters.
     pub params: Vec<HirParam>,
     /// Optional return contract.
@@ -312,7 +320,8 @@ impl HirExpr {
             | HirExpr::Dict(_, span)
             | HirExpr::Construct(_, _, span)
             | HirExpr::If(_, _, _, span)
-            | HirExpr::OrElse(_, _, span) => *span,
+            | HirExpr::OrElse(_, _, span)
+            | HirExpr::Await(_, span) => *span,
             HirExpr::Fn(f) => f.span,
         }
     }

@@ -1,0 +1,23 @@
+# Interfaces are structural: a value satisfies one by exposing the declared
+# operations, and `satisfy` states the promise explicitly.
+interface Greeter
+    fn greet(self)
+end
+
+struct Robot
+    name
+end
+
+impl Robot
+    fn greet(self)
+        return "beep " + self.name
+    end
+end
+
+satisfy Robot: Greeter
+
+fn welcome(item: Greeter)
+    return item.greet()
+end
+
+io.println(welcome(Robot{name = "r2"}))

@@ -1,0 +1,2 @@
+error: [AIPO_RT_FAILURE_UNCAUGHT] runtime failure [AIPO_RT_FAILURE_UNCAUGHT]: uncaught failure: invalid integer text: "not a number"
+  = note: while running ../../docs/conformance/diagnostics/10_runtime_failure_uncaught.aipo

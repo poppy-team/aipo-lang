@@ -2,9 +2,9 @@
 
 - Project: **aipo**
 - Prumo: **0.6.0**
-- Current phase: **P01 — JavaScript parity (Wave 2)**
-- Active goal: **none — `P01-G01` DONE, next Wave 2 slice (performance/bench or `Bytes` packing) to be planned**
-- Last completed goal: **P01-G01 — JS parity for the full MVP subset (DONE)**
+- Current phase: **P02 — Wave 3 (Async & Expanded Types)**
+- Active goal: **P02-G02 — Wave 3 stdlib: combinadores assíncronos e operações de task (REVIEWING)**
+- Last completed goal: **P02-G01 — Wave 3 tipos/valores: Set, Sequence, Bytes packing, Task, Duration (REVIEWING)**
 - Completed slices:
   - **S1 (P00-G01)**: Workspace, `aipo-source`, `aipo-diagnostics`
   - **S2 (P00-G02)**: Lexer Core (`aipo-lexer`)
@@ -23,15 +23,15 @@
   - **Static contracts & interface conformance (P00-G15)**: pre-execution `AIPO_SEM_CONTRACT_VIOLATION_STATIC`, runtime structural conformance for interface contracts (caller-visible arity, struct named in the fault), NFC at the `String` construction boundaries, and the closed ADP-001 decisions on `clamp` bounds and tolerant slices
   - **Wave 1 exit review (P00-G16)**: module-scope bindings visible inside `fn`/`impl` bodies and canonical local `fn` declarations (self-recursion via `FillSelfCapture`, shared `var` capture), certified by `programs/19_local_functions` and `programs/20_module_scope`; exit criteria audited against `docs/waves/wave-1-mvp.md`, gauntlet 100% (13/13, 11/11, 3/3, 146/146), non-delivery explicit (`Bytes` packing, `aipo-js`, `Set`/`Sequence`, LSP/REPL) — see `docs/evidence/P00-G16-wave-1-exit-review.md`
   - **JS parity MVP (P01-G01)**: `aipo-js` emitter + versioned shim + source maps, `aipo build`, differential suite green (20/20 programs, 19/19 diagnostics, 3 module cases, 152 workspace tests) — see `docs/evidence/P01-G01-js-parity-mvp-subset.md`
+  - **Deep quality gauntlet (P01-G02)**: performance baseline, fuzzing, property suites, supply-chain policy (`deny.toml`), and security boundaries — see `docs/evidence/P01-G02-deep-quality-gauntlet.md`
+  - **Wave 3 tipos e valores (P02-G01)**: Set com ordem de inserção, Sequence lazy, packing de Bytes little-endian (`read_*`/`write_*`), Duration e Task/Group handles com paridade diferencial VM↔JS e conformance — ver `docs/evidence/P02-G01-wave3-types-and-values.md`
+  - **Wave 3 combinadores assíncronos e scheduler (P02-G02)**: Scheduler cooperativo determinístico com tempo virtual, combinadores assíncronos (`task.spawn`, `task.sleep`, `task.all`, `task.race`, `task.timeout`, `task.cancel`, `task.group`), `await` opcode e paridade diferencial total VM↔JS — ver `docs/evidence/P02-G02-wave3-stdlib-async.md`
 - Context methodology: **Lean Progressive Context (LPC)**
-- Last updated: `2026-09-19T00:00:00Z`
+- Last updated: `2026-09-20T20:00:00Z`
 
 ## Next action
 
-Wave 1 is closed. Wave 2 slice W2-1 is DONE (`docs/evidence/P01-G01-js-parity-mvp-subset.md`).
-Remaining Wave 2 work (W2-2 diagnostics closure is already covered by the build suite;
-next candidates are JS performance baselines or `Bytes` packing APIs) needs a new goal —
-do not extend `P01-G01` silently.
+Transition `P02-G02` to `DONE` upon review and proceed to `P02-G03` (Wave 3 infra assíncrona: refinamento de sintaxe `async fn`/`await do`, diagnósticos estáticos e testes adicionais).
 
 ## Recovery order
 

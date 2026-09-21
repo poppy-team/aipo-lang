@@ -1,0 +1,1 @@
+{"code":"AIPO_PARSE_UNEXPECTED_TOKEN","severity":"error","message":"expected 'end' to close function declaration","primary_span":{"file":"../../docs/conformance/diagnostics/01_parse_missing_end.aipo","start":36,"end":36,"line":3,"column":1},"notes":[],"suggestions":[]}

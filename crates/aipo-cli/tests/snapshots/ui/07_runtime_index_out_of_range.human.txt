@@ -1,0 +1,2 @@
+error: [AIPO_RT_INDEX_OUT_OF_RANGE] runtime fault [AIPO_RT_INDEX_OUT_OF_RANGE]: index 10 out of range (length 3)
+  = note: while running ../../docs/conformance/diagnostics/07_runtime_index_out_of_range.aipo

@@ -1,0 +1,6 @@
+beep r2
+beep r2
+nobody to greet
+balance: 6
+refused: invariant() of Account did not hold after mutation
+balance after rollback: 6

@@ -37,6 +37,8 @@ pub enum DiagnosticCode {
     AIPO_PARSE_MISSING_END,
     /// Assignment target is not a valid mutable path.
     AIPO_PARSE_INVALID_TARGET,
+    /// Nesting exceeds the parser recursion bound (robustness limit, not syntax).
+    AIPO_PARSE_NESTING_TOO_DEEP,
 
     // --- Semantic (AIPO_SEM_*) ---
     /// Identifier could not be resolved in the current lexical scope.
@@ -67,6 +69,14 @@ pub enum DiagnosticCode {
     AIPO_SEM_EXPORT_UNKNOWN,
     /// Statically provable contract violation at call site.
     AIPO_SEM_CONTRACT_VIOLATION_STATIC,
+    /// Explicit `await` outside statement, initializer or return position.
+    AIPO_SEM_AWAIT_IN_SUBEXPRESSION,
+    /// Known-`Task` value discarded without await or group combinator.
+    AIPO_SEM_FORGOTTEN_TASK,
+    /// Redundant nested `await do` block.
+    AIPO_SEM_NESTED_AWAIT_DO,
+    /// Parametric `Name[Args]` contract before parametric contracts exist.
+    AIPO_SEM_PARAMETRIC_CONTRACT,
 
     // --- Runtime fault (AIPO_RT_*) ---
     /// Integer arithmetic exceeded range ±(2^53 - 1).
@@ -85,6 +95,13 @@ pub enum DiagnosticCode {
     AIPO_RT_MUTATION_DURING_ITERATION,
     /// Runtime type mismatch or contract boundary violation.
     AIPO_RT_TYPE_MISMATCH,
+    /// Cancelled task driven or awaited.
+    AIPO_RT_CANCELLED,
+    /// Task awaiting itself, directly or transitively.
+    AIPO_RT_AWAIT_CYCLE,
+    /// Blocking operation (`await`, `sleep`, join) inside a synchronous
+    /// callback driven by `invoke`: the host Rust stack cannot suspend.
+    AIPO_RT_AWAIT_IN_CALLBACK,
 
     // --- Runtime failure (AIPO_RT_FAILURE_*) ---
     /// Uncaught failure value reached top level.
@@ -106,6 +123,7 @@ impl DiagnosticCode {
             Self::AIPO_PARSE_UNEXPECTED_TOKEN => "AIPO_PARSE_UNEXPECTED_TOKEN",
             Self::AIPO_PARSE_MISSING_END => "AIPO_PARSE_MISSING_END",
             Self::AIPO_PARSE_INVALID_TARGET => "AIPO_PARSE_INVALID_TARGET",
+            Self::AIPO_PARSE_NESTING_TOO_DEEP => "AIPO_PARSE_NESTING_TOO_DEEP",
             Self::AIPO_SEM_UNKNOWN_NAME => "AIPO_SEM_UNKNOWN_NAME",
             Self::AIPO_SEM_REDECLARED_IN_SCOPE => "AIPO_SEM_REDECLARED_IN_SCOPE",
             Self::AIPO_SEM_READONLY_MUTATION => "AIPO_SEM_READONLY_MUTATION",
@@ -120,6 +138,10 @@ impl DiagnosticCode {
             Self::AIPO_SEM_UNKNOWN_MODULE => "AIPO_SEM_UNKNOWN_MODULE",
             Self::AIPO_SEM_EXPORT_UNKNOWN => "AIPO_SEM_EXPORT_UNKNOWN",
             Self::AIPO_SEM_CONTRACT_VIOLATION_STATIC => "AIPO_SEM_CONTRACT_VIOLATION_STATIC",
+            Self::AIPO_SEM_AWAIT_IN_SUBEXPRESSION => "AIPO_SEM_AWAIT_IN_SUBEXPRESSION",
+            Self::AIPO_SEM_FORGOTTEN_TASK => "AIPO_SEM_FORGOTTEN_TASK",
+            Self::AIPO_SEM_NESTED_AWAIT_DO => "AIPO_SEM_NESTED_AWAIT_DO",
+            Self::AIPO_SEM_PARAMETRIC_CONTRACT => "AIPO_SEM_PARAMETRIC_CONTRACT",
             Self::AIPO_RT_OVERFLOW => "AIPO_RT_OVERFLOW",
             Self::AIPO_RT_NON_FINITE_FLOAT => "AIPO_RT_NON_FINITE_FLOAT",
             Self::AIPO_RT_DIV_ZERO => "AIPO_RT_DIV_ZERO",
@@ -128,6 +150,9 @@ impl DiagnosticCode {
             Self::AIPO_RT_NOT_CALLABLE => "AIPO_RT_NOT_CALLABLE",
             Self::AIPO_RT_MUTATION_DURING_ITERATION => "AIPO_RT_MUTATION_DURING_ITERATION",
             Self::AIPO_RT_TYPE_MISMATCH => "AIPO_RT_TYPE_MISMATCH",
+            Self::AIPO_RT_CANCELLED => "AIPO_RT_CANCELLED",
+            Self::AIPO_RT_AWAIT_CYCLE => "AIPO_RT_AWAIT_CYCLE",
+            Self::AIPO_RT_AWAIT_IN_CALLBACK => "AIPO_RT_AWAIT_IN_CALLBACK",
             Self::AIPO_RT_FAILURE_UNCAUGHT => "AIPO_RT_FAILURE_UNCAUGHT",
         }
     }
@@ -146,6 +171,7 @@ impl DiagnosticCode {
             | Self::AIPO_PARSE_UNEXPECTED_TOKEN
             | Self::AIPO_PARSE_MISSING_END
             | Self::AIPO_PARSE_INVALID_TARGET
+            | Self::AIPO_PARSE_NESTING_TOO_DEEP
             | Self::AIPO_SEM_UNKNOWN_NAME
             | Self::AIPO_SEM_REDECLARED_IN_SCOPE
             | Self::AIPO_SEM_READONLY_MUTATION
@@ -160,6 +186,10 @@ impl DiagnosticCode {
             | Self::AIPO_SEM_UNKNOWN_MODULE
             | Self::AIPO_SEM_EXPORT_UNKNOWN
             | Self::AIPO_SEM_CONTRACT_VIOLATION_STATIC
+            | Self::AIPO_SEM_AWAIT_IN_SUBEXPRESSION
+            | Self::AIPO_SEM_FORGOTTEN_TASK
+            | Self::AIPO_SEM_NESTED_AWAIT_DO
+            | Self::AIPO_SEM_PARAMETRIC_CONTRACT
             | Self::AIPO_RT_FAILURE_UNCAUGHT => Severity::Error,
 
             Self::AIPO_RT_OVERFLOW
@@ -169,7 +199,10 @@ impl DiagnosticCode {
             | Self::AIPO_RT_KEY_NOT_FOUND
             | Self::AIPO_RT_NOT_CALLABLE
             | Self::AIPO_RT_MUTATION_DURING_ITERATION
-            | Self::AIPO_RT_TYPE_MISMATCH => Severity::Fault,
+            | Self::AIPO_RT_TYPE_MISMATCH
+            | Self::AIPO_RT_CANCELLED
+            | Self::AIPO_RT_AWAIT_CYCLE
+            | Self::AIPO_RT_AWAIT_IN_CALLBACK => Severity::Fault,
         }
     }
 }

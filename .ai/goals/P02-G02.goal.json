@@ -1,0 +1,73 @@
+{
+  "acceptance": [
+    "Replace this placeholder with objective acceptance criteria."
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-20T22:29:22.867149718Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-20T22:29:25.984272663Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-20T22:29:26.002707525Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-20T22:29:26.020088577Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-20T23:05:24.397314925Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-20T23:05:31.8909508Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    }
+  ],
+  "id": "P02-G02",
+  "lock": {
+    "digest": "b8441609b623858c1a2d6d0bf1781e4020529ff4d0629d56a7a21a8076a0d3a3",
+    "locked_at": "2026-09-20T22:29:26.00269959Z",
+    "revision": 1
+  },
+  "non_goals": [],
+  "objective": "Implementar e certificar combinadores assíncronos (task.spawn, task.sleep, task.all, task.race, task.timeout, task.cancel, task.group) com tempo virtual determinístico e paridade VM↔JS.",
+  "phase": "P02",
+  "revision": 1,
+  "state": "REVIEWING",
+  "title": "Wave 3 stdlib: combinadores assíncronos e operações de task"
+}

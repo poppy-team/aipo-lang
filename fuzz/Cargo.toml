@@ -1,0 +1,50 @@
+[package]
+name = "aipo-source-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.aipo-source]
+path = "../crates/aipo-source"
+
+[dependencies.aipo-lexer]
+path = "../crates/aipo-lexer"
+[dependencies.aipo-diagnostics]
+path = "../crates/aipo-diagnostics"
+[dependencies.aipo-syntax]
+path = "../crates/aipo-syntax"
+[dependencies.aipo-hir]
+path = "../crates/aipo-hir"
+[dependencies.aipo-sema]
+path = "../crates/aipo-sema"
+[dependencies.aipo-ir]
+path = "../crates/aipo-ir"
+[dependencies.aipo-formatter]
+path = "../crates/aipo-formatter"
+
+[[bin]]
+name = "lexer_tokens"
+path = "fuzz_targets/lexer_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frontend_check"
+path = "fuzz_targets/frontend_check.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "formatter"
+path = "fuzz_targets/formatter.rs"
+test = false
+doc = false
+bench = false

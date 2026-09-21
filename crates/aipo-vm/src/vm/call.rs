@@ -42,36 +42,85 @@ impl Vm {
         }
 
         match callee {
-            Value::Function { entry_ip, arity } => {
+            Value::Function {
+                entry_ip,
+                arity,
+                is_async,
+            } => {
                 self.check_arity(arg_count, arity)?;
+                if is_async {
+                    // Calling an async function spawns it eagerly and yields
+                    // its `Task`; awaiting stays explicit (`await`, joins).
+                    let callee = Value::Function {
+                        entry_ip,
+                        arity,
+                        is_async,
+                    };
+                    let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
+                    let id = self.spawn_task(callee, args, None)?;
+                    self.stack.truncate(callee_idx);
+                    self.push(Value::Task(id))?;
+                    return Ok(());
+                }
                 let journal_start = self.mutation_journal.len();
-                self.frames.push(CallFrame::new(
-                    self.ip,
-                    callee_idx + 1,
-                    arg_count,
+                Self::push_plain_frame(
+                    &mut self.frames,
+                    &mut self.upvalue_frames,
                     journal_start,
-                ));
-                self.upvalue_frames.push(None);
+                    self.ip,
+                    callee_idx,
+                    arg_count,
+                    None,
+                );
                 self.ip = entry_ip;
             }
             Value::Closure {
                 entry_ip,
                 arity,
                 upvalues,
+                is_async,
             } => {
                 self.check_arity(arg_count, arity)?;
+                if is_async {
+                    let callee = Value::Closure {
+                        entry_ip,
+                        arity,
+                        upvalues,
+                        is_async,
+                    };
+                    let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
+                    let id = self.spawn_task(callee, args, None)?;
+                    self.stack.truncate(callee_idx);
+                    self.push(Value::Task(id))?;
+                    return Ok(());
+                }
                 let journal_start = self.mutation_journal.len();
-                self.frames.push(CallFrame::new(
-                    self.ip,
-                    callee_idx + 1,
-                    arg_count,
+                Self::push_plain_frame(
+                    &mut self.frames,
+                    &mut self.upvalue_frames,
                     journal_start,
-                ));
-                self.upvalue_frames.push(Some(Rc::new(upvalues)));
+                    self.ip,
+                    callee_idx,
+                    arg_count,
+                    Some(Rc::new(upvalues)),
+                );
                 self.ip = entry_ip;
             }
-            Value::Native { arity, func, .. } => {
+            Value::Native { name, arity, func } => {
                 self.check_arity(arg_count, arity)?;
+                if matches!(
+                    name.as_str(),
+                    "task.spawn"
+                        | "task.sleep"
+                        | "task.all"
+                        | "task.race"
+                        | "task.timeout"
+                        | "task.cancel"
+                        | "task.group"
+                ) {
+                    let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
+                    return self.task_call(&name, callee_idx, &args);
+                }
                 let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
                 let result = func(&args)?;
                 self.stack.truncate(callee_idx);
@@ -91,6 +140,16 @@ impl Vm {
             } => {
                 self.check_arity(arg_count, arity)?;
                 self.ensure_mutation_allowed(&receiver, &name)?;
+                // `Sequence` and `Group` methods need the scheduler or the
+                // driving interpreter, so they dispatch before the kind match.
+                if matches!(&*receiver, Value::Sequence(_)) {
+                    let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
+                    return self.sequence_method(module, &name, &receiver, &args, callee_idx);
+                }
+                if matches!(&*receiver, Value::Group(_)) {
+                    let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
+                    return self.group_method(&name, &receiver, &args, callee_idx);
+                }
                 match kind {
                     MethodKind::Native(func) => {
                         let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
@@ -158,7 +217,21 @@ impl Vm {
     ///
     /// Runs the interpreter until the invoked frame returns, so user functions and
     /// closures can be applied while the outer computation is still in progress.
+    /// Blocking inside the callback faults (`AIPO_RT_AWAIT_IN_CALLBACK`): the
+    /// host Rust stack cannot suspend, so suspension signals propagate through.
     pub(super) fn invoke(
+        &mut self,
+        module: &BytecodeModule,
+        callee: Value,
+        args: &[Value],
+    ) -> Result<Value, VmError> {
+        self.invoke_depth += 1;
+        let result = self.invoke_inner(module, callee, args);
+        self.invoke_depth -= 1;
+        result
+    }
+
+    fn invoke_inner(
         &mut self,
         module: &BytecodeModule,
         callee: Value,

@@ -1,0 +1,3 @@
+../../docs/conformance/diagnostics/15_sem_contract_violation.aipo:7:26: error: [AIPO_SEM_CONTRACT_VIOLATION_STATIC] argument for parameter 'x' of 'double' cannot satisfy contract 'Int'
+    7 | io.println(String(double("no")))
+      |                          ^^^^

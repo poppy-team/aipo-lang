@@ -7,6 +7,7 @@ repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Target-neutral Core Intermediate Representation for the Aipo compiler"
+publish = false
 
 [lints]
 workspace = true

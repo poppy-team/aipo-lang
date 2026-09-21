@@ -1,6 +1,7 @@
 [package]
 name = "aipo-formatter"
 description = "Canonical formatter for the Aipo programming language"
+publish = false
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

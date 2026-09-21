@@ -6,7 +6,7 @@
     "input_tokens": 0,
     "intermediate_output_tokens": 0,
     "output_tokens": 0,
-    "tasks": 5
+    "tasks": 6
   },
   "tasks": [
     {
@@ -111,8 +111,34 @@
         "passed": 152
       },
       "title": "JS parity for the full MVP subset"
+    },
+    {
+      "evidence": [
+        {
+          "description": "cargo test --workspace --all-targets: 253 passed, 0 failed, 46 suites. See docs/evidence/P01-G02-deep-quality-gauntlet.md",
+          "kind": "test"
+        },
+        {
+          "description": "fmt, check, clippy -D warnings, doc, prumo validate/doctor green; MSRV 1.85 green; audit 0 findings; deny all-ok; miri aipo-vm green",
+          "kind": "gate"
+        },
+        {
+          "description": "ADP-003/004/005; gap matrix; tooling decisions; CI tiers; rubric+protocol; baseline.md; P01-G02 evidence record",
+          "kind": "doc"
+        }
+      ],
+      "files_changed": 60,
+      "goal": "P01-G02",
+      "id": "TR-006",
+      "kind": "implementation",
+      "status": "done",
+      "tests": {
+        "failed": 0,
+        "passed": 253
+      },
+      "title": "Deep quality gauntlet: performance, security, conformance, accessibility"
     }
   ],
-  "updated_at": "2026-09-19T22:04:04.829434576Z",
+  "updated_at": "2026-09-20T02:56:24.735504211Z",
   "version": 1
 }

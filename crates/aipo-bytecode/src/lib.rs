@@ -118,6 +118,7 @@ mod tests {
             functions: vec![],
             top_level: CoreFunction {
                 name: "__top_level__".to_string(),
+                is_async: false,
                 params: vec![],
                 locals: vec![],
                 upvalues: vec![],

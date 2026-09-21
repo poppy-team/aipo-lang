@@ -1,0 +1,18 @@
+# Recoverable problems are `Failure` values: `or_else` supplies a fallback
+# and `attempt` catches with access to `err.message`.
+fn parse_age(text)
+    let age = Int(text) or_else -1
+    if age < 0
+        return fail(f"not an age: {text}")
+    end
+    return age
+end
+
+io.println(parse_age("33"))
+io.println(parse_age("nope") or_else "fallback")
+
+attempt
+    io.println(parse_age("xyz"))
+failed err
+    io.println(f"caught: {err.message}")
+end

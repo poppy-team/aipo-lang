@@ -142,6 +142,12 @@ pub enum OpCode {
     /// this instruction — emitted right after the closure is created — rewrites that cell
     /// with the newly created closure, completing the recursion handle.
     FillSelfCapture = 56,
+    /// Drive the `Task` on top of the stack to its value: no operands.
+    ///
+    /// The scheduler runs the awaited task depth-first in deterministic order;
+    /// ready tasks resolve immediately, failed ones propagate `Failure`, and
+    /// cancelled ones fault (never capturable by `attempt`).
+    Await = 57,
 }
 
 impl TryFrom<u8> for OpCode {
@@ -205,6 +211,7 @@ impl TryFrom<u8> for OpCode {
             54 => Ok(OpCode::AssertContract),
             55 => Ok(OpCode::CheckMutations),
             56 => Ok(OpCode::FillSelfCapture),
+            57 => Ok(OpCode::Await),
             other => Err(other),
         }
     }

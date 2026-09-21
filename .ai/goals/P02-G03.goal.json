@@ -1,0 +1,59 @@
+{
+  "acceptance": [
+    "Replace this placeholder with objective acceptance criteria."
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-20T23:05:46.117955157Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-20T23:05:52.894599545Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-20T23:05:58.383489259Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-20T23:06:13.627556277Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    }
+  ],
+  "id": "P02-G03",
+  "lock": {
+    "digest": "ee366a3d28cd88b99614473d456931181761ce635ef2a25ed24a45ba9cf9e39c",
+    "locked_at": "2026-09-20T23:05:58.383484611Z",
+    "revision": 1
+  },
+  "non_goals": [],
+  "objective": "Implementar e certificar sintaxe async fn, desugaring de await do, diagnósticos estáticos (AIPO_SEM_AWAIT_IN_SUBEXPRESSION, AIPO_SEM_FORGOTTEN_TASK, AIPO_SEM_NESTED_AWAIT_DO), com testes e conformance.",
+  "phase": "P02",
+  "revision": 1,
+  "state": "EXECUTING",
+  "title": "Wave 3 infra: sintaxe async fn, await do e diagnósticos estáticos"
+}

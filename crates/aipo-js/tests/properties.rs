@@ -67,34 +67,7 @@ fn compile_to_ir(path: &Path) -> (String, aipo_ir::CoreModule) {
     (text, aipo_ir::lower_to_ir(&hir))
 }
 
-/// Decodes one unsigned VLQ value, returning `(value, bytes consumed)`.
-fn decode_vlq(bytes: &[u8]) -> (i64, usize) {
-    let mut result = 0i64;
-    let mut shift = 0u32;
-    let mut consumed = 0usize;
-    for &byte in bytes {
-        let digit = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => panic!("invalid VLQ char {byte}"),
-        } as i64;
-        consumed += 1;
-        result |= (digit & 31) << shift;
-        shift += 5;
-        if digit & 32 == 0 {
-            break;
-        }
-    }
-    let value = if result & 1 == 1 {
-        -(result >> 1)
-    } else {
-        result >> 1
-    };
-    (value, consumed)
-}
+/// Mapping coherence is asserted through `aipo_testkit::js::decode_mappings`.
 
 #[test]
 fn test_emission_is_deterministic_over_the_corpus() {
@@ -146,20 +119,14 @@ fn test_bundles_are_coherent_over_the_corpus() {
         let mappings = map["mappings"].as_str().expect("mappings is a string");
         let app_lines = bundle.app_js.lines().count();
         let src_lines = text.lines().count().max(1);
-        let map_lines: Vec<&str> = mappings.split(';').collect();
-        assert_eq!(map_lines.len(), app_lines, "{name} maps every emitted line");
-        for (index, line) in map_lines.iter().enumerate() {
-            if line.is_empty() {
-                continue;
-            }
-            let bytes = line.as_bytes();
-            let (_, used) = decode_vlq(bytes);
-            let (_, used) = decode_vlq(&bytes[used.min(bytes.len())..]);
-            let (src_line, _) = decode_vlq(&bytes[used.min(bytes.len())..]);
+        for segment in aipo_testkit::js::decode_mappings(mappings) {
+            assert_eq!(segment.source, 0, "{name} maps the entry source");
             assert!(
-                (src_line as usize) < src_lines,
-                "{name} line {index} maps inside the entry source"
+                (segment.source_line as usize) < src_lines,
+                "{name} line {} maps inside the entry source",
+                segment.generated_line
             );
+            assert_eq!(app_lines, mappings.split(';').count());
         }
     }
 }

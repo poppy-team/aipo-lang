@@ -7,6 +7,7 @@ repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Module registry, lifecycle, topological initialization, and native function registry for Aipo"
+publish = false
 
 [lints]
 workspace = true

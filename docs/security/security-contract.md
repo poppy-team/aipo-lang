@@ -23,6 +23,16 @@
 | Dependency | Used by | Contains `unsafe` | Justification | Approved |
 |---|---|---|---|---|
 | `unicode-normalization` 0.1.25 | `aipo-stdlib` (`string.reverse` NFC re-normalization) | yes — `char::from_u32_unchecked` confined to Hangul decomposition in `src/normalize.rs` | Canon names this crate as the preferred Rust provider for NFC (`Aipo — Stdlib V1 Canônica …` → “Implementação Rust — referências preferidas”); canon requires the result of `reverse()` to keep the `String` NFC invariant; no workspace crate enables `unsafe` | 2026-09-15, explicit user approval during slice S9 (`P00-G09`) |
+| `memchr` 2.8.3 | transitive via `serde_json` (JSONL diagnostics) | yes — SIMD dispatch paths, `unsafe` pointer reads guarded by runtime CPU detection | Mainstream crate (BurntSushi), `cargo audit` green, no advisories; performance-critical text search with no safe equivalent at equal throughput | P01-G02 maintainer inventory (this gauntlet), `cargo audit` 0 findings / 31 deps |
+| `serde` / `serde_core` 1.0.229 | serialization framework (`serde`, `serde_json`) | yes — internal `unsafe` in private impls (ptr reads, uninitialized buffers) | Foundation crate of the ecosystem; `cargo audit` green; workspace uses only the safe public API | P01-G02 maintainer inventory, `cargo audit` 0 findings |
+| `serde_json` 1.0.151 | JSONL diagnostics | yes — `unsafe` float parsing/serialization fast paths | Same as `serde`; JSONL is the machine interface, no alternative vetted | P01-G02 maintainer inventory, `cargo audit` 0 findings |
+| `syn` 3.0.5 + `proc-macro2` 1.0.107 + `quote` (safe) + `unicode-ident` 1.0.24 | build-time proc macros (`serde_derive`) | yes — `syn`/`proc-macro2` use `unsafe` for parsing buffers; `unicode-ident` table lookup | Build-time only (never ships in binaries); mainstream; `cargo audit` green | P01-G02 maintainer inventory, `cargo audit` 0 findings |
+| `byteorder` 1.5.0 | bytecode encode/decode (`aipo-bytecode`) | yes — `unsafe` slice casts in cited paths | Pinned 1.5.0; `cargo audit` green; used only for explicit-endian u16/i16 operands | P01-G02 maintainer inventory, `cargo audit` 0 findings |
+| `itoa` 1.0.18 | transitive via `serde_json` | yes — `unsafe` digit-table writes | Same justification as `serde_json` | P01-G02 maintainer inventory, `cargo audit` 0 findings |
+| `zmij` 1.0.23 | transitive JSON machinery | yes — confined `unsafe` blocks | `cargo audit` green | P01-G02 maintainer inventory, `cargo audit` 0 findings |
+
+Verified unsafe-free (explicit `#![deny/forbid(unsafe_code)]` upstream): `unicode-segmentation`
+1.13.3, `tinyvec` 1.13.3, `serde_derive`, `quote`.
 
 Dependencies added to the workspace must be scanned before use. For slice S9 the remaining additions were verified
 unsafe-free: `unicode-segmentation` 1.13.3 (`#![deny(unsafe_code)]`) and its transitive `tinyvec` 1.13.3
@@ -37,5 +47,7 @@ unsafe-free: `unicode-segmentation` 1.13.3 (`#![deny(unsafe_code)]`) and its tra
 
 - In the event of a security violation or regression:
   1. Offending changes are reverted immediately.
-  2. A reproducing regression fixture is committed under `docs/conformance/fixtures/`.
+  2. A reproducing regression fixture is committed under `docs/conformance/`
+     (runnable program, diagnostic fixture, or fuzzer seed — the smallest
+     minimized artifact, per the regression policy).
   3. Quality gate checks are re-run to confirm remediation.

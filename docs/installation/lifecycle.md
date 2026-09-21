@@ -6,8 +6,10 @@
 
 ## Installation paths
 
-- Single binary executable: `aipo` (placed in `~/.local/bin` or `/usr/local/bin`).
-- Standard library root: embedded in executable or located in `~/.local/share/aipo/stdlib/`.
+- Single binary executable: `aipo` (placed in `~/.local/bin` or `/usr/local/bin`),
+  built with `cargo build --release -p aipo-cli`.
+- Standard library root: compiled into the executable — there is no external
+  stdlib directory (an absent `~/.local/share/aipo/stdlib/` is normal).
 
 ## Ownership and permissions
 
@@ -21,4 +23,6 @@
 
 ## Uninstall safety
 
-- Removing the `aipo` binary and the optional cache directory `~/.cache/aipo/` cleanly uninstalls the toolchain without side effects on system libraries.
+- Removing the `aipo` binary cleanly uninstalls the toolchain. The CLI keeps no
+  persistent state: no daemon, no cache directory, no system libraries touched
+  (test harnesses use the OS temp directory only).

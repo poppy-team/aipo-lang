@@ -1,0 +1,7 @@
+# Unicode text stays normalized across operations: an escaped pair, a case
+# change and a reversal all come back composed.
+io.println("caf\u{e9}")
+io.println("CAF\u{e9}".lower())
+io.println("h\u{e9}llo".reverse())
+io.println("na\u{ef}ve".capitalize())
+io.println("a,b".split(",").len())

@@ -1,0 +1,5 @@
+# `Bytes(count)` allocates a zeroed block; indexing yields `Byte`.
+let data = Bytes(8)
+io.println(len(data))
+io.println(data[0])
+io.println(len(data[0..3]))

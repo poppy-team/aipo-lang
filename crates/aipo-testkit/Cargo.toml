@@ -1,0 +1,28 @@
+[package]
+name = "aipo-testkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Shared deterministic test harnesses for Aipo: RNG, corpus helpers, pipeline and JS runners, program generator"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-source = { path = "../aipo-source" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-lexer = { path = "../aipo-lexer" }
+aipo-ast = { path = "../aipo-ast" }
+aipo-syntax = { path = "../aipo-syntax" }
+aipo-hir = { path = "../aipo-hir" }
+aipo-sema = { path = "../aipo-sema" }
+aipo-ir = { path = "../aipo-ir" }
+aipo-bytecode = { path = "../aipo-bytecode" }
+aipo-vm = { path = "../aipo-vm" }
+aipo-runtime = { path = "../aipo-runtime" }
+aipo-stdlib = { path = "../aipo-stdlib" }
+aipo-js = { path = "../aipo-js" }

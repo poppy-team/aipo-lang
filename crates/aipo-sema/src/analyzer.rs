@@ -13,8 +13,9 @@ use std::collections::{HashMap, HashSet};
 /// The list mirrors what the runtime can decide about a value (`aipo-vm::TypeTag`); a contract
 /// naming anything else is left to the runtime, because a provable category test is the only
 /// thing a pre-execution report may act on.
-const CORE_CONTRACT_CATEGORIES: [&str; 9] = [
-    "Bool", "Int", "Float", "Byte", "String", "List", "Dict", "Bytes", "Range",
+const CORE_CONTRACT_CATEGORIES: [&str; 13] = [
+    "Bool", "Int", "Float", "Byte", "String", "List", "Dict", "Bytes", "Range", "Set", "Duration",
+    "Sequence", "Task",
 ];
 
 /// Canonical category of a literal, when the category is provable from the literal itself.
@@ -128,6 +129,11 @@ pub struct SemanticAnalyzer<'a> {
     /// Function, method and closure bodies are deferred code: they run after the module has
     /// initialized, so they see every module binding and never depend on textual position.
     in_module_flow: bool,
+    /// Names of declared `async fn` functions: calling one produces a `Task`.
+    async_fns: HashSet<String>,
+    /// `true` inside an `await do` body (reset on function boundaries: the
+    /// block form never enters lambdas defined inside it).
+    in_await_do: bool,
 }
 
 impl<'a> SemanticAnalyzer<'a> {
@@ -159,6 +165,8 @@ impl<'a> SemanticAnalyzer<'a> {
             module_bindings: HashSet::new(),
             reached_bindings: HashSet::new(),
             in_module_flow: false,
+            async_fns: HashSet::new(),
+            in_await_do: false,
         };
 
         analyzer.register_surface(surface);
@@ -255,6 +263,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 // written annotations are collected here for the call and return checks.
                 self.fn_contracts
                     .insert(f.name.clone(), DeclaredContract::of(f));
+                // Calling an `async fn` produces a `Task`: the name table backs
+                // the known-Task analysis (await-do desugar, forgotten tasks).
+                if f.is_async {
+                    self.async_fns.insert(f.name.clone());
+                }
             }
             HirItem::Struct(s) => {
                 let mut fields = HashMap::new();
@@ -453,11 +466,11 @@ impl<'a> SemanticAnalyzer<'a> {
             HirStmt::Let(name, expr, span) => {
                 // Canon keeps a binding out of its own initializer, so the expression is walked
                 // before the name becomes visible to the executable flow.
-                self.analyze_expr(expr);
+                self.analyze_expr_top(expr);
                 self.declare_binding(name, Mutability::Immutable, *span);
             }
             HirStmt::Var(name, expr, span) => {
-                self.analyze_expr(expr);
+                self.analyze_expr_top(expr);
                 self.declare_binding(name, Mutability::Mutable, *span);
             }
             HirStmt::Assign(target, value, span) => {
@@ -567,11 +580,28 @@ impl<'a> SemanticAnalyzer<'a> {
             HirStmt::Break(_) | HirStmt::Continue(_) => {}
             HirStmt::Return(expr, span) => {
                 if let Some(e) = expr {
-                    self.analyze_expr(e);
+                    self.analyze_expr_top(e);
                     self.check_return_contract(e, *span);
                 }
             }
             HirStmt::Fail(expr, _) => self.analyze_expr(expr),
+            HirStmt::AwaitDo(body, span) => {
+                if self.in_await_do {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::AIPO_SEM_NESTED_AWAIT_DO,
+                            "redundant nested `await do`: the inner block awaits nothing new",
+                        )
+                        .with_primary_span(self.source, *span),
+                    );
+                }
+                let was_inside = self.in_await_do;
+                self.in_await_do = true;
+                for stmt in body {
+                    self.analyze_stmt(stmt);
+                }
+                self.in_await_do = was_inside;
+            }
             HirStmt::Attempt(s) => {
                 self.with_block_scope(|this| {
                     for st in &s.body {
@@ -603,10 +633,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 // of the enclosing flow that were not reached yet must not leak in, which
                 // the block scope + module-flow reset already handle for closures.
                 self.declare_binding(&f.name, Mutability::Immutable, f.span);
+                if f.is_async {
+                    self.async_fns.insert(f.name.clone());
+                }
                 let prev_return_contract = self.current_return_contract.clone();
                 let prev_module_flow = self.in_module_flow;
                 self.current_return_contract = f.return_type.clone();
                 self.in_module_flow = false;
+                // `await do` never enters a nested function body.
+                let prev_await_do = self.in_await_do;
+                self.in_await_do = false;
                 self.with_block_scope(|this| {
                     for p in &f.params {
                         let mutability = if p.is_mut {
@@ -630,8 +666,52 @@ impl<'a> SemanticAnalyzer<'a> {
                 });
                 self.current_return_contract = prev_return_contract;
                 self.in_module_flow = prev_module_flow;
+                self.in_await_do = prev_await_do;
             }
-            HirStmt::Expr(expr) => self.analyze_expr(expr),
+            HirStmt::Expr(expr) => {
+                self.analyze_expr_top(expr);
+                self.check_forgotten_task(expr);
+            }
+        }
+    }
+
+    /// Walks an expression in statement, initializer or return position, where
+    /// one top-level `await` is legal. Anything nested stays strict.
+    fn analyze_expr_top(&mut self, expr: &HirExpr) {
+        if let HirExpr::Await(inner, _) = expr {
+            self.analyze_expr(inner);
+        } else {
+            self.analyze_expr(expr);
+        }
+    }
+
+    /// Reports a known-`Task` value discarded by an expression statement.
+    ///
+    /// Canon requires a diagnostic for a task created and discarded without
+    /// `await`, group combinator or explicit spawn handling. The check is
+    /// deliberately syntactic (a full dataflow is out of scope): a root call
+    /// to a declared `async fn`, or to `task.spawn`/`all`/`race`, whose value
+    /// no statement consumes. `let x = spawn(f)` for later awaiting is fine.
+    fn check_forgotten_task(&mut self, expr: &HirExpr) {
+        let HirExpr::Call(callee, _, span) = expr else {
+            return;
+        };
+        let task_producing = match &**callee {
+            HirExpr::Identifier(name, _) => self.async_fns.contains(name),
+            HirExpr::Dot(target, member, _) => {
+                matches!(&**target, HirExpr::Identifier(name, _) if name == "task")
+                    && matches!(member.as_str(), "spawn" | "all" | "race")
+            }
+            _ => false,
+        };
+        if task_producing {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::AIPO_SEM_FORGOTTEN_TASK,
+                    "created `Task` is discarded without `await`, group or combinator; bind it or await it",
+                )
+                .with_primary_span(self.source, *span),
+            );
         }
     }
 
@@ -853,6 +933,19 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             HirExpr::Unary(_, inner, _) => self.analyze_expr(inner),
+            HirExpr::Await(inner, span) => {
+                // Explicit `await` lives in statements, initializers and
+                // returns (checked via `analyze_expr_top`); anywhere else it
+                // cannot suspend, so it is a dedicated diagnostic, not a guess.
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::AIPO_SEM_AWAIT_IN_SUBEXPRESSION,
+                        "`await` is only allowed as a statement, initializer or return value, never inside a subexpression",
+                    )
+                    .with_primary_span(self.source, *span),
+                );
+                self.analyze_expr(inner);
+            }
             HirExpr::Binary(_, left, right, _) => {
                 self.analyze_expr(left);
                 self.analyze_expr(right);
@@ -932,6 +1025,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 let prev_module_flow = self.in_module_flow;
                 self.current_return_contract = f.return_type.clone();
                 self.in_module_flow = false;
+                let prev_await_do = self.in_await_do;
+                self.in_await_do = false;
                 self.with_block_scope(|this| {
                     for p in &f.params {
                         let mutability = if p.is_mut {
@@ -955,6 +1050,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 });
                 self.current_return_contract = prev_return_contract;
                 self.in_module_flow = prev_module_flow;
+                self.in_await_do = prev_await_do;
             }
             HirExpr::If(c, t, e, _) => {
                 self.analyze_expr(c);

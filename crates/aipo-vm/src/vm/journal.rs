@@ -65,7 +65,11 @@ impl Vm {
             let type_name = instance.borrow().type_name.clone();
             let outcome = match self.struct_invariant_entries.get(&type_name).copied() {
                 Some(entry_ip) => {
-                    let callee = Value::Function { entry_ip, arity: 1 };
+                    let callee = Value::Function {
+                        entry_ip,
+                        arity: 1,
+                        is_async: false,
+                    };
                     let receiver = Value::Struct(Rc::clone(instance));
                     match self.invoke(module, callee, &[receiver])? {
                         Value::Bool(true) => Ok(()),

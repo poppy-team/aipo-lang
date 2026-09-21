@@ -1,0 +1,1 @@
+error: [AIPO_SEM_IMPORT_CYCLE] import cycle detected through module 'left'

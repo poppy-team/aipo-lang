@@ -1,0 +1,1 @@
+{"code":"AIPO_SEM_CONTRACT_VIOLATION_STATIC","severity":"error","message":"argument for parameter 'x' of 'double' cannot satisfy contract 'Int'","primary_span":{"file":"../../docs/conformance/diagnostics/15_sem_contract_violation.aipo","start":253,"end":257,"line":7,"column":26},"notes":[],"suggestions":[]}

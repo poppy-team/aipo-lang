@@ -745,12 +745,12 @@ fn test_convert_bytes() {
     let Value::Bytes(buffer) = &bytes else {
         panic!("Bytes(32) must produce a Bytes value, got {bytes:?}");
     };
-    assert_eq!(buffer.len(), 32);
-    assert!(buffer.iter().all(|byte| *byte == 0));
+    assert_eq!(buffer.borrow().len(), 32);
+    assert!(buffer.borrow().iter().all(|byte| *byte == 0));
 
     // Zero is a valid (empty) block, and negative or oversized counts are recoverable.
     let empty = convert::convert_bytes(&[Value::Int(0)]).unwrap();
-    assert_eq!(empty, Value::Bytes(Rc::new(Vec::new())));
+    assert_eq!(empty, Value::Bytes(Rc::new(RefCell::new(Vec::new()))));
     assert!(
         convert::convert_bytes(&[Value::Int(-1)])
             .unwrap()

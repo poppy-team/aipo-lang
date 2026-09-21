@@ -61,6 +61,8 @@ snapshot for a program is only ever rewritten on request (see *Regeneration*).
 | `19_local_functions` | local `fn` declarations: shared `var` capture (canon's `create_counter`), self-recursion through the local name, and a local `fn` reading an enclosing parameter |
 | `20_module_scope` | module-scope visibility: a top-level `var` read and mutated by a module function (canon's `var counter` + `fn bump` pattern) and a top-level `let` read from one |
 | `21_attempt_recovery_and_journal` | `return fail(…)` propagating to the caller's `attempt` boundary, and recovery releasing pre-handler journal entries (only post-handler mutations roll back) |
+| `22_signed_zero` | IEEE signed zero: `-0.0` observable in `Float` display, `Int` arithmetic never producing negative zero (normalized on the JS backend) |
+| `23_init_in_parameterized_fn` | construction with `init` inside a parameterized function (fuzz-found IR builder panic regression) |
 
 | Diagnostic fixture | Code asserted |
 |---|---|
@@ -140,7 +142,7 @@ Scored 2026-09-19 from the repository root (rustc/cargo 1.98.1). Full hand-off i
 | Robustness | 15% | `cargo test -p aipo-cli --test fuzz_smoke` | **pass** — 3/3 |
 | Repository gates | 15% | `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (146/146), `cargo doc --workspace --no-deps` | **pass** |
 
-Inventory verified on disk: `programs/` 21 `.aipo` + 21 `.stdout`, `diagnostics/` 19 `.aipo` +
+Inventory verified on disk: `programs/` 23 `.aipo` + 23 `.stdout`, `diagnostics/` 19 `.aipo` +
 19 `.code`, `formatting/` 8 `.input.aipo` + 8 `.expected.aipo`, `modules/` 3 entry points
 (`basic`, `cycle`, `missing`).
 

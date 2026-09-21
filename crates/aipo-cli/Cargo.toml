@@ -1,6 +1,7 @@
 [package]
 name = "aipo-cli"
 description = "Command-line interface for the Aipo programming language"
+publish = false
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -25,6 +26,10 @@ aipo-source = { path = "../aipo-source" }
 aipo-stdlib = { path = "../aipo-stdlib" }
 aipo-syntax = { path = "../aipo-syntax" }
 aipo-vm = { path = "../aipo-vm" }
+
+[dev-dependencies]
+aipo-testkit = { path = "../aipo-testkit" }
+aipo-lexer = { path = "../aipo-lexer" }
 
 [lints]
 workspace = true

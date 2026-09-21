@@ -313,6 +313,8 @@ impl<'a> Lexer<'a> {
             "var" => TokenKind::Var,
             "fixed" => TokenKind::Fixed,
             "fn" => TokenKind::Fn,
+            "async" => TokenKind::Async,
+            "await" => TokenKind::Await,
             "struct" => TokenKind::Struct,
             "impl" => TokenKind::Impl,
             "interface" => TokenKind::Interface,

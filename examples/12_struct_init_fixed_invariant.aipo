@@ -1,0 +1,26 @@
+# Construction runs `init` when declared; `fixed` fields freeze after
+# publication; `invariant()` must hold at the end of construction.
+struct Player
+    fixed id
+    name
+    health
+end
+
+impl Player
+    init(id, name, health = 100)
+        self.id = id
+        self.name = name
+        self.health = health
+    end
+
+    invariant()
+        self.name != ""
+        self.health >= 0
+        self.health <= 100
+    end
+end
+
+let ana = Player{id = 1, name = "ana"}
+io.println(ana.id)
+io.println(ana.name)
+io.println(ana.health)

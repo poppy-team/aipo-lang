@@ -1,0 +1,73 @@
+{
+  "acceptance": [
+    "Replace this placeholder with objective acceptance criteria."
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-20T04:04:22.841132383Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-20T04:04:22.923622234Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-20T04:04:22.968298875Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-20T04:04:22.996607821Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-20T22:27:49.848503105Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-20T22:27:53.060824389Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    }
+  ],
+  "id": "P02-G01",
+  "lock": {
+    "digest": "b0eb8533e6584718d0b8642a2e5ed5b3b1ead790a5af053b39770b0843bb8818",
+    "locked_at": "2026-09-20T04:04:22.968290737Z",
+    "revision": 1
+  },
+  "non_goals": [],
+  "objective": "Implementar os tipos/valores da Wave 3 (Set com ordem de inserção, Sequence lazy, packing de Bytes little-endian, Task como valor, Duration) com tags, prelude, display/igualdade e testes, sem mudar semântica existente.",
+  "phase": "P02",
+  "revision": 1,
+  "state": "REVIEWING",
+  "title": "Wave 3 tipos/valores: Set, Sequence, Bytes packing, Task, Duration"
+}

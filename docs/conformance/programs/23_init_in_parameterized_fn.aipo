@@ -1,0 +1,19 @@
+# Regression: constructing a struct with `init` inside a function that has
+# parameters used to panic the IR builder (fuzz-found; the hidden receiver
+# temporary was resolved against the wrong slot base).
+struct Entry
+    label
+end
+
+impl Entry
+    init(self!, label)
+        self.label = label
+    end
+end
+
+fn make(suffix)
+    return Entry{label = suffix}
+end
+
+io.println(make("x").label)
+io.println(make("y").label)

@@ -9,12 +9,15 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod bytes;
 pub mod collections;
 pub mod convert;
+pub mod duration;
 pub mod io;
 pub mod math;
 pub mod prelude;
 pub mod string;
+pub mod task;
 
 use aipo_runtime::{NativeFunctionMeta, NativeRegistry};
 use aipo_vm::{TypeTag, Value, Vm, VmFault};
@@ -25,6 +28,7 @@ pub fn register_stdlib(vm: &mut Vm, registry: &mut NativeRegistry) {
     register_math(registry);
     register_string(registry);
     register_io(registry);
+    register_task(registry);
     register_modules(vm);
     register_methods(vm);
 }
@@ -87,6 +91,8 @@ fn register_methods(vm: &mut Vm) {
     vm.register_method_native("String", "format", 1, method_string_format);
 
     collections::register_methods(vm);
+    bytes::register_methods(vm);
+    duration::register_methods(vm);
 }
 
 fn native(
@@ -178,6 +184,8 @@ fn register_prelude(vm: &mut Vm, registry: &mut NativeRegistry) {
     vm.define_global("List", Value::Type(TypeTag::List));
     vm.define_global("Dict", Value::Type(TypeTag::Dict));
     vm.define_global("Bytes", Value::Type(TypeTag::Bytes));
+    vm.define_global("Set", Value::Type(TypeTag::Set));
+    vm.define_global("Duration", Value::Type(TypeTag::Duration));
 }
 
 /// Signature of a core-type conversion native.
@@ -374,9 +382,56 @@ fn register_io(registry: &mut NativeRegistry) {
     ));
 }
 
+/// Registers `task` module metadata.
+fn register_task(registry: &mut NativeRegistry) {
+    registry.register(NativeFunctionMeta::new(
+        "spawn",
+        2,
+        Some("task"),
+        "Spawns a new asynchronous task.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "sleep",
+        1,
+        Some("task"),
+        "Suspends current task until virtual clock reaches deadline.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "all",
+        1,
+        Some("task"),
+        "Awaits completion of all tasks in a list.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "race",
+        1,
+        Some("task"),
+        "Races tasks, returning the first result.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "timeout",
+        2,
+        Some("task"),
+        "Awaits task with a virtual tick deadline.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "cancel",
+        1,
+        Some("task"),
+        "Cancels an active task.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "group",
+        0,
+        Some("task"),
+        "Creates a structured-concurrency task group.",
+    ));
+}
+
 /// Defines the standard module dictionaries as VM globals.
 fn register_modules(vm: &mut Vm) {
     vm.define_global("math", math::create_module());
     vm.define_global("string", string::create_module());
     vm.define_global("io", io::create_module());
+    vm.define_global("task", task::create_module());
 }

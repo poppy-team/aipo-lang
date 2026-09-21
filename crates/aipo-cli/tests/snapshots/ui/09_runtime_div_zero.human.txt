@@ -1,0 +1,2 @@
+error: [AIPO_RT_DIV_ZERO] runtime fault [AIPO_RT_DIV_ZERO]: division or modulo by zero
+  = note: while running ../../docs/conformance/diagnostics/09_runtime_div_zero.aipo

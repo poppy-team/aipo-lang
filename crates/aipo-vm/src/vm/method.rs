@@ -15,6 +15,36 @@ impl Vm {
     /// independent of the receiver type.
     pub(super) fn bind_method(&self, receiver: &Value, method: &str) -> Option<Value> {
         let type_name = receiver.type_name().to_string();
+        // Sequence methods dispatch through the scheduler-aware path in
+        // `begin_call` (pure stages append, driving stages evaluate).
+        if matches!(receiver, Value::Sequence(_)) {
+            if let Some((_, arity)) = super::task::SEQUENCE_METHODS
+                .iter()
+                .find(|(name, _)| *name == method)
+            {
+                return Some(Value::BoundMethod {
+                    name: method.to_string(),
+                    arity: *arity,
+                    receiver: Box::new(receiver.clone()),
+                    kind: MethodKind::HigherOrder,
+                });
+            }
+            return None;
+        }
+        // Group methods (`spawn`, `wait`) run through the scheduler too.
+        if matches!(receiver, Value::Group(_)) {
+            let arity = match method {
+                "spawn" => 2,
+                "wait" => 0,
+                _ => return None,
+            };
+            return Some(Value::BoundMethod {
+                name: method.to_string(),
+                arity,
+                receiver: Box::new(receiver.clone()),
+                kind: MethodKind::HigherOrder,
+            });
+        }
         if let Some((arity, func)) = self.method_natives.get(&(type_name, method.to_string())) {
             return Some(Value::BoundMethod {
                 name: method.to_string(),
@@ -155,6 +185,19 @@ impl Vm {
         if guard.is_some() {
             self.active_iterations.pop();
         }
-        outcome
+        // `filter`/`transform`/`sort_by` over a `Set` return a `Set`
+        // (deduplicated, insertion order); over anything else a `List`.
+        match (&receiver, outcome) {
+            (Value::Set(_), Ok(Value::List(items))) => {
+                let mut unique = Vec::new();
+                for item in items.borrow().iter() {
+                    if !unique.iter().any(|seen| seen == item) {
+                        unique.push(item.clone());
+                    }
+                }
+                Ok(Value::Set(Rc::new(RefCell::new(unique))))
+            }
+            (_, outcome) => outcome,
+        }
     }
 }

@@ -1,0 +1,59 @@
+{
+  "acceptance": [
+    "Replace this placeholder with objective acceptance criteria."
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-20T00:14:31.103848821Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-20T00:14:31.120524836Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-20T00:14:31.131597338Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-20T00:14:31.142845118Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    }
+  ],
+  "id": "P01-G02",
+  "lock": {
+    "digest": "8767deb617229393339b6cd07508152f43292ca23e6f146cc70bd52a52bb8484",
+    "locked_at": "2026-09-20T00:14:31.13159248Z",
+    "revision": 1
+  },
+  "non_goals": [],
+  "objective": "Establish reproducible performance, security, conformance, accessibility and generated-program validation infrastructure for the Aipo frontend, VM and JavaScript backend without changing canonical language semantics; record evidence and open ADPs for genuine ambiguities.",
+  "phase": "P01",
+  "revision": 1,
+  "state": "EXECUTING",
+  "title": "Deep quality gauntlet: performance, security, conformance and accessibility validation"
+}

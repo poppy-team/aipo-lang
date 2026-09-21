@@ -66,6 +66,8 @@ pub enum Item {
 pub struct FunctionDecl {
     /// Function name.
     pub name: Ident,
+    /// `true` for `async fn`: calling returns a `Task` instead of running.
+    pub is_async: bool,
     /// Parameters.
     pub params: Vec<Param>,
     /// Optional return contract.
@@ -235,6 +237,8 @@ pub enum Stmt {
     /// visible inside the function's own body for recursion, and captures enclosing lexical
     /// bindings automatically.
     Fn(FunctionDecl),
+    /// Sequential-await block: `await do ... end` (sugar, desugared before execution).
+    AwaitDo(Vec<Stmt>, SourceSpan),
     /// Expression statement.
     Expr(Expr),
 }
@@ -338,6 +342,8 @@ pub enum Expr {
     Dict(Vec<(Expr, Expr)>, SourceSpan),
     /// Conditional value form `if condition then a else b`.
     If(Box<Expr>, Box<Expr>, Box<Expr>, SourceSpan),
+    /// Suspension point: `await task` drives a `Task` to its value.
+    Await(Box<Expr>, SourceSpan),
 }
 
 impl Expr {
@@ -353,7 +359,8 @@ impl Expr {
             | Self::Index(_, _, span)
             | Self::List(_, span)
             | Self::Dict(_, span)
-            | Self::If(_, _, _, span) => *span,
+            | Self::If(_, _, _, span)
+            | Self::Await(_, span) => *span,
             Self::Identifier(ident) => ident.span,
             Self::Call(call) => call.span,
             Self::Construct(construct) => construct.span,
@@ -422,6 +429,8 @@ pub struct ConstructField {
 /// Anonymous function literal / closure.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionExpr {
+    /// `true` for `async fn(...)`: calling returns a `Task`.
+    pub is_async: bool,
     /// Parameters.
     pub params: Vec<Param>,
     /// Optional return contract.

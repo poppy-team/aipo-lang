@@ -36,6 +36,8 @@ pub struct CoreStruct {
 pub struct CoreFunction {
     /// Function name (`__top_level__` for the module entry script).
     pub name: String,
+    /// `true` for `async fn`: calling produces a `Task` instead of running.
+    pub is_async: bool,
     /// Parameter names, in slot order.
     pub params: Vec<String>,
     /// Declared local names, in slot order after the parameters.
@@ -210,6 +212,13 @@ pub enum CoreInst {
     PushHandler(isize, SourceSpan),
     /// Unregister the topmost failure recovery handler.
     PopHandler(SourceSpan),
+    /// Drive the `Task` on top of the stack to its value.
+    ///
+    /// Canon suspends only at explicit `await` positions: the scheduler runs the
+    /// awaited task (depth-first, deterministic order) and pushes its result.
+    /// Awaiting a ready task is immediate; a failed one propagates `Failure`;
+    /// a cancelled one is a fault, never capturable.
+    Await(SourceSpan),
     /// Push the omitted-argument sentinel used for a defaulted parameter the caller skipped.
     ///
     /// Canon evaluates parameter defaults inside the callee and allows a default to reference

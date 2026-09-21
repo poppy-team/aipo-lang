@@ -3,8 +3,8 @@
 //! This module is the single source of truth for the explicit conversion forms
 //! `Int(value)`, `Float(value)`, `Byte(value)` and `String(value)` that canon defines
 //! (`Aipo V1 — Language Reference`, `Aipo Language — Especificação Viva`), plus the
-//! `Bytes(count)` construction. `aipo-stdlib` delegates to it so the VM and the Prelude can
-//! never disagree.
+//! `Bytes(count)`, `Set(list)` and `Duration(seconds)` constructions. `aipo-stdlib`
+//! delegates to it so the VM and the Prelude can never disagree.
 //!
 //! Recovery follows the two-channel rule: domain problems (invalid text, out-of-range
 //! values, non-representable conversions) produce a recoverable [`Value::Failure`],
@@ -13,6 +13,7 @@
 use crate::fault::VmFault;
 use crate::value::{FailureValue, Value, check_finite_float, check_safe_int};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::rc::Rc;
 use unicode_normalization::UnicodeNormalization;
 
@@ -50,6 +51,14 @@ pub enum TypeTag {
     Bytes,
     /// `Range`
     Range,
+    /// `Set`
+    Set,
+    /// `Sequence`
+    Sequence,
+    /// `Task`
+    Task,
+    /// `Duration`
+    Duration,
 }
 
 impl TypeTag {
@@ -67,6 +76,10 @@ impl TypeTag {
             Self::Dict => "Dict",
             Self::Bytes => "Bytes",
             Self::Range => "Range",
+            Self::Set => "Set",
+            Self::Sequence => "Sequence",
+            Self::Task => "Task",
+            Self::Duration => "Duration",
         }
     }
 
@@ -89,6 +102,10 @@ impl TypeTag {
             "Dict" => Some(Self::Dict),
             "Bytes" => Some(Self::Bytes),
             "Range" => Some(Self::Range),
+            "Set" => Some(Self::Set),
+            "Sequence" => Some(Self::Sequence),
+            "Task" => Some(Self::Task),
+            "Duration" => Some(Self::Duration),
             _ => None,
         }
     }
@@ -108,6 +125,10 @@ impl TypeTag {
                 | (Self::Dict, Value::Dict(_))
                 | (Self::Bytes, Value::Bytes(_))
                 | (Self::Range, Value::Range { .. })
+                | (Self::Set, Value::Set(_))
+                | (Self::Sequence, Value::Sequence(_))
+                | (Self::Task, Value::Task(_))
+                | (Self::Duration, Value::Duration(_))
         )
     }
 }
@@ -143,7 +164,55 @@ pub fn convert_bytes(value: &Value) -> Result<Value, VmFault> {
             "Bytes({count}) is outside the constructible range 0..={BYTES_MAX_ALLOCATION}"
         )));
     }
-    Ok(Value::Bytes(Rc::new(vec![0u8; *count as usize])))
+    Ok(Value::Bytes(Rc::new(RefCell::new(vec![
+        0u8;
+        *count as usize
+    ]))))
+}
+
+/// Explicit conversion to `Set`: deduplicates a `List`, keeping first-occurrence
+/// order (canon: `Set` preserves insertion order).
+///
+/// # Errors
+/// Returns [`VmFault::TypeMismatch`] for non-list values.
+pub fn convert_set(value: &Value) -> Result<Value, VmFault> {
+    match value {
+        Value::List(items) => {
+            let mut unique: Vec<Value> = Vec::new();
+            for item in items.borrow().iter() {
+                if !unique.iter().any(|seen| seen == item) {
+                    unique.push(item.clone());
+                }
+            }
+            Ok(Value::Set(Rc::new(RefCell::new(unique))))
+        }
+        Value::Failure(f) => Ok(Value::Failure(Rc::clone(f))),
+        other => Err(type_error("List for Set(list)", other)),
+    }
+}
+
+/// Explicit conversion to `Duration`: a finite number of seconds.
+///
+/// # Errors
+/// Returns a recoverable `Failure` for non-finite floats; [`VmFault::TypeMismatch`]
+/// for categories without a defined conversion.
+pub fn convert_duration(value: &Value) -> Result<Value, VmFault> {
+    match value {
+        #[allow(clippy::cast_precision_loss)]
+        Value::Int(n) => Ok(Value::Duration(*n as f64)),
+        Value::Byte(b) => Ok(Value::Duration(f64::from(*b))),
+        Value::Float(f) => {
+            if !f.is_finite() {
+                return Ok(recoverable("Duration cannot represent a non-finite Float"));
+            }
+            Ok(Value::Duration(*f))
+        }
+        Value::Failure(f) => Ok(Value::Failure(Rc::clone(f))),
+        other => Err(type_error(
+            "Int or Float seconds for Duration(seconds)",
+            other,
+        )),
+    }
 }
 
 /// Explicit conversion to `Int`.
@@ -294,6 +363,8 @@ pub fn convert_via_type(tag: TypeTag, args: &[Value]) -> Result<Value, VmFault> 
         TypeTag::Byte => convert_byte(&args[0]),
         TypeTag::String => convert_string(&args[0]),
         TypeTag::Bytes => convert_bytes(&args[0]),
+        TypeTag::Set => convert_set(&args[0]),
+        TypeTag::Duration => convert_duration(&args[0]),
         other => Err(VmFault::NotCallable {
             type_name: format!("{} (no conversion form in V1)", other.name()),
         }),

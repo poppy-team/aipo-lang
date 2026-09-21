@@ -1,6 +1,7 @@
 //! Integration and unit tests for aipo-runtime: module dependency graph, cycle detection,
 //! deterministic initialization ordering, and native function registry.
 
+use aipo_diagnostics::DiagnosticCode;
 use aipo_runtime::{
     ModuleGraph, ModuleRecord, ModuleState, NativeFunctionMeta, NativeRegistry, RuntimeError,
 };
@@ -173,4 +174,47 @@ fn test_native_registry_operations() {
 
     let not_found = registry.get(None, "abs");
     assert!(not_found.is_none());
+}
+
+#[test]
+fn test_error_display_and_codes_cover_all_variants() {
+    let cases = [
+        (
+            RuntimeError::ModuleNotFound {
+                name: "m".to_string(),
+            },
+            DiagnosticCode::AIPO_SEM_UNKNOWN_MODULE,
+            "m",
+        ),
+        (
+            RuntimeError::CyclicDependency {
+                cycle: vec!["a".to_string(), "b".to_string()],
+            },
+            DiagnosticCode::AIPO_SEM_IMPORT_CYCLE,
+            "a",
+        ),
+        (
+            RuntimeError::ExportNotFound {
+                module: "m".to_string(),
+                symbol: "s".to_string(),
+            },
+            DiagnosticCode::AIPO_SEM_EXPORT_UNKNOWN,
+            "s",
+        ),
+        (
+            RuntimeError::InitializationFailed {
+                module: "m".to_string(),
+                reason: "boom".to_string(),
+            },
+            DiagnosticCode::AIPO_RT_TYPE_MISMATCH,
+            "boom",
+        ),
+    ];
+    for (error, code, fragment) in cases {
+        assert_eq!(error.diagnostic_code(), code);
+        assert!(
+            error.to_string().contains(fragment),
+            "Display names the participant: {error}"
+        );
+    }
 }

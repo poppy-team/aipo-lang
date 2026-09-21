@@ -1,0 +1,13 @@
+# Small statistics over a data set with `math` and loops.
+let data = [4, 8, 15, 16, 23, 42]
+var sum = 0
+each n in data
+    sum = sum + n
+end
+let mean = sum / len(data)
+io.println(sum)
+io.println(mean)
+io.println(math.min(3, 9))
+io.println(math.max(3, 9))
+io.println(math.sqrt(144))
+io.println(data.filter(fn (x) return x > mean end))

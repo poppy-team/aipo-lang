@@ -7,6 +7,7 @@ repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Diagnostic representation, stable codes catalog, and JSONL emission for the Aipo language"
+publish = false
 
 [lints]
 workspace = true
@@ -14,4 +15,8 @@ workspace = true
 [dependencies]
 aipo-source = { path = "../aipo-source" }
 serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+aipo-syntax = { path = "../aipo-syntax" }
 serde_json = { workspace = true }

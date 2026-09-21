@@ -21,6 +21,8 @@ pub struct FunctionInfo {
     pub params: usize,
     /// Number of declared locals after the parameters.
     pub locals: usize,
+    /// `true` for `async fn`: calling produces a `Task` instead of running.
+    pub is_async: bool,
 }
 
 /// A compiled, self-contained Aipo bytecode module.

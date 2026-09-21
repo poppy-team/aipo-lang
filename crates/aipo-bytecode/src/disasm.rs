@@ -224,6 +224,9 @@ pub fn disassemble(module: &BytecodeModule) -> String {
             OpCode::CheckMutations => {
                 out.push_str(&format!("{offset:04}  OpCheckMutations\n"));
             }
+            OpCode::Await => {
+                out.push_str(&format!("{offset:04}  OpAwait\n"));
+            }
             OpCode::FillSelfCapture => {
                 let idx = BigEndian::read_u16(&module.code[cursor..cursor + 2]) as usize;
                 cursor += 2;

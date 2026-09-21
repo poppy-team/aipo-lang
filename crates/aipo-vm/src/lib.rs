@@ -7,13 +7,15 @@ pub mod value;
 pub mod vm;
 
 pub use convert::{
-    BYTE_MAX, TypeTag, convert_byte, convert_float, convert_int, convert_string, convert_via_type,
+    BYTE_MAX, TypeTag, convert_byte, convert_bytes, convert_duration, convert_float, convert_int,
+    convert_set, convert_string, convert_via_type,
 };
 pub use fault::{VmError, VmFault};
 pub use frame::{CallFrame, HandlerFrame};
 pub use value::{
-    DictMap, FailureValue, MAX_SAFE_INT, MIN_SAFE_INT, MethodKind, StructInstance, Value,
-    check_finite_float, check_safe_int,
+    DictMap, FailureValue, GroupId, MAX_SAFE_INT, MIN_SAFE_INT, MethodKind, SeqOp,
+    SequencePipeline, SequenceSource, StructInstance, TaskId, Value, check_finite_float,
+    check_safe_int,
 };
 pub use vm::Vm;
 

@@ -7,6 +7,7 @@ repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Source code management, byte offsets, line/column mapping, and UTF-8 handling for the Aipo language"
+publish = false
 
 [lints]
 workspace = true

@@ -7,6 +7,7 @@ repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Stack-based virtual machine, call frames, value model, and opcode dispatch for Aipo"
+publish = false
 
 [lints]
 workspace = true
@@ -23,3 +24,5 @@ unicode-normalization = { workspace = true }
 aipo-syntax = { path = "../aipo-syntax" }
 aipo-hir = { path = "../aipo-hir" }
 aipo-ir = { path = "../aipo-ir" }
+aipo-stdlib = { path = "../aipo-stdlib" }
+aipo-runtime = { path = "../aipo-runtime" }

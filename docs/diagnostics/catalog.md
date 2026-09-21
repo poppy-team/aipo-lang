@@ -40,6 +40,7 @@
 | AIPO_PARSE_UNEXPECTED_TOKEN | error | token cannot start/continue a construct |
 | AIPO_PARSE_MISSING_END | error | block opened but `end` missing |
 | AIPO_PARSE_INVALID_TARGET | error | assignment target is not a mutable path |
+| AIPO_PARSE_NESTING_TOO_DEEP | error | nesting exceeds the parser recursion bound (robustness limit, see ADP-005) |
 
 ### Semantic (AIPO_SEM_*)
 | Code | Severity | Trigger |

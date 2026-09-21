@@ -31,7 +31,8 @@ impl PreludeSurface {
             surface.add_variable(name);
         }
         for name in [
-            "Int", "Float", "Byte", "String", "Bool", "List", "Dict", "Bytes", "Range",
+            "Int", "Float", "Byte", "String", "Bool", "List", "Dict", "Bytes", "Range", "Set",
+            "Duration",
         ] {
             surface.add_variable(name);
         }

@@ -79,8 +79,8 @@
     "version": "0.6.0"
   },
   "goals": {
-    "active_goal": "P01-G01",
-    "active_phase": "P01"
+    "active_goal": "P02-G03",
+    "active_phase": "P02"
   },
   "intelligence": {
     "distinguish_observed_estimated": true,

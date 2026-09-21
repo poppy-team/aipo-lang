@@ -7,6 +7,7 @@ repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "High-Level Intermediate Representation and early desugaring passes for Aipo"
+publish = false
 
 [lints]
 workspace = true

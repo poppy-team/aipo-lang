@@ -84,3 +84,117 @@ assert.ok(R.valAdd(f, R.vInt(1)) === f);
 assert.ok(R.valNot(f) === f);
 assert.equal(R.structGetField(f, 'message').v, 'x');
 console.log('shim selftest: all assertions passed');
+// --- negative zero preserves VM display ---
+assert.equal(R.display({ t: 'float', v: -0 }), '-0.0');
+assert.equal(R.display({ t: 'float', v: 0 }), '0.0');
+console.log('shim selftest: negative-zero assertions passed');
+// --- integers never hold negative zero (Rust i64 has none) ---
+const negMul = R.valMul(R.vInt(-33), R.vInt(0));
+assert.equal(negMul.t, 'int');
+assert.ok(Object.is(negMul.v, 0) && !Object.is(negMul.v, -0));
+assert.equal(R.display(negMul), '0');
+console.log('shim selftest: int-negzero assertions passed');
+
+// --- Wave 3: Set ---
+const s = R.vSet([R.vInt(1), R.vInt(2), R.vInt(1), R.vInt(3)]);
+assert.equal(s.items.length, 3);
+assert.equal(R.setNatives.has(s, [R.vInt(2)]).v, true);
+assert.equal(R.setNatives.has(s, [R.vInt(99)]).v, false);
+R.setNatives.add(s, [R.vInt(4)]);
+assert.equal(s.items.length, 4);
+assert.equal(R.setNatives.remove(s, [R.vInt(2)]).v, true);
+assert.equal(R.setNatives.remove(s, [R.vInt(2)]).v, false);
+assert.equal(R.setNatives.len(s).v, 3);
+assert.equal(R.valLen(s).v, 3);
+assert.equal(R.std_len(s).v, 3);
+const sCopy = R.std_copy(s);
+assert.ok(R.valuesEqual(s, sCopy));
+assert.equal(R.std_same(s, sCopy).v, false);
+assert.equal(R.std_same(s, s).v, true);
+assert.equal(R.display(s), '{1, 3, 4}');
+
+// --- Wave 3: Duration ---
+const dur1 = R.vDuration(2.5);
+const dur2 = R.vDuration(1.5);
+const durSum = R.valAdd(dur1, dur2);
+assert.equal(durSum.t, 'duration');
+assert.equal(durSum.v, 4.0);
+assert.equal(R.valSub(dur1, dur2).v, 1.0);
+assert.equal(R.valNeg(dur1).v, -2.5);
+assert.equal(R.valLess(dur2, dur1).v, true);
+assert.equal(R.valLessEqual(dur1, dur1).v, true);
+assert.equal(R.display(R.vDuration(2.0)), '2s');
+assert.equal(R.display(dur1), '2.5s');
+
+// --- Wave 3: Bytes packing ---
+const buf = R.vBytes(new Uint8Array(8));
+R.bytesNatives.write_i16(buf, [R.vInt(0), R.vInt(-500)]);
+R.bytesNatives.write_u16(buf, [R.vInt(2), R.vInt(40000)]);
+assert.equal(R.bytesNatives.read_i16(buf, [R.vInt(0)]).v, -500);
+assert.equal(R.bytesNatives.read_u16(buf, [R.vInt(2)]).v, 40000);
+throwsCode(() => R.bytesNatives.read_i32(buf, [R.vInt(6)]), 'AIPO_RT_INDEX_OUT_OF_RANGE');
+assert.ok(R.isFailure(R.bytesNatives.write_i8(buf, [R.vInt(0), R.vInt(300)])));
+R.valSetIndex(buf, R.vInt(4), R.vInt(42));
+assert.equal(R.valGetIndex(buf, R.vInt(4), []).v, 42);
+
+// --- Wave 3: Bytes decode & String encode ---
+const encoded = R.vBytes(new TextEncoder().encode('Hello Aipo'));
+const decoded = R.bytesNatives.decode(encoded);
+assert.equal(decoded.v, 'Hello Aipo');
+const invalidUtf8 = R.vBytes(new Uint8Array([0xFF, 0xFE]));
+assert.ok(R.isFailure(R.bytesNatives.decode(invalidUtf8)));
+
+// --- Wave 3: Sequence .lazy() ---
+const listLazy = R.listNatives.lazy(l);
+assert.equal(listLazy.t, 'sequence');
+assert.equal(R.display(listLazy), '<sequence>');
+
+// --- Wave 3: Task & Group values ---
+const t = R.vTask(42);
+assert.equal(t.t, 'task');
+assert.equal(R.display(t), '<task #42>');
+
+const g = R.vGroup(99);
+assert.equal(g.t, 'group');
+assert.equal(R.display(g), '<group #99>');
+assert.equal(R.typeName(g), 'Group');
+assert.ok(R.valuesEqual(g, R.vGroup(99)));
+assert.ok(!R.valuesEqual(g, R.vGroup(100)));
+
+// --- Wave 3: runModule async scheduler execution ---
+const asyncMod = {
+  version: R.RUNTIME_VERSION,
+  functions: [
+    {
+      name: 'worker',
+      params: [],
+      locals: [],
+      upvalues: [],
+      code: [
+        { op: 'Constant', value: { Int: 42 } },
+        { op: 'Return', has: true },
+      ],
+    },
+  ],
+  top: {
+    name: 'main',
+    params: [],
+    locals: [],
+    upvalues: [],
+    code: [
+      { op: 'Load', name: 'task' },
+      { op: 'GetField', f: 'spawn' },
+      { op: 'MakeFunction', name: 'worker' },
+      { op: 'BuildList', n: 0 },
+      { op: 'Call', argc: 2 },
+      { op: 'Await' },
+      { op: 'Return', has: true },
+    ],
+  },
+  structs: [],
+};
+
+assert.equal(R.runModule(asyncMod), 0);
+
+console.log('shim selftest: Wave 3 assertions passed');
+

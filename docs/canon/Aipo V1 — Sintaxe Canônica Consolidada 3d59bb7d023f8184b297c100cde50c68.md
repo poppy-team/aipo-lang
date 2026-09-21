@@ -550,7 +550,7 @@ A existência de uma expressão condicional curta continua aprovada como necessi
 ## Fechamento do modelo numérico/binário — 2026-09-10
 
 - `Int` deixa de ser normativamente signed 64-bit completo e passa a representar exatamente o intervalo **-9_007_199_254_740_991 .. 9_007_199_254_740_991** (`±(2^53 - 1)`), preservando equivalência exata entre VM e JavaScript.
-- A VM Odin pode continuar usando `i64` internamente; a restrição é semântica, não necessariamente física.
+- A VM pode continuar usando `i64` internamente; a restrição é semântica, não necessariamente física.
 - `Float` permanece IEEE 754 binary64 finito.
 - `Byte` entra na V1 como valor inteiro explícito `0..255`; conversões para `Byte` são verificadas e nunca fazem wraparound/saturação silenciosa.
 - `Int("...")`, `Float("...")` e `Byte("...")` são conversões explícitas que podem produzir `Failure`; `or_else` é a recuperação idiomática.

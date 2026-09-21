@@ -32,16 +32,29 @@ Add deployment, configuration, observability, runbooks, backup/recovery, trouble
 ## Architecture / decisions / specs
 
 - [Crate contracts](crates/crate-contracts.md) — per-crate responsibility, dependency and invariants
-- [Wave 1 plan](waves/wave-1-mvp.md) — MVP subset, vertical slices, exit gate
+- [Wave 1 plan](waves/wave-1-mvp.md) — MVP subset, vertical slices, exit gate (closed, see P00-G16)
+- [Wave 2 plan](waves/wave-2-js-parity.md) — JS parity objective, slices, exit gate (W2-1 done, see P01-G01)
 - [Language authority map](language/authority-map.md) — which document wins, and the no-invention/evidence policies
-- [CLI reference](reference/cli.md) — stable `aipo run/check/fmt` surface, machine output and exit codes
+- [CLI reference](reference/cli.md) — stable `aipo run/check/build/fmt` surface, machine output and exit codes
 - [MVP stdlib subset](stdlib/mvp-subset.md) — implemented Prelude V1, `List`/`Dict` methods and `math`/`string`/`io` surface
 - [Conformance corpus](conformance/README.md) — fixture layout, snapshot matrix, regeneration and the gauntlet rubric
-- [ADP-001 — Byte and core types as values](adp/ADP-001-byte-and-core-types-as-values.md) — Q1/Q2 resolved, Q3–Q5 open
+- [ADP-001 — Byte and core types as values](adp/ADP-001-byte-and-core-types-as-values.md) — resolved: Q1/Q2 by `P00-G10`, Q3/Q4/Q5 by `P00-G15`
 - [ADP-002 — Construction hooks and runtime contracts](adp/ADP-002-construction-hooks-and-runtime-contracts.md) — resolved: G1/G2/G4 by `P00-G13`, G2b/G3 by `P00-G14` (interface structural conformance corrected and certified by `P00-G15`)
-- [ADP-001 — Byte, `Bytes` and core types as values](adp/ADP-001-byte-and-core-types-as-values.md) — resolved: Q1/Q2 by `P00-G10`, Q3/Q4/Q5 by `P00-G15`
+- [ADP-003 — Execution budgets](adp/ADP-003-execution-budgets.md) — draft: fuel/memory/interruption undecided
+- [ADP-004 — Unicode identifier policy](adp/ADP-004-unicode-identifier-policy.md) — draft: confusables/NFC/NBSP undecided
+- [ADP-005 — Parser recursion bounds](adp/ADP-005-parser-recursion-bounds.md) — accepted: 128/64/128 robustness bounds
 
 Add further architecture, ADR/RFC and specifications as the project grows.
+
+## Quality and testing
+
+- [Testing strategy](development/testing-strategy.md) — validation levels, gates, fixtures
+- [CI tiers](testing/ci-tiers.md) — what runs per-PR, scheduled, or on a dedicated runner
+- [Gap matrix](testing/gauntlet-gap-matrix.md) — per-crate coverage inventory of the gauntlet
+- [Tooling decisions](testing/tooling-decisions.md) — adopted/rejected/deferred tools
+- [Concurrency audit](testing/concurrency-audit.md) — global test state discipline
+- [Diagnostic accessibility rubric](testing/diagnostic-accessibility-rubric.md) — text-interface requirements
+- [Performance baseline](performance/baseline.md) — wall-clock medians per workload
 
 ## Evidence
 
@@ -56,6 +69,7 @@ Gate evidence records live under `docs/evidence/`, one per completed goal:
 - [P00-G15 — Static contracts and interface conformance](evidence/P00-G15-static-contracts-and-interface-conformance.md)
 - [P00-G16 — Wave 1 exit review](evidence/P00-G16-wave-1-exit-review.md)
 - [P01-G01 — JS parity for the full MVP subset](evidence/P01-G01-js-parity-mvp-subset.md)
+- [P01-G02 — Deep quality gauntlet](evidence/P01-G02-deep-quality-gauntlet.md)
 
 ## Goals
 

@@ -82,6 +82,26 @@ pub enum VmFault {
         /// Validation failure message.
         message: String,
     },
+    /// Cancelled task driven or awaited: cancellation is a fault, never a
+    /// recoverable `Failure`, so it is not capturable by `attempt`.
+    Cancelled {
+        /// Description of what was cancelled.
+        details: String,
+    },
+    /// Task awaiting itself, directly or transitively: depth-first driving
+    /// would never complete, so the cycle faults instead of hanging.
+    AwaitCycle {
+        /// Chain of task ids forming the cycle.
+        chain: Vec<u64>,
+    },
+    /// Blocking operation (`await`, `sleep`, join) executed inside a
+    /// synchronous callback: `invoke` runs the callback on the host Rust
+    /// stack, which the scheduler cannot suspend and resume. Await the task
+    /// outside the callback instead.
+    AwaitInCallback {
+        /// Which blocking operation was attempted.
+        operation: String,
+    },
     /// Corrupted bytecode instruction encountered.
     CorruptedBytecode {
         /// Offset where error occurred.
@@ -111,6 +131,9 @@ impl VmFault {
             | Self::InvariantViolation { .. }
             | Self::ContractViolation { .. }
             | Self::CorruptedBytecode { .. } => DiagnosticCode::AIPO_RT_TYPE_MISMATCH,
+            Self::Cancelled { .. } => DiagnosticCode::AIPO_RT_CANCELLED,
+            Self::AwaitCycle { .. } => DiagnosticCode::AIPO_RT_AWAIT_CYCLE,
+            Self::AwaitInCallback { .. } => DiagnosticCode::AIPO_RT_AWAIT_IN_CALLBACK,
         }
     }
 }
@@ -212,6 +235,29 @@ impl fmt::Display for VmFault {
                     "runtime fault [AIPO_RT_TYPE_MISMATCH]: corrupted bytecode at offset {offset}: {reason}"
                 )
             }
+            Self::Cancelled { details } => {
+                write!(
+                    f,
+                    "runtime fault [AIPO_RT_CANCELLED]: cancelled task: {details}"
+                )
+            }
+            Self::AwaitCycle { chain } => {
+                write!(
+                    f,
+                    "runtime fault [AIPO_RT_AWAIT_CYCLE]: task await cycle: {}",
+                    chain
+                        .iter()
+                        .map(|id| id.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" -> ")
+                )
+            }
+            Self::AwaitInCallback { operation } => {
+                write!(
+                    f,
+                    "runtime fault [AIPO_RT_AWAIT_IN_CALLBACK]: {operation} inside a synchronous callback cannot suspend; await outside the callback"
+                )
+            }
         }
     }
 }
@@ -225,6 +271,15 @@ pub enum VmError {
     Fault(VmFault),
     /// Uncaught recoverable failure reached top-level execution.
     UncaughtFailure(String),
+    /// Internal control signal: the running task suspended (await, sleep, join)
+    /// and the machine must pick another runnable task.
+    ///
+    /// Blocking primitives suspend with the triggering instruction and the
+    /// operand stack intact, so resuming re-executes the instruction once its
+    /// target is terminal. The signal unwinds through internal `invoke` callers
+    /// and is consumed by [`crate::Vm::run`]; it never surfaces to user code. A stray
+    /// signal escaping `run` is converted to `CorruptedBytecode`.
+    Suspended,
 }
 
 impl VmError {
@@ -234,6 +289,8 @@ impl VmError {
         match self {
             Self::Fault(fault) => fault.diagnostic_code(),
             Self::UncaughtFailure(_) => DiagnosticCode::AIPO_RT_FAILURE_UNCAUGHT,
+            // Internal control flow; mapped only so the envelope stays total.
+            Self::Suspended => DiagnosticCode::AIPO_RT_FAILURE_UNCAUGHT,
         }
     }
 }
@@ -248,6 +305,7 @@ impl fmt::Display for VmError {
                     "runtime failure [AIPO_RT_FAILURE_UNCAUGHT]: uncaught failure: {msg}"
                 )
             }
+            Self::Suspended => write!(f, "internal error: task suspension escaped the scheduler"),
         }
     }
 }

@@ -437,7 +437,154 @@ pub fn dict_len(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
     Ok(Value::Int(expect_dict(receiver)?.len() as i64))
 }
 
-/// Registers every List and Dict method on the VM so dot-call sugar resolves them.
+/// Extracts a shared set receiver, or a type fault.
+fn expect_set(receiver: &Value) -> Result<Rc<RefCell<Vec<Value>>>, VmFault> {
+    match receiver {
+        Value::Set(items) => Ok(Rc::clone(items)),
+        other => Err(VmFault::TypeMismatch {
+            expected: "Set receiver".to_string(),
+            actual: other.type_name().to_string(),
+        }),
+    }
+}
+
+/// `set.has(value)` — reports whether value is present.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a Set.
+pub fn set_has(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "set.has")?;
+    let items = expect_set(receiver)?;
+    let b = items.borrow();
+    Ok(Value::Bool(b.contains(&args[0])))
+}
+
+/// `set.add(value)` — adds value if not present, preserving insertion order.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a Set.
+pub fn set_add(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "set.add")?;
+    let items = expect_set(receiver)?;
+    let mut b = items.borrow_mut();
+    if !b.contains(&args[0]) {
+        b.push(args[0].clone());
+    }
+    Ok(Value::None)
+}
+
+/// `set.remove(value)` — removes value if present, returning whether it existed.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a Set.
+pub fn set_remove(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "set.remove")?;
+    let items = expect_set(receiver)?;
+    let mut b = items.borrow_mut();
+    if let Some(pos) = b.iter().position(|x| x == &args[0]) {
+        b.remove(pos);
+        Ok(Value::Bool(true))
+    } else {
+        Ok(Value::Bool(false))
+    }
+}
+
+/// `set.clear()` — clears all elements in place.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a Set.
+pub fn set_clear(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 0, "set.clear")?;
+    let items = expect_set(receiver)?;
+    items.borrow_mut().clear();
+    Ok(Value::None)
+}
+
+/// `set.is_empty()` — returns whether the set has no elements.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a Set.
+pub fn set_is_empty(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 0, "set.is_empty")?;
+    let items = expect_set(receiver)?;
+    Ok(Value::Bool(items.borrow().is_empty()))
+}
+
+/// `set.len()` — returns element count.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a Set.
+pub fn set_len(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 0, "set.len")?;
+    let items = expect_set(receiver)?;
+    #[allow(clippy::cast_possible_wrap)]
+    Ok(Value::Int(items.borrow().len() as i64))
+}
+
+/// `set.to_list()` — returns elements in insertion order as a new List.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a Set.
+pub fn set_to_list(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 0, "set.to_list")?;
+    let items = expect_set(receiver)?;
+    let list = items.borrow().clone();
+    Ok(Value::List(Rc::new(RefCell::new(list))))
+}
+
+/// `list.lazy()` — snapshots list into a lazy Sequence.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a List.
+pub fn list_lazy(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 0, "list.lazy")?;
+    let Value::List(list) = receiver else {
+        return Err(VmFault::TypeMismatch {
+            expected: "List receiver".to_string(),
+            actual: receiver.type_name().to_string(),
+        });
+    };
+    let pipeline = aipo_vm::SequencePipeline::new(
+        aipo_vm::SequenceSource::List(list.borrow().clone()),
+        Vec::new(),
+    );
+    Ok(Value::Sequence(Rc::new(pipeline)))
+}
+
+/// `dict.lazy()` — snapshots dict values into a lazy Sequence.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a Dict.
+pub fn dict_lazy(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 0, "dict.lazy")?;
+    let Value::Dict(dict) = receiver else {
+        return Err(VmFault::TypeMismatch {
+            expected: "Dict receiver".to_string(),
+            actual: receiver.type_name().to_string(),
+        });
+    };
+    let pipeline = aipo_vm::SequencePipeline::new(
+        aipo_vm::SequenceSource::Dict(dict.borrow().values()),
+        Vec::new(),
+    );
+    Ok(Value::Sequence(Rc::new(pipeline)))
+}
+
+/// `set.lazy()` — snapshots set members into a lazy Sequence.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a Set.
+pub fn set_lazy(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 0, "set.lazy")?;
+    let items = expect_set(receiver)?;
+    let pipeline = aipo_vm::SequencePipeline::new(
+        aipo_vm::SequenceSource::Set(items.borrow().clone()),
+        Vec::new(),
+    );
+    Ok(Value::Sequence(Rc::new(pipeline)))
+}
+
+/// Registers every List, Dict, and Set method on the VM so dot-call sugar resolves them.
 pub fn register_methods(vm: &mut Vm) {
     vm.register_method_native("List", "add", 1, list_add);
     vm.register_method_native("List", "insert", 2, list_insert);
@@ -454,6 +601,7 @@ pub fn register_methods(vm: &mut Vm) {
     vm.register_method_native("List", "reverse", 0, list_reverse);
     vm.register_method_native("List", "sort", 0, list_sort);
     vm.register_method_native("List", "len", 0, list_len);
+    vm.register_method_native("List", "lazy", 0, list_lazy);
 
     vm.register_method_native("Dict", "has", 1, dict_has);
     vm.register_method_native("Dict", "get", 1, dict_get);
@@ -463,4 +611,14 @@ pub fn register_methods(vm: &mut Vm) {
     vm.register_method_native("Dict", "clear", 0, dict_clear);
     vm.register_method_native("Dict", "is_empty", 0, dict_is_empty);
     vm.register_method_native("Dict", "len", 0, dict_len);
+    vm.register_method_native("Dict", "lazy", 0, dict_lazy);
+
+    vm.register_method_native("Set", "has", 1, set_has);
+    vm.register_method_native("Set", "add", 1, set_add);
+    vm.register_method_native("Set", "remove", 1, set_remove);
+    vm.register_method_native("Set", "clear", 0, set_clear);
+    vm.register_method_native("Set", "is_empty", 0, set_is_empty);
+    vm.register_method_native("Set", "len", 0, set_len);
+    vm.register_method_native("Set", "to_list", 0, set_to_list);
+    vm.register_method_native("Set", "lazy", 0, set_lazy);
 }

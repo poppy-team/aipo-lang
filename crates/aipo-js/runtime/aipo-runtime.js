@@ -47,7 +47,7 @@ export function vInt(n) {
 export function vFloat(f) { return checkFiniteFloat(f); }
 export function vByte(b) {
   if (!Number.isInteger(b) || b < 0 || b > 255) fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected Byte, got ${b}`);
-  return { t: 'byte', v: b };
+  return { t: 'byte', v: normInt(b) };
 }
 export function vStr(s) { return { t: 'str', v: String(s).normalize('NFC') }; }
 export function vList(items) { return { t: 'list', items: items || [], id: freshId() }; }
@@ -104,6 +104,19 @@ export function dictRemove(d, key) {
 }
 export function dictClear(d) { d.entries.length = 0; d.strIdx.clear(); }
 export function vBytes(data) { return { t: 'bytes', data: data instanceof Uint8Array ? data : new Uint8Array(data || []) }; }
+export function vSet(items) {
+  const list = [];
+  for (const item of (items || [])) {
+    if (!list.some(x => valuesEqual(x, item))) {
+      list.push(item);
+    }
+  }
+  return { t: 'set', items: list, id: freshId() };
+}
+export function vDuration(secs) { return { t: 'duration', v: checkFiniteFloat(secs).v }; }
+export function vSequence(pipeline) { return { t: 'sequence', source: pipeline.source, ops: pipeline.ops || [], id: freshId() }; }
+export function vTask(id) { return { t: 'task', id: id !== undefined ? id : freshId() }; }
+export function vGroup(id) { return { t: 'group', id: id !== undefined ? id : freshId() }; }
 export function vRange(start, end) { return { t: 'range', start, end }; }
 export function vType(name) { return { t: 'type', name }; }
 export function vFail(msg) { return { t: 'fail', msg: String(msg) }; }
@@ -124,6 +137,11 @@ export function typeName(v) {
     case 'str': return 'String';
     case 'list': return 'List';
     case 'dict': return 'Dict';
+    case 'set': return 'Set';
+    case 'duration': return 'Duration';
+    case 'sequence': return 'Sequence';
+    case 'task': return 'Task';
+    case 'group': return 'Group';
     case 'struct': return 'struct';
     case 'func': case 'closure': case 'native': case 'bound': return 'Function';
     case 'byte': return 'Byte';
@@ -145,11 +163,16 @@ export function display(v) {
     case 'none': return 'none';
     case 'bool': return v.v ? 'true' : 'false';
     case 'int': return String(v.v);
-    case 'float': return Number.isInteger(v.v) ? `${v.v}.0` : String(v.v);
+    case 'float': return floatText(v.v);
     case 'byte': return String(v.v);
     case 'str': return v.v;
     case 'list': return `[${v.items.map(display).join(', ')}]`;
     case 'dict': return `#{${v.entries.map(([k, val]) => `${display(k)}: ${display(val)}`).join(', ')}}`;
+    case 'set': return `{${v.items.map(display).join(', ')}}`;
+    case 'sequence': return '<sequence>';
+    case 'task': return `<task #${v.id}>`;
+    case 'group': return `<group #${v.id}>`;
+    case 'duration': return Number.isInteger(v.v) ? (Object.is(v.v, -0) ? '-0s' : `${v.v}s`) : `${v.v}s`;
     case 'struct': return `${v.type}{${v.fields.map(([k, val]) => `${k} = ${display(val)}`).join(', ')}}`;
     case 'bytes': return '<bytes>';
     case 'type': return v.name;
@@ -160,12 +183,25 @@ export function display(v) {
   }
 }
 
+
+// Canonical float rendering shared by display and String(): integral floats
+// print with one decimal, preserving negative zero like the VM reference.
+function floatText(f) {
+  if (Number.isInteger(f)) return Object.is(f, -0) ? '-0.0' : `${f}.0`;
+  return String(f);
+}
 // ---- numeric guards ----
+// Integers never hold negative zero: Rust i64 arithmetic cannot produce it,
+// but JS doubles can (`-33 * 0 === -0`). Normalizing here keeps every Int
+// producer (arithmetic, conversions, lengths, indexes) identical to the VM.
+function normInt(n) {
+  return Object.is(n, -0) ? 0 : n;
+}
 function checkSafeInt(n) {
   if (!Number.isInteger(n) || n < MIN_SAFE_INT || n > MAX_SAFE_INT) {
     fault('AIPO_RT_OVERFLOW', `${n} exceeds integer range ±(2^53 - 1)`);
   }
-  return { t: 'int', v: n };
+  return { t: 'int', v: normInt(n) };
 }
 function checkFiniteFloat(f) {
   if (typeof f !== 'number' || !Number.isFinite(f)) fault('AIPO_RT_NON_FINITE_FLOAT', 'non-finite float');
@@ -192,9 +228,10 @@ export function valAdd(a, b) {
   if (a.t === 'float' && b.t === 'float') return checkFiniteFloat(a.v + b.v);
   if (a.t === 'int' && b.t === 'float') return checkFiniteFloat(a.v + b.v);
   if (a.t === 'float' && b.t === 'int') return checkFiniteFloat(a.v + b.v);
+  if (a.t === 'duration' && b.t === 'duration') return vDuration(checkFiniteFloat(a.v + b.v).v);
   if (a.t === 'str' && b.t === 'str') return vStr(a.v + b.v);
   if (a.t === 'list' && b.t === 'list') return vList([...a.items, ...b.items]);
-  return typeMismatch('Int, Float, String, or List', `${typeName(a)} and ${typeName(b)}`);
+  return typeMismatch('Int, Float, String, List, or Duration', `${typeName(a)} and ${typeName(b)}`);
 }
 export function valSub(a, b) {
   const p = arithPre(a, b); if (p) return p;
@@ -203,7 +240,8 @@ export function valSub(a, b) {
   if (a.t === 'float' && b.t === 'float') return checkFiniteFloat(a.v - b.v);
   if (a.t === 'int' && b.t === 'float') return checkFiniteFloat(a.v - b.v);
   if (a.t === 'float' && b.t === 'int') return checkFiniteFloat(a.v - b.v);
-  return typeMismatch('Int or Float', `${typeName(a)} and ${typeName(b)}`);
+  if (a.t === 'duration' && b.t === 'duration') return vDuration(checkFiniteFloat(a.v - b.v).v);
+  return typeMismatch('Int, Float, or Duration', `${typeName(a)} and ${typeName(b)}`);
 }
 export function valMul(a, b) {
   const p = arithPre(a, b); if (p) return p;
@@ -240,7 +278,8 @@ export function valNeg(a) {
   const x = widen(a);
   if (x.t === 'int') return checkSafeInt(-x.v);
   if (x.t === 'float') return checkFiniteFloat(-x.v);
-  return typeMismatch('Int or Float', typeName(a));
+  if (x.t === 'duration') return vDuration(checkFiniteFloat(-x.v).v);
+  return typeMismatch('Int, Float, or Duration', typeName(a));
 }
 export function valPos(a) {
   if (isFailure(a)) return a;
@@ -275,6 +314,11 @@ export function valuesEqual(a, b) {
     case 'bytes': { if (a.data.length !== b.data.length) return false; for (let i = 0; i < a.data.length; i++) if (a.data[i] !== b.data[i]) return false; return true; }
     case 'type': return a.name === b.name;
     case 'range': return a.start === b.start && a.end === b.end;
+    case 'set': { if (a.items.length !== b.items.length) return false; for (let i = 0; i < a.items.length; i++) if (!valuesEqual(a.items[i], b.items[i])) return false; return true; }
+    case 'duration': return a.v === b.v;
+    case 'task': return a.id === b.id;
+    case 'group': return a.id === b.id;
+    case 'sequence': return a === b;
     case 'list': { if (a.items.length !== b.items.length) return false; for (let i = 0; i < a.items.length; i++) if (!valuesEqual(a.items[i], b.items[i])) return false; return true; }
     case 'dict': { if (a.entries.length !== b.entries.length) return false; for (let i = 0; i < a.entries.length; i++) if (!valuesEqual(a.entries[i][0], b.entries[i][0]) || !valuesEqual(a.entries[i][1], b.entries[i][1])) return false; return true; }
     case 'struct': { if (a.type !== b.type || a.fields.length !== b.fields.length) return false; for (let i = 0; i < a.fields.length; i++) if (a.fields[i][0] !== b.fields[i][0] || !valuesEqual(a.fields[i][1], b.fields[i][1])) return false; return true; }
@@ -292,20 +336,21 @@ function cmpOrder(a, b) {
   if (an !== null && bn !== null) return an < bn ? -1 : an > bn ? 1 : 0;
   if (a.t === 'str' && b.t === 'str') return a.v < b.v ? -1 : a.v > b.v ? 1 : 0;
   if (a.t === 'bool' && b.t === 'bool') return a.v === b.v ? 0 : !a.v && b.v ? -1 : 1;
+  if (a.t === 'duration' && b.t === 'duration') return a.v < b.v ? -1 : a.v > b.v ? 1 : 0;
   return null;
 }
 export function valLess(a, b) {
   if (isFailure(a)) return a;
   if (isFailure(b)) return b;
   const c = cmpOrder(widen(a), widen(b));
-  if (c === null) return typeMismatch('comparable Int, Float, or String', `${typeName(a)} and ${typeName(b)}`);
+  if (c === null) return typeMismatch('comparable Int, Float, String, or Duration', `${typeName(a)} and ${typeName(b)}`);
   return vBool(c < 0);
 }
 export function valLessEqual(a, b) {
   if (isFailure(a)) return a;
   if (isFailure(b)) return b;
   const c = cmpOrder(widen(a), widen(b));
-  if (c === null) return typeMismatch('comparable Int, Float, or String', `${typeName(a)} and ${typeName(b)}`);
+  if (c === null) return typeMismatch('comparable Int, Float, String, or Duration', `${typeName(a)} and ${typeName(b)}`);
   return vBool(c <= 0);
 }
 export function valGreater(a, b) { return valLess(b, a); }
@@ -590,20 +635,22 @@ export function std_len(v) {
   if (v.t === 'list') return vInt(v.items.length);
   if (v.t === 'dict') return vInt(v.entries.length);
   if (v.t === 'bytes') return vInt(v.data.length);
-  return typeMismatch('String, List, Dict, or Bytes', typeName(v));
+  if (v.t === 'set') return vInt(v.items.length);
+  return typeMismatch('String, List, Dict, Bytes, or Set', typeName(v));
 }
 export function std_copy(v) {
   if (isFailure(v)) return v;
   if (v.t === 'list') return vList([...v.items]);
   if (v.t === 'dict') return vDict(v.entries.map(([k, x]) => [k, x]));
+  if (v.t === 'set') return vSet([...v.items]);
   if (v.t === 'struct') return vStruct(v.type, v.fields.map(([k, x]) => [k, x]), [...v.fixed], v.constructing);
   return v;
 }
 export function std_same(a, b) {
   if (isFailure(a) || isFailure(b)) return vBool(false);
-  if ((a.t === 'list' || a.t === 'dict' || a.t === 'struct') && a === b) return vBool(true);
+  if ((a.t === 'list' || a.t === 'dict' || a.t === 'struct' || a.t === 'set') && a === b) return vBool(true);
   if (a.t === 'str' && b.t === 'str') return vBool(a.v === b.v);
-  if ((a.t === 'list' || a.t === 'dict' || a.t === 'struct') || (b.t === 'list' || b.t === 'dict' || b.t === 'struct')) return vBool(false);
+  if ((a.t === 'list' || a.t === 'dict' || a.t === 'struct' || a.t === 'set') || (b.t === 'list' || b.t === 'dict' || b.t === 'struct' || b.t === 'set')) return vBool(false);
   return vBool(valuesEqual(a, b));
 }
 export function std_some(v) { return vBool(!(v.t === 'none')); }
@@ -636,7 +683,7 @@ export function convInt(v) {
     const p = parseIntWhole(x.v);
     if (p === null || !Number.isSafeInteger(p)) return vFail(`invalid integer text: ${dq(x.v)}`);
     if (p < MIN_SAFE_INT || p > MAX_SAFE_INT) return vFail(`integer text out of range: ${dq(x.v)}`);
-    return { t: 'int', v: p };
+    return { t: 'int', v: normInt(p) };
   }
   return typeMismatch('String, Int, Float, or Byte', typeName(v));
 }
@@ -673,14 +720,14 @@ export function convByte(v) {
     n = p;
   } else return typeMismatch('String, Int, Float, or Byte', typeName(v));
   if (n < 0 || n > 255) return vFail(`Byte value ${n} is outside the range 0..=255`);
-  return { t: 'byte', v: n };
+  return { t: 'byte', v: normInt(n) };
 }
 export function convString(v) {
   if (isFailure(v)) return v;
   switch (v.t) {
     case 'str': return vStr(v.v);
     case 'int': case 'byte': return vStr(String(v.v));
-    case 'float': return vStr(Number.isInteger(v.v) ? `${v.v}.0` : String(v.v));
+    case 'float': return vStr(floatText(v.v));
     case 'bool': return vStr(v.v ? 'true' : 'false');
     case 'none': return vStr('none');
     case 'type': return vStr(v.name);
@@ -692,6 +739,18 @@ export function convBytes(v) {
   if (v.t !== 'int') return typeMismatch('Int for Bytes(count)', typeName(v));
   if (v.v < 0 || v.v > BYTES_MAX_ALLOCATION) return vFail(`Bytes(${v.v}) is outside the constructible range 0..=${BYTES_MAX_ALLOCATION}`);
   return vBytes(new Uint8Array(v.v));
+}
+export function convSet(v) {
+  if (isFailure(v)) return v;
+  if (v.t === 'list' || v.t === 'set') return vSet(v.items);
+  return typeMismatch('List or Set', typeName(v));
+}
+export function convDuration(v) {
+  if (isFailure(v)) return v;
+  const x = widen(v);
+  if (x.t === 'int') return vDuration(x.v);
+  if (x.t === 'float') return vDuration(x.v);
+  return typeMismatch('Int or Float', typeName(v));
 }
 
 // ---- indexing / slicing ----
@@ -779,6 +838,17 @@ export function valSetIndex(target, index, value) {
     dictUpsert(target, index, value);
     return vNone();
   }
+  if (target.t === 'bytes') {
+    const xi = widen(index);
+    if (xi.t !== 'int') return typeMismatch('Int index', typeName(index));
+    const i = resolveIndex(target.data.length, xi.v);
+    if (i < 0 || i >= target.data.length) fault('AIPO_RT_INDEX_OUT_OF_RANGE', `index ${xi.v} out of range (len ${target.data.length})`);
+    const xv = widen(value);
+    if (xv.t !== 'int') return typeMismatch('Byte or Int value', typeName(value));
+    if (xv.v < 0 || xv.v > 255) return vFail(`byte value out of range: ${xv.v}`);
+    target.data[i] = xv.v;
+    return vNone();
+  }
   return typeMismatch('mutable collection', typeName(target));
 }
 export function valLen(v) {
@@ -788,14 +858,15 @@ export function valLen(v) {
   if (v.t === 'dict') return vInt(v.entries.length);
   if (v.t === 'bytes') return vInt(v.data.length);
   if (v.t === 'range') return vInt(rangeLen(v));
-  return typeMismatch('String, List, Dict, Bytes, or Range', typeName(v));
+  if (v.t === 'set') return vInt(v.items.length);
+  return typeMismatch('String, List, Dict, Bytes, Range, or Set', typeName(v));
 }
 
-// ---- List / Dict natives (receiver-first) ----
+// ---- List / Dict / Set natives (receiver-first) ----
 const MUTATING = new Set(['add', 'insert', 'remove', 'remove_at', 'remove_last', 'clear']);
 export function checkMutationAllowed(name, recv, active) {
   if (!MUTATING.has(name)) return;
-  if (recv && (recv.t === 'list' || recv.t === 'dict') && active.includes(recv.id)) {
+  if (recv && (recv.t === 'list' || recv.t === 'dict' || recv.t === 'set') && active.includes(recv.id)) {
     fault('AIPO_RT_MUTATION_DURING_ITERATION', 'mutation during iteration');
   }
 }
@@ -822,6 +893,7 @@ export const listNatives = {
   len(r) { reqList(r); return vInt(r.items.length); },
   reverse(r) { reqList(r); return vList([...r.items].reverse()); },
   sort(r) { reqList(r); const cp = [...r.items]; cp.sort(compareValues); return vList(cp); },
+  lazy(r) { reqList(r); return vSequence({ source: { type: 'list', items: [...r.items] }, ops: [] }); },
 };
 export const dictNatives = {
   has(r, a) { reqDict(r); return vBool(dictGet(r, a[0]) !== null); },
@@ -832,6 +904,150 @@ export const dictNatives = {
   clear(r) { reqDict(r); dictClear(r); return vNone(); },
   is_empty(r) { reqDict(r); return vBool(r.entries.length === 0); },
   len(r) { reqDict(r); return vInt(r.entries.length); },
+  lazy(r) { reqDict(r); return vSequence({ source: { type: 'dict', items: r.entries.map(([, v]) => v) }, ops: [] }); },
+};
+function reqSet(v) { if (v.t !== 'set') return typeMismatch('Set', typeName(v)); }
+export const setNatives = {
+  has(r, a) { reqSet(r); return vBool(r.items.some(x => valuesEqual(x, a[0]))); },
+  add(r, a) {
+    reqSet(r);
+    if (!r.items.some(x => valuesEqual(x, a[0]))) {
+      r.items.push(a[0]);
+    }
+    return vNone();
+  },
+  remove(r, a) {
+    reqSet(r);
+    const at = r.items.findIndex(x => valuesEqual(x, a[0]));
+    if (at >= 0) r.items.splice(at, 1);
+    return vBool(at >= 0);
+  },
+  clear(r) { reqSet(r); r.items.length = 0; return vNone(); },
+  is_empty(r) { reqSet(r); return vBool(r.items.length === 0); },
+  len(r) { reqSet(r); return vInt(r.items.length); },
+  to_list(r) { reqSet(r); return vList([...r.items]); },
+  lazy(r) { reqSet(r); return vSequence({ source: { type: 'set', items: [...r.items] }, ops: [] }); },
+};
+function reqBytes(v) { if (v.t !== 'bytes') return typeMismatch('Bytes', typeName(v)); }
+function bytesView(r, offset, size) {
+  reqBytes(r);
+  const idx = intIndex(offset);
+  if (idx < 0 || idx + size > r.data.length) {
+    fault('AIPO_RT_INDEX_OUT_OF_RANGE', `index ${idx} out of range (len ${r.data.length})`);
+  }
+  return { view: new DataView(r.data.buffer, r.data.byteOffset, r.data.byteLength), idx };
+}
+export const bytesNatives = {
+  read_i8(r, a) { const { view, idx } = bytesView(r, a[0], 1); return vInt(view.getInt8(idx)); },
+  read_u8(r, a) { const { view, idx } = bytesView(r, a[0], 1); return vInt(view.getUint8(idx)); },
+  read_i16(r, a) { const { view, idx } = bytesView(r, a[0], 2); return vInt(view.getInt16(idx, true)); },
+  read_u16(r, a) { const { view, idx } = bytesView(r, a[0], 2); return vInt(view.getUint16(idx, true)); },
+  read_i32(r, a) { const { view, idx } = bytesView(r, a[0], 4); return vInt(view.getInt32(idx, true)); },
+  read_u32(r, a) { const { view, idx } = bytesView(r, a[0], 4); return vInt(view.getUint32(idx, true)); },
+  read_i64(r, a) {
+    const { view, idx } = bytesView(r, a[0], 8);
+    const bi = view.getBigInt64(idx, true);
+    if (bi < BigInt(MIN_SAFE_INT) || bi > BigInt(MAX_SAFE_INT)) {
+      fault('AIPO_RT_OVERFLOW', `${bi} exceeds integer range ±(2^53 - 1)`);
+    }
+    return vInt(Number(bi));
+  },
+  read_u64(r, a) {
+    const { view, idx } = bytesView(r, a[0], 8);
+    const bu = view.getBigUint64(idx, true);
+    if (bu > BigInt(MAX_SAFE_INT)) {
+      fault('AIPO_RT_OVERFLOW', `${bu} exceeds integer range ±(2^53 - 1)`);
+    }
+    return vInt(Number(bu));
+  },
+  read_f32(r, a) { const { view, idx } = bytesView(r, a[0], 4); return checkFiniteFloat(view.getFloat32(idx, true)); },
+  read_f64(r, a) { const { view, idx } = bytesView(r, a[0], 8); return checkFiniteFloat(view.getFloat64(idx, true)); },
+  write_i8(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < -128 || val.v > 127) return vFail(`value ${val.v} out of range for i8`);
+    const { view, idx } = bytesView(r, a[0], 1);
+    view.setInt8(idx, val.v);
+    return vNone();
+  },
+  write_u8(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < 0 || val.v > 255) return vFail(`value ${val.v} out of range for u8`);
+    const { view, idx } = bytesView(r, a[0], 1);
+    view.setUint8(idx, val.v);
+    return vNone();
+  },
+  write_i16(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < -32768 || val.v > 32767) return vFail(`value ${val.v} out of range for i16`);
+    const { view, idx } = bytesView(r, a[0], 2);
+    view.setInt16(idx, val.v, true);
+    return vNone();
+  },
+  write_u16(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < 0 || val.v > 65535) return vFail(`value ${val.v} out of range for u16`);
+    const { view, idx } = bytesView(r, a[0], 2);
+    view.setUint16(idx, val.v, true);
+    return vNone();
+  },
+  write_i32(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < -2147483648 || val.v > 2147483647) return vFail(`value ${val.v} out of range for i32`);
+    const { view, idx } = bytesView(r, a[0], 4);
+    view.setInt32(idx, val.v, true);
+    return vNone();
+  },
+  write_u32(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < 0 || val.v > 4294967295) return vFail(`value ${val.v} out of range for u32`);
+    const { view, idx } = bytesView(r, a[0], 4);
+    view.setUint32(idx, val.v, true);
+    return vNone();
+  },
+  write_i64(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    const { view, idx } = bytesView(r, a[0], 8);
+    view.setBigInt64(idx, BigInt(val.v), true);
+    return vNone();
+  },
+  write_u64(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < 0) return vFail(`value ${val.v} out of range for u64`);
+    const { view, idx } = bytesView(r, a[0], 8);
+    view.setBigUint64(idx, BigInt(val.v), true);
+    return vNone();
+  },
+  write_f32(r, a) {
+    const f = toF64(widen(a[1]));
+    if (Number.isNaN(f) || !Number.isFinite(f)) return typeMismatch('Float or Int', typeName(a[1]));
+    const { view, idx } = bytesView(r, a[0], 4);
+    view.setFloat32(idx, f, true);
+    return vNone();
+  },
+  write_f64(r, a) {
+    const f = toF64(widen(a[1]));
+    if (Number.isNaN(f) || !Number.isFinite(f)) return typeMismatch('Float or Int', typeName(a[1]));
+    const { view, idx } = bytesView(r, a[0], 8);
+    view.setFloat64(idx, f, true);
+    return vNone();
+  },
+  decode(r) {
+    reqBytes(r);
+    try {
+      const s = new TextDecoder('utf-8', { fatal: true }).decode(r.data);
+      return vStr(s);
+    } catch {
+      return vFail('invalid UTF-8 bytes');
+    }
+  },
 };
 function numKey(v) {
   if (v.t === 'int' || v.t === 'byte') return v.v;
@@ -919,6 +1135,18 @@ function makeMachine(module) {
     module, funcIndex, structMethods,
     stack: [], frames: [], handlers: [], journal: [], active: [],
     globals: makeGlobals(), halted: null, done: false, result: null,
+    tasks: new Map(),
+    runQueue: [],
+    waiters: new Map(),
+    joins: new Map(),
+    groups: new Map(),
+    current: 0,
+    nextTask: 1,
+    nextJoin: 1,
+    nextGroup: 1,
+    tick: 0,
+    mainOutcome: null,
+    invokeDepth: 0,
   };
 }
 
@@ -941,6 +1169,20 @@ function makeGlobals() {
   g.set('List', vType('List'));
   g.set('Dict', vType('Dict'));
   g.set('Bytes', vType('Bytes'));
+  g.set('Set', vType('Set'));
+  g.set('Duration', vType('Duration'));
+  g.set('Group', vType('Group'));
+  // task module
+  const taskEntries = [
+    ['spawn', nat('task.spawn', 2, () => vNone())],
+    ['sleep', nat('task.sleep', 1, () => vNone())],
+    ['all', nat('task.all', 1, () => vNone())],
+    ['race', nat('task.race', 1, () => vNone())],
+    ['timeout', nat('task.timeout', 2, () => vNone())],
+    ['cancel', nat('task.cancel', 1, () => vNone())],
+    ['group', nat('task.group', 0, () => vNone())],
+  ];
+  g.set('task', vDict(taskEntries.map(([k, v]) => [vStr(k), v])));
   // math module
   const mathEntries = [
     ['abs', nat('math.abs', 1, a => std_math_abs(a[0]))],
@@ -1001,6 +1243,11 @@ function mPeek(m) {
 function curFrame(m) { return m.frames.length ? m.frames[m.frames.length - 1] : null; }
 
 function bindMethod(m, recv, name) {
+  if (recv.t === 'group') {
+    if (name === 'spawn') return { t: 'bound', name, arity: 2, recv, kind: 'group' };
+    if (name === 'wait') return { t: 'bound', name, arity: 0, recv, kind: 'group' };
+    return null;
+  }
   const tn = recv.t === 'struct' ? 'struct' : typeName(recv);
   const key = `${tn}.${name}`;
   const table = {
@@ -1020,6 +1267,8 @@ function bindMethod(m, recv, name) {
     'String.replace': [2, a => std_string_replace(a[0], a[1], a[2])],
     'String.slice': [2, a => std_string_slice(a[0], a[1], a[2])],
     'String.format': [1, a => std_string_format(a[0], a[1])],
+    'String.encode': [0, a => { reqStr(a[0]); return vBytes(new TextEncoder().encode(a[0].v)); }],
+    'Duration.total_seconds': [0, a => { if (a[0].t !== 'duration') return typeMismatch('Duration', typeName(a[0])); return checkFiniteFloat(a[0].v); }],
     'List.add': [1, a => listNatives.add(a[0], a.slice(1))],
     'List.insert': [2, a => listNatives.insert(a[0], a.slice(1))],
     'List.remove': [1, a => listNatives.remove(a[0], a.slice(1))],
@@ -1035,6 +1284,7 @@ function bindMethod(m, recv, name) {
     'List.reverse': [0, a => listNatives.reverse(a[0], a.slice(1))],
     'List.sort': [0, a => listNatives.sort(a[0], a.slice(1))],
     'List.len': [0, a => listNatives.len(a[0], a.slice(1))],
+    'List.lazy': [0, a => listNatives.lazy(a[0])],
     'Dict.has': [1, a => dictNatives.has(a[0], a.slice(1))],
     'Dict.get': [1, a => dictNatives.get(a[0], a.slice(1))],
     'Dict.keys': [0, a => dictNatives.keys(a[0], a.slice(1))],
@@ -1043,13 +1293,43 @@ function bindMethod(m, recv, name) {
     'Dict.clear': [0, a => dictNatives.clear(a[0], a.slice(1))],
     'Dict.is_empty': [0, a => dictNatives.is_empty(a[0], a.slice(1))],
     'Dict.len': [0, a => dictNatives.len(a[0], a.slice(1))],
+    'Dict.lazy': [0, a => dictNatives.lazy(a[0])],
+    'Set.has': [1, a => setNatives.has(a[0], a.slice(1))],
+    'Set.add': [1, a => setNatives.add(a[0], a.slice(1))],
+    'Set.remove': [1, a => setNatives.remove(a[0], a.slice(1))],
+    'Set.clear': [0, a => setNatives.clear(a[0])],
+    'Set.is_empty': [0, a => setNatives.is_empty(a[0])],
+    'Set.len': [0, a => setNatives.len(a[0])],
+    'Set.to_list': [0, a => setNatives.to_list(a[0])],
+    'Set.lazy': [0, a => setNatives.lazy(a[0])],
+    'Bytes.read_i8': [1, a => bytesNatives.read_i8(a[0], a.slice(1))],
+    'Bytes.read_u8': [1, a => bytesNatives.read_u8(a[0], a.slice(1))],
+    'Bytes.read_i16': [1, a => bytesNatives.read_i16(a[0], a.slice(1))],
+    'Bytes.read_u16': [1, a => bytesNatives.read_u16(a[0], a.slice(1))],
+    'Bytes.read_i32': [1, a => bytesNatives.read_i32(a[0], a.slice(1))],
+    'Bytes.read_u32': [1, a => bytesNatives.read_u32(a[0], a.slice(1))],
+    'Bytes.read_i64': [1, a => bytesNatives.read_i64(a[0], a.slice(1))],
+    'Bytes.read_u64': [1, a => bytesNatives.read_u64(a[0], a.slice(1))],
+    'Bytes.read_f32': [1, a => bytesNatives.read_f32(a[0], a.slice(1))],
+    'Bytes.read_f64': [1, a => bytesNatives.read_f64(a[0], a.slice(1))],
+    'Bytes.write_i8': [2, a => bytesNatives.write_i8(a[0], a.slice(1))],
+    'Bytes.write_u8': [2, a => bytesNatives.write_u8(a[0], a.slice(1))],
+    'Bytes.write_i16': [2, a => bytesNatives.write_i16(a[0], a.slice(1))],
+    'Bytes.write_u16': [2, a => bytesNatives.write_u16(a[0], a.slice(1))],
+    'Bytes.write_i32': [2, a => bytesNatives.write_i32(a[0], a.slice(1))],
+    'Bytes.write_u32': [2, a => bytesNatives.write_u32(a[0], a.slice(1))],
+    'Bytes.write_i64': [2, a => bytesNatives.write_i64(a[0], a.slice(1))],
+    'Bytes.write_u64': [2, a => bytesNatives.write_u64(a[0], a.slice(1))],
+    'Bytes.write_f32': [2, a => bytesNatives.write_f32(a[0], a.slice(1))],
+    'Bytes.write_f64': [2, a => bytesNatives.write_f64(a[0], a.slice(1))],
+    'Bytes.decode': [0, a => bytesNatives.decode(a[0])],
   };
   if (table[key]) {
     const [arity, fn] = table[key];
     return { t: 'bound', name, arity, recv, kind: 'native', fn };
   }
   if ((name === 'filter' || name === 'transform' || name === 'sort_by') &&
-      (recv.t === 'list' || recv.t === 'dict' || recv.t === 'str' || recv.t === 'range')) {
+      (recv.t === 'list' || recv.t === 'dict' || recv.t === 'set' || recv.t === 'str' || recv.t === 'range')) {
     return { t: 'bound', name, arity: 1, recv, kind: 'higher' };
   }
   return null;
@@ -1090,6 +1370,8 @@ function convertViaType(tag, args) {
     case 'Byte': return convByte(a);
     case 'String': return convString(a);
     case 'Bytes': return convBytes(a);
+    case 'Set': return convSet(a);
+    case 'Duration': return convDuration(a);
     default: fault('AIPO_RT_NOT_CALLABLE', `${tag} (no conversion form in V1)`);
   }
 }
@@ -1131,6 +1413,10 @@ function beginCall(m, argc) {
     m.stack.length = calleeIdx + 1 + argc;
   } else if (callee.t === 'native') {
     checkArity(argc, callee.arity);
+    if (callee.name && callee.name.startsWith('task.')) {
+      taskCall(m, callee.name, calleeIdx, args);
+      return;
+    }
     const r = callee.fn(args);
     m.stack.length = calleeIdx;
     mPush(m, r);
@@ -1140,6 +1426,10 @@ function beginCall(m, argc) {
     mPush(m, r);
   } else if (callee.t === 'bound') {
     checkArity(argc, callee.arity);
+    if (callee.kind === 'group') {
+      groupMethod(m, callee.name, callee.recv, args, calleeIdx);
+      return;
+    }
     if (callee.kind === 'native') {
       checkMutationAllowed(callee.name, callee.recv, m.active);
       const r = callee.fn([callee.recv, ...args]);
@@ -1168,13 +1458,14 @@ function beginCall(m, argc) {
 function iterableItems(m, recv) {
   if (recv.t === 'list') return [...recv.items];
   if (recv.t === 'dict') return recv.entries.map(([, v]) => v);
+  if (recv.t === 'set') return [...recv.items];
   if (recv.t === 'str') return chars(recv.v).map(c => vStr(c));
   if (recv.t === 'range') {
     const out = [];
     for (let i = recv.start; i < recv.end; i++) out.push(vInt(i));
     return out;
   }
-  return typeMismatch('iterable List, Dict, String, or Range', typeName(recv));
+  return typeMismatch('iterable List, Dict, Set, String, or Range', typeName(recv));
 }
 
 function invokeSame(m, callee, args) {
@@ -1194,9 +1485,14 @@ function invokeSame(m, callee, args) {
     if (isFailure(r)) throw { uncaught: r.msg };
     return r;
   }
-  while (m.frames.length > frameBase) {
-    stepFn(m);
-    if (m.done) break;
+  m.invokeDepth++;
+  try {
+    while (m.frames.length > frameBase) {
+      stepFn(m);
+      if (m.done) break;
+    }
+  } finally {
+    m.invokeDepth--;
   }
   if (m.done) {
     const r = m.result;
@@ -1218,7 +1514,7 @@ function invokeSame(m, callee, args) {
 
 function higherOrder(m, name, recv, callable) {
   const items = iterableItems(m, recv);
-  const guardId = (recv.t === 'list' || recv.t === 'dict') ? recv.id : null;
+  const guardId = (recv.t === 'list' || recv.t === 'dict' || recv.t === 'set') ? recv.id : null;
   if (guardId !== null) m.active.push(guardId);
   try {
     if (name === 'filter') {
@@ -1281,6 +1577,11 @@ function tagMatches(tag, v) {
     case 'Dict': return v.t === 'dict';
     case 'Bytes': return v.t === 'bytes';
     case 'Range': return v.t === 'range';
+    case 'Set': return v.t === 'set';
+    case 'Duration': return v.t === 'duration';
+    case 'Sequence': return v.t === 'sequence';
+    case 'Task': return v.t === 'task';
+    case 'Group': return v.t === 'group';
     default: return false;
   }
 }
@@ -1304,7 +1605,7 @@ function assertContract(m, type, nullable, pos, ops, value) {
     if (!(value.t === 'func' || value.t === 'closure' || value.t === 'native' || value.t === 'bound')) {
       fault('AIPO_RT_TYPE_MISMATCH', `contract violation at ${pos}: expected Function, got ${typeName(value)}`);
     }
-  } else if (['none', 'Bool', 'Int', 'Float', 'Byte', 'String', 'List', 'Dict', 'Bytes', 'Range'].includes(type)) {
+  } else if (['none', 'Bool', 'Int', 'Float', 'Byte', 'String', 'List', 'Dict', 'Bytes', 'Range', 'Set', 'Duration', 'Sequence', 'Task'].includes(type)) {
     if (!tagMatches(type, value)) {
       fault('AIPO_RT_TYPE_MISMATCH', `contract violation at ${pos}: expected ${nullable ? `${type}?` : type}, got ${structDisplayName(value)}`);
     }
@@ -1344,11 +1645,22 @@ function handleFailure(m, failVal) {
     const fr = m.frames.pop();
     m.stack.length = fr.base;
     m.journal.length = fr.journalStart;
+    if (m.frames.length === 0 && m.current !== null && m.current !== 0) {
+      m.stack.length = 0;
+      completeCurrent(m, { t: 'failed', v: failVal });
+      return;
+    }
     mPush(m, failVal);
+    return;
+  }
+  if (m.current !== null && m.current !== 0) {
+    m.stack.length = 0;
+    completeCurrent(m, { t: 'failed', v: failVal });
     return;
   }
   m.halted = failVal;
   m.done = true;
+  completeCurrent(m, { t: 'failed', v: failVal });
 }
 
 function checkMutations(m) {
@@ -1386,6 +1698,720 @@ function checkMutations(m) {
   } else {
     m.journal.length = start;
   }
+}
+
+// ---- cooperative scheduler & async combinators ----
+const SUSPENDED = Symbol('suspended');
+
+function suspendCurrent(m, status) {
+  const id = m.current !== null ? m.current : 0;
+  const existing = m.tasks.get(id);
+  if (existing && existing.status && existing.status.t === 'cancelled') {
+    fault('AIPO_RT_CANCELLED', `task ${id} was cancelled`);
+  }
+  const sleepingUntil = status.t === 'sleeping' ? status.until : null;
+  const state = {
+    status,
+    stack: m.stack,
+    frames: m.frames,
+    handlers: m.handlers,
+    journal: m.journal,
+    active: m.active,
+    result: null,
+    sleepingUntil,
+  };
+  m.tasks.set(id, state);
+  m.stack = [];
+  m.frames = [];
+  m.handlers = [];
+  m.journal = [];
+  m.active = [];
+  if (status.t === 'sleeping' && !m.runQueue.includes(id)) {
+    m.runQueue.push(id);
+  }
+  m.current = null;
+  throw SUSPENDED;
+}
+
+function suspendAtCall(m, status) {
+  const fr = curFrame(m);
+  if (fr) {
+    fr.ip--;
+  }
+  suspendCurrent(m, status);
+}
+
+function loadTask(m, id) {
+  const st = m.tasks.get(id) || {
+    status: { t: 'pending' },
+    stack: [], frames: [], handlers: [], journal: [], active: [],
+    result: null, sleepingUntil: null,
+  };
+  m.tasks.delete(id);
+  m.stack = st.stack;
+  m.frames = st.frames;
+  m.handlers = st.handlers;
+  m.journal = st.journal;
+  m.active = st.active;
+  st.stack = [];
+  st.frames = [];
+  st.handlers = [];
+  st.journal = [];
+  st.active = [];
+  st.status = { t: 'running' };
+  m.tasks.set(id, st);
+  m.current = id;
+}
+
+function completeCurrent(m, outcome) {
+  const id = m.current !== null ? m.current : 0;
+  m.current = null;
+  const existing = m.tasks.get(id);
+  if (existing && existing.status && existing.status.t === 'cancelled') {
+    outcome = { t: 'cancelled' };
+  }
+  if (id === 0) {
+    m.mainOutcome = outcome;
+    m.tasks.delete(0);
+    return true;
+  }
+  finishTask(m, id, outcome);
+  return false;
+}
+
+function finishTask(m, id, outcome) {
+  const st = m.tasks.get(id);
+  if (st) {
+    if (outcome.t === 'cancelled') {
+      st.status = { t: 'cancelled' };
+    } else if (outcome.t === 'ready') {
+      st.status = { t: 'ready' };
+      st.result = outcome.v;
+    } else if (outcome.t === 'failed') {
+      st.status = { t: 'failed' };
+      st.result = outcome.v;
+    }
+  }
+  const ws = m.waiters.get(id);
+  if (ws) {
+    m.waiters.delete(id);
+    for (const waiter of ws) {
+      wakeWaiter(m, waiter);
+    }
+  }
+  const affected = [];
+  for (const [joinId, join] of m.joins) {
+    if (join.members.includes(id)) {
+      affected.push(joinId);
+    }
+  }
+  for (const joinId of affected) {
+    const join = m.joins.get(joinId);
+    if (join && !join.completed.includes(id)) {
+      join.completed.push(id);
+    }
+    pollJoin(m, joinId);
+  }
+}
+
+function wakeWaiter(m, waiter) {
+  const st = m.tasks.get(waiter);
+  if (st) {
+    if (st.status.t === 'blocked') {
+      st.status = { t: 'pending' };
+    } else {
+      return;
+    }
+  } else {
+    return;
+  }
+  if (!m.runQueue.includes(waiter)) {
+    m.runQueue.push(waiter);
+  }
+}
+
+function selectNext(m) {
+  if (m.runQueue.length === 0 && !m.tasks.has(0)) {
+    return;
+  }
+  while (true) {
+    pollTimeouts(m);
+    m.runQueue = m.runQueue.filter(id => {
+      const st = m.tasks.get(id);
+      if (!st || !st.status) return false;
+      const t = st.status.t;
+      return t === 'pending' || t === 'blocked' || t === 'running' || t === 'sleeping';
+    });
+    let pick = null;
+    for (const id of m.runQueue) {
+      const st = m.tasks.get(id);
+      if (!st || !st.status) continue;
+      const t = st.status.t;
+      if (t === 'pending' || t === 'blocked' || t === 'running') {
+        pick = id;
+        break;
+      }
+      if (t === 'sleeping' && st.status.until <= m.tick) {
+        pick = id;
+        break;
+      }
+    }
+    if (pick !== null) {
+      const idx = m.runQueue.indexOf(pick);
+      if (idx >= 0) m.runQueue.splice(idx, 1);
+      const st = m.tasks.get(pick);
+      if (st && st.status && st.status.t === 'cancelled') {
+        continue;
+      }
+      loadTask(m, pick);
+      return;
+    }
+    let nextWake = null;
+    for (const st of m.tasks.values()) {
+      if (st.status && st.status.t === 'sleeping' && st.status.until > m.tick) {
+        if (nextWake === null || st.status.until < nextWake) {
+          nextWake = st.status.until;
+        }
+      }
+    }
+    let nextTimeout = null;
+    for (const join of m.joins.values()) {
+      if (!join.done && join.deadline !== null && join.deadline > m.tick) {
+        if (nextTimeout === null || join.deadline < nextTimeout) {
+          nextTimeout = join.deadline;
+        }
+      }
+    }
+    let targetTick = null;
+    if (nextWake !== null && nextTimeout !== null) {
+      targetTick = Math.min(nextWake, nextTimeout);
+    } else if (nextWake !== null) {
+      targetTick = nextWake;
+    } else if (nextTimeout !== null) {
+      targetTick = nextTimeout;
+    }
+    if (targetTick !== null) {
+      m.tick = targetTick;
+    } else {
+      let live = false;
+      for (const st of m.tasks.values()) {
+        if (st.status) {
+          const t = st.status.t;
+          if (t === 'pending' || t === 'sleeping' || t === 'blocked' || t === 'running') {
+            live = true;
+            break;
+          }
+        }
+      }
+      if (live) {
+        fault('AIPO_RT_TYPE_MISMATCH', 'scheduler deadlock: live tasks with nothing runnable');
+      }
+      return;
+    }
+  }
+}
+
+function pollTimeouts(m) {
+  const expired = [];
+  for (const [joinId, join] of m.joins) {
+    if (!join.done && join.kind === 'timeout' && join.deadline !== null && m.tick > join.deadline) {
+      expired.push(joinId);
+    }
+  }
+  for (const joinId of expired) {
+    const join = m.joins.get(joinId);
+    if (join) {
+      join.done = true;
+      join.outcome = vFail('timeout');
+      const member = join.members[0];
+      if (member !== undefined) {
+        finishTask(m, member, { t: 'cancelled' });
+      }
+      wakeJoin(m, joinId);
+    }
+  }
+}
+
+function pollJoin(m, joinId) {
+  const join = m.joins.get(joinId);
+  if (!join || join.done) return;
+
+  const terminal = id => {
+    const st = m.tasks.get(id);
+    if (!st || !st.status) return false;
+    const t = st.status.t;
+    return t === 'ready' || t === 'failed' || t === 'cancelled';
+  };
+
+  let resolution = { t: 'pending' };
+
+  if (join.kind === 'all') {
+    const anyCancelled = join.members.some(id => {
+      const r = taskResult(m, id);
+      return r && r.t === 'cancelled';
+    });
+    if (anyCancelled) {
+      resolution = { t: 'fault', code: 'AIPO_RT_CANCELLED', message: 'a joined task was cancelled' };
+    } else if (join.members.every(terminal)) {
+      const order = completionOrder(m, joinId);
+      let firstFailure = null;
+      for (const member of order) {
+        const r = taskResult(m, member);
+        if (r && r.t === 'failed') {
+          firstFailure = r.v;
+          break;
+        }
+      }
+      if (firstFailure) {
+        resolution = { t: 'value', v: firstFailure };
+      } else {
+        const values = join.order.map(member => {
+          const r = taskResult(m, member);
+          return r ? r.v : vNone();
+        });
+        resolution = { t: 'value', v: vList(values) };
+      }
+    }
+  } else if (join.kind === 'race') {
+    const order = completionOrder(m, joinId);
+    let winner = null;
+    for (const member of order) {
+      const r = taskResult(m, member);
+      if (r) {
+        winner = r;
+        break;
+      }
+    }
+    if (winner) {
+      if (winner.t === 'cancelled') {
+        resolution = { t: 'fault', code: 'AIPO_RT_CANCELLED', message: 'the winning task was cancelled' };
+      } else {
+        resolution = { t: 'value', v: winner.v };
+      }
+    }
+  } else if (join.kind === 'timeout') {
+    const member = join.members[0];
+    const r = member !== undefined ? taskResult(m, member) : null;
+    if (r) {
+      if (r.t === 'cancelled') {
+        resolution = { t: 'fault', code: 'AIPO_RT_CANCELLED', message: 'the timed task was cancelled' };
+      } else {
+        resolution = { t: 'value', v: r.v };
+      }
+    }
+  } else if (join.kind === 'group_wait') {
+    const allTerminal = join.members.every(terminal);
+    const anyCancelled = join.members.some(id => {
+      const r = taskResult(m, id);
+      return r && r.t === 'cancelled';
+    });
+    if (anyCancelled) {
+      resolution = { t: 'fault', code: 'AIPO_RT_CANCELLED', message: 'a group member was cancelled' };
+    } else if (allTerminal) {
+      const order = completionOrder(m, joinId);
+      const values = order.map(member => {
+        const r = taskResult(m, member);
+        return r ? r.v : vNone();
+      });
+      resolution = { t: 'value', v: vList(values) };
+    }
+  }
+
+  if (resolution.t === 'value') {
+    join.done = true;
+    join.outcome = resolution.v;
+    wakeJoin(m, joinId);
+  } else if (resolution.t === 'fault') {
+    join.done = true;
+    join.fault = { code: resolution.code, message: resolution.message };
+    wakeJoin(m, joinId);
+  }
+}
+
+function wakeJoin(m, joinId) {
+  const join = m.joins.get(joinId);
+  if (!join) return;
+  for (const waiter of join.waiters) {
+    wakeWaiter(m, waiter);
+  }
+}
+
+function completionOrder(m, joinId) {
+  const join = m.joins.get(joinId);
+  if (!join) return [];
+  const ordered = join.completed.filter(id => join.members.includes(id));
+  const missing = join.members.filter(id => !ordered.includes(id));
+  return [...missing, ...ordered];
+}
+
+function taskResult(m, id) {
+  const st = m.tasks.get(id);
+  if (!st) return null;
+  if (st.status.t === 'ready') return { t: 'ready', v: st.result };
+  if (st.status.t === 'failed') return { t: 'failed', v: st.result };
+  if (st.status.t === 'cancelled') return { t: 'cancelled' };
+  return null;
+}
+
+function blocksOn(m, from, target) {
+  let cursor = from;
+  let visited = 0;
+  const max = m.tasks.size + 1;
+  while (visited <= max) {
+    visited++;
+    const st = m.tasks.get(cursor);
+    if (st && st.status && st.status.t === 'blocked' && st.status.target.t === 'task') {
+      const next = st.status.target.id;
+      if (next === target) return true;
+      cursor = next;
+    } else {
+      return false;
+    }
+  }
+  return false;
+}
+
+function awaitChain(m, me, id) {
+  const chain = [me, id];
+  let cursor = id;
+  let visited = 0;
+  const max = m.tasks.size;
+  while (visited <= max) {
+    visited++;
+    const st = m.tasks.get(cursor);
+    if (st && st.status && st.status.t === 'blocked' && st.status.target.t === 'task') {
+      const next = st.status.target.id;
+      chain.push(next);
+      if (next === me) break;
+      cursor = next;
+    } else {
+      break;
+    }
+  }
+  return chain;
+}
+
+function spawnTask(m, callee, args, group) {
+  if (callee.t !== 'func' && callee.t !== 'closure') {
+    fault('AIPO_RT_NOT_CALLABLE', `${typeName(callee)} is not callable`);
+  }
+  const fn = m.module.functions[callee.idx];
+  checkArity(args.length, fn.params.length);
+  const id = m.nextTask++;
+  const v = {};
+  fn.params.forEach((p, i) => { v[p] = args[i]; });
+  const frame = { fn, ip: 0, vars: v, cells: callee.cells || null, base: 0, journalStart: 0 };
+  const state = {
+    status: { t: 'pending' },
+    stack: [callee, ...args],
+    frames: [frame],
+    handlers: [],
+    journal: [],
+    active: [],
+    result: null,
+    sleepingUntil: null,
+  };
+  m.tasks.set(id, state);
+  m.runQueue.push(id);
+  if (group !== null && group !== undefined) {
+    const grp = m.groups.get(group);
+    if (grp) grp.members.push(id);
+    for (const [, join] of m.joins) {
+      if (!join.done && join.kind === 'group_wait' && join.group === group) {
+        if (!join.members.includes(id)) {
+          join.members.push(id);
+          join.order.push(id);
+        }
+      }
+    }
+  }
+  return id;
+}
+
+function resolveCall(m, calleeIdx, value) {
+  m.stack.length = calleeIdx;
+  mPush(m, value);
+}
+
+function taskCall(m, name, calleeIdx, args) {
+  for (const arg of args) {
+    if (isFailure(arg)) {
+      resolveCall(m, calleeIdx, arg);
+      return;
+    }
+  }
+  switch (name) {
+    case 'task.spawn': {
+      const items = taskListArg(args[1], 'task.spawn(f, args)');
+      const id = spawnTask(m, args[0], items, null);
+      resolveCall(m, calleeIdx, vTask(id));
+      break;
+    }
+    case 'task.sleep':
+      doSleep(m, calleeIdx, args[0]);
+      break;
+    case 'task.all': {
+      const members = taskMembers(args[0], 'task.all');
+      if (members.failure) {
+        resolveCall(m, calleeIdx, members.failure);
+      } else {
+        doJoin(m, 'all', members.tasks, null, calleeIdx, 'task.all');
+      }
+      break;
+    }
+    case 'task.race': {
+      const members = taskMembers(args[0], 'task.race');
+      if (members.failure) {
+        resolveCall(m, calleeIdx, members.failure);
+      } else {
+        doJoin(m, 'race', members.tasks, null, calleeIdx, 'task.race');
+      }
+      break;
+    }
+    case 'task.timeout': {
+      if (args[0].t !== 'task') typeMismatch('Task for task.timeout', typeName(args[0]));
+      const ticks = sleepTicks(args[1], 'task.timeout');
+      if (ticks.failure) {
+        resolveCall(m, calleeIdx, ticks.failure);
+      } else {
+        const deadline = m.tick + ticks.ticks;
+        doJoin(m, 'timeout', [args[0].id], deadline, calleeIdx, 'task.timeout');
+      }
+      break;
+    }
+    case 'task.cancel': {
+      if (args[0].t !== 'task') typeMismatch('Task for task.cancel', typeName(args[0]));
+      const id = args[0].id;
+      const state = m.tasks.get(id);
+      if (!state) typeMismatch('live task for task.cancel', `unknown task ${id}`);
+      if (state.status.t !== 'ready' && state.status.t !== 'failed' && state.status.t !== 'cancelled') {
+        finishTask(m, id, { t: 'cancelled' });
+      }
+      resolveCall(m, calleeIdx, vNone());
+      break;
+    }
+    case 'task.group': {
+      const id = m.nextGroup++;
+      m.groups.set(id, { members: [] });
+      resolveCall(m, calleeIdx, vGroup(id));
+      break;
+    }
+    default:
+      fault('AIPO_RT_TYPE_MISMATCH', `unknown task function ${name}`);
+  }
+}
+
+function doSleep(m, calleeIdx, arg) {
+  if (m.invokeDepth > 0) {
+    fault('AIPO_RT_AWAIT_IN_CALLBACK', 'sleep is not allowed inside a synchronous host callback');
+  }
+  const me = m.current !== null ? m.current : 0;
+  const meState = m.tasks.get(me);
+  if (meState && meState.sleepingUntil !== null && meState.sleepingUntil !== undefined) {
+    const until = meState.sleepingUntil;
+    meState.sleepingUntil = null;
+    if (until <= m.tick) {
+      resolveCall(m, calleeIdx, vNone());
+      return;
+    }
+    meState.sleepingUntil = until;
+    suspendAtCall(m, { t: 'sleeping', until });
+    return;
+  }
+  const ticks = sleepTicks(arg, 'task.sleep');
+  if (ticks.failure) {
+    resolveCall(m, calleeIdx, ticks.failure);
+    return;
+  }
+  const until = m.tick + ticks.ticks;
+  suspendAtCall(m, { t: 'sleeping', until });
+}
+
+function doJoin(m, kind, members, deadline, calleeIdx, op) {
+  if (m.invokeDepth > 0) {
+    fault('AIPO_RT_AWAIT_IN_CALLBACK', `${op} is not allowed inside a synchronous host callback`);
+  }
+  if (members.length === 0) {
+    let empty = vNone();
+    if (kind === 'race') empty = vFail('race of no tasks');
+    else if (kind === 'all' || kind === 'group_wait') empty = vList([]);
+    else if (kind === 'timeout') empty = vFail('timeout of no task');
+    resolveCall(m, calleeIdx, empty);
+    return;
+  }
+  const me = m.current !== null ? m.current : 0;
+  let joinId = joinFor(m, kind, members);
+  if (joinId === null) joinId = pendingJoin(m, kind);
+  if (joinId === null) {
+    joinId = m.nextJoin++;
+    m.joins.set(joinId, {
+      kind,
+      order: [...members],
+      members: [...members],
+      completed: [],
+      waiters: [me],
+      deadline,
+      group: null,
+      done: false,
+      outcome: null,
+      fault: null,
+    });
+  }
+  pollJoin(m, joinId);
+  const join = m.joins.get(joinId);
+  if (join.done) {
+    const { fault: f, outcome } = join;
+    m.joins.delete(joinId);
+    if (f) fault(f.code, f.message);
+    resolveCall(m, calleeIdx, outcome !== null ? outcome : vNone());
+    return;
+  }
+  suspendAtCall(m, { t: 'blocked', target: { t: 'join', id: joinId } });
+}
+
+function pendingJoin(m, kind) {
+  const me = m.current !== null ? m.current : 0;
+  for (const [id, join] of m.joins) {
+    if (join.kind === kind && join.waiters.includes(me)) {
+      return id;
+    }
+  }
+  return null;
+}
+
+function joinFor(m, kind, members) {
+  const me = m.current !== null ? m.current : 0;
+  for (const [id, join] of m.joins) {
+    if (join.kind === kind && join.waiters.includes(me) &&
+        join.members.length === members.length &&
+        join.members.every((v, i) => v === members[i])) {
+      return id;
+    }
+  }
+  return null;
+}
+
+function groupMethod(m, name, recv, args, calleeIdx) {
+  if (recv.t !== 'group') typeMismatch('Group receiver', typeName(recv));
+  const groupId = recv.id;
+  if (!m.groups.has(groupId)) typeMismatch('live group', `unknown group ${groupId}`);
+  for (const arg of args) {
+    if (isFailure(arg)) {
+      resolveCall(m, calleeIdx, arg);
+      return;
+    }
+  }
+  if (name === 'spawn') {
+    const items = taskListArg(args[1], 'group.spawn(f, args)');
+    const id = spawnTask(m, args[0], items, groupId);
+    resolveCall(m, calleeIdx, vTask(id));
+  } else if (name === 'wait') {
+    doGroupWait(m, groupId, calleeIdx);
+  } else {
+    typeMismatch('spawn or wait', `unknown group method ${name}`);
+  }
+}
+
+function doGroupWait(m, groupId, calleeIdx) {
+  if (m.invokeDepth > 0) {
+    fault('AIPO_RT_AWAIT_IN_CALLBACK', 'group.wait is not allowed inside a synchronous host callback');
+  }
+  const me = m.current !== null ? m.current : 0;
+  let joinId = null;
+  for (const [id, join] of m.joins) {
+    if (join.kind === 'group_wait' && join.group === groupId && join.waiters.includes(me)) {
+      joinId = id;
+      break;
+    }
+  }
+  if (joinId === null) {
+    const group = m.groups.get(groupId);
+    const members = group ? [...group.members] : [];
+    const allTerminal = members.every(id => {
+      const r = taskResult(m, id);
+      return r && (r.t === 'ready' || r.t === 'failed');
+    });
+    if (allTerminal && members.length > 0) {
+      const anyCancelled = members.some(id => {
+        const r = taskResult(m, id);
+        return r && r.t === 'cancelled';
+      });
+      if (anyCancelled) {
+        fault('AIPO_RT_CANCELLED', 'a group member was cancelled');
+      }
+      const values = members.map(id => {
+        const r = taskResult(m, id);
+        return r ? r.v : vNone();
+      });
+      resolveCall(m, calleeIdx, vList(values));
+      return;
+    }
+    joinId = m.nextJoin++;
+    m.joins.set(joinId, {
+      kind: 'group_wait',
+      order: [...members],
+      members: [...members],
+      completed: [],
+      waiters: [me],
+      deadline: null,
+      group: groupId,
+      done: false,
+      outcome: null,
+      fault: null,
+    });
+  }
+  pollJoin(m, joinId);
+  const join = m.joins.get(joinId);
+  if (join.done) {
+    if (join.fault) {
+      fault(join.fault.code, join.fault.message);
+    }
+    const outcome = join.outcome !== null ? join.outcome : vNone();
+    resolveCall(m, calleeIdx, outcome);
+    return;
+  }
+  suspendAtCall(m, { t: 'blocked', target: { t: 'join', id: joinId } });
+}
+
+function sleepTicks(arg, op) {
+  if (arg.t === 'int') {
+    if (arg.v >= 0) return { ticks: arg.v };
+    return { failure: vFail(`${op} amount must be >= 0`) };
+  }
+  if (arg.t === 'byte') {
+    return { ticks: arg.v };
+  }
+  if (arg.t === 'duration') {
+    if (Number.isFinite(arg.v) && arg.v >= 0) {
+      return { ticks: Math.trunc(arg.v * 1000) };
+    }
+    return { failure: vFail(`${op} duration must be finite and >= 0`) };
+  }
+  typeMismatch('Int ticks or Duration', typeName(arg));
+}
+
+function taskListArg(arg, op) {
+  if (arg.t === 'list') {
+    return [...arg.items];
+  }
+  typeMismatch(`argument list for ${op}`, typeName(arg));
+}
+
+function taskMembers(arg, op) {
+  if (arg.t !== 'list') {
+    typeMismatch(`task list for ${op}`, typeName(arg));
+  }
+  const tasks = [];
+  for (const item of arg.items) {
+    if (item.t === 'task') {
+      tasks.push(item.id);
+    } else if (isFailure(item)) {
+      return { failure: item };
+    } else {
+      typeMismatch(`Task members for ${op}`, typeName(item));
+    }
+  }
+  return { tasks };
 }
 
 // ---- instruction dispatch ----
@@ -1446,8 +2472,8 @@ function stepFn(m) {
   const fr = curFrame(m);
   if (!fr) {
     const r = m.stack.length ? m.stack[m.stack.length - 1] : vNone();
-    m.result = r;
-    m.done = true;
+    m.stack.length = 0;
+    completeCurrent(m, isFailure(r) ? { t: 'failed', v: r } : { t: 'ready', v: r });
     return;
   }
   const fn = fr.fn;
@@ -1505,6 +2531,39 @@ function stepFn(m) {
       break;
     }
     case 'Call': beginCall(m, inst.argc); break;
+    case 'Await': {
+      const target = mPeek(m);
+      if (isFailure(target)) break;
+      if (target.t !== 'task') typeMismatch('Task to await', typeName(target));
+      const id = target.id;
+      if (m.invokeDepth > 0) fault('AIPO_RT_AWAIT_IN_CALLBACK', 'await is not allowed inside a synchronous host callback');
+      const res = taskResult(m, id);
+      if (res) {
+        if (res.t === 'cancelled') {
+          fault('AIPO_RT_CANCELLED', `task ${id} was cancelled`);
+        }
+        mPop(m);
+        mPush(m, res.v);
+        break;
+      }
+      if (!m.tasks.has(id)) {
+        typeMismatch('live task to await', `unknown task ${id}`);
+      }
+      const me = m.current !== null ? m.current : 0;
+      if (me === id || blocksOn(m, id, me)) {
+        const chain = awaitChain(m, me, id);
+        fault('AIPO_RT_AWAIT_CYCLE', `await cycle detected: ${chain.join(' -> ')}`);
+      }
+      let ws = m.waiters.get(id);
+      if (!ws) { ws = []; m.waiters.set(id, ws); }
+      if (!ws.includes(me)) ws.push(me);
+      const qIdx = m.runQueue.indexOf(id);
+      if (qIdx >= 0) m.runQueue.splice(qIdx, 1);
+      m.runQueue.unshift(id);
+      fr.ip--;
+      suspendCurrent(m, { t: 'blocked', target: { t: 'task', id } });
+      break;
+    }
     case 'Return': {
       const v = inst.has ? mPop(m) : vNone();
       doReturn(m, v);
@@ -1691,7 +2750,7 @@ function stepFn(m) {
     }
     case 'IterGuard': {
       const v = mPop(m);
-      if (v.t === 'list' || v.t === 'dict' || v.t === 'bytes') m.active.push(v.id);
+      if (v.t === 'list' || v.t === 'dict' || v.t === 'bytes' || v.t === 'set') m.active.push(v.id);
       break;
     }
     case 'IterGuardEnd': m.active.pop(); break;
@@ -1707,19 +2766,28 @@ function doReturn(m, v) {
       m.frames.pop();
       m.stack.length = fr0.base;
       m.journal.length = fr0.journalStart;
+      if (m.frames.length === 0 && m.current !== null && m.current !== 0) {
+        m.stack.length = 0;
+        completeCurrent(m, { t: 'failed', v });
+        return;
+      }
     }
     handleFailure(m, v);
     return;
   }
   const fr = m.frames.pop();
   if (!fr) {
-    mPush(m, v);
-    m.result = v;
-    m.done = true;
+    m.stack.length = 0;
+    completeCurrent(m, isFailure(v) ? { t: 'failed', v } : { t: 'ready', v });
+    return;
+  }
+  m.journal.length = fr.journalStart;
+  if (m.frames.length === 0) {
+    m.stack.length = 0;
+    completeCurrent(m, isFailure(v) ? { t: 'failed', v } : { t: 'ready', v });
     return;
   }
   m.stack.length = fr.base;
-  m.journal.length = fr.journalStart;
   mPush(m, v);
 }
 
@@ -1734,7 +2802,25 @@ export function runModule(module) {
   const top = module.top;
   m.frames.push({ fn: top, ip: 0, vars: {}, cells: null, base: 0, journalStart: 0 });
   try {
-    while (!m.done) stepFn(m);
+    while (m.mainOutcome === null) {
+      if (m.current === null && m.frames.length === 0) {
+        selectNext(m);
+        if (m.mainOutcome !== null) break;
+      }
+      try {
+        stepFn(m);
+      } catch (e) {
+        if (e === SUSPENDED) {
+          continue;
+        }
+        if (m.current !== null && m.current !== 0) {
+          const msg = e instanceof AipoFault ? e.message : (e && e.uncaught !== undefined ? String(e.uncaught) : String(e && e.message ? e.message : e));
+          completeCurrent(m, { t: 'failed', v: vFail(msg) });
+        } else {
+          throw e;
+        }
+      }
+    }
   } catch (e) {
     if (e && e.uncaught !== undefined) {
       printFault('AIPO_RT_FAILURE_UNCAUGHT', `uncaught failure: ${e.uncaught}`);
@@ -1745,6 +2831,17 @@ export function runModule(module) {
       return 1;
     }
     throw e;
+  }
+  if (m.mainOutcome) {
+    if (m.mainOutcome.t === 'cancelled') {
+      printFault('AIPO_RT_CANCELLED', 'entry script was cancelled');
+      return 1;
+    }
+    if (m.mainOutcome.t === 'failed') {
+      printFault('AIPO_RT_FAILURE_UNCAUGHT', `uncaught failure: ${m.mainOutcome.v.msg}`);
+      return 1;
+    }
+    m.result = m.mainOutcome.v;
   }
   if (m.halted) {
     printFault('AIPO_RT_FAILURE_UNCAUGHT', `uncaught failure: ${m.halted.msg}`);

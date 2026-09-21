@@ -1,0 +1,8 @@
+export price
+
+fn price(item)
+    if item == "book"
+        return 30
+    end
+    return 5
+end

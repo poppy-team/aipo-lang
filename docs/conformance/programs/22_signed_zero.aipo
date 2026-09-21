@@ -1,0 +1,6 @@
+# Canon: IEEE signed zero is observable in Float display (`-0.0`);
+# Int arithmetic never produces negative zero (Rust i64 has none), and the
+# JS backend normalizes it so both backends agree.
+io.println(0.0 * -108 - 0.0)
+io.println(-33 * 0)
+io.println(0 / 4)

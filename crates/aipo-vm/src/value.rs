@@ -259,6 +259,110 @@ impl DictMap {
     }
 }
 
+/// Identifier of a scheduler-managed task.
+pub type TaskId = u64;
+
+/// Identifier of a structured-concurrency group.
+pub type GroupId = u64;
+
+/// Materialized source of a lazy [`SequencePipeline`]: a snapshot taken by
+/// `.lazy()`, so later mutations of the origin do not affect the pipeline.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SequenceSource {
+    /// Elements of a list, in order.
+    List(Vec<Value>),
+    /// Values of a dict, in insertion order.
+    Dict(Vec<Value>),
+    /// Members of a set, in insertion order.
+    Set(Vec<Value>),
+    /// Integers of a half-open range.
+    Range {
+        /// Inclusive start.
+        start: i64,
+        /// Exclusive end.
+        end: i64,
+    },
+}
+
+/// One lazy pipeline stage. Stages holding callables (`Map`, `Filter`, …)
+/// are driven by the VM, which can invoke Aipo closures; the pipeline itself
+/// stays plain data so it remains target-neutral.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SeqOp {
+    /// Transform each element.
+    Map(Value),
+    /// Keep elements with a truthy predicate result.
+    Filter(Value),
+    /// Map each element to a list and concatenate.
+    FlatMap(Value),
+    /// Keep the first `n` elements.
+    Take(i64),
+    /// Drop the first `n` elements.
+    Skip(i64),
+    /// First element with a truthy predicate result (`none` if absent).
+    Find(Value),
+    /// Whether any element has a truthy predicate result.
+    Any(Value),
+    /// Whether every element has a truthy predicate result.
+    All(Value),
+    /// Count elements, or those with a truthy predicate result.
+    Count(Option<Value>),
+    /// Fold with an initial value.
+    Reduce {
+        /// Initial accumulator value.
+        initial: Value,
+        /// Binary folding function.
+        func: Value,
+    },
+    /// Group elements by key into a `Dict` of lists.
+    GroupBy(Value),
+    /// Drop later duplicates, keeping first-occurrence order.
+    Distinct,
+    /// Pairwise zip with a snapshot taken at call time (stops at the shorter side).
+    Zip(Vec<Value>),
+    /// Concatenate a snapshot taken at call time after this pipeline.
+    Chain(Vec<Value>),
+    /// Non-overlapping chunks of `n` as lists.
+    Chunk(i64),
+    /// Sliding windows of `n` as lists.
+    Window(i64),
+    /// `[index, value]` pairs as two-element lists.
+    Enumerate,
+}
+
+/// Lazy pipeline value: a snapshotted source plus unevaluated stages.
+#[derive(Debug, Clone)]
+pub struct SequencePipeline {
+    /// Snapshotted source elements.
+    pub source: SequenceSource,
+    /// Unevaluated stages, in order.
+    pub ops: Vec<SeqOp>,
+    /// First-consumption snapshot of the pure prefix: `each` (Len + GetIndex
+    /// per iteration) and repeated `collect` calls drain the same pipeline, so
+    /// the memo keeps element callbacks running exactly once. Stages are
+    /// strict at consumption; the memo never crosses pipeline construction
+    /// (every op append builds a fresh pipeline).
+    pub cached: RefCell<Option<Vec<Value>>>,
+}
+
+impl PartialEq for SequencePipeline {
+    fn eq(&self, other: &Self) -> bool {
+        self.source == other.source && self.ops == other.ops
+    }
+}
+
+impl SequencePipeline {
+    /// Builds an unevaluated pipeline over a snapshotted source.
+    #[must_use]
+    pub fn new(source: SequenceSource, ops: Vec<SeqOp>) -> Self {
+        Self {
+            source,
+            ops,
+            cached: RefCell::new(None),
+        }
+    }
+}
+
 /// Dynamic value manipulated by the Aipo VM stack machine.
 ///
 /// Sharing (`List`, `Dict`, struct instances, closure upvalue cells) is
@@ -289,6 +393,8 @@ pub enum Value {
         entry_ip: usize,
         /// Expected number of parameters.
         arity: usize,
+        /// `true` for `async fn`: calling produces a `Task` instead of running.
+        is_async: bool,
     },
     /// Closure capturing upvalues.
     Closure {
@@ -298,6 +404,8 @@ pub enum Value {
         arity: usize,
         /// Captured upvalues.
         upvalues: Vec<Rc<RefCell<Value>>>,
+        /// `true` for `async fn` closures: calling produces a `Task`.
+        is_async: bool,
     },
     /// Native host function callable by the VM.
     Native {
@@ -310,8 +418,8 @@ pub enum Value {
     },
     /// Compact integer in the canonical `Byte` range `0..=255`.
     Byte(u8),
-    /// Immutable byte buffer (`Bytes`).
-    Bytes(Rc<Vec<u8>>),
+    /// Managed mutable binary buffer (`Bytes`).
+    Bytes(Rc<RefCell<Vec<u8>>>),
     /// Fundamental type value usable as a runtime `is` target and, for the
     /// convertible core types, as a callable conversion.
     Type(TypeTag),
@@ -336,6 +444,16 @@ pub enum Value {
     },
     /// Recoverable failure (Model B).
     Failure(Rc<FailureValue>),
+    /// Insertion-ordered set of unique values (structural equality).
+    Set(Rc<RefCell<Vec<Value>>>),
+    /// Lazy pipeline over a materialized source (see `SequencePipeline`).
+    Sequence(Rc<SequencePipeline>),
+    /// Future result produced by calling an `async fn`; driven by the scheduler.
+    Task(TaskId),
+    /// Structured-concurrency group: spawned tasks awaited together.
+    Group(GroupId),
+    /// Pure time span in seconds (finite float, may be negative as a value).
+    Duration(f64),
     /// Internal sentinel standing for a defaulted parameter the caller omitted.
     ///
     /// Canon evaluates parameter defaults inside the callee, so the value travels from the
@@ -382,6 +500,11 @@ impl Value {
             Self::Type(_) => "Type",
             Self::Range { .. } => "Range",
             Self::Failure(_) => "Failure",
+            Self::Set(_) => "Set",
+            Self::Sequence(_) => "Sequence",
+            Self::Task(_) => "Task",
+            Self::Group(_) => "Group",
+            Self::Duration(_) => "Duration",
             // Internal sentinel: never observable from Aipo, so the name only ever
             // appears in an invariant-violation message.
             Self::Unset => "<omitted argument>",
@@ -485,8 +608,12 @@ impl Value {
                 items.extend(b.borrow().iter().cloned());
                 Ok(Self::List(Rc::new(RefCell::new(items))))
             }
+            (Self::Duration(a), Self::Duration(b)) => {
+                let res = check_finite_float(a + b)?;
+                Ok(Self::Duration(res))
+            }
             _ => Err(VmFault::TypeMismatch {
-                expected: "Int, Float, String, or List".to_string(),
+                expected: "Int, Float, String, List, or Duration".to_string(),
                 actual: format!("{} and {}", self.type_name(), other.type_name()),
             }),
         }
@@ -528,8 +655,12 @@ impl Value {
                 let res = check_finite_float(a - *b as f64)?;
                 Ok(Self::Float(res))
             }
+            (Self::Duration(a), Self::Duration(b)) => {
+                let res = check_finite_float(a - b)?;
+                Ok(Self::Duration(res))
+            }
             _ => Err(VmFault::TypeMismatch {
-                expected: "Int or Float".to_string(),
+                expected: "Int, Float, or Duration".to_string(),
                 actual: format!("{} and {}", self.type_name(), other.type_name()),
             }),
         }
@@ -699,8 +830,9 @@ impl Value {
                 Ok(Self::Int(check_safe_int(res)?))
             }
             Self::Float(a) => Ok(Self::Float(check_finite_float(-a)?)),
+            Self::Duration(a) => Ok(Self::Duration(check_finite_float(-a)?)),
             _ => Err(VmFault::TypeMismatch {
-                expected: "Int or Float".to_string(),
+                expected: "Int, Float, or Duration".to_string(),
                 actual: self.type_name().to_string(),
             }),
         }
@@ -769,6 +901,7 @@ impl Value {
             #[allow(clippy::cast_precision_loss)]
             (Self::Float(a), Self::Int(b)) => Ok(Self::Bool(*a < (*b as f64))),
             (Self::String(a), Self::String(b)) => Ok(Self::Bool(a < b)),
+            (Self::Duration(a), Self::Duration(b)) => Ok(Self::Bool(a < b)),
             _ => Err(VmFault::TypeMismatch {
                 expected: "comparable Int, Float, or String".to_string(),
                 actual: format!("{} and {}", self.type_name(), other.type_name()),
@@ -799,6 +932,7 @@ impl Value {
             #[allow(clippy::cast_precision_loss)]
             (Self::Float(a), Self::Int(b)) => Ok(Self::Bool(*a <= (*b as f64))),
             (Self::String(a), Self::String(b)) => Ok(Self::Bool(a <= b)),
+            (Self::Duration(a), Self::Duration(b)) => Ok(Self::Bool(a <= b)),
             _ => Err(VmFault::TypeMismatch {
                 expected: "comparable Int, Float, or String".to_string(),
                 actual: format!("{} and {}", self.type_name(), other.type_name()),
@@ -842,11 +976,16 @@ impl PartialEq for Value {
             (Self::Byte(a), Self::Float(b)) => f64::from(*a) == *b,
             #[allow(clippy::cast_precision_loss)]
             (Self::Float(a), Self::Byte(b)) => *a == f64::from(*b),
-            (Self::Bytes(a), Self::Bytes(b)) => a == b,
+            (Self::Bytes(a), Self::Bytes(b)) => *a.borrow() == *b.borrow(),
             (Self::Type(a), Self::Type(b)) => a == b,
             (Self::Range { start: s1, end: e1 }, Self::Range { start: s2, end: e2 }) => {
                 s1 == s2 && e1 == e2
             }
+            (Self::Set(a), Self::Set(b)) => *a.borrow() == *b.borrow(),
+            (Self::Sequence(a), Self::Sequence(b)) => Rc::ptr_eq(a, b),
+            (Self::Task(a), Self::Task(b)) => a == b,
+            (Self::Group(a), Self::Group(b)) => a == b,
+            (Self::Duration(a), Self::Duration(b)) => a == b,
             (
                 Self::BoundMethod {
                     name: n1,
@@ -896,11 +1035,18 @@ impl fmt::Debug for Value {
             Self::String(s) => write!(f, "{s:?}"),
             Self::List(l) => write!(f, "{:?}", l.borrow()),
             Self::Dict(d) => write!(f, "{:?}", d.borrow()),
+            Self::Set(items) => write!(f, "{:?}", items.borrow()),
+            Self::Sequence(pipeline) => write!(f, "<sequence {:?}>", pipeline.source),
+            Self::Task(id) => write!(f, "<task #{id}>"),
+            Self::Group(id) => write!(f, "<group #{id}>"),
+            Self::Duration(seconds) => write!(f, "Duration({seconds:?})"),
             Self::Struct(s) => {
                 let s = s.borrow();
                 write!(f, "{}{:?}", s.type_name, s.fields)
             }
-            Self::Function { entry_ip, arity } => {
+            Self::Function {
+                entry_ip, arity, ..
+            } => {
                 write!(f, "<fn@{entry_ip} arity={arity}>")
             }
             Self::Closure {
@@ -912,7 +1058,7 @@ impl fmt::Debug for Value {
                 write!(f, "<native fn {name} arity={arity}>")
             }
             Self::Byte(b) => write!(f, "{b}"),
-            Self::Bytes(b) => write!(f, "Bytes({} bytes)", b.len()),
+            Self::Bytes(b) => write!(f, "Bytes({} bytes)", b.borrow().len()),
             Self::Type(tag) => write!(f, "<type {}>", tag.name()),
             Self::Range { start, end } => write!(f, "{start}..{end}"),
             Self::BoundMethod { name, arity, .. } => {
@@ -978,6 +1124,27 @@ impl fmt::Display for Value {
             Self::Bytes(_) => write!(f, "<bytes>"),
             Self::Type(tag) => write!(f, "{}", tag.name()),
             Self::Range { start, end } => write!(f, "{start}..{end}"),
+            Self::Set(items) => {
+                let items = items.borrow();
+                write!(f, "{{")?;
+                for (i, v) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{v}")?;
+                }
+                write!(f, "}}")
+            }
+            Self::Sequence(_) => write!(f, "<sequence>"),
+            Self::Task(id) => write!(f, "<task #{id}>"),
+            Self::Group(id) => write!(f, "<group #{id}>"),
+            Self::Duration(seconds) => {
+                if seconds.fract() == 0.0 {
+                    write!(f, "{}s", *seconds as i64)
+                } else {
+                    write!(f, "{seconds}s")
+                }
+            }
             Self::BoundMethod { name, .. } => write!(f, "<fn {name}>"),
             Self::Failure(err) => write!(f, "fail(\"{}\")", err.message),
             Self::Unset => write!(f, "<unset>"),

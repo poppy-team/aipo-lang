@@ -120,6 +120,7 @@ impl BytecodeEmitter {
             entry_ip: 0,
             params: 0,
             locals: module.top_level.locals.len(),
+            is_async: false,
         });
 
         // Top-level: reserved local slots, function values, then the script body.
@@ -146,6 +147,7 @@ impl BytecodeEmitter {
                 entry_ip: entry,
                 params: function.params.len(),
                 locals: function.locals.len(),
+                is_async: function.is_async,
             });
             self.emit_slot_prologue(function);
             self.emit_body(function, &layout);
@@ -615,6 +617,10 @@ impl BytecodeEmitter {
             CoreInst::PopHandler(span) => {
                 self.spans.push((offset, *span));
                 self.code.push(OpCode::PopHandler as u8);
+            }
+            CoreInst::Await(span) => {
+                self.spans.push((offset, *span));
+                self.code.push(OpCode::Await as u8);
             }
         }
     }

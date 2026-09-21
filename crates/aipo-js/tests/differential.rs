@@ -213,3 +213,198 @@ fn test_emitted_bundle_is_esm_with_source_map() {
     assert!(bundle.runtime_js.contains("RUNTIME_VERSION"));
     let _ = Write::write_all(&mut std::io::sink(), b"");
 }
+
+fn compile_code(name: &str, text: &str) -> Compiled {
+    let source = Source::new(SourceId::next(), name.to_string(), text);
+    let (program, mut diagnostics) = aipo_syntax::parse(&source);
+    assert!(
+        diagnostics
+            .iter()
+            .all(|d| d.severity != aipo_diagnostics::Severity::Error),
+        "parse errors in {name}: {diagnostics:?}"
+    );
+    let hir = aipo_hir::lower(program);
+    let surface = prelude_surface();
+    let (_, sema_diagnostics) = aipo_sema::check_with_prelude(&source, &hir, &surface);
+    diagnostics.extend(sema_diagnostics);
+    assert!(
+        diagnostics
+            .iter()
+            .all(|d| d.severity != aipo_diagnostics::Severity::Error),
+        "sema errors in {name}: {diagnostics:?}"
+    );
+    let ir = aipo_ir::lower_to_ir(&hir);
+    let bytecode = aipo_bytecode::compile(&ir).expect("bytecode verifies");
+    Compiled { ir, bytecode }
+}
+
+fn run_js_code(name: &str, text: &str, compiled: &Compiled) -> String {
+    let bundle = aipo_js::emit_js(name, text, &compiled.ir);
+    let dir = std::env::temp_dir().join(format!("aipo-js-diff-{name}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    std::fs::write(dir.join("app.js"), &bundle.app_js).expect("write app.js");
+    std::fs::write(dir.join("aipo-runtime.js"), &bundle.runtime_js).expect("write shim");
+    std::fs::write(dir.join("app.js.map"), &bundle.source_map).expect("write map");
+    let output = Command::new("node")
+        .arg("app.js")
+        .current_dir(&dir)
+        .output()
+        .expect("node runs (requires Node >= 20)");
+    assert!(
+        output.status.success(),
+        "node failed for {name}: status {:?} stderr: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("node stdout is utf-8")
+}
+
+#[test]
+fn test_wave3_differential_parity() {
+    let code = r#"
+var s = Set([1, 2, 2, 3])
+s.add(4)
+io.println(s.has(2))
+s.remove(2)
+io.println(s.has(2))
+io.println(s.len())
+io.println(s)
+
+var b = Bytes(4)
+b.write_i16(0, -42)
+b.write_u16(2, 60000)
+io.println(b.read_i16(0))
+io.println(b.read_u16(2))
+var text = "hello"
+var dec = text.encode().decode()
+io.println(dec)
+
+var d1 = Duration(1.5)
+var d2 = Duration(2.5)
+io.println(d1 + d2)
+io.println(d2 - d1)
+io.println(d1 < d2)
+io.println(d1.total_seconds())
+
+var l = [1, 2, 3]
+io.println(l.lazy())
+"#;
+
+    let compiled = compile_code("wave3_diff.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("wave3_diff.aipo", code, &compiled);
+    assert_eq!(
+        vm_out, js_out,
+        "VM and JS outputs must be identical for Wave 3 features"
+    );
+}
+
+#[test]
+fn test_wave3_async_spawn_await_differential() {
+    let code = r#"
+fn worker(x)
+    return x * 2
+end
+
+var t = task.spawn(worker, [21])
+var res = await t
+io.println(res)
+"#;
+    let compiled = compile_code("wave3_async_spawn.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("wave3_async_spawn.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "42\n");
+}
+
+#[test]
+fn test_wave3_async_all_and_race_differential() {
+    let code = r#"
+fn f1()
+    return 10
+end
+fn f2()
+    return 20
+end
+
+var t1 = task.spawn(f1, [])
+var t2 = task.spawn(f2, [])
+var all_res = task.all([t1, t2])
+io.println(all_res)
+
+var race_res = task.race([task.spawn(f1, []), task.spawn(f2, [])])
+io.println(race_res)
+"#;
+    let compiled = compile_code("wave3_async_all_race.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("wave3_async_all_race.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+}
+
+#[test]
+fn test_wave3_async_group_differential() {
+    let code = r#"
+fn mult(val)
+    return val * 3
+end
+
+var g = task.group()
+var t1 = g.spawn(mult, [4])
+var t2 = g.spawn(mult, [5])
+var res = g.wait()
+io.println(res)
+"#;
+    let compiled = compile_code("wave3_async_group.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("wave3_async_group.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "[12, 15]\n");
+}
+
+#[test]
+fn test_wave3_async_sleep_and_timeout_differential() {
+    let code = r#"
+fn worker()
+    task.sleep(1)
+    return 99
+end
+
+var t = task.spawn(worker, [])
+var res = task.timeout(t, 2)
+io.println(res)
+
+fn slow_worker()
+    task.sleep(5)
+    return 100
+end
+
+var t2 = task.spawn(slow_worker, [])
+var timeout_res = task.timeout(t2, 1) or_else "timed_out"
+io.println(timeout_res)
+"#;
+    let compiled = compile_code("wave3_async_sleep_timeout.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("wave3_async_sleep_timeout.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "99\ntimed_out\n");
+}
+
+#[test]
+fn test_wave3_async_cancel_differential() {
+    let code = r#"
+fn worker()
+    task.sleep(10)
+    return 1
+end
+
+var t = task.spawn(worker, [])
+task.cancel(t)
+io.println("cancelled ok")
+"#;
+    let compiled = compile_code("wave3_async_cancel.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("wave3_async_cancel.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "cancelled ok\n");
+}

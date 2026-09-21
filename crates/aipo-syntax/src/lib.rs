@@ -4,16 +4,23 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod depth;
 pub mod parser;
+pub mod shift;
 
+pub use depth::MAX_AST_DEPTH;
 pub use parser::Parser;
 
 use aipo_ast::Program;
-use aipo_diagnostics::Diagnostic;
+use aipo_diagnostics::{Diagnostic, DiagnosticCode};
 use aipo_lexer::Lexer;
 use aipo_source::Source;
 
 /// Parses an Aipo source file into a `Program` AST and a collection of diagnostics.
+///
+/// After parsing, the AST depth is measured iteratively (see [`depth`]): a tree
+/// deeper than [`MAX_AST_DEPTH`] would overflow downstream recursive walkers,
+/// so it is reported as `AIPO_PARSE_NESTING_TOO_DEEP` here instead.
 #[must_use]
 pub fn parse(source: &Source) -> (Program, Vec<Diagnostic>) {
     let lexer = Lexer::new(source);
@@ -21,6 +28,15 @@ pub fn parse(source: &Source) -> (Program, Vec<Diagnostic>) {
     let parser = Parser::new(source, tokens);
     let (program, mut parse_diagnostics) = parser.parse();
     diagnostics.append(&mut parse_diagnostics);
+    if let Some(span) = depth::over_limit_span(&program) {
+        diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::AIPO_PARSE_NESTING_TOO_DEEP,
+                "expression tree is too deep (limit documented in ADP-005)",
+            )
+            .with_primary_span(source, span),
+        );
+    }
     (program, diagnostics)
 }
 

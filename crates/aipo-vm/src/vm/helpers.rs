@@ -23,6 +23,7 @@ pub(crate) fn collection_identity(value: &Value) -> Option<usize> {
         Value::List(list) => Some(Rc::as_ptr(list) as usize),
         Value::Dict(dict) => Some(Rc::as_ptr(dict) as usize),
         Value::Bytes(bytes) => Some(Rc::as_ptr(bytes) as usize),
+        Value::Set(items) => Some(Rc::as_ptr(items) as usize),
         _ => None,
     }
 }
@@ -36,11 +37,12 @@ pub(crate) fn length_of(value: &Value) -> Result<Value, VmFault> {
         Value::String(text) => text.chars().count(),
         Value::List(list) => list.borrow().len(),
         Value::Dict(dict) => dict.borrow().len(),
-        Value::Bytes(bytes) => bytes.len(),
+        Value::Bytes(bytes) => bytes.borrow().len(),
+        Value::Set(items) => items.borrow().len(),
         Value::Range { start, end } => usize::try_from((end - start).max(0)).unwrap_or(0),
         other => {
             return Err(VmFault::TypeMismatch {
-                expected: "String, List, Dict, Bytes, or Range".to_string(),
+                expected: "String, List, Dict, Bytes, Set, or Range".to_string(),
                 actual: other.type_name().to_string(),
             });
         }
@@ -57,13 +59,14 @@ pub(crate) fn iterable_items(receiver: &Value) -> Result<Vec<Value>, VmFault> {
     match receiver {
         Value::List(list) => Ok(list.borrow().clone()),
         Value::Dict(dict) => Ok(dict.borrow().values()),
+        Value::Set(items) => Ok(items.borrow().clone()),
         Value::String(text) => Ok(text
             .chars()
             .map(|ch| Value::String(Rc::new(ch.to_string())))
             .collect()),
         Value::Range { start, end } => Ok((*start..*end).map(Value::Int).collect()),
         other => Err(VmFault::TypeMismatch {
-            expected: "iterable List, Dict, String, or Range".to_string(),
+            expected: "iterable List, Dict, Set, String, or Range".to_string(),
             actual: other.type_name().to_string(),
         }),
     }

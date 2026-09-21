@@ -1,7 +1,8 @@
 //! Recursive descent parser with Pratt expression parsing and error recovery.
 
+use crate::shift::shift_expr;
 use aipo_ast::*;
-use aipo_diagnostics::{Diagnostic, DiagnosticCode};
+use aipo_diagnostics::{Diagnostic, DiagnosticCode, PrimarySpan};
 
 /// Largest integer the runtime treats as safe (`2^53 - 1`).
 ///
@@ -10,6 +11,31 @@ use aipo_diagnostics::{Diagnostic, DiagnosticCode};
 const SAFE_MAX_INT: i64 = 9_007_199_254_740_991;
 use aipo_lexer::{Lexer, StringPrefix as LexerStringPrefix, Token, TokenKind};
 use aipo_source::{Source, SourceId, SourceSpan};
+
+/// Moves a sub-parse diagnostic back to original-file coordinates.
+///
+/// Sub-parses run on the unpadded slice, so every offset is relative to the
+/// slice start; adding `delta` restores absolute positions, with line/column
+/// re-derived from the outer source. Offsets are clamped to the file length so
+/// a span touching the synthetic trailing newline can never escape the file.
+fn shift_diagnostic(source: &Source, mut diagnostic: Diagnostic, delta: usize) -> Diagnostic {
+    let outer_len = source.len();
+    if let Some(span) = diagnostic.primary_span.take() {
+        let start = (span.start + delta).min(outer_len);
+        let end = (span.end + delta).min(outer_len).max(start);
+        diagnostic.primary_span = Some(PrimarySpan::from_source(
+            source,
+            SourceSpan::new(start, end),
+        ));
+    }
+    for suggestion in &mut diagnostic.suggestions {
+        suggestion.start = (suggestion.start + delta).min(outer_len);
+        suggestion.end = (suggestion.end + delta)
+            .min(outer_len)
+            .max(suggestion.start);
+    }
+    diagnostic
+}
 
 /// Finds the `}` that closes the placeholder body starting at `body_start`.
 ///
@@ -45,7 +71,28 @@ pub struct Parser<'a> {
     tokens: Vec<Token>,
     cursor: usize,
     diagnostics: Vec<Diagnostic>,
+    /// Current expression nesting depth (parentheses, calls, binary chains).
+    expr_depth: usize,
+    /// Current block nesting depth (`if`/`fn`/loops/`match` bodies).
+    block_depth: usize,
+    /// Set once a nesting overflow is reported: the rest of the file is
+    /// skipped quietly instead of cascading one error per remaining token.
+    depth_aborted: bool,
 }
+
+/// Maximum expression nesting before the parser bails out with
+/// `AIPO_PARSE_NESTING_TOO_DEEP`.
+///
+/// Rationale (see ADP-005): the deepest corpus nesting is single digits, so 128
+/// is orders of magnitude beyond legitimate code, while measured per-level
+/// frame cost (~10–16 KiB) keeps 128 levels under 2 MiB — inside the smallest
+/// supported host stack (test threads). This is a robustness bound, not syntax:
+/// every program below it parses exactly as before.
+const MAX_EXPR_DEPTH: usize = 128;
+
+/// Maximum block nesting, same rationale as [`MAX_EXPR_DEPTH`]. Block frames
+/// measured larger (~13–27 KiB), hence the lower bound.
+const MAX_BLOCK_DEPTH: usize = 64;
 
 impl<'a> Parser<'a> {
     /// Constructs a new parser from source and token list.
@@ -62,7 +109,27 @@ impl<'a> Parser<'a> {
             tokens,
             cursor: 0,
             diagnostics: Vec::new(),
+            expr_depth: 0,
+            block_depth: 0,
+            depth_aborted: false,
         }
+    }
+
+    /// Reports host-stack exhaustion protection: nesting past the documented
+    /// bound is a controlled diagnostic, never a process abort.
+    fn too_deep(&mut self, what: &str) {
+        self.depth_aborted = true;
+        let span = self
+            .peek_token()
+            .map(|t| t.span)
+            .unwrap_or_else(|| SourceSpan::empty(self.source.len()));
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::AIPO_PARSE_NESTING_TOO_DEEP,
+                format!("{what} nesting is too deep (limit documented in ADP-005)"),
+            )
+            .with_primary_span(self.source, span),
+        );
     }
 
     /// Parses a single expression from the token stream.
@@ -207,13 +274,17 @@ impl<'a> Parser<'a> {
     }
 
     /// Re-lexes a slice of the original text as a string literal and returns its content.
+    ///
+    /// The slice is lexed unpadded: only the literal content is needed here, so
+    /// no absolute-offset padding is built (it made placeholder-heavy files
+    /// quadratic — see ADP-005).
     fn lex_slice_string(&self, start: usize, end: usize, is_raw: bool) -> Option<String> {
-        let mut padded = " ".repeat(start);
-        padded.push_str(if is_raw { "r\"" } else { "\"" });
-        padded.push_str(&self.source.text()[start..end]);
-        padded.push('"');
+        let mut text = String::with_capacity(end - start + 3);
+        text.push_str(if is_raw { "r\"" } else { "\"" });
+        text.push_str(&self.source.text()[start..end]);
+        text.push('"');
 
-        let sub_source = Source::new(SourceId::next(), self.source.name(), &padded);
+        let sub_source = Source::new(SourceId::next(), self.source.name(), &text);
         let (tokens, diagnostics) = Lexer::new(&sub_source).tokenize();
         if !diagnostics.is_empty() {
             return None;
@@ -227,27 +298,32 @@ impl<'a> Parser<'a> {
 
     /// Parses a slice of the original text as a single expression.
     ///
-    /// The sub-source pads everything before `start` with spaces, so the sub-parse sees
-    /// the real byte offsets and every span it produces belongs to the original file.
+    /// The slice is parsed unpadded and every produced span is shifted back by
+    /// `start` (see `shift.rs`), so observable spans are identical to the old
+    /// padded implementation while the work stays proportional to the slice.
     fn parse_slice_expression(&mut self, start: usize, end: usize) -> Option<Expr> {
         if start > end || end > self.source.text().len() {
             return None;
         }
 
-        let mut padded = " ".repeat(start);
-        padded.push_str(&self.source.text()[start..end]);
-        padded.push('\n');
+        let mut text = String::with_capacity(end - start + 1);
+        text.push_str(&self.source.text()[start..end]);
+        text.push('\n');
 
-        let sub_source = Source::new(SourceId::next(), self.source.name(), &padded);
+        let sub_source = Source::new(SourceId::next(), self.source.name(), &text);
         let (tokens, diagnostics) = Lexer::new(&sub_source).tokenize();
         if let Some(first) = diagnostics.first() {
-            self.diagnostics.push(first.clone());
+            self.diagnostics
+                .push(shift_diagnostic(self.source, first.clone(), start));
             return None;
         }
 
         let mut sub = Parser::new(&sub_source, tokens);
-        let expression = sub.parse_expression();
-        self.diagnostics.append(&mut sub.diagnostics);
+        let expression = sub.parse_expression().map(|expr| shift_expr(&expr, start));
+        for diagnostic in sub.diagnostics {
+            self.diagnostics
+                .push(shift_diagnostic(self.source, diagnostic, start));
+        }
 
         if expression.is_none() {
             self.diagnostics.push(
@@ -268,7 +344,7 @@ impl<'a> Parser<'a> {
 
         self.skip_newlines();
 
-        while !self.is_at_end() {
+        while !self.is_at_end() && !self.depth_aborted {
             if self.is_item_start() {
                 if let Some(item) = self.parse_item() {
                     items.push(item);
@@ -380,6 +456,8 @@ impl<'a> Parser<'a> {
                 TokenKind::Let
                     | TokenKind::Var
                     | TokenKind::Fn
+                    | TokenKind::Async
+                    | TokenKind::Await
                     | TokenKind::Struct
                     | TokenKind::Impl
                     | TokenKind::Interface
@@ -421,6 +499,7 @@ impl<'a> Parser<'a> {
     fn parse_item(&mut self) -> Option<Item> {
         match self.peek() {
             TokenKind::Fn => self.parse_function_decl().map(Item::Fn),
+            TokenKind::Async => self.parse_async_item(),
             TokenKind::Struct => self.parse_struct_decl().map(Item::Struct),
             TokenKind::Impl => self.parse_impl_block().map(Item::Impl),
             TokenKind::Interface => self.parse_interface_decl().map(Item::Interface),
@@ -491,6 +570,10 @@ impl<'a> Parser<'a> {
                 if let Some(method) = self.parse_function_decl() {
                     methods.push(method);
                 }
+            } else if self.check(&TokenKind::Async) {
+                if let Some(method) = self.parse_async_function_decl() {
+                    methods.push(method);
+                }
             } else {
                 self.advance();
             }
@@ -549,6 +632,7 @@ impl<'a> Parser<'a> {
 
         Some(FunctionDecl {
             name: Ident::new("init".into(), start),
+            is_async: false,
             params,
             return_type: None,
             body,
@@ -682,6 +766,34 @@ impl<'a> Parser<'a> {
     // --- Statements ---
 
     fn parse_stmt(&mut self) -> Option<Stmt> {
+        // After the first overflow the file is skipped quietly: no new
+        // diagnostics, but the shared progress guarantee below still applies,
+        // otherwise body loops would spin on the stalled cursor forever.
+        let over_limit = self.depth_aborted || self.block_depth >= MAX_BLOCK_DEPTH;
+        if over_limit && !self.depth_aborted {
+            self.too_deep("block");
+        }
+        let start = self.cursor;
+        let result = if over_limit {
+            None
+        } else {
+            self.block_depth += 1;
+            let parsed = self.parse_stmt_inner();
+            self.block_depth -= 1;
+            parsed
+        };
+        // Progress guarantee: body loops spin until a terminator, so a failed
+        // parse that consumed nothing would hang them forever. Skipping one
+        // token only ever fires on inputs that previously hung (terminating
+        // inputs always make progress), hence observable behavior there is
+        // unchanged by construction.
+        if result.is_none() && self.cursor == start && !self.is_at_end() {
+            self.advance();
+        }
+        result
+    }
+
+    fn parse_stmt_inner(&mut self) -> Option<Stmt> {
         match self.peek() {
             TokenKind::Let => self.parse_let_stmt(),
             TokenKind::Var => self.parse_var_stmt(),
@@ -702,6 +814,8 @@ impl<'a> Parser<'a> {
             TokenKind::Return => self.parse_return_stmt(),
             TokenKind::Fail => self.parse_fail_stmt(),
             TokenKind::Attempt => self.parse_attempt_stmt(),
+            TokenKind::Async => self.parse_async_stmt(),
+            TokenKind::Await => self.parse_await_stmt(),
             TokenKind::Fn => {
                 // A named `fn name(params) ... end` inside a statement position is a local
                 // function declaration: canon makes its binding exist when execution reaches
@@ -1147,6 +1261,37 @@ impl<'a> Parser<'a> {
 
     fn parse_function_decl(&mut self) -> Option<FunctionDecl> {
         let start = self.advance().span; // 'fn'
+        self.parse_function_decl_rest(start, false)
+    }
+
+    /// Parses `async fn ...`: the modifier is contextual (only meaningful before
+    /// `fn`); a bare `async` elsewhere is a dedicated diagnostic, never a name.
+    fn parse_async_function_decl(&mut self) -> Option<FunctionDecl> {
+        let start = self.advance().span; // 'async'
+        if !self.check(&TokenKind::Fn) {
+            let span = self
+                .peek_token()
+                .map(|t| t.span)
+                .unwrap_or_else(|| SourceSpan::empty(self.source.len()));
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                    "expected 'fn' after 'async'",
+                )
+                .with_primary_span(self.source, span),
+            );
+            return None;
+        }
+        self.advance(); // 'fn'
+        self.parse_function_decl_rest(start, true)
+    }
+
+    /// Shared body of `fn` / `async fn` declarations.
+    fn parse_function_decl_rest(
+        &mut self,
+        start: SourceSpan,
+        is_async: bool,
+    ) -> Option<FunctionDecl> {
         let name = self.parse_ident()?;
         self.expect(
             &TokenKind::LParen,
@@ -1174,6 +1319,7 @@ impl<'a> Parser<'a> {
 
         Some(FunctionDecl {
             name,
+            is_async,
             params,
             return_type,
             body,
@@ -1182,6 +1328,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function_signature(&mut self) -> Option<FunctionDecl> {
+        // `async` on an interface signature parses uniformly but means nothing
+        // without a body to suspend; only `impl` methods suspend.
+        let _ = self.match_token(&TokenKind::Async);
         let start = self.advance().span; // 'fn'
         let name = self.parse_ident()?;
         self.expect(&TokenKind::LParen, "expected '(' in method signature")?;
@@ -1192,11 +1341,124 @@ impl<'a> Parser<'a> {
 
         Some(FunctionDecl {
             name,
+            is_async: false,
             params,
             return_type,
             body: Vec::new(),
             span: start.merge(end_span),
         })
+    }
+
+    /// Parses `async ...` in statement position: only `async fn` is meaningful.
+    fn parse_async_stmt(&mut self) -> Option<Stmt> {
+        self.parse_async_function_decl().map(Stmt::Fn)
+    }
+
+    /// Parses `async ...` as a top-level item: only `async fn` is meaningful.
+    fn parse_async_item(&mut self) -> Option<Item> {
+        self.parse_async_function_decl().map(Item::Fn)
+    }
+
+    /// Parses `await ...` in statement position: `await do ... end` becomes an
+    /// await-block, anything else an awaited expression statement.
+    fn parse_await_stmt(&mut self) -> Option<Stmt> {
+        let start = self.advance().span; // 'await'
+        if self.check(&TokenKind::Do) {
+            return self.parse_await_do_block(start);
+        }
+        let inner = self.parse_expr()?;
+        let span = start.merge(inner.span());
+        Some(Stmt::Expr(Expr::Await(Box::new(inner), span)))
+    }
+
+    /// Parses `await expr` in value position. Placement is validated later:
+    /// explicit `await` belongs to statements, initializers and returns, never
+    /// to arbitrary subexpressions (`AIPO_SEM_AWAIT_IN_SUBEXPRESSION`).
+    fn parse_await_expr(&mut self) -> Option<Expr> {
+        let start = self.advance().span; // 'await'
+        let inner = self.parse_pratt_expr(Precedence::Prefix)?;
+        let span = start.merge(inner.span());
+        Some(Expr::Await(Box::new(inner), span))
+    }
+
+    /// Parses `await do ... end`: sugar for sequential awaits, kept as a block
+    /// so later stages can apply the known-Task rule (canon: sugar, never a
+    /// second async machine).
+    fn parse_await_do_block(&mut self, start: SourceSpan) -> Option<Stmt> {
+        self.advance(); // 'do'
+        self.skip_newlines();
+        let mut body = Vec::new();
+        while !self.check(&TokenKind::End) && !self.is_at_end() {
+            if let Some(stmt) = self.parse_stmt() {
+                body.push(stmt);
+            }
+            self.skip_newlines();
+        }
+        let end_span = self
+            .expect(&TokenKind::End, "expected 'end' to close await do block")?
+            .span;
+        Some(Stmt::AwaitDo(body, start.merge(end_span)))
+    }
+
+    /// Parses `async fn(...) ... end` as an anonymous function value.
+    fn parse_async_fn_expr(&mut self) -> Option<Expr> {
+        self.advance(); // 'async'
+        if !self.check(&TokenKind::Fn) {
+            let span = self
+                .peek_token()
+                .map(|t| t.span)
+                .unwrap_or_else(|| SourceSpan::empty(self.source.len()));
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                    "expected 'fn' after 'async'",
+                )
+                .with_primary_span(self.source, span),
+            );
+            return None;
+        }
+        let async_span = self.tokens[self.cursor - 1].span;
+        self.parse_fn_expr_rest(async_span, true)
+    }
+
+    /// Rejects parametric `Name[Args]` contracts: the language has no generics
+    /// yet (see ADP-006), so `Task[T]` and friends are a dedicated diagnostic,
+    /// never silent acceptance. Call after parsing a contract type name.
+    fn check_no_parametric_contract(&mut self) {
+        if !self.check(&TokenKind::LBracket) {
+            return;
+        }
+        let span = self
+            .peek_token()
+            .map(|t| t.span)
+            .unwrap_or_else(|| SourceSpan::empty(self.source.len()));
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::AIPO_SEM_PARAMETRIC_CONTRACT,
+                "parametric contracts like `Task[T]` are not in V1 (see ADP-006); write the bare contract name",
+            )
+            .with_primary_span(self.source, span),
+        );
+        // Skip the bracketed section so recovery continues after it.
+        let mut depth = 0usize;
+        while !self.is_at_end() {
+            match self.peek() {
+                TokenKind::LBracket => {
+                    depth += 1;
+                    self.advance();
+                }
+                TokenKind::RBracket => {
+                    self.advance();
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 1;
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
     }
 
     fn parse_params(&mut self) -> Option<Vec<Param>> {
@@ -1218,6 +1480,7 @@ impl<'a> Parser<'a> {
             let type_annotation = if self.match_token(&TokenKind::Colon) {
                 let type_ident = self.parse_ident()?;
                 let is_nullable = self.match_token(&TokenKind::Question);
+                self.check_no_parametric_contract();
                 let span = if is_nullable {
                     type_ident.span.merge(self.tokens[self.cursor - 1].span)
                 } else {
@@ -1259,6 +1522,7 @@ impl<'a> Parser<'a> {
         if self.match_token(&TokenKind::Minus) && self.match_token(&TokenKind::Greater) {
             let type_ident = self.parse_ident()?;
             let is_nullable = self.match_token(&TokenKind::Question);
+            self.check_no_parametric_contract();
             let span = if is_nullable {
                 type_ident.span.merge(self.tokens[self.cursor - 1].span)
             } else {
@@ -1281,6 +1545,21 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_pratt_expr(&mut self, precedence: Precedence) -> Option<Expr> {
+        let over_limit = self.depth_aborted || self.expr_depth >= MAX_EXPR_DEPTH;
+        if over_limit && !self.depth_aborted {
+            self.too_deep("expression");
+            return None;
+        }
+        if over_limit {
+            return None;
+        }
+        self.expr_depth += 1;
+        let result = self.parse_pratt_expr_inner(precedence);
+        self.expr_depth -= 1;
+        result
+    }
+
+    fn parse_pratt_expr_inner(&mut self, precedence: Precedence) -> Option<Expr> {
         let left = self.parse_prefix_expr()?;
         self.continue_pratt(left, precedence)
     }
@@ -1385,6 +1664,8 @@ impl<'a> Parser<'a> {
                 Some(Expr::Unary(UnaryOp::Not, Box::new(operand), full_span))
             }
             TokenKind::Fn => self.parse_fn_expr(),
+            TokenKind::Async => self.parse_async_fn_expr(),
+            TokenKind::Await => self.parse_await_expr(),
             TokenKind::Fail => {
                 // Canon: `fail("message")` creates a recoverable Failure and `fail(err)`
                 // repropagates one. The form also terminates a path inside an expression
@@ -1717,6 +1998,11 @@ impl<'a> Parser<'a> {
 
     fn parse_fn_expr(&mut self) -> Option<Expr> {
         let start = self.advance().span; // 'fn'
+        self.parse_fn_expr_rest(start, false)
+    }
+
+    /// Shared body of `fn(...)` / `async fn(...)` anonymous functions.
+    fn parse_fn_expr_rest(&mut self, start: SourceSpan, is_async: bool) -> Option<Expr> {
         self.expect(
             &TokenKind::LParen,
             "expected '(' in anonymous function params",
@@ -1743,6 +2029,7 @@ impl<'a> Parser<'a> {
             )?
             .span;
         Some(Expr::Fn(FunctionExpr {
+            is_async,
             params,
             return_type,
             body,
@@ -1835,7 +2122,8 @@ fn stmt_span(stmt: &Stmt) -> SourceSpan {
         | Stmt::Break(span)
         | Stmt::Continue(span)
         | Stmt::Return(_, span)
-        | Stmt::Fail(_, span) => *span,
+        | Stmt::Fail(_, span)
+        | Stmt::AwaitDo(_, span) => *span,
         Stmt::If(s) => s.span,
         Stmt::Match(s) => s.span,
         Stmt::Attempt(s) => s.span,

@@ -55,7 +55,7 @@ impl LoweringContext {
         match item {
             Item::Fn(f) => HirItem::Fn(self.lower_function_decl(f)),
             Item::Struct(s) => HirItem::Struct(self.lower_struct_decl(s)),
-            Item::Impl(i) => HirItem::Impl(self.lower_impl_block(i)),
+            Item::Impl(i) => HirItem::Impl(Box::new(self.lower_impl_block(i))),
             Item::Interface(i) => HirItem::Interface(self.lower_interface_decl(i)),
             Item::Satisfy(s) => HirItem::Satisfy(self.lower_satisfy_decl(s)),
             Item::Import(i) => HirItem::Import(self.lower_import_decl(i)),
@@ -71,6 +71,7 @@ impl LoweringContext {
         }
         HirFunctionDecl {
             name: f.name.name,
+            is_async: f.is_async,
             params,
             return_type: f.return_type,
             body,
@@ -160,6 +161,7 @@ impl LoweringContext {
 
         HirFunctionDecl {
             name: "invariant".to_string(),
+            is_async: false,
             params: vec![self_param],
             return_type: None,
             body: vec![HirStmt::Return(Some(combined), hook.span)],
@@ -352,6 +354,13 @@ impl LoweringContext {
                 // function and to wire the self-capture that makes recursion work.
                 out.push(HirStmt::FnDecl(self.lower_function_decl(f)));
             }
+            Stmt::AwaitDo(stmts, span) => {
+                let mut lowered = Vec::new();
+                for stmt in stmts {
+                    self.lower_stmt(stmt, &mut lowered);
+                }
+                out.push(HirStmt::AwaitDo(lowered, span));
+            }
             Stmt::Expr(expr) => {
                 out.push(HirStmt::Expr(self.lower_expr(expr)));
             }
@@ -416,6 +425,7 @@ impl LoweringContext {
     pub fn lower_expr(&mut self, expr: Expr) -> HirExpr {
         match expr {
             Expr::Literal(lit, span) => HirExpr::Literal(lit, span),
+            Expr::Await(inner, span) => HirExpr::Await(Box::new(self.lower_expr(*inner)), span),
             Expr::Identifier(id) => HirExpr::Identifier(id.name, id.span),
             Expr::Unary(op, inner, span) => {
                 HirExpr::Unary(op, Box::new(self.lower_expr(*inner)), span)
@@ -472,6 +482,7 @@ impl LoweringContext {
                     self.lower_stmt(stmt, &mut body);
                 }
                 HirExpr::Fn(HirFunctionExpr {
+                    is_async: f.is_async,
                     params,
                     return_type: f.return_type,
                     body,
@@ -570,6 +581,7 @@ impl LoweringContext {
             self.lower_stmt(stmt, &mut body);
         }
         HirExpr::Fn(HirFunctionExpr {
+            is_async: false,
             params,
             return_type: None,
             body,

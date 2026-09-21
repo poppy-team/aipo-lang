@@ -7,6 +7,7 @@ repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "JavaScript backend for Aipo: Core IR to ESM emitter, versioned runtime shim and source maps"
+publish = false
 
 [lints]
 workspace = true
@@ -17,6 +18,7 @@ aipo-diagnostics = { path = "../aipo-diagnostics" }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+aipo-testkit = { path = "../aipo-testkit" }
 aipo-source = { path = "../aipo-source" }
 aipo-syntax = { path = "../aipo-syntax" }
 aipo-hir = { path = "../aipo-hir" }

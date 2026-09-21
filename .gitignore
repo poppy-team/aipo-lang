@@ -7,3 +7,5 @@
 target/
 **/*.rs.bk
 
+# libFuzzer build artifacts
+fuzz/target/

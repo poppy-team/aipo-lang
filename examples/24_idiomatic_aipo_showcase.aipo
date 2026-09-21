@@ -1,0 +1,43 @@
+# A small task board combining structs, higher-order methods, `match` and
+# recoverable failures: idiomatic Aipo in one file.
+struct Task
+    title
+    done = false
+end
+
+impl Task
+    fn finish(self!)
+        self.done = true
+    end
+end
+
+var board = []
+board.add(Task{title = "parser"})
+board.add(Task{title = "tests"})
+board[0].finish()
+
+let open = board.filter(fn (t) return not t.done end)
+io.println(len(open))
+each task in board
+    match task.done
+    when true
+        io.println(f"done: {task.title}")
+    else
+        io.println(f"todo: {task.title}")
+    end
+end
+
+fn find(title)
+    each task in board
+        if task.title == title
+            return task
+        end
+    end
+    return fail(f"unknown task: {title}")
+end
+
+attempt
+    io.println(find("nope").title)
+failed err
+    io.println("no such task")
+end

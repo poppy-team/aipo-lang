@@ -2,10 +2,10 @@
 
 use crate::fault::{VmError, VmFault};
 use crate::frame::{CallFrame, HandlerFrame};
-use crate::value::{StructInstance, Value};
+use crate::value::{GroupId, StructInstance, TaskId, Value};
 use aipo_bytecode::BytecodeModule;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
 mod call;
@@ -15,6 +15,7 @@ mod failure;
 mod helpers;
 mod journal;
 mod method;
+mod task;
 
 /// Receiver-first native method implementation.
 pub type MethodNative = fn(&Value, &[Value]) -> Result<Value, VmFault>;
@@ -92,6 +93,32 @@ pub struct Vm {
     halted_with: Option<Value>,
     /// Maximum allowed operand stack depth.
     pub max_stack_depth: usize,
+    /// Scheduler-managed task states, including the suspended main task under id 0.
+    tasks: HashMap<TaskId, task::TaskState>,
+    /// Runnable tasks in FIFO order; sleepers stay queued until their deadline passes.
+    run_queue: VecDeque<TaskId>,
+    /// Tasks waiting on a task or join completing: target task id -> waiters.
+    waiters: HashMap<TaskId, Vec<TaskId>>,
+    /// Active structured joins (`all`, `race`, `timeout`, group waits).
+    joins: HashMap<task::JoinId, task::JoinState>,
+    /// Structured-concurrency groups created by `task.group()`.
+    groups: HashMap<GroupId, task::GroupState>,
+    /// Task currently loaded on the machine (`None` while the never-suspended
+    /// main script runs on the bare machine).
+    current: Option<TaskId>,
+    /// Next fresh task, join, and group identifiers.
+    next_task: TaskId,
+    next_join: task::JoinId,
+    next_group: GroupId,
+    /// Virtual clock in ticks. Time advances only while tasks sleep or wait on
+    /// deadlines; pure computation never moves the clock, so scheduling is
+    /// fully deterministic for a fixed program input.
+    tick: u64,
+    /// Outcome of the module entry script once it completes.
+    main_outcome: Option<task::TaskOutcome>,
+    /// Reentrancy depth of [`Vm::invoke`]: blocking operations fault instead of
+    /// suspending while positive, because the host Rust stack cannot resume.
+    invoke_depth: usize,
 }
 
 impl Default for Vm {
@@ -120,6 +147,18 @@ impl Vm {
             active_iterations: Vec::new(),
             halted_with: None,
             max_stack_depth: 1024,
+            tasks: HashMap::new(),
+            run_queue: VecDeque::new(),
+            waiters: HashMap::new(),
+            joins: HashMap::new(),
+            groups: HashMap::new(),
+            current: None,
+            next_task: task::MAIN_TASK + 1,
+            next_join: 1,
+            next_group: 1,
+            tick: 0,
+            main_outcome: None,
+            invoke_depth: 0,
         }
     }
 
@@ -225,6 +264,18 @@ impl Vm {
         self.active_iterations.clear();
         self.halted_with = None;
         self.mutation_journal.clear();
+        self.tasks.clear();
+        self.run_queue.clear();
+        self.waiters.clear();
+        self.joins.clear();
+        self.groups.clear();
+        self.current = Some(task::MAIN_TASK);
+        self.next_task = task::MAIN_TASK + 1;
+        self.next_join = 1;
+        self.next_group = 1;
+        self.tick = 0;
+        self.main_outcome = None;
+        self.invoke_depth = 0;
 
         // Struct invariants are compiled as `Type.invariant` predicates, so the module itself
         // records how to reach each type's check: the runtime resolves the entry points once
@@ -237,16 +288,54 @@ impl Vm {
             }
         }
 
-        while self.ip < module.code.len() {
-            let halted = self.step(module)?;
-            if halted {
+        loop {
+            if self.main_outcome.is_some() {
                 break;
+            }
+            // An idle machine (nothing loaded, no live frames) pumps the
+            // scheduler: a queued task is loaded, the bare main script keeps
+            // stepping, or virtual time advances past the next sleeper.
+            if self.current.is_none() && self.frames.is_empty() {
+                self.select_next(module)?;
+                if self.main_outcome.is_some() {
+                    break;
+                }
+            }
+            match self.step(module) {
+                Ok(_) => {}
+                Err(VmError::Suspended) => {
+                    // A blocking primitive saved its task and unwound with the
+                    // triggering instruction intact; the loop head pumps next.
+                }
+                Err(other) => {
+                    if self.current.is_some() && self.current != Some(task::MAIN_TASK) {
+                        // Faults inside a driven task fail that task; waiters
+                        // observe the failure value through `await`/joins and
+                        // Model B propagation continues from there.
+                        let message = other.to_string();
+                        self.complete_current(task::TaskOutcome::Failed(Value::Failure(Rc::new(
+                            crate::value::FailureValue { message },
+                        ))));
+                    } else {
+                        return Err(other);
+                    }
+                }
             }
         }
 
-        let result = match self.halted_with.take() {
-            Some(failure) => failure,
-            None => self.stack.pop().unwrap_or(Value::None),
+        let result = match self.main_outcome.take() {
+            Some(task::TaskOutcome::Ready(value)) => value,
+            Some(task::TaskOutcome::Failed(failure)) => failure,
+            Some(task::TaskOutcome::Cancelled) => {
+                return Err(VmFault::Cancelled {
+                    details: "main task was cancelled".to_string(),
+                }
+                .into());
+            }
+            None => match self.halted_with.take() {
+                Some(failure) => failure,
+                None => self.stack.pop().unwrap_or(Value::None),
+            },
         };
         if let Value::Failure(err) = &result {
             return Err(VmError::UncaughtFailure(err.message.clone()));

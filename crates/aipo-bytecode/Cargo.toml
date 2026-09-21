@@ -7,6 +7,7 @@ repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Compact bytecode module format, instruction set, emitter, verifier, and disassembler for Aipo"
+publish = false
 
 [lints]
 workspace = true
@@ -21,3 +22,4 @@ byteorder = "1.5"
 [dev-dependencies]
 aipo-syntax = { path = "../aipo-syntax" }
 aipo-hir = { path = "../aipo-hir" }
+aipo-vm = { path = "../aipo-vm" }

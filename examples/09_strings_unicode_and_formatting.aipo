@@ -1,0 +1,10 @@
+# Text is Unicode code points, always NFC. Interpolation lowers to `+`.
+let name = "ana"
+io.println(f"hi {name}!")
+io.println("a,B,c".split(","))
+io.println("-".join(["a", "b"]))
+io.println("aaa".replace("a", "b"))
+io.println("héllo".upper())
+io.println("café".len())
+io.println("🎉".len())
+io.println("Name: {name}".format({"name": name}))

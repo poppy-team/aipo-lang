@@ -226,8 +226,10 @@ Outside this slice (tracked in ADP-001/ADP-002 and the canon backlog): `format` 
 placeholders and format specifiers (`{price:.2f}`), `Bytes` packing APIs (`read_i32`/`write_f32`/…,
 `String.encode`/`Bytes.decode`), `casefold`, `graphemes`, `words`, `lines`, explicit advanced
 Unicode normalization, `Set`, lazy `Sequence`, regex/json/fs/http and every capability-aware
-module. Explicit Wave 1 non-delivery (see `docs/evidence/P00-G16-wave-1-exit-review.md`): the
-`aipo-js` backend (Wave 2), LSP and REPL (CLI stays `run`/`check`/`fmt`), async/await, host
+module. Wave 1 non-delivery that Wave 2 slice W2-1 has since closed (see
+`docs/evidence/P01-G01-js-parity-mvp-subset.md`): the `aipo-js` backend now ships
+the MVP subset with differential parity (CLI is `run`/`check`/`build`/`fmt`).
+Still explicitly deferred: LSP and REPL, async/await, host
 ABI/Poppy, packages/registry and hot reload. Type values for `List`/`Dict`/`Bytes` and a
 dedicated `Byte` runtime kind were listed here previously and are now delivered — see
 `docs/evidence/P00-G10-backend-completion.md`.

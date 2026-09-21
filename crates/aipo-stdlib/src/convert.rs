@@ -68,3 +68,19 @@ pub fn convert_string(args: &[Value]) -> Result<Value, VmFault> {
 pub fn convert_bytes(args: &[Value]) -> Result<Value, VmFault> {
     vm_convert::convert_bytes(single_argument("Bytes", args)?)
 }
+
+/// Explicit conversion to `Set` from a list or existing set.
+///
+/// # Errors
+/// Returns [`VmFault::TypeMismatch`] when the argument is not a `List` or `Set`.
+pub fn convert_set(args: &[Value]) -> Result<Value, VmFault> {
+    vm_convert::convert_set(single_argument("Set", args)?)
+}
+
+/// Explicit conversion to `Duration` from Int or Float seconds.
+///
+/// # Errors
+/// Returns [`VmFault::TypeMismatch`] when the argument is not numeric or non-finite.
+pub fn convert_duration(args: &[Value]) -> Result<Value, VmFault> {
+    vm_convert::convert_duration(single_argument("Duration", args)?)
+}

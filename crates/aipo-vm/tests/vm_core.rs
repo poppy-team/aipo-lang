@@ -1,7 +1,7 @@
 //! Comprehensive unit tests for VM Core (Slice S7).
 
-use aipo_bytecode::BytecodeModule;
 use aipo_bytecode::opcode::{Constant, OpCode};
+use aipo_bytecode::{BytecodeModule, FunctionInfo};
 use aipo_diagnostics::DiagnosticCode;
 use aipo_vm::{MAX_SAFE_INT, MIN_SAFE_INT, Value, Vm, VmError, VmFault, execute};
 use byteorder::{BigEndian, ByteOrder};
@@ -266,6 +266,7 @@ fn test_function_call_and_return() {
         Value::Function {
             entry_ip: 3,
             arity: 1,
+            is_async: false,
         },
     );
 
@@ -300,4 +301,52 @@ fn test_function_call_and_return() {
 
     let result = vm.run(&module).expect("function call should succeed");
     assert_eq!(result, Value::Int(42));
+}
+
+#[test]
+fn test_call_with_extra_arguments_faults_on_arity() {
+    // Regression guard for the runtime arity check: a callee declared with one
+    // parameter must reject two arguments even when every value is well-typed.
+    // (Static arity is checked by sema; this is the last line of defense for
+    // hand-built bytecode.)
+    let mut vm = Vm::new();
+    vm.define_global(
+        "only_one",
+        Value::Function {
+            entry_ip: 0,
+            arity: 1,
+            is_async: false,
+        },
+    );
+
+    let mut code = Vec::new();
+    // GetGlobal "only_one", Constant 1, Constant 2, Call 2, Return
+    code.push(OpCode::GetGlobal as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&1u16.to_be_bytes());
+    code.push(OpCode::Call as u8);
+    code.push(2u8);
+    code.push(OpCode::Return as u8);
+
+    let mut module = make_test_module(
+        code,
+        vec![Constant::Int(1), Constant::Int(2)],
+        vec!["only_one".to_string()],
+    );
+    module.functions.push(FunctionInfo {
+        name: "only_one".to_string(),
+        entry_ip: 0,
+        params: 1,
+        locals: 0,
+        is_async: false,
+    });
+
+    let outcome = vm.run(&module);
+    assert!(
+        matches!(outcome, Err(VmError::Fault(VmFault::TypeMismatch { .. }))),
+        "extra arguments fault, got {outcome:?}"
+    );
 }

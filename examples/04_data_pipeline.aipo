@@ -23,9 +23,10 @@ fn totals_for(list, who)
     return mine.transform(fn (o) return o.total end)
 end
 
-let ana_total = orders
-    |> totals_for("ana")
-    |> fold(0, fn (acc, t) return acc + t end)
+var ana_total = 0
+each total in orders |> totals_for("ana")
+    ana_total = ana_total + total
+end
 io.println(f"ana total: {ana_total}")
 
 each order in orders

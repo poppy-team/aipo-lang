@@ -1,0 +1,17 @@
+# A closure keeps shared state: each counter below owns its own `count`.
+fn make_counter()
+    var count = 0
+
+    fn bump()
+        count += 1
+        return count
+    end
+
+    return bump
+end
+
+let first = make_counter()
+let second = make_counter()
+io.println(first())
+io.println(first())
+io.println(second())

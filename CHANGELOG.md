@@ -5,8 +5,43 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [Não lançado]
 
+### Corrigido
+- **Auditoria de docs (P01-G02)**: varredura completa de `docs/` — resíduo "Odin"
+  confinado ao material histórico do canon (1 menção normativa corrigida sem
+  mudança semântica); `scope.md`, `architecture/overview.md`, coding-standards,
+  governance, deployment, observability, lifecycle, security-contract (paths +
+  tabela `unsafe`), PRUMO.md, mvp-subset, status das waves e ADR-001 alinhados
+  ao implementado (Waves 1–2, `aipo build`, sem GC, sem stdlib externa).
+  114 links internos validados, zero quebrados. Registro em
+  `docs/journal/2026-09-20-docs-audit.md`.
+
 ### Adicionado
-- **JS backend MVP (P01-G01)**: novo crate `aipo-js` — emissor Core IR → ESM (`app.js` + `aipo-runtime.js` versionado + `app.js.map` ECMA-426, sem acoplamento com bytecode) e comando estável `aipo build <path> [--out <dir>]`. Suíte diferencial VM↔JS verde sobre os 20 programas do corpus, paridade de diagnósticos (falhas de check rejeitadas no build, faults de runtime idênticos sob `node`) e bundle de módulos (`basic` empacotado, `cycle`/`missing` rejeitados). Requer Node ≥ 20.
+- **Wave 3 combinadores assíncronos e scheduler (P02-G02)**: Scheduler cooperativo determinístico mono-thread com tempo virtual (`tick`), combinadores assíncronos (`task.spawn`, `task.sleep`, `task.all`, `task.race`, `task.timeout`, `task.cancel`, `task.group`), `group.spawn`, `group.wait`, suporte completo a `await` e detecção de ciclo de await (`AIPO_RT_AWAIT_CYCLE`), restrição de bloqueio em callbacks de host (`AIPO_RT_AWAIT_IN_CALLBACK`) e 100% de paridade diferencial VM↔JS (`aipo-runtime.js`).
+- **Wave 3 tipos e valores (P02-G01)**: `Set` ordenado com semântica de conjunto (`has`, `add`, `remove`, `clear`, `to_list`, `lazy`); `Sequence` lazy iterável com pipeline (`map`, `filter`, `flat_map`, `take`, `skip`, `distinct`, `enumerate`) e terminais (`collect`, `find`, `any`, `all`, `count`, `reduce`, `group_by`); `Bytes` com buffer mutável (`Rc<RefCell<Vec<u8>>>`) e packing binário little-endian (`read_*`/`write_*` para `i8`..`f64`), mais `String.encode()` e `Bytes.decode()`; `Duration` com precisão em segundos, aritmética (`+`, `-`, comparação) e `.total_seconds()`; handles de `Task` e `Group` no modelo de valores com combinadores do módulo `task` (`spawn`, `sleep`, `all`, `race`, `timeout`, `cancel`, `group`); paridade estrita entre VM Rust e runtime JavaScript (`aipo-runtime.js`) comprovada pela suíte diferencial e selftest.
+- **Deep quality gauntlet (P01-G02)**: `aipo-testkit` (Rng, AipoSmith generator,
+  differential/metamorphic harnesses, portable subprocess watchdog),
+  `aipo-bench` (frontend/VM/JS/scaling baselines → `docs/performance/baseline.md`),
+  libFuzzer targets (`fuzz/`, nightly tier), LLVM coverage (`docs/testing/coverage.sh`),
+  property suites (lexer, source, parser totality, values, contracts, unicode, fmt),
+  UI diagnostic goldens + accessibility rubric/protocol, source-map conformance,
+  determinism suite, resource-exhaustion suite, examples 06–24 with executable
+  harness, programs 21–23, `deny.toml` supply-chain policy, ADPs 003/004/005.
+  Suite: 165 → 253 testes, zero falhas; Miri verde em `aipo-vm`; MSRV 1.85 verificado.
+
+### Corrigido
+- **Abort do host em nesting profundo (SIGABRT)**: guardas de profundidade no
+  parser + garantia de progresso + `AIPO_PARSE_NESTING_TOO_DEEP` (ADP-005);
+  latente: loops de corpo travavam em qualquer falha sem consumo.
+- **Panic do IR builder em programa válido**: construção com `init` dentro de
+  função com parâmetros (achado do fuzzer); usa `hidden_name` (regressão: programa 23).
+- **Divergência VM↔JS no recovery de `attempt`**: journal truncado até o frame
+  sobrevivente (regressão: programa 21).
+- **Divergência de zero com sinal**: `-0.0` no display e normalização de `Int`
+  negativo inexistente no JS (regressão: programa 22).
+- **Parsing quadrático de f-strings**: slices sem padding + shift de spans
+  (`shift.rs`), 23,4 ms → 1,8 ms em 400 f-strings, snapshots idênticos.
+- **Examples apodrecidos**: 03 (`return` em `invariant`), 04 (`fold`
+  inexistente, pipelines liderando linha).
 - **Fixture `programs/21_attempt_recovery_and_journal`**: `return fail(…)` propagando até o `attempt` do chamador e recovery descartando entradas do journal anteriores ao handler (só mutações pós-handler revertem) — cobre os dois backends.
 - **Índice de chaves `String` no `Dict`** (`DictMap`): lookup/upsert O(1) no caso comum, preservando ordem de inserção e igualdade estrutural; espelhado no shim JS.
 - **Fuzz gramatical** (`fuzz_smoke`): mutações por tokens (keywords, `end`-stripping, splice de programas) sobre `check`/`fmt --check`, mais execução real de mutantes sob `timeout` com assert de exit codes e ausência de panic.

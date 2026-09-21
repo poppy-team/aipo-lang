@@ -1,0 +1,7 @@
+export total, spend
+
+var total = 200
+
+fn spend(balance, amount)
+    return balance - amount
+end

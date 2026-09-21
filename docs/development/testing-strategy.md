@@ -10,12 +10,21 @@
 2. **Snapshot/golden** — tokens, syntax, HIR, IR, bytecode disassembly, formatter output,
    diagnostics. Committed under each crate's `tests/snapshots/` or `docs/conformance/`.
 3. **Property** — lossless round-trip, formatter idempotency, lexer span slicing,
-   parser never-panic.
+   parser never-panic. Deterministic (`aipo-testkit::Rng` + printed seeds).
 4. **Integration** — end-to-end: `.aipo` program → `aipo run` → expected stdout/exit;
    `aipo check` → expected diagnostics.
 5. **Fuzz** — pipeline smoke fuzz over arbitrary bytes; parser/lexer fuzz targets.
    Every crash finding becomes a regression fixture.
-6. **Differential (Wave 2)** — VM ↔ JavaScript on the proven subset.
+6. **Differential (Wave 2)** — VM ↔ JavaScript on the proven subset, extended to
+   generated programs (AipoSmith) and metamorphic rewrites.
+7. **UI/diagnostic** — golden human + JSONL renderings, schema invariants,
+   no-color discipline, cascade control (`crates/aipo-cli/tests/diagnostic_ui.rs`).
+8. **Resource/security** — hostile bytecode, resource exhaustion with termination
+   contract, portable subprocess watchdog (no platform-only `timeout`).
+9. **Benchmarks** — `aipo-bench` baselines (median/MAD), scaling analysis;
+   compilation-gated in PRs, executed on a dedicated runner.
+10. **Coverage-guided fuzz (nightly tier)** — `fuzz/` libFuzzer targets with
+    committed seed corpora; see `docs/testing/ci-tiers.md`.
 
 ## Quality gates (blocking)
 
@@ -30,6 +39,17 @@ prumo validate . && prumo doctor .
 
 Risk-gated (when relevant code changes): `cargo miri test` (no Wave 1 unsafe expected),
 fuzz targets, `cargo audit`/`cargo deny`.
+
+## Cross-cutting rules
+
+- **Sink discipline:** program output flows through the process-global stdlib
+  sink. Any test capturing it must hold a serializing lock for the whole test
+  (see `docs/testing/concurrency-audit.md`); locks are per test file and never
+  re-entered.
+- **Determinism:** fixed seeds everywhere; a failure prints its seed and the
+  exact commands to reproduce.
+- **Tiers:** `docs/testing/ci-tiers.md` decides what runs per-PR vs scheduled
+  vs dedicated-runner. Wall-clock timing never gates shared runners.
 
 ## Fixtures
 
