@@ -2,8 +2,8 @@
 
 - Project: **aipo**
 - Prumo: **0.6.0**
-- Current phase: **Wave 3 closed** (next: **P03 — Wave 4 host ABI/Poppy**)
-- Active goal: **none** — `P02-G01`, `P02-G02` and `P02-G03` are DONE; Wave 3 is closed
+- Current phase: **P03 — Wave 4 (Host ABI + Poppy)**
+- Active goal: **P03-G01 — Host ABI: capability model, host values and generational handles (EXECUTING)**
 - Last completed goal: **P02-G03 — Wave 3 infra: sintaxe async fn, await do e diagnósticos estáticos (DONE)**
 - Completed slices:
   - **S1 (P00-G01)**: Workspace, `aipo-source`, `aipo-diagnostics`
@@ -27,12 +27,13 @@
   - **Wave 3 tipos e valores (P02-G01)**: Set com ordem de inserção, Sequence lazy, packing de Bytes little-endian (`read_*`/`write_*`), Duration e Task/Group handles com paridade diferencial VM↔JS e conformance — ver `docs/evidence/P02-G01-wave3-types-and-values.md`
   - **Wave 3 combinadores assíncronos e scheduler (P02-G02)**: Scheduler cooperativo determinístico com tempo virtual, combinadores assíncronos (`task.spawn`, `task.sleep`, `task.all`, `task.race`, `task.timeout`, `task.cancel`, `task.group`), `await` opcode e paridade diferencial total VM↔JS — ver `docs/evidence/P02-G02-wave3-stdlib-async.md`
   - **Wave 3 infra assíncrona (P02-G03)**: `async fn` como protocolo de chamada em forma de topo, local, anônima e método de `impl` (receptor = argumento 0), `await do … end` sequencial, diagnósticos estáticos `AIPO_SEM_AWAIT_IN_SUBEXPRESSION`/`AIPO_SEM_FORGOTTEN_TASK`/`AIPO_SEM_NESTED_AWAIT_DO`, contrato estático do operando de `await`, faults de runtime `AIPO_RT_AWAIT_CYCLE`/`AIPO_RT_CANCELLED` com paridade VM↔JS, e endurecimento de literais numéricos com helper único em `aipo-lexer::number`; conformance programas 24–27 e diagnósticos 20–29 (suíte 301 testes) — ver `docs/evidence/P02-G03-wave3-async-syntax-and-diagnostics.md`
+  - **Wave 4 ABI de host (P03-G01, em andamento)**: crate `aipo-host` com o AHS (`HostSchema`) validado, capabilities deny-by-default (`CapabilitySet`, caminho = árvore), handles geracionais sem use-after-free (`HandleTable`), valores de host por cópia com `Int`/`Float` checados na fronteira e faults com código estável (`AIPO_RT_CAPABILITY_DENIED`, `AIPO_RT_STALE_HANDLE`, `AIPO_RT_SCOPE_ESCAPE`). Restante do slice: adaptador no VM (conversão de `HostValue`, enforcement de escape nos pontos de publicação, `time.now`/`monotonic` atrás da capability `clock`) e fixtures de conformance — ver `crates/aipo-host/README.md`.
 - Context methodology: **Lean Progressive Context (LPC)**
-- Last updated: `2026-09-21T05:05:00Z`
+- Last updated: `2026-09-21T06:00:00Z`
 
 ## Next action
 
-Wave 3 is closed: `docs/waves/wave-3-async.md` records the met exit gate, and `P02-G01`/`P02-G02`/`P02-G03` are DONE. Open the Wave 4 phase from `docs/waves/wave-4-host-poppy.md` — first slice `P03-G01` (host embedding ABI), then `P03-G02` (Poppy adapter + demo). Open items still carried: `P00-G16`, `P01-G01` are REVIEWING and `P01-G02` is EXECUTING.
+Finish `P03-G01`: write the VM-side adapter for `aipo-host` (a `HostValue` → language value conversion, `HostFault` → runtime fault, scoped-escape enforcement at SetGlobal/Return/SetField/SetIndex/BuildList/BuildDict, and `time.now`/`time.monotonic` behind the `clock` capability with the CLI profile granting it), then add the stale-handle, escape and capability-denial fixtures the Wave 4 exit gate asks for. After that, `P03-G02` (Poppy adapter + deterministic headless demo). Open items carried: `P00-G16`, `P01-G01` are REVIEWING and `P01-G02` is EXECUTING.
 
 ## Recovery order
 

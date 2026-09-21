@@ -78,6 +78,9 @@
 | AIPO_RT_CANCELLED | fault | a cancelled `Task` is awaited or driven (Wave 3) |
 | AIPO_RT_AWAIT_CYCLE | fault | a task awaits itself directly or transitively (Wave 3) |
 | AIPO_RT_AWAIT_IN_CALLBACK | fault | `await`/`sleep`/join inside a synchronous `invoke` callback, which cannot suspend (Wave 3) |
+| AIPO_RT_CAPABILITY_DENIED | fault | host operation attempted without the capability it requires (Wave 4) |
+| AIPO_RT_STALE_HANDLE | fault | host handle addressed after its slot was released or reused (Wave 4) |
+| AIPO_RT_SCOPE_ESCAPE | fault | scoped host binding reached a heap-publication point outside its scope (Wave 4) |
 
 ### Runtime failure (AIPO_RT_FAILURE_*)
 | Code | Severity | Trigger |

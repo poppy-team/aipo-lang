@@ -185,8 +185,17 @@ Related ADPs.**
 ### aipo-lsp (Wave 5)
 - **Responsibility:** LSP over compiler services; never duplicates analyzer logic.
 
-### aipo-host (Wave 4)
+### aipo-host (Wave 4, started by `P03-G01`)
 - **Responsibility:** host ABI contracts: AHS consumption, capability model, host values/handles. General abstractions only.
+- **Owns:** `HostSchema` (the AHS model and its validation), `Capability`/`CapabilitySet`, `Handle`/`HandleTable`, `HostValue`, `HostFault`.
+- **Inputs:** a host surface description as data; a profile's granted capabilities.
+- **Outputs:** the validated surface, capability decisions, host values and handle resolutions as `Result`.
+- **Allowed deps:** aipo-diagnostics, serde, serde_json.
+- **Forbidden:** any specific engine or engine type; VM, IR or bytecode internals (the VM adapter that consumes this crate is written in `aipo-vm`, not here).
+- **Invariants:** capabilities are deny-by-default and a declared set is an upper bound that policy may only narrow; a handle is dereferenced only through the table that minted it, and a released generation is never reused; a host value is plain data, with `Int` within ±(2^53−1) and `Float` finite; no Rust reference, lifetime or panic crosses the boundary.
+- **Error model:** `HostFault` with one stable code per refusal (`AIPO_RT_CAPABILITY_DENIED`, `AIPO_RT_STALE_HANDLE`, `AIPO_RT_SCOPE_ESCAPE`, and a contract fault for an invalid host value).
+- **Testing:** unit tests per guarantee inside the crate plus the VM-level fixtures once the adapter lands.
+- **Related ADPs:** ADP-006 §I (Wave 4 deviations).
 
 ### aipo-poppy (Wave 4)
 - **Responsibility:** Poppy Game Engine adapter over aipo-host: ECS scopes/command buffer, behaviors/events, game.random. Depends on host contracts; bytecode/IR never know it.

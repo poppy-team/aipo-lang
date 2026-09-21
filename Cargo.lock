@@ -91,6 +91,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aipo-host"
+version = "0.1.0"
+dependencies = [
+ "aipo-diagnostics",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aipo-ir"
 version = "0.1.0"
 dependencies = [

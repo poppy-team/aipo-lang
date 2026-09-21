@@ -102,6 +102,12 @@ pub enum DiagnosticCode {
     /// Blocking operation (`await`, `sleep`, join) inside a synchronous
     /// callback driven by `invoke`: the host Rust stack cannot suspend.
     AIPO_RT_AWAIT_IN_CALLBACK,
+    /// Host operation attempted without the capability it requires.
+    AIPO_RT_CAPABILITY_DENIED,
+    /// Host handle addressed after its slot was released or reused.
+    AIPO_RT_STALE_HANDLE,
+    /// Scoped host binding reached a heap-publication point outside its scope.
+    AIPO_RT_SCOPE_ESCAPE,
 
     // --- Runtime failure (AIPO_RT_FAILURE_*) ---
     /// Uncaught failure value reached top level.
@@ -153,6 +159,9 @@ impl DiagnosticCode {
             Self::AIPO_RT_CANCELLED => "AIPO_RT_CANCELLED",
             Self::AIPO_RT_AWAIT_CYCLE => "AIPO_RT_AWAIT_CYCLE",
             Self::AIPO_RT_AWAIT_IN_CALLBACK => "AIPO_RT_AWAIT_IN_CALLBACK",
+            Self::AIPO_RT_CAPABILITY_DENIED => "AIPO_RT_CAPABILITY_DENIED",
+            Self::AIPO_RT_STALE_HANDLE => "AIPO_RT_STALE_HANDLE",
+            Self::AIPO_RT_SCOPE_ESCAPE => "AIPO_RT_SCOPE_ESCAPE",
             Self::AIPO_RT_FAILURE_UNCAUGHT => "AIPO_RT_FAILURE_UNCAUGHT",
         }
     }
@@ -202,7 +211,10 @@ impl DiagnosticCode {
             | Self::AIPO_RT_TYPE_MISMATCH
             | Self::AIPO_RT_CANCELLED
             | Self::AIPO_RT_AWAIT_CYCLE
-            | Self::AIPO_RT_AWAIT_IN_CALLBACK => Severity::Fault,
+            | Self::AIPO_RT_AWAIT_IN_CALLBACK
+            | Self::AIPO_RT_CAPABILITY_DENIED
+            | Self::AIPO_RT_STALE_HANDLE
+            | Self::AIPO_RT_SCOPE_ESCAPE => Severity::Fault,
         }
     }
 }

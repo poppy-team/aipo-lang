@@ -90,6 +90,21 @@ suspension points only, so no inspect-and-kill race is possible.
 - No `bevy` dependency: canon forbids *exposing* bevy/Ecs internals, and a
   100+ crate dependency for a demo adapter would violate the minimal-surface
   rule; `aipo-poppy` is self-contained and proves the ABI instead.
+- **Host fault codes for restrictions canon mandates but does not name.** Canon
+  fixes the ban (no use-after-free on a stale handle, no scoped binding escaping
+  its callback) and names only `AIPO_RT_CAPABILITY_DENIED`; the code *names* are
+  implementation detail, the same latitude §F recorded for the await
+  diagnostics. Chosen: `AIPO_RT_STALE_HANDLE` and `AIPO_RT_SCOPE_ESCAPE`,
+  alongside `AIPO_RT_CAPABILITY_DENIED`. A host value that cannot satisfy its
+  declared contract is `AIPO_RT_TYPE_MISMATCH`, because canon classifies a
+  contract violation discovered at a boundary as a type mismatch.
+- **Capability paths are the tree.** Canon §11 lists a flat hierarchy including
+  the `poppy.*` family, while the clock is treated as the single `clock`
+  capability at the call site (`time.now`/`time.monotonic`). Both are the same
+  rule once a path grants its descendants: `clock` covers `clock.wall` and
+  `clock.monotonic`, and `poppy` covers every `poppy.<name>`. No wildcard syntax
+  is introduced, and a profile that grants only `clock.wall` still cannot read
+  the monotonic clock.
 - Scoped-escape enforcement covers SetGlobal, Return, SetField, SetIndex,
   BuildList and BuildDict (every heap-publication point in the VM).
 - `time.now`/`time.monotonic` require the `clock` capability (canon: clocks are

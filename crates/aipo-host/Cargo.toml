@@ -1,0 +1,18 @@
+[package]
+name = "aipo-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Host ABI contracts for Aipo: capability model, host values and generational handles"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+serde = { workspace = true }
+serde_json = { workspace = true }
