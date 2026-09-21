@@ -24,6 +24,47 @@ fn lock_io() -> MutexGuard<'static, ()> {
     IO_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// The deterministic clock profile this suite runs both backends under.
+///
+/// `time.now`/`time.monotonic` are host capabilities, so a parity comparison is only
+/// meaningful when the two backends read the *same* source: the VM installs
+/// [`DeterministicClock`] and the JavaScript side gets its twin as a preload module (see
+/// [`write_clock_profile`]). Wall time is a fixed instant and the monotonic origin is zero, so
+/// a fixture can assert the clock contracts and still produce a stable, comparable result.
+const PROFILE_WALL_SECONDS: f64 = 1_000_000.0;
+const PROFILE_MONOTONIC_SECONDS: f64 = 0.0;
+
+/// The VM-side half of the deterministic clock profile.
+struct DeterministicClock;
+
+impl aipo_stdlib::time::ClockSource for DeterministicClock {
+    fn wall_seconds(&self) -> f64 {
+        PROFILE_WALL_SECONDS
+    }
+
+    fn monotonic_seconds(&self) -> f64 {
+        PROFILE_MONOTONIC_SECONDS
+    }
+}
+
+/// Writes the JavaScript half of the deterministic clock profile, returning the preload file
+/// name to hand to `node --import`.
+///
+/// The emitted entry installs the system clock only when no source is present, so loading this
+/// module first is what makes a replay replay. That is the same mechanism a host uses, not a
+/// hook the runtime reserves for tests.
+fn write_clock_profile(dir: &Path) -> &'static str {
+    let source = format!(
+        "// Deterministic clock profile for the VM/JS differential suite.\n\
+         globalThis.__aipoClock = {{\n\
+         \x20 wallSeconds: () => {PROFILE_WALL_SECONDS},\n\
+         \x20 monotonicSeconds: () => {PROFILE_MONOTONIC_SECONDS},\n\
+         }};\n"
+    );
+    std::fs::write(dir.join("clock-profile.mjs"), source).expect("write clock profile");
+    "clock-profile.mjs"
+}
+
 fn conformance_dir() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     dir.pop();
@@ -119,6 +160,8 @@ fn run_vm(compiled: &Compiled) -> String {
         aipo_stdlib::register_stdlib(&mut vm, &mut registry);
         (vm, registry)
     };
+    // The deterministic profile: the same clock the preload installs on the JavaScript side.
+    aipo_stdlib::time::install_clock(Box::new(DeterministicClock));
     for decl in &compiled.bytecode.structs {
         let fields: Vec<(&str, bool)> = decl
             .fields
@@ -140,6 +183,7 @@ fn run_vm(compiled: &Compiled) -> String {
     }
     vm.run(&compiled.bytecode).expect("vm runs fixture");
     aipo_stdlib::io::set_output_sink(None);
+    aipo_stdlib::time::revoke_clock();
     drop(_guard);
     let bytes = buffer.lock().unwrap_or_else(|e| e.into_inner()).clone();
     String::from_utf8(bytes).expect("vm output is utf-8")
@@ -162,7 +206,10 @@ fn run_js(path: &Path, compiled: &Compiled) -> String {
     std::fs::write(dir.join("app.js"), &bundle.app_js).expect("write app.js");
     std::fs::write(dir.join("aipo-runtime.js"), &bundle.runtime_js).expect("write shim");
     std::fs::write(dir.join("app.js.map"), &bundle.source_map).expect("write map");
+    let profile = write_clock_profile(&dir);
     let output = Command::new("node")
+        .arg("--import")
+        .arg(format!("./{profile}"))
         .arg("app.js")
         .current_dir(&dir)
         .output()
@@ -252,7 +299,10 @@ fn run_js_code(name: &str, text: &str, compiled: &Compiled) -> String {
     std::fs::write(dir.join("app.js"), &bundle.app_js).expect("write app.js");
     std::fs::write(dir.join("aipo-runtime.js"), &bundle.runtime_js).expect("write shim");
     std::fs::write(dir.join("app.js.map"), &bundle.source_map).expect("write map");
+    let profile = write_clock_profile(&dir);
     let output = Command::new("node")
+        .arg("--import")
+        .arg(format!("./{profile}"))
         .arg("app.js")
         .current_dir(&dir)
         .output()
@@ -413,4 +463,76 @@ io.println("cancelled ok")
     let js_out = run_js_code("wave3_async_cancel.aipo", code, &compiled);
     assert_eq!(vm_out, js_out);
     assert_eq!(vm_out, "cancelled ok\n");
+}
+
+#[test]
+fn test_time_clock_differential_under_the_deterministic_profile() {
+    // The clock is a host capability, so parity means the two backends read the same source:
+    // the readings themselves must match, not merely the booleans derived from them.
+    let code = r#"
+io.println(time.now().total_seconds())
+io.println(time.monotonic().total_seconds())
+io.println(time.monotonic().total_seconds() >= 0.0)
+"#;
+    let compiled = compile_code("wave4_time_diff.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("wave4_time_diff.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out, "VM and JS must read the same clock profile");
+    // Aipo prints a whole Float with its fraction (`1000000.0`), so the profile above is what
+    // makes both readings exact and comparable on both backends.
+    assert_eq!(
+        vm_out, "1000000.0\n0.0\ntrue\n",
+        "the profile decides both readings"
+    );
+}
+
+#[test]
+fn test_denied_clock_faults_identically_on_both_backends() {
+    // A host that grants nothing must not get a faked clock on either backend, and the fault
+    // must carry the canon code rather than a silent zero.
+    let code = "io.println(time.monotonic().total_seconds())\n";
+    let compiled = compile_code("wave4_time_denied.aipo", code);
+
+    // The clock is process-global, so this test must exclude the ones that install a source.
+    let _guard = lock_io();
+    let mut vm = aipo_vm::Vm::new();
+    let mut registry = aipo_runtime::NativeRegistry::new();
+    aipo_stdlib::register_stdlib(&mut vm, &mut registry);
+    aipo_stdlib::time::revoke_clock();
+    let vm_error = vm.run(&compiled.bytecode).expect_err("denied on the VM");
+    assert_eq!(
+        vm_error.diagnostic_code(),
+        aipo_diagnostics::DiagnosticCode::AIPO_RT_CAPABILITY_DENIED
+    );
+
+    let bundle = aipo_js::emit_js("wave4_time_denied.aipo", code, &compiled.ir);
+    let dir = std::env::temp_dir().join("aipo-js-diff-wave4_time_denied");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    std::fs::write(dir.join("app.js"), &bundle.app_js).expect("write app.js");
+    std::fs::write(dir.join("aipo-runtime.js"), &bundle.runtime_js).expect("write shim");
+    std::fs::write(dir.join("app.js.map"), &bundle.source_map).expect("write map");
+    // Deny the capability: the preload removes whatever the entry installed.
+    std::fs::write(
+        dir.join("deny-clock.mjs"),
+        "globalThis.__aipoClock = null;\n",
+    )
+    .expect("write deny profile");
+    let output = Command::new("node")
+        .arg("--import")
+        .arg("./deny-clock.mjs")
+        .arg("app.js")
+        .current_dir(&dir)
+        .output()
+        .expect("node runs (requires Node >= 20)");
+    assert!(
+        !output.status.success(),
+        "a denied clock must fail the JS run too"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("AIPO_RT_CAPABILITY_DENIED"),
+        "JS denial must report the canon code, got: {stderr}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -1,0 +1,12 @@
+# `time.now()` and `time.monotonic()` are host capabilities, not language primitives: a
+# denied profile faults with AIPO_RT_CAPABILITY_DENIED instead of returning a fake clock.
+# The CLI profile grants `clock`, so both readings succeed here. Their values depend on the
+# host, so the program asserts the contract each reading has to satisfy rather than printing
+# a number a snapshot could never match.
+io.println(time.monotonic().total_seconds() >= 0.0)
+io.println(time.now().total_seconds() > 0.0)
+
+# Monotonic readings never go backwards, which is the only guarantee the contract makes.
+let first = time.monotonic().total_seconds()
+let second = time.monotonic().total_seconds()
+io.println(second >= first)

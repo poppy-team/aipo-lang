@@ -161,6 +161,29 @@ points; `byte_len` exposes the UTF-8 byte length.
 
 `io::set_output_sink` lets tests and embedders capture output deterministically.
 
+## `time`
+
+Canon classifies non-deterministic sources as **host capabilities**, so the clock is not a
+language primitive: it is a service the host installs, and a program cannot tell a real clock
+from a replay's fixed one.
+
+| Signature | Behavior |
+|---|---|
+| `now()` | Wall clock as `Duration` seconds since the Unix epoch. Requires the `clock.wall` capability. |
+| `monotonic()` | Monotonic clock as `Duration` seconds from an arbitrary fixed origin, never decreasing. Requires the `clock.monotonic` capability. |
+
+Neither function has a fallback: with no clock installed the reading is a runtime fault with the
+stable code `AIPO_RT_CAPABILITY_DENIED` naming the capability, exactly like any other denied
+operation. `time::install_clock` grants the capability (the CLI profile installs `SystemClock`,
+so `aipo run` reads the operating system's clocks) and `time::revoke_clock` denies it; a
+deterministic profile installs its own `ClockSource`, which is what makes a replay replay. The
+`aipo-js` shim mirrors this: the emitted entry installs the system clock, and a host that needs
+determinism installs its own source on `globalThis.__aipoClock` before the bundle loads, or sets
+it to `null` to deny.
+
+`Date`/`TimeOfDay`/`DateTime` are **not** part of this surface: their calendar, offset and IANA
+timezone contracts are a separate decision, and inventing a representation here would preempt it.
+
 ## `String` and Unicode normalization
 
 NFC is an **invariant** of every `String` value, not an operation performed at `==`. It is
@@ -234,7 +257,11 @@ Wave 3 has since closed `Set`, lazy `Sequence`, the `Bytes` packing APIs
 surface (`Task`/`Group` values, a cooperative scheduler, `async fn`/`await`/`await do` and the
 `task.*` combinators) — see `docs/evidence/P02-G01-wave3-types-and-values.md`.
 
-Still explicitly deferred: LSP and REPL, host ABI/Poppy, packages/registry, regex/json/fs/http
-and hot reload. Type values for `List`/`Dict`/`Bytes` and a
+Wave 4 has since started the host ABI (`aipo-host`) and closed the `time` clock module on both
+backends (`time.now`/`time.monotonic` behind the `clock` capabilities, with a deterministic test
+profile) — see `docs/evidence/P03-G01-host-abi.md`.
+
+Still explicitly deferred: LSP and REPL, packages/registry, regex/json/fs/http, `Date`/
+`TimeOfDay`/`DateTime`, the ECS host (`aipo-poppy`) and hot reload. Type values for `List`/`Dict`/`Bytes` and a
 dedicated `Byte` runtime kind were listed here previously and are now delivered — see
 `docs/evidence/P00-G10-backend-completion.md`.

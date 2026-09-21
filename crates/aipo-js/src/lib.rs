@@ -23,7 +23,7 @@ use serde_json::{Value as Json, json};
 ///
 /// Bumped whenever `runtime/aipo-runtime.js` semantics change; the emitted
 /// `app.js` records it so a stale shim is detectable.
-pub const RUNTIME_VERSION: &str = "1.0.0";
+pub const RUNTIME_VERSION: &str = "1.1.0";
 
 /// The versioned runtime shim source, embedded at compile time.
 pub const RUNTIME_JS: &str = include_str!("../runtime/aipo-runtime.js");
@@ -46,8 +46,13 @@ pub struct JsBundle {
 pub fn emit_js(source_name: &str, source_text: &str, module: &CoreModule) -> JsBundle {
     let module_json = module_to_json(module);
     let module_str = serde_json::to_string(&module_json).unwrap_or_else(|_| "{}".to_string());
+    // The entry grants the `clock` capability by installing the system clock, mirroring the
+    // CLI profile that grants it for `aipo run`. A host that needs determinism installs its own
+    // source on `globalThis.__aipoClock` before this module evaluates, and
+    // `installDefaultClock` then leaves it alone — that preload is the deterministic test
+    // profile, and it is the only reason a replay reads the same clock on both backends.
     let app_js = format!(
-        "import {{ runModule }} from './aipo-runtime.js';\n// aipo-js runtime v{RUNTIME_VERSION}\nconst MODULE = {module_str};\nconst __code = runModule(MODULE);\nif (typeof process !== 'undefined' && __code) process.exit(__code);\n//# sourceMappingURL=app.js.map\n"
+        "import {{ runModule, installDefaultClock }} from './aipo-runtime.js';\n// aipo-js runtime v{RUNTIME_VERSION}\ninstallDefaultClock();\nconst MODULE = {module_str};\nconst __code = runModule(MODULE);\nif (typeof process !== 'undefined' && __code) process.exit(__code);\n//# sourceMappingURL=app.js.map\n"
     );
     let source_map = build_source_map(source_name, source_text, &app_js);
     JsBundle {

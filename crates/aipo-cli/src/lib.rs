@@ -482,10 +482,22 @@ fn execute_module(module: &aipo_bytecode::BytecodeModule) -> Result<(), VmError>
 
 /// Builds a VM with the standard library registered, plus the registry of its metadata.
 fn standard_environment() -> (Vm, NativeRegistry) {
+    install_host_services();
     let mut vm = Vm::new();
     let mut registry = NativeRegistry::new();
     aipo_stdlib::register_stdlib(&mut vm, &mut registry);
     (vm, registry)
+}
+
+/// Installs the host services the CLI profile grants.
+///
+/// The CLI is a real host, so `clock` is granted: `time.now` and `time.monotonic` read the
+/// operating system's clocks. This is the one place that decision is made, and a deterministic
+/// profile (replay, tests, the Poppy demo) replaces it by calling `install_clock` with its own
+/// source, or `revoke_clock` to deny the capability outright. Nothing in the language changes
+/// between the two: a denied reading faults with `AIPO_RT_CAPABILITY_DENIED` either way.
+fn install_host_services() {
+    aipo_stdlib::time::install_clock(Box::new(aipo_stdlib::time::SystemClock));
 }
 
 /// Derives the semantic surface from the standard library registration.

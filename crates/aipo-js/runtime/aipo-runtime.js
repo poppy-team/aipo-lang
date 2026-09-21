@@ -2,7 +2,7 @@
 // ESM. Mirrors the Rust VM value model and Core IR interpreter semantics:
 // divergence between VM and JS backends is a bug.
 // RUNTIME_VERSION must match aipo-js RUNTIME_VERSION in src/lib.rs.
-export const RUNTIME_VERSION = '1.0.0';
+export const RUNTIME_VERSION = '1.1.0';
 
 const MAX_SAFE_INT = 9007199254740991;
 const MIN_SAFE_INT = -9007199254740991;
@@ -1150,6 +1150,46 @@ function makeMachine(module) {
   };
 }
 
+// ---- time module: the clock is a host capability, not a language primitive ----
+// With no clock installed, `time.now`/`time.monotonic` fault with AIPO_RT_CAPABILITY_DENIED
+// rather than returning a faked or defaulted reading, which is the same observable behaviour
+// the Rust VM has. The emitted entry installs the system clock — the CLI profile grants the
+// same capability for `aipo run` — and a host that needs a deterministic run installs its own
+// source on `globalThis.__aipoClock` first (a preload module is enough), so a replay reads a
+// fixed clock on both backends.
+function hostClock() {
+  const clock = globalThis.__aipoClock;
+  return clock && typeof clock === 'object' ? clock : null;
+}
+
+/** Installs the system clock unless the host already decided.
+ *
+ * The host's decision is whatever it put on `globalThis.__aipoClock` before this entry
+ * evaluated: an object supplies the readings, `null` denies the capability. `undefined` means
+ * no decision was made, so the entry installs the system clock. */
+export function installDefaultClock() {
+  if (globalThis.__aipoClock !== undefined) return;
+  const origin = Date.now();
+  globalThis.__aipoClock = {
+    wallSeconds: () => Date.now() / 1000,
+    monotonicSeconds: () => (Date.now() - origin) / 1000,
+  };
+}
+
+/** Denies the `clock` capability, removing any installed source. */
+export function revokeClock() {
+  globalThis.__aipoClock = null;
+}
+
+function clockReading(capability, operation, read) {
+  const clock = hostClock();
+  if (!clock) {
+    fault('AIPO_RT_CAPABILITY_DENIED',
+      `${operation} requires the \`${capability}\` capability, which this host did not grant`);
+  }
+  return vDuration(read(clock));
+}
+
 function makeGlobals() {
   const g = new Map();
   g.set('none', vNone());
@@ -1224,6 +1264,11 @@ function makeGlobals() {
   g.set('io', vDict([
     [vStr('print'), nat('io.print', 1, a => { emitText(ioText(a[0])); return vNone(); })],
     [vStr('println'), nat('io.println', 1, a => { emitText(ioText(a[0])); emitText('\n'); return vNone(); })],
+  ]));
+  // time module (capability-gated clock)
+  g.set('time', vDict([
+    [vStr('now'), nat('time.now', 0, () => clockReading('clock.wall', 'time.now', c => c.wallSeconds()))],
+    [vStr('monotonic'), nat('time.monotonic', 0, () => clockReading('clock.monotonic', 'time.monotonic', c => c.monotonicSeconds()))],
   ]));
   return g;
 }

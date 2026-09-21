@@ -1,7 +1,12 @@
 //! Standard library for the Aipo programming language.
 //!
-//! Provides the canonical Prelude V1 and standard library modules (`math`, `string`, `io`),
-//! registering their native functions and module dictionaries into the Aipo VM and NativeRegistry.
+//! Provides the canonical Prelude V1 and standard library modules (`math`, `string`, `io`,
+//! `task`, `time`), registering their native functions and module dictionaries into the Aipo VM
+//! and NativeRegistry.
+//!
+//! Modules whose readings depend on the host (`time`) are capability-gated: the function exists
+//! and faults with `AIPO_RT_CAPABILITY_DENIED` until the host installs the service, so a denied
+//! capability is never disguised as a missing or faked API.
 //!
 //! See `docs/stdlib/mvp-subset.md` for the closed V1 surface implemented here and
 //! `docs/adp/ADP-001-byte-and-core-types-as-values.md` for the recorded representation gaps.
@@ -18,6 +23,7 @@ pub mod math;
 pub mod prelude;
 pub mod string;
 pub mod task;
+pub mod time;
 
 use aipo_runtime::{NativeFunctionMeta, NativeRegistry};
 use aipo_vm::{TypeTag, Value, Vm, VmFault};
@@ -29,6 +35,7 @@ pub fn register_stdlib(vm: &mut Vm, registry: &mut NativeRegistry) {
     register_string(registry);
     register_io(registry);
     register_task(registry);
+    register_time(registry);
     register_modules(vm);
     register_methods(vm);
 }
@@ -434,4 +441,24 @@ fn register_modules(vm: &mut Vm) {
     vm.define_global("string", string::create_module());
     vm.define_global("io", io::create_module());
     vm.define_global("task", task::create_module());
+    vm.define_global("time", time::create_module());
+}
+
+/// Registers `time` module metadata.
+///
+/// Both functions are capability-gated at call time, so they are always present as natives and
+/// a denied profile reports the denial instead of an undefined name.
+fn register_time(registry: &mut NativeRegistry) {
+    registry.register(NativeFunctionMeta::new(
+        "now",
+        0,
+        Some("time"),
+        "Reads the wall clock (capability `clock.wall`).",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "monotonic",
+        0,
+        Some("time"),
+        "Reads the monotonic clock (capability `clock.monotonic`).",
+    ));
 }
