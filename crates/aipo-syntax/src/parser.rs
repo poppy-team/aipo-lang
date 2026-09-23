@@ -78,6 +78,8 @@ pub struct Parser<'a> {
     /// Set once a nesting overflow is reported: the rest of the file is
     /// skipped quietly instead of cascading one error per remaining token.
     depth_aborted: bool,
+    /// Whether multiple comma-separated subjects before `is` (`a, b, c is T`) are permitted in the current context.
+    allow_comma_is: bool,
 }
 
 /// Maximum expression nesting before the parser bails out with
@@ -112,6 +114,7 @@ impl<'a> Parser<'a> {
             expr_depth: 0,
             block_depth: 0,
             depth_aborted: false,
+            allow_comma_is: true,
         }
     }
 
@@ -410,6 +413,37 @@ impl<'a> Parser<'a> {
         matches!(self.peek(), TokenKind::Eof)
     }
 
+    /// Looks ahead through matching parentheses to check if a `=>` follows,
+    /// identifying a short lambda `(...) => expr`.
+    fn is_lambda_ahead(&self) -> bool {
+        let mut depth = 0;
+        let mut i = self.cursor;
+        while i < self.tokens.len() {
+            match &self.tokens[i].kind {
+                TokenKind::LParen => depth += 1,
+                TokenKind::RParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let mut next_i = i + 1;
+                        while next_i < self.tokens.len()
+                            && self.tokens[next_i].kind == TokenKind::Newline
+                        {
+                            next_i += 1;
+                        }
+                        return self.tokens.get(next_i).map(|t| &t.kind)
+                            == Some(&TokenKind::FatArrow);
+                    }
+                }
+                TokenKind::Eof => {
+                    return false;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        false
+    }
+
     fn check(&self, expected: &TokenKind) -> bool {
         if self.is_at_end() {
             false
@@ -671,7 +705,7 @@ impl<'a> Parser<'a> {
 
         let mut methods = Vec::new();
         while !self.check(&TokenKind::End) && !self.is_at_end() {
-            if self.check(&TokenKind::Fn) {
+            if self.check(&TokenKind::Fn) || self.check(&TokenKind::Async) {
                 if let Some(method) = self.parse_function_signature() {
                     methods.push(method);
                 }
@@ -788,8 +822,11 @@ impl<'a> Parser<'a> {
         // token only ever fires on inputs that previously hung (terminating
         // inputs always make progress), hence observable behavior there is
         // unchanged by construction.
-        if result.is_none() && self.cursor == start && !self.is_at_end() {
-            self.advance();
+        if result.is_none() {
+            self.synchronize();
+            if self.cursor == start && !self.is_at_end() {
+                self.advance();
+            }
         }
         result
     }
@@ -1018,7 +1055,11 @@ impl<'a> Parser<'a> {
         while self.match_token(&TokenKind::When) {
             let mut patterns = Vec::new();
             loop {
-                patterns.push(self.parse_expr()?);
+                let old = self.allow_comma_is;
+                self.allow_comma_is = false;
+                let pat = self.parse_expr()?;
+                self.allow_comma_is = old;
+                patterns.push(pat);
                 if !self.match_token(&TokenKind::Comma) {
                     break;
                 }
@@ -1329,10 +1370,16 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function_signature(&mut self) -> Option<FunctionDecl> {
-        // `async` on an interface signature parses uniformly but means nothing
-        // without a body to suspend; only `impl` methods suspend.
-        let _ = self.match_token(&TokenKind::Async);
-        let start = self.advance().span; // 'fn'
+        let (start, is_async) = if self.check(&TokenKind::Async) {
+            let async_span = self.advance().span;
+            self.expect(&TokenKind::Fn, "expected 'fn' in method signature")?;
+            (async_span, true)
+        } else {
+            let fn_span = self
+                .expect(&TokenKind::Fn, "expected 'fn' in method signature")?
+                .span;
+            (fn_span, false)
+        };
         let name = self.parse_ident()?;
         self.expect(&TokenKind::LParen, "expected '(' in method signature")?;
         let params = self.parse_params()?;
@@ -1342,7 +1389,7 @@ impl<'a> Parser<'a> {
 
         Some(FunctionDecl {
             name,
-            is_async: false,
+            is_async,
             params,
             return_type,
             body: Vec::new(),
@@ -1467,6 +1514,7 @@ impl<'a> Parser<'a> {
 
     fn parse_params(&mut self) -> Option<Vec<Param>> {
         let mut params = Vec::new();
+        self.skip_newlines();
         while !self.check(&TokenKind::RParen) && !self.is_at_end() {
             let is_self_mut = self.match_token(&TokenKind::SelfMut);
             let (param_name, is_mut) = if is_self_mut {
@@ -1475,6 +1523,9 @@ impl<'a> Parser<'a> {
             } else if self.match_token(&TokenKind::SelfVal) {
                 let span = self.tokens[self.cursor - 1].span;
                 (Ident::new("self".into(), span), false)
+            } else if self.match_token(&TokenKind::Discard) {
+                let span = self.tokens[self.cursor - 1].span;
+                (Ident::new("_".into(), span), false)
             } else {
                 let id = self.parse_ident()?;
                 let mut_marker = self.match_token(&TokenKind::Bang);
@@ -1514,9 +1565,11 @@ impl<'a> Parser<'a> {
                 span,
             });
 
+            self.skip_newlines();
             if !self.match_token(&TokenKind::Comma) {
                 break;
             }
+            self.skip_newlines();
         }
         Some(params)
     }
@@ -1545,7 +1598,122 @@ impl<'a> Parser<'a> {
     // --- Pratt Expression Parsing ---
 
     fn parse_expr(&mut self) -> Option<Expr> {
-        self.parse_pratt_expr(Precedence::Lowest)
+        let left = self.parse_pratt_expr(Precedence::Lowest)?;
+        if self.allow_comma_is && self.check(&TokenKind::Comma) && self.has_is_after_commas() {
+            let multiple = self.parse_multiple_is(left)?;
+            self.continue_pratt(multiple, Precedence::Lowest)
+        } else {
+            Some(left)
+        }
+    }
+
+    /// Checks whether comma-separated subjects are followed by `is` at current delimiter depth.
+    fn has_is_after_commas(&self) -> bool {
+        let mut i = self.cursor;
+        let mut paren_depth: usize = 0;
+        let mut bracket_depth: usize = 0;
+        let mut brace_depth: usize = 0;
+        while i < self.tokens.len() {
+            match &self.tokens[i].kind {
+                TokenKind::LParen => paren_depth += 1,
+                TokenKind::RParen => {
+                    if paren_depth == 0 {
+                        return false;
+                    }
+                    paren_depth -= 1;
+                }
+                TokenKind::LBracket => bracket_depth += 1,
+                TokenKind::RBracket => {
+                    if bracket_depth == 0 {
+                        return false;
+                    }
+                    bracket_depth -= 1;
+                }
+                TokenKind::LBrace => brace_depth += 1,
+                TokenKind::RBrace => {
+                    if brace_depth == 0 {
+                        return false;
+                    }
+                    brace_depth -= 1;
+                }
+                TokenKind::Is if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+                    return true;
+                }
+                TokenKind::Newline
+                | TokenKind::Eof
+                | TokenKind::Then
+                | TokenKind::Do
+                | TokenKind::End
+                | TokenKind::Else
+                | TokenKind::When
+                | TokenKind::Equal
+                | TokenKind::Colon
+                    if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 =>
+                {
+                    return false;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        false
+    }
+
+    /// Parses `a, b, c is Type[?]` syntactic sugar into `a is Type and b is Type and c is Type`.
+    fn parse_multiple_is(&mut self, first: Expr) -> Option<Expr> {
+        let mut subjects = vec![first];
+        while self.match_token(&TokenKind::Comma) {
+            let next_subject = self.parse_pratt_expr(Precedence::Comparison)?;
+            subjects.push(next_subject);
+            if self.check(&TokenKind::Is) {
+                break;
+            }
+        }
+        let is_tok = self.expect(&TokenKind::Is, "expected 'is' after subject list")?;
+        if self.check(&TokenKind::Not) {
+            let not_span = self.advance().span;
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                    "'is not' is not supported; use canonical negation 'not value is Type' instead",
+                )
+                .with_primary_span(self.source, is_tok.span.merge(not_span)),
+            );
+            return None;
+        }
+        let type_expr = self.parse_pratt_expr(Precedence::Comparison)?;
+        let is_nullable = self.match_token(&TokenKind::Question);
+        let comp_op = if is_nullable {
+            BinaryOp::IsNullable
+        } else {
+            BinaryOp::Is
+        };
+        let end_span = if is_nullable {
+            self.tokens[self.cursor - 1].span
+        } else {
+            type_expr.span()
+        };
+
+        let mut result = None;
+        for s in subjects {
+            let s_span = s.span();
+            let full_span = s_span.merge(end_span);
+            let check = Expr::Binary(comp_op, Box::new(s), Box::new(type_expr.clone()), full_span);
+            result = match result {
+                None => Some(check),
+                Some(prev) => {
+                    let prev_span = prev.span();
+                    let combo_span = prev_span.merge(check.span());
+                    Some(Expr::Binary(
+                        BinaryOp::And,
+                        Box::new(prev),
+                        Box::new(check),
+                        combo_span,
+                    ))
+                }
+            };
+        }
+        result
     }
 
     fn parse_pratt_expr(&mut self, precedence: Precedence) -> Option<Expr> {
@@ -1625,9 +1793,28 @@ impl<'a> Parser<'a> {
                 let span = self.advance().span;
                 Some(Expr::Identifier(Ident::new("self".into(), span)))
             }
+            TokenKind::Discard => {
+                let span = self.advance().span;
+                if self.check(&TokenKind::FatArrow) {
+                    return self.parse_short_lambda_discard(span);
+                }
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                        "unexpected token 'Discard' in expression",
+                    )
+                    .with_primary_span(self.source, span),
+                );
+                None
+            }
             TokenKind::Identifier(name) => {
                 let span = self.advance().span;
                 let ident = Ident::new(name, span);
+
+                // Check for single-parameter short lambda `x => expr`
+                if self.check(&TokenKind::FatArrow) {
+                    return self.parse_short_lambda_single(ident);
+                }
 
                 // Check for struct construction `Type{...}`
                 if self.check(&TokenKind::LBrace)
@@ -1639,13 +1826,10 @@ impl<'a> Parser<'a> {
                 Some(Expr::Identifier(ident))
             }
             TokenKind::LParen => {
-                self.advance();
-                let inner = self.parse_expr()?;
-                self.expect(
-                    &TokenKind::RParen,
-                    "expected ')' after parenthesized expression",
-                )?;
-                Some(inner)
+                if self.is_lambda_ahead() {
+                    return self.parse_short_lambda_tuple();
+                }
+                self.parse_paren_expr()
             }
             TokenKind::LBracket => self.parse_list_expr(),
             TokenKind::LBrace => self.parse_dict_expr(),
@@ -1746,6 +1930,86 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[inline(never)]
+    fn parse_short_lambda_single(&mut self, ident: Ident) -> Option<Expr> {
+        let span = ident.span;
+        self.advance(); // consume '=>'
+        let body = self.parse_pratt_expr(Precedence::Lowest)?;
+        let full_span = span.merge(body.span());
+        let param = Param {
+            name: ident,
+            is_mutable: false,
+            type_annotation: None,
+            default: None,
+            span,
+        };
+        let ret_stmt = Stmt::Return(Some(body.clone()), body.span());
+        Some(Expr::Fn(FunctionExpr {
+            is_async: false,
+            params: vec![param],
+            return_type: None,
+            body: vec![ret_stmt],
+            span: full_span,
+        }))
+    }
+
+    #[inline(never)]
+    fn parse_short_lambda_discard(&mut self, span: SourceSpan) -> Option<Expr> {
+        self.advance(); // consume '=>'
+        let body = self.parse_pratt_expr(Precedence::Lowest)?;
+        let full_span = span.merge(body.span());
+        let param = Param {
+            name: Ident::new("_".into(), span),
+            is_mutable: false,
+            type_annotation: None,
+            default: None,
+            span,
+        };
+        let ret_stmt = Stmt::Return(Some(body.clone()), body.span());
+        Some(Expr::Fn(FunctionExpr {
+            is_async: false,
+            params: vec![param],
+            return_type: None,
+            body: vec![ret_stmt],
+            span: full_span,
+        }))
+    }
+
+    #[inline(never)]
+    fn parse_short_lambda_tuple(&mut self) -> Option<Expr> {
+        let start = self.advance().span; // consume '('
+        let params = self.parse_params()?;
+        self.expect(&TokenKind::RParen, "expected ')' after lambda parameters")?;
+        self.expect(
+            &TokenKind::FatArrow,
+            "expected '=>' after lambda parameters",
+        )?;
+        let body = self.parse_pratt_expr(Precedence::Lowest)?;
+        let full_span = start.merge(body.span());
+        let ret_stmt = Stmt::Return(Some(body.clone()), body.span());
+        Some(Expr::Fn(FunctionExpr {
+            is_async: false,
+            params,
+            return_type: None,
+            body: vec![ret_stmt],
+            span: full_span,
+        }))
+    }
+
+    #[inline(never)]
+    fn parse_paren_expr(&mut self) -> Option<Expr> {
+        self.advance();
+        let old = self.allow_comma_is;
+        self.allow_comma_is = true;
+        let inner = self.parse_expr()?;
+        self.allow_comma_is = old;
+        self.expect(
+            &TokenKind::RParen,
+            "expected ')' after parenthesized expression",
+        )?;
+        Some(inner)
+    }
+
     fn parse_infix_expr(&mut self, left: Expr) -> Option<Expr> {
         let op_tok = self.advance();
         let op_span = op_tok.span;
@@ -1782,8 +2046,100 @@ impl<'a> Parser<'a> {
                 Precedence::Comparison,
                 op_span,
             ),
-            TokenKind::Is => self.binary_expr(left, BinaryOp::Is, Precedence::Comparison, op_span),
-            TokenKind::And => self.binary_expr(left, BinaryOp::And, Precedence::And, op_span),
+            TokenKind::Is => {
+                if self.check(&TokenKind::Not) {
+                    let not_span = self.advance().span;
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                            "'is not' is not supported; use canonical negation 'not value is Type' instead",
+                        )
+                        .with_primary_span(self.source, op_span.merge(not_span)),
+                    );
+                    return None;
+                }
+                let right = self.parse_pratt_expr(Precedence::Comparison)?;
+                let is_nullable = self.match_token(&TokenKind::Question);
+                let op = if is_nullable {
+                    BinaryOp::IsNullable
+                } else {
+                    BinaryOp::Is
+                };
+                let end_span = if is_nullable {
+                    self.tokens[self.cursor - 1].span
+                } else {
+                    right.span()
+                };
+                let full_span = left.span().merge(end_span);
+                Some(Expr::Binary(op, Box::new(left), Box::new(right), full_span))
+            }
+            TokenKind::And => {
+                if is_comparison_token(self.peek()) {
+                    if let Some(subject) = extract_comparison_subject(&left) {
+                        let op_tok = self.advance();
+                        if op_tok.kind == TokenKind::Is {
+                            if self.check(&TokenKind::Not) {
+                                let not_span = self.advance().span;
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                                        "'is not' is not supported; use canonical negation 'not value is Type' instead",
+                                    )
+                                    .with_primary_span(self.source, op_tok.span.merge(not_span)),
+                                );
+                                return None;
+                            }
+                            let right = self.parse_pratt_expr(Precedence::Comparison)?;
+                            let is_nullable = self.match_token(&TokenKind::Question);
+                            let comp_op = if is_nullable {
+                                BinaryOp::IsNullable
+                            } else {
+                                BinaryOp::Is
+                            };
+                            let end_span = if is_nullable {
+                                self.tokens[self.cursor - 1].span
+                            } else {
+                                right.span()
+                            };
+                            let comp_span = subject.span().merge(end_span);
+                            let continuation = Expr::Binary(
+                                comp_op,
+                                Box::new(subject),
+                                Box::new(right),
+                                comp_span,
+                            );
+                            let full_span = left.span().merge(continuation.span());
+                            return Some(Expr::Binary(
+                                BinaryOp::And,
+                                Box::new(left),
+                                Box::new(continuation),
+                                full_span,
+                            ));
+                        }
+                        let comp_op = match op_tok.kind {
+                            TokenKind::EqualEqual => BinaryOp::Equal,
+                            TokenKind::BangEqual => BinaryOp::NotEqual,
+                            TokenKind::Less => BinaryOp::Less,
+                            TokenKind::LessEqual => BinaryOp::LessEqual,
+                            TokenKind::Greater => BinaryOp::Greater,
+                            TokenKind::GreaterEqual => BinaryOp::GreaterEqual,
+                            _ => unreachable!(),
+                        };
+                        let right = self.parse_pratt_expr(Precedence::Comparison)?;
+                        let comp_span = subject.span().merge(right.span());
+                        let continuation =
+                            Expr::Binary(comp_op, Box::new(subject), Box::new(right), comp_span);
+                        let full_span = left.span().merge(continuation.span());
+                        return Some(Expr::Binary(
+                            BinaryOp::And,
+                            Box::new(left),
+                            Box::new(continuation),
+                            full_span,
+                        ));
+                    }
+                }
+                self.binary_expr(left, BinaryOp::And, Precedence::And, op_span)
+            }
             TokenKind::Or => self.binary_expr(left, BinaryOp::Or, Precedence::Or, op_span),
             TokenKind::OrElse => {
                 self.binary_expr(left, BinaryOp::OrElse, Precedence::OrElse, op_span)
@@ -1805,10 +2161,17 @@ impl<'a> Parser<'a> {
                     let (arg_name, value) = if is_named {
                         let id = self.parse_ident()?;
                         self.advance(); // consume '='
+                        let old = self.allow_comma_is;
+                        self.allow_comma_is = false;
                         let val = self.parse_expr()?;
+                        self.allow_comma_is = old;
                         (Some(id), val)
                     } else {
-                        (None, self.parse_expr()?)
+                        let old = self.allow_comma_is;
+                        self.allow_comma_is = false;
+                        let val = self.parse_expr()?;
+                        self.allow_comma_is = old;
+                        (None, val)
                     };
                     let span = arg_name
                         .as_ref()
@@ -1896,9 +2259,38 @@ impl<'a> Parser<'a> {
         prec: Precedence,
         op_span: SourceSpan,
     ) -> Option<Expr> {
+        if matches!(
+            op,
+            BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual
+                | BinaryOp::Equal
+                | BinaryOp::NotEqual
+        ) && matches!(
+            &left,
+            Expr::Binary(
+                BinaryOp::Less
+                    | BinaryOp::LessEqual
+                    | BinaryOp::Greater
+                    | BinaryOp::GreaterEqual
+                    | BinaryOp::Equal
+                    | BinaryOp::NotEqual,
+                _,
+                _,
+                _
+            )
+        ) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                    "chained comparisons like `a < b < c` are not supported in Aipo V1; write `a < b and b < c` or use elided continuation `a < b and < c`",
+                )
+                .with_primary_span(self.source, op_span),
+            );
+        }
         let right = self.parse_pratt_expr(prec)?;
         let span = left.span().merge(right.span());
-        let _ = op_span;
         Some(Expr::Binary(op, Box::new(left), Box::new(right), span))
     }
 
@@ -1940,10 +2332,17 @@ impl<'a> Parser<'a> {
             let (name, value) = if is_named {
                 let id = self.parse_ident()?;
                 self.advance(); // consume '='
+                let old = self.allow_comma_is;
+                self.allow_comma_is = false;
                 let val = self.parse_expr()?;
+                self.allow_comma_is = old;
                 (Some(id), val)
             } else {
-                (None, self.parse_expr()?)
+                let old = self.allow_comma_is;
+                self.allow_comma_is = false;
+                let val = self.parse_expr()?;
+                self.allow_comma_is = old;
+                (None, val)
             };
             let span = name
                 .as_ref()
@@ -2045,7 +2444,11 @@ impl<'a> Parser<'a> {
         let start = self.advance().span; // '['
         let mut items = Vec::new();
         while !self.check(&TokenKind::RBracket) && !self.is_at_end() {
-            items.push(self.parse_expr()?);
+            let old = self.allow_comma_is;
+            self.allow_comma_is = false;
+            let item = self.parse_expr()?;
+            self.allow_comma_is = old;
+            items.push(item);
             if !self.match_token(&TokenKind::Comma) {
                 break;
             }
@@ -2060,12 +2463,18 @@ impl<'a> Parser<'a> {
         let start = self.advance().span; // '{'
         let mut pairs = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            let old_key = self.allow_comma_is;
+            self.allow_comma_is = false;
             let key = self.parse_expr()?;
+            self.allow_comma_is = old_key;
             self.expect(
                 &TokenKind::Colon,
                 "expected ':' between dictionary key and value",
             )?;
+            let old_val = self.allow_comma_is;
+            self.allow_comma_is = false;
             let val = self.parse_expr()?;
+            self.allow_comma_is = old_val;
             pairs.push((key, val));
             if !self.match_token(&TokenKind::Comma) {
                 break;
@@ -2150,4 +2559,37 @@ enum Precedence {
     Product,    // * / div %
     Prefix,     // - +
     Call,       // . ?. () [] do
+}
+
+/// Returns whether `kind` is a comparison token supported in continuation chains.
+fn is_comparison_token(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::EqualEqual
+            | TokenKind::BangEqual
+            | TokenKind::Less
+            | TokenKind::LessEqual
+            | TokenKind::Greater
+            | TokenKind::GreaterEqual
+            | TokenKind::Is
+    )
+}
+
+/// Extracts the single subject of a comparison expression or comparison chain.
+fn extract_comparison_subject(expr: &Expr) -> Option<Expr> {
+    match expr {
+        Expr::Binary(op, left, right, _) => match op {
+            BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual
+            | BinaryOp::Is
+            | BinaryOp::IsNullable => Some((**left).clone()),
+            BinaryOp::And => extract_comparison_subject(right),
+            _ => None,
+        },
+        _ => None,
+    }
 }

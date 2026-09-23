@@ -1,0 +1,29 @@
+[package]
+name = "aipo-poppy"
+description = "Poppy Game Engine reference profile and deterministic headless adapter for Aipo"
+publish = false
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+aipo-bytecode = { path = "../aipo-bytecode" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-host = { path = "../aipo-host" }
+aipo-runtime = { path = "../aipo-runtime" }
+aipo-stdlib = { path = "../aipo-stdlib" }
+aipo-vm = { path = "../aipo-vm" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+aipo-hir = { path = "../aipo-hir" }
+aipo-ir = { path = "../aipo-ir" }
+aipo-source = { path = "../aipo-source" }
+aipo-syntax = { path = "../aipo-syntax" }
+
+[lints]
+workspace = true

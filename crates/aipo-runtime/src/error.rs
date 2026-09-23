@@ -40,7 +40,7 @@ impl RuntimeError {
             Self::ModuleNotFound { .. } => DiagnosticCode::AIPO_SEM_UNKNOWN_MODULE,
             Self::CyclicDependency { .. } => DiagnosticCode::AIPO_SEM_IMPORT_CYCLE,
             Self::ExportNotFound { .. } => DiagnosticCode::AIPO_SEM_EXPORT_UNKNOWN,
-            Self::InitializationFailed { .. } => DiagnosticCode::AIPO_RT_TYPE_MISMATCH,
+            Self::InitializationFailed { .. } => DiagnosticCode::AIPO_RT_MODULE_INIT_FAILED,
         }
     }
 }

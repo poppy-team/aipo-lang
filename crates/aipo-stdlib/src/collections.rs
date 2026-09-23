@@ -277,6 +277,16 @@ pub fn list_first(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
         .ok_or(VmFault::IndexOutOfRange { index: 0, len: 0 })
 }
 
+/// `list.first_or(default)` — first element, or `default` if the list is empty.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a List or arity != 1.
+pub fn list_first_or(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "list.first_or")?;
+    let items = expect_list(receiver)?;
+    Ok(items.first().cloned().unwrap_or_else(|| args[0].clone()))
+}
+
 /// `list.last()` — last element; strict, faults on an empty list.
 ///
 /// # Errors
@@ -289,6 +299,26 @@ pub fn list_last(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
         .last()
         .cloned()
         .ok_or(VmFault::IndexOutOfRange { index: -1, len })
+}
+
+/// `list.last_or(default)` — last element, or `default` if the list is empty.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a List or arity != 1.
+pub fn list_last_or(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "list.last_or")?;
+    let items = expect_list(receiver)?;
+    Ok(items.last().cloned().unwrap_or_else(|| args[0].clone()))
+}
+
+/// `list.find_index(value)` — index of the first match as `Int`, or `none`.
+///
+/// Explicit alias for `list.find(value)` per canon.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a List.
+pub fn list_find_index(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    list_find(receiver, args)
 }
 
 /// `list.is_empty()` — canonical emptiness check.
@@ -345,6 +375,189 @@ pub fn list_len(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
     Ok(Value::Int(expect_list(receiver)?.len() as i64))
 }
 
+/// `list.take(n)` — returns a new List with the first `n` elements.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not an Int.
+pub fn list_take(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "list.take")?;
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let items = expect_list(receiver)?;
+    let n = match &args[0] {
+        Value::Int(i) => *i,
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Int for list.take".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    let count = n.max(0) as usize;
+    let taken: Vec<Value> = items.into_iter().take(count).collect();
+    Ok(Value::List(Rc::new(RefCell::new(taken))))
+}
+
+/// `list.skip(n)` — returns a new List skipping the first `n` elements.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not an Int.
+pub fn list_skip(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "list.skip")?;
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let items = expect_list(receiver)?;
+    let n = match &args[0] {
+        Value::Int(i) => *i,
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Int for list.skip".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    let count = n.max(0) as usize;
+    let skipped: Vec<Value> = items.into_iter().skip(count).collect();
+    Ok(Value::List(Rc::new(RefCell::new(skipped))))
+}
+
+/// `list.distinct()` — returns a new List with duplicate elements removed, preserving first-occurrence order.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if receiver is not a List.
+pub fn list_distinct(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 0, "list.distinct")?;
+    let items = expect_list(receiver)?;
+    let mut unique = Vec::new();
+    for item in items {
+        if !unique.iter().any(|seen| seen == &item) {
+            unique.push(item);
+        }
+    }
+    Ok(Value::List(Rc::new(RefCell::new(unique))))
+}
+
+/// `list.zip(other)` — pairs elements of `list` and `other` into 2-element lists until the shorter ends.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if argument is not a List.
+pub fn list_zip(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "list.zip")?;
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let items = expect_list(receiver)?;
+    let other = expect_list(&args[0])?;
+    let paired: Vec<Value> = items
+        .into_iter()
+        .zip(other)
+        .map(|(a, b)| Value::List(Rc::new(RefCell::new(vec![a, b]))))
+        .collect();
+    Ok(Value::List(Rc::new(RefCell::new(paired))))
+}
+
+/// `list.chain(other)` — concatenates elements of `other` after `list`.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if argument is not a List.
+pub fn list_chain(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "list.chain")?;
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let mut items = expect_list(receiver)?;
+    let other = expect_list(&args[0])?;
+    items.extend(other);
+    Ok(Value::List(Rc::new(RefCell::new(items))))
+}
+
+/// `list.chunk(size)` — divides list into non-overlapping lists of length `size`.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if size is not a positive Int.
+pub fn list_chunk(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "list.chunk")?;
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let items = expect_list(receiver)?;
+    let n = match &args[0] {
+        Value::Int(i) => *i,
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Int for list.chunk".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    if n <= 0 {
+        return Err(VmFault::TypeMismatch {
+            expected: "positive Int for list.chunk size".to_string(),
+            actual: n.to_string(),
+        });
+    }
+    let size = n as usize;
+    let chunks: Vec<Value> = items
+        .chunks(size)
+        .map(|c| Value::List(Rc::new(RefCell::new(c.to_vec()))))
+        .collect();
+    Ok(Value::List(Rc::new(RefCell::new(chunks))))
+}
+
+/// `list.window(size)` — sliding windows of length `size` as lists.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if size is not a positive Int.
+pub fn list_window(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "list.window")?;
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let items = expect_list(receiver)?;
+    let n = match &args[0] {
+        Value::Int(i) => *i,
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Int for list.window".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    if n <= 0 {
+        return Err(VmFault::TypeMismatch {
+            expected: "positive Int for list.window size".to_string(),
+            actual: n.to_string(),
+        });
+    }
+    let size = n as usize;
+    if size > items.len() {
+        return Ok(Value::List(Rc::new(RefCell::new(Vec::new()))));
+    }
+    let windows: Vec<Value> = items
+        .windows(size)
+        .map(|w| Value::List(Rc::new(RefCell::new(w.to_vec()))))
+        .collect();
+    Ok(Value::List(Rc::new(RefCell::new(windows))))
+}
+
+/// `list.enumerate()` — returns a List of `[index, value]` pairs as 2-element lists.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if receiver is not a List.
+pub fn list_enumerate(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 0, "list.enumerate")?;
+    let items = expect_list(receiver)?;
+    let mut indexed = Vec::with_capacity(items.len());
+    for (i, item) in items.into_iter().enumerate() {
+        #[allow(clippy::cast_possible_wrap)]
+        let pos = aipo_vm::check_safe_int(i as i64).map(Value::Int)?;
+        indexed.push(Value::List(Rc::new(RefCell::new(vec![pos, item]))));
+    }
+    Ok(Value::List(Rc::new(RefCell::new(indexed))))
+}
+
 /// `dict.has(key)` — presence check that cannot be confused with a stored `none`.
 ///
 /// # Errors
@@ -385,6 +598,21 @@ pub fn dict_values(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
     require_arity(args, 0, "dict.values")?;
     let entries = expect_dict(receiver)?;
     Ok(Value::List(Rc::new(RefCell::new(entries.values()))))
+}
+
+/// `dict.entries()` — new List with `[key, value]` pairs in insertion order.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if the receiver is not a Dict.
+pub fn dict_entries(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 0, "dict.entries")?;
+    let entries = expect_dict(receiver)?;
+    let pairs = entries
+        .entries()
+        .iter()
+        .map(|(k, v)| Value::List(Rc::new(RefCell::new(vec![k.clone(), v.clone()]))))
+        .collect();
+    Ok(Value::List(Rc::new(RefCell::new(pairs))))
 }
 
 /// `dict.remove(key)` — removes a key, reporting whether it existed.
@@ -594,19 +822,31 @@ pub fn register_methods(vm: &mut Vm) {
     vm.register_method_native("List", "clear", 0, list_clear);
     vm.register_method_native("List", "contains", 1, list_contains);
     vm.register_method_native("List", "find", 1, list_find);
+    vm.register_method_native("List", "find_index", 1, list_find_index);
     vm.register_method_native("List", "count", 1, list_count);
     vm.register_method_native("List", "first", 0, list_first);
+    vm.register_method_native("List", "first_or", 1, list_first_or);
     vm.register_method_native("List", "last", 0, list_last);
+    vm.register_method_native("List", "last_or", 1, list_last_or);
     vm.register_method_native("List", "is_empty", 0, list_is_empty);
     vm.register_method_native("List", "reverse", 0, list_reverse);
     vm.register_method_native("List", "sort", 0, list_sort);
     vm.register_method_native("List", "len", 0, list_len);
+    vm.register_method_native("List", "take", 1, list_take);
+    vm.register_method_native("List", "skip", 1, list_skip);
+    vm.register_method_native("List", "distinct", 0, list_distinct);
+    vm.register_method_native("List", "zip", 1, list_zip);
+    vm.register_method_native("List", "chain", 1, list_chain);
+    vm.register_method_native("List", "chunk", 1, list_chunk);
+    vm.register_method_native("List", "window", 1, list_window);
+    vm.register_method_native("List", "enumerate", 0, list_enumerate);
     vm.register_method_native("List", "lazy", 0, list_lazy);
 
     vm.register_method_native("Dict", "has", 1, dict_has);
     vm.register_method_native("Dict", "get", 1, dict_get);
     vm.register_method_native("Dict", "keys", 0, dict_keys);
     vm.register_method_native("Dict", "values", 0, dict_values);
+    vm.register_method_native("Dict", "entries", 0, dict_entries);
     vm.register_method_native("Dict", "remove", 1, dict_remove);
     vm.register_method_native("Dict", "clear", 0, dict_clear);
     vm.register_method_native("Dict", "is_empty", 0, dict_is_empty);

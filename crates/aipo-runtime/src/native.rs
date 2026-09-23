@@ -34,6 +34,11 @@ impl NativeFunctionMeta {
 }
 
 /// Catalog of native functions registered for prelude and built-in modules.
+///
+/// Introspection/tooling catalog only (auditoria R-2): the VM dispatches natives
+/// by name in `aipo-vm/src/vm/call.rs` and never consults this registry on the
+/// hot path. `get()` therefore allocates on lookup; that is acceptable because
+/// this type serves documentation, CLI help and tests — not per-call dispatch.
 #[derive(Debug, Default, Clone)]
 pub struct NativeRegistry {
     functions: HashMap<(Option<String>, String), NativeFunctionMeta>,

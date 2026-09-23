@@ -1,0 +1,107 @@
+{
+  "acceptance": [
+    "Crate `aipo-poppy` implemented with `#![forbid(unsafe_code)]`, exposing the Poppy host profile over `aipo-host` without contaminating Core IR, bytecode or VM with engine specifics",
+    "Poppy host surface is described as data via AHS (`HostSchema`) under the `poppy` capability tree (`poppy.ecs`, `poppy.random`)",
+    "Entity identities use generational `Handle`s from `aipo-host` with stale handle detection preventing use-after-free",
+    "Structural ECS mutations (spawn, despawn, add component, remove component) are recorded into a command buffer and deferred to explicit safe points",
+    "Behavior lifecycle adheres to plain interface semantics (`init`, `update`) without custom language keywords",
+    "Headless Poppy simulation is completely deterministic: fixed tick, seeded PRNG, command buffer ordering, yielding identical state digests across repeated runs with the same seed",
+    "Executable headless demo fixture verifies deterministic multi-tick simulation and command buffer execution",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --all-targets, and cargo doc --workspace --no-deps are all green"
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [
+    "P03-G01"
+  ],
+  "evidence": [
+    {
+      "description": "cargo test --workspace --all-targets: 391 passed, 0 failed; cargo test -p aipo-poppy: 14 passed (11 unit, 3 integration in tests/headless_demo.rs)",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo doc --workspace --no-deps zero warnings. Node runtime selftest all assertions passed; CLI conformance suite (programs 1-28, diagnostics 1-29) passed",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/evidence/P03-G02-poppy-adapter-and-headless-demo.md records the full certification; docs/PRUMO.md, CHANGELOG.md, crates/aipo-poppy/README.md, and PROJECT_STATE.md updated",
+      "kind": "doc"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-22T01:27:24.347228663Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-22T01:27:39.744262777Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-22T01:27:39.758954119Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-22T01:27:39.773777073Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-22T01:36:33.55199539Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-22T01:36:33.571786737Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-22T01:36:33.597420568Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P03-G02",
+  "lock": {
+    "digest": "c5d8ca8b9e4172eb662f2aa5cf4ea2b4303589b47611ff4090e01e0c1d867dde",
+    "locked_at": "2026-09-22T01:27:39.758949016Z",
+    "revision": 1
+  },
+  "non_goals": [
+    "Graphical rendering, windowing, audio, or GPU integration (headless deterministic simulation only)",
+    "External Bevy/C++ engine binding (aipo-poppy is a self-contained reference Poppy profile)",
+    "JavaScript WebGL/Canvas adapter (reserved for Wave 5/6)",
+    "Arbitrary heap serialization across hot reload code changes (reserved for Hot Reload V2)"
+  ],
+  "objective": "Implement aipo-poppy crate as the Poppy Game Engine adapter over aipo-host (ECS scopes, command buffer, behaviors/events, deterministic simulation) and prove it with a deterministic headless demo game fixture",
+  "phase": "P03",
+  "revision": 1,
+  "state": "DONE",
+  "title": "Poppy adapter and deterministic headless demo"
+}

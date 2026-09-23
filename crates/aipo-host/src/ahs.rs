@@ -295,6 +295,10 @@ impl HostSchema {
 
 impl ModuleSchema {
     /// Collects this module's consistency problems.
+    ///
+    /// Duplicate detection is intentionally namespaced per category (auditoria H-4):
+    /// a type named `Foo` and a handle named `Foo` do not collide because they
+    /// live in distinct declaration lists consumed independently by hosts.
     fn validate(&self, problems: &mut Vec<SchemaProblem>) {
         if self.name.trim().is_empty() {
             problems.push(SchemaProblem::new("modules[]", "module name is empty"));

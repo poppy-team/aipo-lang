@@ -29,6 +29,7 @@ use crate::value::{
 };
 use aipo_bytecode::BytecodeModule;
 use std::cell::RefCell;
+use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
 
 /// Identifier of the module entry script inside [`Vm::tasks`].
@@ -698,46 +699,90 @@ impl Vm {
         }
     }
 
-    /// Whether `from` transitively awaits `target` through task waits.
+    /// Whether `from` transitively awaits `target` through task waits or structured joins.
     fn blocks_on(&self, from: TaskId, target: TaskId) -> bool {
-        let mut cursor = from;
-        let mut visited = 0;
-        loop {
-            if visited > self.tasks.len() + 1 {
-                return false;
-            }
-            visited += 1;
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(from);
+        visited.insert(from);
+
+        while let Some(cursor) = queue.pop_front() {
             match self.tasks.get(&cursor).map(|state| state.status) {
                 Some(TaskStatus::Blocked(WaitTarget::Task(next))) => {
                     if next == target {
                         return true;
                     }
-                    cursor = next;
+                    if visited.insert(next) {
+                        queue.push_back(next);
+                    }
                 }
-                _ => return false,
+                Some(TaskStatus::Blocked(WaitTarget::Join(join_id))) => {
+                    if let Some(join) = self.joins.get(&join_id) {
+                        for &member in &join.members {
+                            if member == target {
+                                return true;
+                            }
+                            if visited.insert(member) {
+                                queue.push_back(member);
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
+        false
     }
 
     /// Builds the await chain for cycle reports.
     fn await_chain(&self, me: TaskId, id: TaskId) -> Vec<u64> {
-        let mut chain = vec![me, id];
-        let mut cursor = id;
-        let mut visited = 0;
-        while visited <= self.tasks.len() {
-            visited += 1;
-            match self.tasks.get(&cursor).map(|state| state.status) {
-                Some(TaskStatus::Blocked(WaitTarget::Task(next))) => {
-                    chain.push(next);
-                    if next == me {
-                        break;
-                    }
-                    cursor = next;
-                }
-                _ => break,
-            }
+        let mut chain = vec![me];
+        let mut path = Vec::new();
+        let mut visited = HashSet::new();
+        if self.find_await_path(id, me, &mut visited, &mut path) {
+            chain.extend(path);
+        } else {
+            chain.push(id);
         }
         chain
+    }
+
+    fn find_await_path(
+        &self,
+        current: TaskId,
+        target: TaskId,
+        visited: &mut HashSet<TaskId>,
+        path: &mut Vec<u64>,
+    ) -> bool {
+        path.push(current);
+        if current == target {
+            return true;
+        }
+        if !visited.insert(current) {
+            path.pop();
+            return false;
+        }
+
+        match self.tasks.get(&current).map(|state| state.status) {
+            Some(TaskStatus::Blocked(WaitTarget::Task(next))) => {
+                if self.find_await_path(next, target, visited, path) {
+                    return true;
+                }
+            }
+            Some(TaskStatus::Blocked(WaitTarget::Join(join_id))) => {
+                if let Some(join) = self.joins.get(&join_id) {
+                    for &member in &join.members {
+                        if self.find_await_path(member, target, visited, path) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        path.pop();
+        false
     }
 
     /// Shared frame setup for plain function/closure calls, on the live
@@ -772,12 +817,11 @@ impl Vm {
             Value::Function {
                 entry_ip, arity, ..
             } => (entry_ip, arity, None),
-            Value::Closure {
-                entry_ip,
-                arity,
-                upvalues,
-                ..
-            } => (entry_ip, arity, Some(Rc::new(upvalues))),
+            Value::Closure(closure) => (
+                closure.entry_ip,
+                closure.arity,
+                Some(Rc::new(closure.upvalues.clone())),
+            ),
             other => {
                 return Err(VmFault::NotCallable {
                     type_name: other.type_name().to_string(),
@@ -1009,6 +1053,17 @@ impl Vm {
             };
             return self.resolve_call(callee_idx, empty);
         }
+        let me = self.current.unwrap_or(MAIN_TASK);
+        if matches!(kind, JoinKind::All | JoinKind::GroupWait) {
+            for &member in &members {
+                if member == me || self.blocks_on(member, me) {
+                    return Err(VmFault::AwaitCycle {
+                        chain: self.await_chain(me, member),
+                    }
+                    .into());
+                }
+            }
+        }
         // Reuse the waiter's pending join when it matches this call;
         // otherwise create one. A task blocks on at most one join at a time,
         // so the pending join is unambiguous.
@@ -1018,7 +1073,6 @@ impl Vm {
         {
             Some(id) => id,
             None => {
-                let me = self.current.unwrap_or(MAIN_TASK);
                 let id = self.next_join;
                 self.next_join += 1;
                 self.joins.insert(
@@ -1508,9 +1562,9 @@ impl Vm {
     fn seq_callable(arg: &Value, operation: &str) -> Result<Value, VmFault> {
         match arg {
             Value::Function { .. }
-            | Value::Closure { .. }
+            | Value::Closure(_)
             | Value::Native { .. }
-            | Value::BoundMethod { .. }
+            | Value::BoundMethod(_)
             | Value::Type(_) => Ok(arg.clone()),
             other => Err(VmFault::NotCallable {
                 type_name: format!("{} as {operation} callable", other.type_name()),

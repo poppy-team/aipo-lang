@@ -2,7 +2,8 @@
 
 use crate::error::RuntimeError;
 use crate::module::ModuleRecord;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 
 /// Directed dependency graph of runtime modules.
 #[derive(Debug, Default, Clone)]
@@ -93,18 +94,16 @@ impl ModuleGraph {
             }
         }
 
-        let mut ready: Vec<String> = dep_count
+        // Min-heap for lexicographical tie-break in O(n log n) (auditoria R-4).
+        let mut ready: BinaryHeap<Reverse<String>> = dep_count
             .iter()
             .filter(|(_, count)| **count == 0)
-            .map(|(path, _)| path.clone())
+            .map(|(path, _)| Reverse(path.clone()))
             .collect();
-        ready.sort(); // Lexicographical tie-break
 
         let mut order = Vec::with_capacity(self.modules.len());
 
-        while !ready.is_empty() {
-            // Pop the smallest canonical path (first element of sorted vec)
-            let curr = ready.remove(0);
+        while let Some(Reverse(curr)) = ready.pop() {
             order.push(curr.clone());
 
             if let Some(dependents) = dependents_of.get(&curr) {
@@ -112,8 +111,7 @@ impl ModuleGraph {
                     if let Some(count) = dep_count.get_mut(dep) {
                         *count -= 1;
                         if *count == 0 {
-                            ready.push(dep.clone());
-                            ready.sort(); // Re-sort for tie-break
+                            ready.push(Reverse(dep.clone()));
                         }
                     }
                 }

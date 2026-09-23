@@ -537,6 +537,355 @@ pub fn bytes_write_f64(receiver: &Value, args: &[Value]) -> Result<Value, VmFaul
 }
 
 /// `bytes.decode()` — decodes UTF-8 into a String, or recoverable `Failure`.
+/// `bytes.read_i16_be(index)` — reads a signed 16-bit integer (big-endian).
+pub fn bytes_read_i16_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "bytes.read_i16_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.read_i16_be")?;
+    let b = bytes.borrow();
+    let at = check_bounds(index, b.len(), 2)?;
+    let slice: [u8; 2] = [b[at], b[at + 1]];
+    Ok(Value::Int(i64::from(i16::from_be_bytes(slice))))
+}
+
+/// `bytes.read_u16_be(index)` — reads an unsigned 16-bit integer (big-endian).
+pub fn bytes_read_u16_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "bytes.read_u16_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.read_u16_be")?;
+    let b = bytes.borrow();
+    let at = check_bounds(index, b.len(), 2)?;
+    let slice: [u8; 2] = [b[at], b[at + 1]];
+    Ok(Value::Int(i64::from(u16::from_be_bytes(slice))))
+}
+
+/// `bytes.read_i32_be(index)` — reads a signed 32-bit integer (big-endian).
+pub fn bytes_read_i32_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "bytes.read_i32_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.read_i32_be")?;
+    let b = bytes.borrow();
+    let at = check_bounds(index, b.len(), 4)?;
+    let slice: [u8; 4] = [b[at], b[at + 1], b[at + 2], b[at + 3]];
+    Ok(Value::Int(i64::from(i32::from_be_bytes(slice))))
+}
+
+/// `bytes.read_u32_be(index)` — reads an unsigned 32-bit integer (big-endian).
+pub fn bytes_read_u32_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "bytes.read_u32_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.read_u32_be")?;
+    let b = bytes.borrow();
+    let at = check_bounds(index, b.len(), 4)?;
+    let slice: [u8; 4] = [b[at], b[at + 1], b[at + 2], b[at + 3]];
+    Ok(Value::Int(i64::from(u32::from_be_bytes(slice))))
+}
+
+/// `bytes.read_i64_be(index)` — reads a signed 64-bit integer (big-endian).
+pub fn bytes_read_i64_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "bytes.read_i64_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.read_i64_be")?;
+    let b = bytes.borrow();
+    let at = check_bounds(index, b.len(), 8)?;
+    let slice: [u8; 8] = [
+        b[at],
+        b[at + 1],
+        b[at + 2],
+        b[at + 3],
+        b[at + 4],
+        b[at + 5],
+        b[at + 6],
+        b[at + 7],
+    ];
+    let val = i64::from_be_bytes(slice);
+    match check_safe_int(val) {
+        Ok(safe) => Ok(Value::Int(safe)),
+        Err(_) => Ok(Value::Failure(Rc::new(FailureValue {
+            message: format!("integer {val} outside safe range"),
+        }))),
+    }
+}
+
+/// `bytes.read_u64_be(index)` — reads an unsigned 64-bit integer (big-endian).
+pub fn bytes_read_u64_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "bytes.read_u64_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.read_u64_be")?;
+    let b = bytes.borrow();
+    let at = check_bounds(index, b.len(), 8)?;
+    let slice: [u8; 8] = [
+        b[at],
+        b[at + 1],
+        b[at + 2],
+        b[at + 3],
+        b[at + 4],
+        b[at + 5],
+        b[at + 6],
+        b[at + 7],
+    ];
+    let val = u64::from_be_bytes(slice);
+    #[allow(clippy::cast_possible_wrap)]
+    if val <= 9_007_199_254_740_991 {
+        Ok(Value::Int(val as i64))
+    } else {
+        Ok(Value::Failure(Rc::new(FailureValue {
+            message: format!("unsigned integer {val} outside safe range"),
+        })))
+    }
+}
+
+/// `bytes.read_f32_be(index)` — reads a 32-bit float (big-endian).
+pub fn bytes_read_f32_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "bytes.read_f32_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.read_f32_be")?;
+    let b = bytes.borrow();
+    let at = check_bounds(index, b.len(), 4)?;
+    let slice: [u8; 4] = [b[at], b[at + 1], b[at + 2], b[at + 3]];
+    let val = f32::from_be_bytes(slice);
+    let finite = check_finite_float(f64::from(val))?;
+    Ok(Value::Float(finite))
+}
+
+/// `bytes.read_f64_be(index)` — reads a 64-bit float (big-endian).
+pub fn bytes_read_f64_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 1, "bytes.read_f64_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.read_f64_be")?;
+    let b = bytes.borrow();
+    let at = check_bounds(index, b.len(), 8)?;
+    let slice: [u8; 8] = [
+        b[at],
+        b[at + 1],
+        b[at + 2],
+        b[at + 3],
+        b[at + 4],
+        b[at + 5],
+        b[at + 6],
+        b[at + 7],
+    ];
+    let val = f64::from_be_bytes(slice);
+    let finite = check_finite_float(val)?;
+    Ok(Value::Float(finite))
+}
+
+/// `bytes.write_i16_be(index, value)` — writes a signed 16-bit integer (big-endian).
+pub fn bytes_write_i16_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 2, "bytes.write_i16_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.write_i16_be")?;
+    let val = match &args[1] {
+        Value::Int(n) if (i64::from(i16::MIN)..=i64::from(i16::MAX)).contains(n) => *n as i16,
+        Value::Int(n) => {
+            return Ok(Value::Failure(Rc::new(FailureValue {
+                message: format!("value {n} out of range for i16"),
+            })));
+        }
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Int for bytes.write_i16_be".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    let mut b = bytes.borrow_mut();
+    let at = check_bounds(index, b.len(), 2)?;
+    b[at..at + 2].copy_from_slice(&val.to_be_bytes());
+    Ok(Value::None)
+}
+
+/// `bytes.write_u16_be(index, value)` — writes an unsigned 16-bit integer (big-endian).
+pub fn bytes_write_u16_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 2, "bytes.write_u16_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.write_u16_be")?;
+    let val = match &args[1] {
+        Value::Int(n) if (0..=i64::from(u16::MAX)).contains(n) => *n as u16,
+        Value::Int(n) => {
+            return Ok(Value::Failure(Rc::new(FailureValue {
+                message: format!("value {n} out of range for u16"),
+            })));
+        }
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Int for bytes.write_u16_be".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    let mut b = bytes.borrow_mut();
+    let at = check_bounds(index, b.len(), 2)?;
+    b[at..at + 2].copy_from_slice(&val.to_be_bytes());
+    Ok(Value::None)
+}
+
+/// `bytes.write_i32_be(index, value)` — writes a signed 32-bit integer (big-endian).
+pub fn bytes_write_i32_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 2, "bytes.write_i32_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.write_i32_be")?;
+    let val = match &args[1] {
+        Value::Int(n) if (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(n) => *n as i32,
+        Value::Int(n) => {
+            return Ok(Value::Failure(Rc::new(FailureValue {
+                message: format!("value {n} out of range for i32"),
+            })));
+        }
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Int for bytes.write_i32_be".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    let mut b = bytes.borrow_mut();
+    let at = check_bounds(index, b.len(), 4)?;
+    b[at..at + 4].copy_from_slice(&val.to_be_bytes());
+    Ok(Value::None)
+}
+
+/// `bytes.write_u32_be(index, value)` — writes an unsigned 32-bit integer (big-endian).
+pub fn bytes_write_u32_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 2, "bytes.write_u32_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.write_u32_be")?;
+    let val = match &args[1] {
+        Value::Int(n) if (0..=4_294_967_295_i64).contains(n) => *n as u32,
+        Value::Int(n) => {
+            return Ok(Value::Failure(Rc::new(FailureValue {
+                message: format!("value {n} out of range for u32"),
+            })));
+        }
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Int for bytes.write_u32_be".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    let mut b = bytes.borrow_mut();
+    let at = check_bounds(index, b.len(), 4)?;
+    b[at..at + 4].copy_from_slice(&val.to_be_bytes());
+    Ok(Value::None)
+}
+
+/// `bytes.write_i64_be(index, value)` — writes a signed 64-bit integer (big-endian).
+pub fn bytes_write_i64_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 2, "bytes.write_i64_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.write_i64_be")?;
+    let val = match &args[1] {
+        Value::Int(n) => *n,
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Int for bytes.write_i64_be".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    let mut b = bytes.borrow_mut();
+    let at = check_bounds(index, b.len(), 8)?;
+    b[at..at + 8].copy_from_slice(&val.to_be_bytes());
+    Ok(Value::None)
+}
+
+/// `bytes.write_u64_be(index, value)` — writes an unsigned 64-bit integer (big-endian).
+pub fn bytes_write_u64_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 2, "bytes.write_u64_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.write_u64_be")?;
+    let val = match &args[1] {
+        Value::Int(n) if *n >= 0 => *n as u64,
+        Value::Int(n) => {
+            return Ok(Value::Failure(Rc::new(FailureValue {
+                message: format!("value {n} must be non-negative for u64"),
+            })));
+        }
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Int for bytes.write_u64_be".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    let mut b = bytes.borrow_mut();
+    let at = check_bounds(index, b.len(), 8)?;
+    b[at..at + 8].copy_from_slice(&val.to_be_bytes());
+    Ok(Value::None)
+}
+
+/// `bytes.write_f32_be(index, value)` — writes a 32-bit float (big-endian).
+pub fn bytes_write_f32_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 2, "bytes.write_f32_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.write_f32_be")?;
+    let val = match &args[1] {
+        Value::Float(f) => *f as f32,
+        Value::Int(n) => *n as f32,
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Float or Int for bytes.write_f32_be".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    let mut b = bytes.borrow_mut();
+    let at = check_bounds(index, b.len(), 4)?;
+    b[at..at + 4].copy_from_slice(&val.to_be_bytes());
+    Ok(Value::None)
+}
+
+/// `bytes.write_f64_be(index, value)` — writes a 64-bit float (big-endian).
+pub fn bytes_write_f64_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 2, "bytes.write_f64_be")?;
+    let bytes = expect_bytes(receiver)?;
+    let index = read_index(&args[0], "bytes.write_f64_be")?;
+    let val = match &args[1] {
+        Value::Float(f) => *f,
+        Value::Int(n) => *n as f64,
+        other => {
+            return Err(VmFault::TypeMismatch {
+                expected: "Float or Int for bytes.write_f64_be".to_string(),
+                actual: other.type_name().to_string(),
+            });
+        }
+    };
+    let mut b = bytes.borrow_mut();
+    let at = check_bounds(index, b.len(), 8)?;
+    b[at..at + 8].copy_from_slice(&val.to_be_bytes());
+    Ok(Value::None)
+}
+
+/// `bytes.slice(start, end)` — returns a new Bytes buffer sliced with tolerant bounds.
+pub fn bytes_slice(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> {
+    require_arity(args, 2, "bytes.slice")?;
+    let bytes = expect_bytes(receiver)?;
+    let start_idx = read_index(&args[0], "bytes.slice")?;
+    let end_idx = read_index(&args[1], "bytes.slice")?;
+    let b = bytes.borrow();
+    let len = b.len();
+    #[allow(clippy::cast_possible_wrap)]
+    let len_i = len as i64;
+    let actual_start = if start_idx < 0 {
+        (len_i + start_idx).max(0) as usize
+    } else {
+        (start_idx as usize).min(len)
+    };
+    let actual_end = if end_idx < 0 {
+        (len_i + end_idx).max(0) as usize
+    } else {
+        (end_idx as usize).min(len)
+    };
+    if actual_start >= actual_end {
+        Ok(Value::Bytes(Rc::new(RefCell::new(Vec::new()))))
+    } else {
+        let sub = b[actual_start..actual_end].to_vec();
+        Ok(Value::Bytes(Rc::new(RefCell::new(sub))))
+    }
+}
+
+/// `bytes.decode()` — decodes UTF-8 bytes into a String, returning Failure on error.
 ///
 /// # Errors
 /// Returns `VmFault::TypeMismatch` if receiver is not Bytes.
@@ -571,28 +920,63 @@ pub fn string_encode(receiver: &Value, args: &[Value]) -> Result<Value, VmFault>
 /// Registers all Bytes methods and String.encode on the VM.
 pub fn register_methods(vm: &mut Vm) {
     vm.register_method_native("Bytes", "len", 0, bytes_len);
+    vm.register_method_native("Bytes", "slice", 2, bytes_slice);
     vm.register_method_native("Bytes", "read_i8", 1, bytes_read_i8);
     vm.register_method_native("Bytes", "read_u8", 1, bytes_read_u8);
     vm.register_method_native("Bytes", "read_i16", 1, bytes_read_i16);
+    vm.register_method_native("Bytes", "read_i16_le", 1, bytes_read_i16);
+    vm.register_method_native("Bytes", "read_i16_be", 1, bytes_read_i16_be);
     vm.register_method_native("Bytes", "read_u16", 1, bytes_read_u16);
+    vm.register_method_native("Bytes", "read_u16_le", 1, bytes_read_u16);
+    vm.register_method_native("Bytes", "read_u16_be", 1, bytes_read_u16_be);
     vm.register_method_native("Bytes", "read_i32", 1, bytes_read_i32);
+    vm.register_method_native("Bytes", "read_i32_le", 1, bytes_read_i32);
+    vm.register_method_native("Bytes", "read_i32_be", 1, bytes_read_i32_be);
     vm.register_method_native("Bytes", "read_u32", 1, bytes_read_u32);
+    vm.register_method_native("Bytes", "read_u32_le", 1, bytes_read_u32);
+    vm.register_method_native("Bytes", "read_u32_be", 1, bytes_read_u32_be);
     vm.register_method_native("Bytes", "read_i64", 1, bytes_read_i64);
+    vm.register_method_native("Bytes", "read_i64_le", 1, bytes_read_i64);
+    vm.register_method_native("Bytes", "read_i64_be", 1, bytes_read_i64_be);
     vm.register_method_native("Bytes", "read_u64", 1, bytes_read_u64);
+    vm.register_method_native("Bytes", "read_u64_le", 1, bytes_read_u64);
+    vm.register_method_native("Bytes", "read_u64_be", 1, bytes_read_u64_be);
     vm.register_method_native("Bytes", "read_f32", 1, bytes_read_f32);
+    vm.register_method_native("Bytes", "read_f32_le", 1, bytes_read_f32);
+    vm.register_method_native("Bytes", "read_f32_be", 1, bytes_read_f32_be);
     vm.register_method_native("Bytes", "read_f64", 1, bytes_read_f64);
+    vm.register_method_native("Bytes", "read_f64_le", 1, bytes_read_f64);
+    vm.register_method_native("Bytes", "read_f64_be", 1, bytes_read_f64_be);
 
     vm.register_method_native("Bytes", "write_i8", 2, bytes_write_i8);
     vm.register_method_native("Bytes", "write_u8", 2, bytes_write_u8);
     vm.register_method_native("Bytes", "write_i16", 2, bytes_write_i16);
+    vm.register_method_native("Bytes", "write_i16_le", 2, bytes_write_i16);
+    vm.register_method_native("Bytes", "write_i16_be", 2, bytes_write_i16_be);
     vm.register_method_native("Bytes", "write_u16", 2, bytes_write_u16);
+    vm.register_method_native("Bytes", "write_u16_le", 2, bytes_write_u16);
+    vm.register_method_native("Bytes", "write_u16_be", 2, bytes_write_u16_be);
     vm.register_method_native("Bytes", "write_i32", 2, bytes_write_i32);
+    vm.register_method_native("Bytes", "write_i32_le", 2, bytes_write_i32);
+    vm.register_method_native("Bytes", "write_i32_be", 2, bytes_write_i32_be);
     vm.register_method_native("Bytes", "write_u32", 2, bytes_write_u32);
+    vm.register_method_native("Bytes", "write_u32_le", 2, bytes_write_u32);
+    vm.register_method_native("Bytes", "write_u32_be", 2, bytes_write_u32_be);
     vm.register_method_native("Bytes", "write_i64", 2, bytes_write_i64);
+    vm.register_method_native("Bytes", "write_i64_le", 2, bytes_write_i64);
+    vm.register_method_native("Bytes", "write_i64_be", 2, bytes_write_i64_be);
     vm.register_method_native("Bytes", "write_u64", 2, bytes_write_u64);
+    vm.register_method_native("Bytes", "write_u64_le", 2, bytes_write_u64);
+    vm.register_method_native("Bytes", "write_u64_be", 2, bytes_write_u64_be);
     vm.register_method_native("Bytes", "write_f32", 2, bytes_write_f32);
+    vm.register_method_native("Bytes", "write_f32_le", 2, bytes_write_f32);
+    vm.register_method_native("Bytes", "write_f32_be", 2, bytes_write_f32_be);
     vm.register_method_native("Bytes", "write_f64", 2, bytes_write_f64);
+    vm.register_method_native("Bytes", "write_f64_le", 2, bytes_write_f64);
+    vm.register_method_native("Bytes", "write_f64_be", 2, bytes_write_f64_be);
 
     vm.register_method_native("Bytes", "decode", 0, bytes_decode);
+    vm.register_method_native("Bytes", "decode_utf8", 0, bytes_decode);
     vm.register_method_native("String", "encode", 0, string_encode);
+    vm.register_method_native("String", "encode_utf8", 0, string_encode);
 }

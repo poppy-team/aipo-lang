@@ -245,3 +245,32 @@ fn test_awaiting_a_cancelled_task_faults_with_cancelled() {
         "expected a cancellation fault, got {error:?}"
     );
 }
+
+#[test]
+fn test_await_cycle_across_join_is_a_fault() {
+    let error = run_error(
+        r#"
+        var first_holder = 0
+        var second_holder = 0
+
+        async fn first()
+            let other = task.all([second_holder])
+            return other
+        end
+
+        async fn second()
+            let other = await first_holder
+            return other
+        end
+
+        first_holder = first()
+        second_holder = second()
+        let done = await first_holder
+        "#,
+    );
+
+    assert!(
+        matches!(error, VmError::Fault(VmFault::AwaitCycle { .. })),
+        "expected an await cycle fault across join, got {error:?}"
+    );
+}

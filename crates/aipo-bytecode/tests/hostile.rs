@@ -138,3 +138,68 @@ fn test_undefined_global_is_a_fault_not_a_panic() {
     let outcome = result.expect("VM never panics on undefined globals");
     assert!(outcome.is_err(), "undefined global faults");
 }
+
+#[test]
+fn test_verifier_rejects_out_of_bounds_local_slot() {
+    let mut module = base_module();
+    module.functions.push(aipo_bytecode::FunctionInfo {
+        name: "__top_level__".to_string(),
+        entry_ip: 0,
+        params: 0,
+        locals: 2,
+        upvalues: 0,
+        is_async: false,
+    });
+    // GetLocal 5 when locals limit is 2
+    module.code = vec![OpCode::GetLocal as u8, 0x00, 0x05, OpCode::Return as u8];
+    assert_rejected(
+        "out-of-bounds-local",
+        &module,
+        "out of bounds for function '__top_level__'",
+    );
+}
+
+#[test]
+fn test_verifier_rejects_out_of_bounds_upvalue_slot() {
+    let mut module = base_module();
+    module.functions.push(aipo_bytecode::FunctionInfo {
+        name: "__top_level__".to_string(),
+        entry_ip: 0,
+        params: 0,
+        locals: 2,
+        upvalues: 1,
+        is_async: false,
+    });
+    // GetUpvalue 3 when upvalues limit is 1
+    module.code = vec![OpCode::GetUpvalue as u8, 0x00, 0x03, OpCode::Return as u8];
+    assert_rejected(
+        "out-of-bounds-upvalue",
+        &module,
+        "out of bounds for function '__top_level__'",
+    );
+}
+
+#[test]
+fn test_verifier_rejects_build_struct_field_count_mismatch() {
+    let mut module = base_module();
+    module.names = vec!["Point".to_string()];
+    module.structs = vec![aipo_bytecode::module::StructInfo {
+        name: "Point".to_string(),
+        fields: vec![("x".to_string(), false), ("y".to_string(), false)],
+    }];
+    // BuildStruct Point (type 0), claims 1 field instead of 2
+    module.code = vec![
+        OpCode::BuildStruct as u8,
+        0x00,
+        0x00, // type 0: Point
+        0x00,
+        0x01, // 1 field (mismatch!)
+        0x00, // not deferred
+        OpCode::Return as u8,
+    ];
+    assert_rejected(
+        "build-struct-field-mismatch",
+        &module,
+        "BuildStruct for Point expected 2 fields, got 1",
+    );
+}

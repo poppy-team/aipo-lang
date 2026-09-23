@@ -202,6 +202,8 @@ pub enum CoreInst {
     Len(SourceSpan),
     /// Runtime type test against a core-type value.
     TypeIs(SourceSpan),
+    /// Runtime nullable type test against a core-type value (`is ...?`).
+    TypeIsNullable(SourceSpan),
     /// Register the collection on top of the stack as actively iterated.
     IterGuard(SourceSpan),
     /// Unregister the innermost active iteration.

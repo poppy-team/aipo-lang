@@ -204,4 +204,258 @@ mod tests {
             "expected recovery to parse second statement"
         );
     }
+
+    #[test]
+    fn test_elided_comparison_continuation() {
+        use aipo_ast::{BinaryOp, Expr};
+        let src = Source::new(
+            SourceId::next(),
+            "test.aipo",
+            "let ok = val >= 0 and <= 100",
+        );
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {:?}", diags);
+        assert_eq!(prog.statements.len(), 1);
+
+        if let aipo_ast::Stmt::Let(_, expr, _) = &prog.statements[0] {
+            if let Expr::Binary(op, left, right, _) = expr {
+                assert_eq!(*op, BinaryOp::And);
+                assert!(matches!(
+                    &**left,
+                    Expr::Binary(BinaryOp::GreaterEqual, _, _, _)
+                ));
+                assert!(matches!(
+                    &**right,
+                    Expr::Binary(BinaryOp::LessEqual, _, _, _)
+                ));
+            } else {
+                panic!("expected Binary and");
+            }
+        } else {
+            panic!("expected let statement");
+        }
+    }
+
+    #[test]
+    fn test_multi_elided_comparison_continuation() {
+        use aipo_ast::{BinaryOp, Expr};
+        let src = Source::new(
+            SourceId::next(),
+            "test.aipo",
+            "let ok = val is Int and >= 0 and <= 100",
+        );
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {:?}", diags);
+        assert_eq!(prog.statements.len(), 1);
+
+        if let aipo_ast::Stmt::Let(_, expr, _) = &prog.statements[0] {
+            if let Expr::Binary(op, left, right, _) = expr {
+                assert_eq!(*op, BinaryOp::And);
+                assert!(matches!(
+                    &**right,
+                    Expr::Binary(BinaryOp::LessEqual, _, _, _)
+                ));
+                if let Expr::Binary(inner_op, inner_l, inner_r, _) = &**left {
+                    assert_eq!(*inner_op, BinaryOp::And);
+                    assert!(matches!(&**inner_l, Expr::Binary(BinaryOp::Is, _, _, _)));
+                    assert!(matches!(
+                        &**inner_r,
+                        Expr::Binary(BinaryOp::GreaterEqual, _, _, _)
+                    ));
+                } else {
+                    panic!("expected nested Binary and");
+                }
+            } else {
+                panic!("expected Binary and");
+            }
+        } else {
+            panic!("expected let statement");
+        }
+    }
+
+    #[test]
+    fn test_chained_comparison_reports_diagnostic() {
+        use aipo_diagnostics::DiagnosticCode;
+        let src = Source::new(SourceId::next(), "test.aipo", "let bad = 1 < x < 10");
+        let (_prog, diags) = parse(&src);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN);
+    }
+
+    #[test]
+    fn test_short_lambda_single_param() {
+        use aipo_ast::{Expr, Stmt};
+        let src = Source::new(SourceId::next(), "test.aipo", "let f = x => x * 2");
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {diags:?}");
+        assert_eq!(prog.statements.len(), 1);
+        if let Stmt::Let(_, Expr::Fn(f), _) = &prog.statements[0] {
+            assert_eq!(f.params.len(), 1);
+            assert_eq!(f.params[0].name.name, "x");
+            assert_eq!(f.body.len(), 1);
+            assert!(matches!(&f.body[0], Stmt::Return(Some(_), _)));
+        } else {
+            panic!("expected let f = Expr::Fn");
+        }
+    }
+
+    #[test]
+    fn test_short_lambda_multi_param() {
+        use aipo_ast::{Expr, Stmt};
+        let src = Source::new(SourceId::next(), "test.aipo", "let add = (a, b) => a + b");
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {diags:?}");
+        assert_eq!(prog.statements.len(), 1);
+        if let Stmt::Let(_, Expr::Fn(f), _) = &prog.statements[0] {
+            assert_eq!(f.params.len(), 2);
+            assert_eq!(f.params[0].name.name, "a");
+            assert_eq!(f.params[1].name.name, "b");
+            assert_eq!(f.body.len(), 1);
+            assert!(matches!(&f.body[0], Stmt::Return(Some(_), _)));
+        } else {
+            panic!("expected let add = Expr::Fn");
+        }
+    }
+
+    #[test]
+    fn test_short_lambda_zero_param() {
+        use aipo_ast::{Expr, Stmt};
+        let src = Source::new(SourceId::next(), "test.aipo", "let get = () => 42");
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {diags:?}");
+        assert_eq!(prog.statements.len(), 1);
+        if let Stmt::Let(_, Expr::Fn(f), _) = &prog.statements[0] {
+            assert_eq!(f.params.len(), 0);
+            assert_eq!(f.body.len(), 1);
+            assert!(matches!(&f.body[0], Stmt::Return(Some(_), _)));
+        } else {
+            panic!("expected let get = Expr::Fn");
+        }
+    }
+
+    #[test]
+    fn test_short_lambda_discard_param() {
+        use aipo_ast::{Expr, Stmt};
+        let src = Source::new(SourceId::next(), "test.aipo", "let sink = _ => 0");
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {diags:?}");
+        assert_eq!(prog.statements.len(), 1);
+        if let Stmt::Let(_, Expr::Fn(f), _) = &prog.statements[0] {
+            assert_eq!(f.params.len(), 1);
+            assert_eq!(f.params[0].name.name, "_");
+            assert_eq!(f.body.len(), 1);
+            assert!(matches!(&f.body[0], Stmt::Return(Some(_), _)));
+        } else {
+            panic!("expected let sink = Expr::Fn");
+        }
+    }
+
+    #[test]
+    fn test_short_lambda_discard_in_tuple() {
+        use aipo_ast::{Expr, Stmt};
+        let src = Source::new(SourceId::next(), "test.aipo", "let f = (a, _) => a");
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {diags:?}");
+        assert_eq!(prog.statements.len(), 1);
+        if let Stmt::Let(_, Expr::Fn(f), _) = &prog.statements[0] {
+            assert_eq!(f.params.len(), 2);
+            assert_eq!(f.params[0].name.name, "a");
+            assert_eq!(f.params[1].name.name, "_");
+            assert_eq!(f.body.len(), 1);
+            assert!(matches!(&f.body[0], Stmt::Return(Some(_), _)));
+        } else {
+            panic!("expected let f = Expr::Fn");
+        }
+    }
+
+    #[test]
+    fn test_parse_inline_conditional_expression() {
+        use aipo_ast::{Expr, Stmt};
+        let src = Source::new(
+            SourceId::next(),
+            "test.aipo",
+            "let x = if condition then 42 else 0",
+        );
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {diags:?}");
+        assert_eq!(prog.statements.len(), 1);
+        if let Stmt::Let(_, Expr::If(cond, then_branch, else_branch, _), _) = &prog.statements[0] {
+            assert!(matches!(**cond, Expr::Identifier(_)));
+            assert!(matches!(**then_branch, Expr::Literal(_, _)));
+            assert!(matches!(**else_branch, Expr::Literal(_, _)));
+        } else {
+            panic!("expected let x = Expr::If");
+        }
+    }
+
+    #[test]
+    fn test_parse_is_nullable() {
+        use aipo_ast::{BinaryOp, Expr, Stmt};
+        let src = Source::new(SourceId::next(), "test.aipo", "let ok = val is Int?");
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {diags:?}");
+        assert_eq!(prog.statements.len(), 1);
+        if let Stmt::Let(_, Expr::Binary(op, left, right, _), _) = &prog.statements[0] {
+            assert_eq!(*op, BinaryOp::IsNullable);
+            assert!(matches!(**left, Expr::Identifier(_)));
+            assert!(matches!(**right, Expr::Identifier(_)));
+        } else {
+            panic!("expected BinaryOp::IsNullable");
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_subjects_is() {
+        use aipo_ast::{BinaryOp, Expr, Stmt};
+        let src = Source::new(SourceId::next(), "test.aipo", "let ok = a, b, c is Int");
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {diags:?}");
+        assert_eq!(prog.statements.len(), 1);
+        // Desugared: ((a is Int and b is Int) and c is Int)
+        if let Stmt::Let(_, Expr::Binary(op, left, right, _), _) = &prog.statements[0] {
+            assert_eq!(*op, BinaryOp::And);
+            assert!(matches!(**right, Expr::Binary(BinaryOp::Is, _, _, _)));
+            if let Expr::Binary(inner_op, inner_l, inner_r, _) = &**left {
+                assert_eq!(*inner_op, BinaryOp::And);
+                assert!(matches!(**inner_l, Expr::Binary(BinaryOp::Is, _, _, _)));
+                assert!(matches!(**inner_r, Expr::Binary(BinaryOp::Is, _, _, _)));
+            } else {
+                panic!("expected nested Binary and");
+            }
+        } else {
+            panic!("expected let ok = Expr::Binary");
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_subjects_is_nullable() {
+        use aipo_ast::{BinaryOp, Expr, Stmt};
+        let src = Source::new(SourceId::next(), "test.aipo", "let ok = a, b is String?");
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {diags:?}");
+        assert_eq!(prog.statements.len(), 1);
+        if let Stmt::Let(_, Expr::Binary(op, left, right, _), _) = &prog.statements[0] {
+            assert_eq!(*op, BinaryOp::And);
+            assert!(matches!(
+                **left,
+                Expr::Binary(BinaryOp::IsNullable, _, _, _)
+            ));
+            assert!(matches!(
+                **right,
+                Expr::Binary(BinaryOp::IsNullable, _, _, _)
+            ));
+        } else {
+            panic!("expected let ok = Expr::Binary");
+        }
+    }
+
+    #[test]
+    fn test_is_not_produces_unexpected_token_diagnostic() {
+        use aipo_diagnostics::DiagnosticCode;
+        let src = Source::new(SourceId::next(), "test.aipo", "let bad = x is not Int");
+        let (_prog, diags) = parse(&src);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN);
+        assert!(diags[0].message.contains("'is not' is not supported"));
+    }
 }

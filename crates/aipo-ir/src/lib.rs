@@ -99,6 +99,63 @@ mod tests {
         assert_eq!(first_constant("1.5e-3"), CoreConstant::Float(0.0015));
     }
 
+    /// `CompoundAssign` on `Index` must evaluate `base`/`idx` once (auditoria IR-1):
+    /// `list[f()] += 1` calls `f` exactly once via hidden locals.
+    #[test]
+    fn test_compound_assign_index_evaluates_base_and_index_once() {
+        let src = Source::new(SourceId::next(), "test.aipo", "list[f()] += 1");
+        let (ast, diags) = parse(&src);
+        assert!(diags.is_empty(), "parse diagnostics: {diags:?}");
+        let ir = lower_to_ir(&lower(ast));
+        let calls = ir
+            .top_level
+            .instructions
+            .iter()
+            .filter(|inst| matches!(inst, CoreInst::Call { .. }))
+            .count();
+        assert_eq!(
+            calls, 1,
+            "index call evaluated once: {:?}",
+            ir.top_level.instructions
+        );
+        assert!(
+            ir.top_level.instructions.iter().any(|inst| matches!(
+                inst,
+                CoreInst::Store(name, _) if name.contains("cai_base")
+            )),
+            "base spilled to hidden local"
+        );
+    }
+
+    /// Invalid assignment targets fail loudly instead of being silently dropped
+    /// (auditoria IR-2). Sema rejects these statically; IR is the backstop.
+    #[test]
+    fn test_invalid_assign_target_emits_fail() {
+        use aipo_hir::{HirExpr, HirProgram, HirStmt};
+        use aipo_source::SourceSpan;
+        let span = SourceSpan::default();
+        let target = HirExpr::Literal(aipo_ast::Literal::Int("1".to_string()), span);
+        let value = HirExpr::Literal(aipo_ast::Literal::Int("2".to_string()), span);
+        for stmt in [
+            HirStmt::Assign(target.clone(), value.clone(), span),
+            HirStmt::CompoundAssign(aipo_ast::BinaryOp::Add, target.clone(), value.clone(), span),
+        ] {
+            let program = HirProgram {
+                items: vec![],
+                statements: vec![stmt],
+                span,
+            };
+            let ir = lower_to_ir(&program);
+            assert!(
+                ir.top_level
+                    .instructions
+                    .iter()
+                    .any(|inst| matches!(inst, CoreInst::Fail(_))),
+                "invalid target must emit Fail"
+            );
+        }
+    }
+
     /// A literal outside `Int`'s range is never coerced: it becomes a sentinel the VM and the
     /// JS shim both reject with `AIPO_RT_OVERFLOW` when the constant is loaded. An overflowing
     /// float parses to infinity, which `AIPO_RT_NON_FINITE_FLOAT` rejects — again on both

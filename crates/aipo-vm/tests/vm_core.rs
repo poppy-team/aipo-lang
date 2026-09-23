@@ -341,6 +341,7 @@ fn test_call_with_extra_arguments_faults_on_arity() {
         entry_ip: 0,
         params: 1,
         locals: 0,
+        upvalues: 0,
         is_async: false,
     });
 

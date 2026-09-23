@@ -97,16 +97,25 @@ impl Vm {
             Some(message) => {
                 // Canon returns the direct fields of every participating instance to the state
                 // the operation started from before the failure propagates.
-                for entry in self.mutation_journal[base..].iter().rev() {
-                    entry
-                        .instance
-                        .borrow_mut()
-                        .restore_field(&entry.field, entry.previous.clone());
-                }
-                self.mutation_journal.truncate(base);
+                self.rollback_mutations(base);
                 self.handle_failure(Value::Failure(Rc::new(FailureValue { message })))?;
                 Ok(())
             }
+        }
+    }
+
+    /// Rolls back provisional field mutations recorded in `self.mutation_journal[base..]`
+    /// in reverse order, restoring each field to its previous value, and truncates the
+    /// journal to `base`.
+    pub(super) fn rollback_mutations(&mut self, base: usize) {
+        if self.mutation_journal.len() > base {
+            for entry in self.mutation_journal[base..].iter().rev() {
+                entry
+                    .instance
+                    .borrow_mut()
+                    .restore_field(&entry.field, entry.previous.clone());
+            }
+            self.mutation_journal.truncate(base);
         }
     }
 }

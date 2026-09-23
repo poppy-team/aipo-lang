@@ -35,6 +35,7 @@ impl Vm {
             // Nothing is left to handle it: the module entry script is the outermost path,
             // so the program ends here and `run` reports the failure.
             self.stack.clear();
+            self.mutation_journal.clear();
             self.halted_with = Some(failure);
             Ok(())
         }

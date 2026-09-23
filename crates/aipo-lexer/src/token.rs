@@ -168,6 +168,8 @@ pub enum TokenKind {
     GreaterEqual,
     /// `=`
     Equal,
+    /// `=>` (short lambda fat arrow)
+    FatArrow,
     /// `|>` (pipeline)
     Pipeline,
     /// `..` (range)

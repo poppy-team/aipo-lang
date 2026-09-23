@@ -54,6 +54,23 @@ mod tests {
     }
 
     #[test]
+    fn test_location_multibyte_utf8() {
+        // "café\n🚀rocket" - 'é' is 2 bytes (offsets 3..5), '🚀' is 4 bytes (offsets 5..9)
+        let text = "café\n🚀rocket";
+        let source = Source::new(SourceId(1), "test.aipo", text);
+
+        // Offset 4 is in the middle of 'é' (bytes 3..5)
+        let loc_mid_e = source.location(4).unwrap();
+        assert_eq!(loc_mid_e.line, 1);
+        assert_eq!(loc_mid_e.column, 4);
+
+        // Offset 7 is in the middle of '🚀' (bytes 5..9)
+        let loc_mid_rocket = source.location(7).unwrap();
+        assert_eq!(loc_mid_rocket.line, 2);
+        assert_eq!(loc_mid_rocket.column, 1);
+    }
+
+    #[test]
     fn test_span_merge() {
         let s1 = SourceSpan::new(2, 5);
         let s2 = SourceSpan::new(8, 12);

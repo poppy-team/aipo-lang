@@ -290,21 +290,6 @@ pub fn math_clamp(args: &[Value]) -> Result<Value, VmFault> {
         return Ok(Value::Int((*value).clamp(*low, *high)));
     }
 
-    let to_float = |val: &Value| -> Result<f64, VmFault> {
-        match val {
-            Value::Int(n) =>
-            {
-                #[allow(clippy::cast_precision_loss)]
-                Ok(*n as f64)
-            }
-            Value::Float(f) => check_finite_float(*f),
-            other => Err(VmFault::TypeMismatch {
-                expected: "numbers (Int or Float)".to_string(),
-                actual: other.type_name().to_string(),
-            }),
-        }
-    };
-
     let value = to_float(&args[0])?;
     let low = to_float(&args[1])?;
     let high = to_float(&args[2])?;
@@ -316,6 +301,352 @@ pub fn math_clamp(args: &[Value]) -> Result<Value, VmFault> {
     }
 
     check_finite_float(value.clamp(low, high)).map(Value::Float)
+}
+
+/// Converts an Aipo number (Int or Float) to `f64`.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float,
+/// or `VmFault::NonFiniteFloat` if float is non-finite.
+pub fn to_float(val: &Value) -> Result<f64, VmFault> {
+    match val {
+        Value::Int(n) =>
+        {
+            #[allow(clippy::cast_precision_loss)]
+            Ok(*n as f64)
+        }
+        Value::Float(f) => check_finite_float(*f),
+        other => Err(VmFault::TypeMismatch {
+            expected: "Int or Float".to_string(),
+            actual: other.type_name().to_string(),
+        }),
+    }
+}
+
+/// Sine function (radians).
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_sin(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    check_finite_float(x.sin()).map(Value::Float)
+}
+
+/// Cosine function (radians).
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_cos(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    check_finite_float(x.cos()).map(Value::Float)
+}
+
+/// Tangent function (radians).
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_tan(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    check_finite_float(x.tan()).map(Value::Float)
+}
+
+/// Arc sine function.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_asin(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    if !(-1.0..=1.0).contains(&x) {
+        return Ok(Value::Failure(Rc::new(FailureValue {
+            message: "math.asin domain error: argument must be between -1.0 and 1.0".to_string(),
+        })));
+    }
+    check_finite_float(x.asin()).map(Value::Float)
+}
+
+/// Arc cosine function.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_acos(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    if !(-1.0..=1.0).contains(&x) {
+        return Ok(Value::Failure(Rc::new(FailureValue {
+            message: "math.acos domain error: argument must be between -1.0 and 1.0".to_string(),
+        })));
+    }
+    check_finite_float(x.acos()).map(Value::Float)
+}
+
+/// Arc tangent function.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_atan(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    check_finite_float(x.atan()).map(Value::Float)
+}
+
+/// Two-argument arc tangent function `atan2(y, x)`.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operands are not Int or Float.
+pub fn math_atan2(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 2 {
+        return Err(VmFault::TypeMismatch {
+            expected: "2 arguments".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    if let Value::Failure(f) = &args[1] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let y = to_float(&args[0])?;
+    let x = to_float(&args[1])?;
+    check_finite_float(y.atan2(x)).map(Value::Float)
+}
+
+/// Euclidean distance `hypot(x, y) = sqrt(x^2 + y^2)`.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operands are not Int or Float.
+pub fn math_hypot(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 2 {
+        return Err(VmFault::TypeMismatch {
+            expected: "2 arguments".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    if let Value::Failure(f) = &args[1] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    let y = to_float(&args[1])?;
+    check_finite_float(x.hypot(y)).map(Value::Float)
+}
+
+/// Natural logarithm (base e).
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_log(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    if x <= 0.0 {
+        return Ok(Value::Failure(Rc::new(FailureValue {
+            message: "math.log domain error: argument must be positive".to_string(),
+        })));
+    }
+    check_finite_float(x.ln()).map(Value::Float)
+}
+
+/// Base-2 logarithm.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_log2(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    if x <= 0.0 {
+        return Ok(Value::Failure(Rc::new(FailureValue {
+            message: "math.log2 domain error: argument must be positive".to_string(),
+        })));
+    }
+    check_finite_float(x.log2()).map(Value::Float)
+}
+
+/// Base-10 logarithm.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_log10(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    if x <= 0.0 {
+        return Ok(Value::Failure(Rc::new(FailureValue {
+            message: "math.log10 domain error: argument must be positive".to_string(),
+        })));
+    }
+    check_finite_float(x.log10()).map(Value::Float)
+}
+
+/// Exponential function `e^x`.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_exp(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let x = to_float(&args[0])?;
+    check_finite_float(x.exp()).map(Value::Float)
+}
+
+/// Signum function returning -1, 0, or 1 preserving type.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_sign(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    match &args[0] {
+        Value::Int(n) => {
+            let s = if *n > 0 {
+                1
+            } else if *n < 0 {
+                -1
+            } else {
+                0
+            };
+            Ok(Value::Int(s))
+        }
+        Value::Float(f) => {
+            check_finite_float(*f)?;
+            let s = if *f > 0.0 {
+                1.0
+            } else if *f < 0.0 {
+                -1.0
+            } else {
+                0.0
+            };
+            Ok(Value::Float(s))
+        }
+        Value::Failure(f) => Ok(Value::Failure(Rc::clone(f))),
+        other => Err(VmFault::TypeMismatch {
+            expected: "Int or Float".to_string(),
+            actual: other.type_name().to_string(),
+        }),
+    }
+}
+
+/// Degrees to radians conversion.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_rad(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let d = to_float(&args[0])?;
+    check_finite_float(d.to_radians()).map(Value::Float)
+}
+
+/// Radians to degrees conversion.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not Int or Float.
+pub fn math_deg(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+    let r = to_float(&args[0])?;
+    check_finite_float(r.to_degrees()).map(Value::Float)
 }
 
 /// Square root function.
@@ -491,6 +822,126 @@ pub fn create_module() -> Value {
                 name: "math.clamp".to_string(),
                 arity: 3,
                 func: math_clamp,
+            },
+        ),
+        (
+            Value::String(Rc::new("sin".to_string())),
+            Value::Native {
+                name: "math.sin".to_string(),
+                arity: 1,
+                func: math_sin,
+            },
+        ),
+        (
+            Value::String(Rc::new("cos".to_string())),
+            Value::Native {
+                name: "math.cos".to_string(),
+                arity: 1,
+                func: math_cos,
+            },
+        ),
+        (
+            Value::String(Rc::new("tan".to_string())),
+            Value::Native {
+                name: "math.tan".to_string(),
+                arity: 1,
+                func: math_tan,
+            },
+        ),
+        (
+            Value::String(Rc::new("asin".to_string())),
+            Value::Native {
+                name: "math.asin".to_string(),
+                arity: 1,
+                func: math_asin,
+            },
+        ),
+        (
+            Value::String(Rc::new("acos".to_string())),
+            Value::Native {
+                name: "math.acos".to_string(),
+                arity: 1,
+                func: math_acos,
+            },
+        ),
+        (
+            Value::String(Rc::new("atan".to_string())),
+            Value::Native {
+                name: "math.atan".to_string(),
+                arity: 1,
+                func: math_atan,
+            },
+        ),
+        (
+            Value::String(Rc::new("atan2".to_string())),
+            Value::Native {
+                name: "math.atan2".to_string(),
+                arity: 2,
+                func: math_atan2,
+            },
+        ),
+        (
+            Value::String(Rc::new("hypot".to_string())),
+            Value::Native {
+                name: "math.hypot".to_string(),
+                arity: 2,
+                func: math_hypot,
+            },
+        ),
+        (
+            Value::String(Rc::new("log".to_string())),
+            Value::Native {
+                name: "math.log".to_string(),
+                arity: 1,
+                func: math_log,
+            },
+        ),
+        (
+            Value::String(Rc::new("log2".to_string())),
+            Value::Native {
+                name: "math.log2".to_string(),
+                arity: 1,
+                func: math_log2,
+            },
+        ),
+        (
+            Value::String(Rc::new("log10".to_string())),
+            Value::Native {
+                name: "math.log10".to_string(),
+                arity: 1,
+                func: math_log10,
+            },
+        ),
+        (
+            Value::String(Rc::new("exp".to_string())),
+            Value::Native {
+                name: "math.exp".to_string(),
+                arity: 1,
+                func: math_exp,
+            },
+        ),
+        (
+            Value::String(Rc::new("sign".to_string())),
+            Value::Native {
+                name: "math.sign".to_string(),
+                arity: 1,
+                func: math_sign,
+            },
+        ),
+        (
+            Value::String(Rc::new("rad".to_string())),
+            Value::Native {
+                name: "math.rad".to_string(),
+                arity: 1,
+                func: math_rad,
+            },
+        ),
+        (
+            Value::String(Rc::new("deg".to_string())),
+            Value::Native {
+                name: "math.deg".to_string(),
+                arity: 1,
+                func: math_deg,
             },
         ),
         (

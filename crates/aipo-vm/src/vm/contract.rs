@@ -18,7 +18,7 @@ impl Vm {
             }
         }
         match self.bind_method(value, name) {
-            Some(Value::BoundMethod { arity, .. }) => Some(arity),
+            Some(Value::BoundMethod(bm)) => Some(bm.arity),
             _ => None,
         }
     }
@@ -37,9 +37,9 @@ impl Vm {
             return matches!(
                 value,
                 Value::Function { .. }
-                    | Value::Closure { .. }
+                    | Value::Closure(_)
                     | Value::Native { .. }
-                    | Value::BoundMethod { .. }
+                    | Value::BoundMethod(_)
             );
         }
         if let Some(tag) = TypeTag::from_name(type_name) {

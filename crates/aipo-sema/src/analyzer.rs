@@ -1,7 +1,7 @@
 //! Semantic analysis and verification pass.
 
 use crate::prelude::PreludeSurface;
-use crate::symbol::{Mutability, ScopeTree, Symbol, SymbolKind};
+use crate::symbol::{MethodSignature, Mutability, ScopeTree, Symbol, SymbolKind};
 use aipo_ast::{Literal, TypeAnnotation};
 use aipo_diagnostics::{Diagnostic, DiagnosticCode};
 use aipo_hir::*;
@@ -86,6 +86,7 @@ impl DeclaredContract {
             params: function
                 .params
                 .iter()
+                .filter(|param| !param.is_self)
                 .map(|param| ParameterContract {
                     name: param.name.clone(),
                     annotation: param.type_annotation.clone(),
@@ -102,13 +103,22 @@ pub struct SemanticFacts {
     pub scopes: ScopeTree,
 }
 
+/// Extracts the root identifier and span of an assignment target path.
+fn path_root(expr: &HirExpr) -> Option<(&str, aipo_source::SourceSpan)> {
+    match expr {
+        HirExpr::Identifier(name, span) => Some((name.as_str(), *span)),
+        HirExpr::Dot(base, _, _) | HirExpr::Index(base, _, _) => path_root(base),
+        _ => None,
+    }
+}
+
 /// Semantic analyzer walking the HIR and collecting diagnostics.
 pub struct SemanticAnalyzer<'a> {
     source: &'a Source,
     facts: SemanticFacts,
     current_scope: usize,
     diagnostics: Vec<Diagnostic>,
-    impl_methods: HashMap<String, HashMap<String, (usize, usize)>>, // struct -> (method -> (min, max))
+    impl_methods: HashMap<String, HashMap<String, MethodSignature>>, // struct -> (method -> signature)
     current_fn_is_mut: bool,
     /// Written signature contracts of every declared function, by name.
     fn_contracts: HashMap<String, DeclaredContract>,
@@ -131,6 +141,16 @@ pub struct SemanticAnalyzer<'a> {
     in_module_flow: bool,
     /// Names of declared `async fn` functions: calling one produces a `Task`.
     async_fns: HashSet<String>,
+    /// Struct currently being implemented in `impl` block.
+    current_struct: Option<String>,
+    /// `true` while analyzing an `init` hook inside an `impl`.
+    in_init: bool,
+    /// Names of declared `async` methods.
+    async_methods: HashSet<String>,
+    /// Declared struct fixed fields: struct_name -> set of fixed field names.
+    struct_fixed_fields: HashMap<String, HashSet<String>>,
+    /// Maps variable name to known struct type name (e.g. `var p = Point{...}` -> "Point").
+    var_struct_types: HashMap<String, String>,
     /// `true` inside an `await do` body (reset on function boundaries: the
     /// block form never enters lambdas defined inside it).
     in_await_do: bool,
@@ -167,6 +187,11 @@ impl<'a> SemanticAnalyzer<'a> {
             in_module_flow: false,
             async_fns: HashSet::new(),
             in_await_do: false,
+            current_struct: None,
+            in_init: false,
+            async_methods: HashSet::new(),
+            struct_fixed_fields: HashMap::new(),
+            var_struct_types: HashMap::new(),
         };
 
         analyzer.register_surface(surface);
@@ -211,9 +236,37 @@ impl<'a> SemanticAnalyzer<'a> {
                     .entry(impl_block.target.clone())
                     .or_default();
                 for m in &impl_block.methods {
-                    let min_args = m.params.iter().filter(|p| p.default.is_none()).count();
-                    let max_args = m.params.len();
-                    methods.insert(m.name.clone(), (min_args, max_args));
+                    let min_args = m
+                        .params
+                        .iter()
+                        .filter(|p| !p.is_self && p.default.is_none())
+                        .count();
+                    let max_args = m.params.iter().filter(|p| !p.is_self).count();
+                    let is_mut_self = m.params.iter().any(|p| p.is_self && p.is_mut);
+                    let param_types = m
+                        .params
+                        .iter()
+                        .filter(|p| !p.is_self)
+                        .map(|p| (p.name.clone(), p.type_annotation.clone()))
+                        .collect();
+                    methods.insert(
+                        m.name.clone(),
+                        MethodSignature {
+                            min_args,
+                            max_args,
+                            is_mut_self,
+                            is_async: m.is_async,
+                            param_types,
+                            return_type: m.return_type.clone(),
+                        },
+                    );
+                    if m.is_async {
+                        self.async_methods.insert(m.name.clone());
+                    }
+                    self.fn_contracts.insert(
+                        format!("{}.{}", impl_block.target, m.name),
+                        DeclaredContract::of(m),
+                    );
                 }
             }
         }
@@ -271,9 +324,15 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             HirItem::Struct(s) => {
                 let mut fields = HashMap::new();
+                let mut fixed_fields = HashSet::new();
                 for f in &s.fields {
                     fields.insert(f.name.clone(), f.is_fixed);
+                    if f.is_fixed {
+                        fixed_fields.insert(f.name.clone());
+                    }
                 }
+                self.struct_fixed_fields
+                    .insert(s.name.clone(), fixed_fields);
                 let sym = Symbol {
                     name: s.name.clone(),
                     kind: SymbolKind::Struct { fields },
@@ -293,9 +352,30 @@ impl<'a> SemanticAnalyzer<'a> {
             HirItem::Interface(i) => {
                 let mut methods = HashMap::new();
                 for m in &i.methods {
-                    let min_args = m.params.iter().filter(|p| p.default.is_none()).count();
-                    let max_args = m.params.len();
-                    methods.insert(m.name.clone(), (min_args, max_args));
+                    let min_args = m
+                        .params
+                        .iter()
+                        .filter(|p| !p.is_self && p.default.is_none())
+                        .count();
+                    let max_args = m.params.iter().filter(|p| !p.is_self).count();
+                    let is_mut_self = m.params.iter().any(|p| p.is_self && p.is_mut);
+                    let param_types = m
+                        .params
+                        .iter()
+                        .filter(|p| !p.is_self)
+                        .map(|p| (p.name.clone(), p.type_annotation.clone()))
+                        .collect();
+                    methods.insert(
+                        m.name.clone(),
+                        MethodSignature {
+                            min_args,
+                            max_args,
+                            is_mut_self,
+                            is_async: m.is_async,
+                            param_types,
+                            return_type: m.return_type.clone(),
+                        },
+                    );
                 }
                 let sym = Symbol {
                     name: i.name.clone(),
@@ -363,9 +443,9 @@ impl<'a> SemanticAnalyzer<'a> {
                     kind: SymbolKind::Interface { methods },
                     ..
                 }) => {
-                    for (method_name, (req_min, req_max)) in methods {
-                        if let Some((prov_min, prov_max)) = struct_methods.get(method_name) {
-                            if *prov_min > *req_min || *prov_max < *req_max {
+                    for (method_name, req) in methods {
+                        if let Some(prov) = struct_methods.get(method_name) {
+                            if prov.min_args > req.min_args || prov.max_args < req.max_args {
                                 self.diagnostics.push(
                                     Diagnostic::error(
                                         DiagnosticCode::AIPO_SEM_ARITY_MISMATCH,
@@ -376,6 +456,109 @@ impl<'a> SemanticAnalyzer<'a> {
                                     )
                                     .with_primary_span(self.source, sat.span),
                                 );
+                            }
+
+                            if req.is_mut_self && !prov.is_mut_self {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC,
+                                        format!(
+                                            "method '{}' on '{}' requires mutable receiver 'self!' to satisfy interface '{}'",
+                                            method_name, sat.target, iface_name
+                                        ),
+                                    )
+                                    .with_primary_span(self.source, sat.span),
+                                );
+                            }
+
+                            if req.is_async != prov.is_async {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC,
+                                        format!(
+                                            "method '{}' on '{}' async modifier does not match interface '{}'",
+                                            method_name, sat.target, iface_name
+                                        ),
+                                    )
+                                    .with_primary_span(self.source, sat.span),
+                                );
+                            }
+
+                            if let Some(req_ret) = &req.return_type {
+                                if let Some(prov_ret) = &prov.return_type {
+                                    if req_ret.name != prov_ret.name
+                                        || req_ret.is_nullable != prov_ret.is_nullable
+                                    {
+                                        self.diagnostics.push(
+                                            Diagnostic::error(
+                                                DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC,
+                                                format!(
+                                                    "method '{}' on '{}' return type '{}' does not match interface '{}' expected '{}'",
+                                                    method_name,
+                                                    sat.target,
+                                                    prov_ret.name,
+                                                    iface_name,
+                                                    req_ret.name
+                                                ),
+                                            )
+                                            .with_primary_span(self.source, sat.span),
+                                        );
+                                    }
+                                } else {
+                                    self.diagnostics.push(
+                                        Diagnostic::error(
+                                            DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC,
+                                            format!(
+                                                "method '{}' on '{}' is missing required return type '{}' from interface '{}'",
+                                                method_name, sat.target, req_ret.name, iface_name
+                                            ),
+                                        )
+                                        .with_primary_span(self.source, sat.span),
+                                    );
+                                }
+                            }
+
+                            for (req_p, prov_p) in
+                                req.param_types.iter().zip(prov.param_types.iter())
+                            {
+                                if let Some(req_ty) = &req_p.1 {
+                                    if let Some(prov_ty) = &prov_p.1 {
+                                        if req_ty.name != prov_ty.name
+                                            || req_ty.is_nullable != prov_ty.is_nullable
+                                        {
+                                            self.diagnostics.push(
+                                                Diagnostic::error(
+                                                    DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC,
+                                                    format!(
+                                                        "parameter '{}' of method '{}' on '{}' type '{}' does not match interface '{}' required '{}'",
+                                                        prov_p.0,
+                                                        method_name,
+                                                        sat.target,
+                                                        prov_ty.name,
+                                                        iface_name,
+                                                        req_ty.name
+                                                    ),
+                                                )
+                                                .with_primary_span(self.source, sat.span),
+                                            );
+                                        }
+                                    } else {
+                                        self.diagnostics.push(
+                                            Diagnostic::error(
+                                                DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC,
+                                                format!(
+                                                    "parameter '{}' of method '{}' on '{}' is missing required type annotation '{}' from interface '{}'",
+                                                    prov_p.0,
+                                                    method_name,
+                                                    sat.target,
+                                                    req_ty.name,
+                                                    iface_name
+                                                ),
+                                            )
+                                            .with_primary_span(self.source, sat.span),
+                                        );
+                                    }
+                                }
                             }
                         } else {
                             self.diagnostics.push(
@@ -408,12 +591,18 @@ impl<'a> SemanticAnalyzer<'a> {
         match item {
             HirItem::Fn(f) => self.analyze_function(f),
             HirItem::Impl(i) => {
+                let prev_struct = self.current_struct.take();
+                self.current_struct = Some(i.target.clone());
                 if let Some(init) = &i.init {
+                    let prev_init = self.in_init;
+                    self.in_init = true;
                     self.analyze_function(init);
+                    self.in_init = prev_init;
                 }
                 for method in &i.methods {
                     self.analyze_function(method);
                 }
+                self.current_struct = prev_struct;
             }
             _ => {}
         }
@@ -468,17 +657,28 @@ impl<'a> SemanticAnalyzer<'a> {
                 // before the name becomes visible to the executable flow.
                 self.analyze_expr_top(expr);
                 self.declare_binding(name, Mutability::Immutable, *span);
+                if let HirExpr::Construct(target, _, _) = expr {
+                    self.var_struct_types.insert(name.clone(), target.clone());
+                }
             }
             HirStmt::Var(name, expr, span) => {
                 self.analyze_expr_top(expr);
                 self.declare_binding(name, Mutability::Mutable, *span);
+                if let HirExpr::Construct(target, _, _) = expr {
+                    self.var_struct_types.insert(name.clone(), target.clone());
+                }
             }
             HirStmt::Assign(target, value, span) => {
-                self.analyze_expr(value);
+                self.analyze_expr_top(value);
                 self.check_assignment_target(target, *span);
+                if let (HirExpr::Identifier(name, _), HirExpr::Construct(st, _, _)) =
+                    (target, value)
+                {
+                    self.var_struct_types.insert(name.clone(), st.clone());
+                }
             }
             HirStmt::CompoundAssign(_, target, value, span) => {
-                self.analyze_expr(value);
+                self.analyze_expr_top(value);
                 self.check_assignment_target(target, *span);
             }
             HirStmt::If(s) => {
@@ -633,6 +833,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 // of the enclosing flow that were not reached yet must not leak in, which
                 // the block scope + module-flow reset already handle for closures.
                 self.declare_binding(&f.name, Mutability::Immutable, f.span);
+                self.fn_contracts
+                    .insert(f.name.clone(), DeclaredContract::of(f));
                 if f.is_async {
                     self.async_fns.insert(f.name.clone());
                 }
@@ -718,8 +920,9 @@ impl<'a> SemanticAnalyzer<'a> {
         let task_producing = match &**callee {
             HirExpr::Identifier(name, _) => self.async_fns.contains(name),
             HirExpr::Dot(target, member, _) => {
-                matches!(&**target, HirExpr::Identifier(name, _) if name == "task")
-                    && matches!(member.as_str(), "spawn" | "all" | "race")
+                (matches!(&**target, HirExpr::Identifier(name, _) if name == "task")
+                    && matches!(member.as_str(), "spawn" | "all" | "race"))
+                    || self.async_methods.contains(member)
             }
             _ => false,
         };
@@ -765,24 +968,133 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             HirExpr::Dot(base, member, dot_span) => {
                 self.analyze_expr(base);
-                if let HirExpr::Identifier(base_name, _) = &**base {
-                    if base_name == "self" && !self.current_fn_is_mut {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                DiagnosticCode::AIPO_SEM_READONLY_MUTATION,
-                                format!(
-                                    "cannot mutate field '{}' through immutable receiver 'self'; method requires 'self!'",
-                                    member
-                                ),
-                            )
-                            .with_primary_span(self.source, *dot_span),
-                        );
+                let root = path_root(base);
+                if let Some((root_name, root_span)) = root {
+                    if root_name == "self" {
+                        if !self.current_fn_is_mut {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    DiagnosticCode::AIPO_SEM_READONLY_MUTATION,
+                                    format!(
+                                        "cannot mutate field '{}' through immutable receiver 'self'; method requires 'self!'",
+                                        member
+                                    ),
+                                )
+                                .with_primary_span(self.source, *dot_span),
+                            );
+                        } else if !self.in_init {
+                            if let Some(struct_name) = &self.current_struct {
+                                if let Some(fixed_set) = self.struct_fixed_fields.get(struct_name) {
+                                    if fixed_set.contains(member) {
+                                        self.diagnostics.push(
+                                            Diagnostic::error(
+                                                DiagnosticCode::AIPO_SEM_FIXED_REASSIGN,
+                                                format!(
+                                                    "cannot mutate fixed field '{}' of struct '{}' after construction",
+                                                    member, struct_name
+                                                ),
+                                            )
+                                            .with_primary_span(self.source, *dot_span),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        let symbol = self
+                            .name_is_visible(root_name)
+                            .then(|| self.facts.scopes.lookup(self.current_scope, root_name))
+                            .flatten();
+                        match symbol {
+                            Some(_) => {
+                                if let Some(struct_name) = self.var_struct_types.get(root_name) {
+                                    if let Some(fixed_set) =
+                                        self.struct_fixed_fields.get(struct_name)
+                                    {
+                                        if fixed_set.contains(member) {
+                                            self.diagnostics.push(
+                                                Diagnostic::error(
+                                                    DiagnosticCode::AIPO_SEM_FIXED_REASSIGN,
+                                                    format!(
+                                                        "cannot mutate fixed field '{}' of struct '{}' after construction",
+                                                        member, struct_name
+                                                    ),
+                                                )
+                                                .with_primary_span(self.source, *dot_span),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            None => {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                        format!(
+                                            "unknown identifier '{}' in assignment target",
+                                            root_name
+                                        ),
+                                    )
+                                    .with_primary_span(self.source, root_span),
+                                );
+                            }
+                        }
                     }
+                } else {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::AIPO_PARSE_INVALID_TARGET,
+                            "invalid target in assignment",
+                        )
+                        .with_primary_span(self.source, *dot_span),
+                    );
                 }
             }
-            HirExpr::Index(base, idx, _) => {
+            HirExpr::Index(base, idx, index_span) => {
                 self.analyze_expr(base);
                 self.analyze_expr(idx);
+                let root = path_root(base);
+                if let Some((root_name, root_span)) = root {
+                    if root_name == "self" {
+                        if !self.current_fn_is_mut {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    DiagnosticCode::AIPO_SEM_READONLY_MUTATION,
+                                    "cannot mutate through immutable receiver 'self'; method requires 'self!'",
+                                )
+                                .with_primary_span(self.source, *index_span),
+                            );
+                        }
+                    } else {
+                        let symbol = self
+                            .name_is_visible(root_name)
+                            .then(|| self.facts.scopes.lookup(self.current_scope, root_name))
+                            .flatten();
+                        match symbol {
+                            Some(_) => {}
+                            None => {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                        format!(
+                                            "unknown identifier '{}' in assignment target",
+                                            root_name
+                                        ),
+                                    )
+                                    .with_primary_span(self.source, root_span),
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::AIPO_PARSE_INVALID_TARGET,
+                            "invalid target in assignment",
+                        )
+                        .with_primary_span(self.source, *index_span),
+                    );
+                }
             }
             _ => {
                 self.diagnostics.push(
@@ -996,6 +1308,36 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                     if let Some(contract) = self.fn_contracts.get(name).cloned() {
                         self.check_argument_contracts(name, args, &contract);
+                    }
+                } else if let HirExpr::Dot(target, member, _) = &**callee {
+                    let target_struct = match &**target {
+                        HirExpr::Identifier(name, _) if name == "self" => {
+                            self.current_struct.clone()
+                        }
+                        HirExpr::Identifier(name, _) => self.var_struct_types.get(name).cloned(),
+                        _ => None,
+                    };
+                    if let Some(st) = target_struct {
+                        let key = format!("{}.{}", st, member);
+                        if let Some(methods) = self.impl_methods.get(&st) {
+                            if let Some(sig) = methods.get(member) {
+                                if args.len() < sig.min_args || args.len() > sig.max_args {
+                                    self.diagnostics.push(
+                                        Diagnostic::error(
+                                            DiagnosticCode::AIPO_SEM_ARITY_MISMATCH,
+                                            format!(
+                                                "method '{}' on '{}' expected between {} and {} arguments, found {}",
+                                                member, st, sig.min_args, sig.max_args, args.len()
+                                            ),
+                                        )
+                                        .with_primary_span(self.source, *span),
+                                    );
+                                }
+                            }
+                        }
+                        if let Some(contract) = self.fn_contracts.get(&key).cloned() {
+                            self.check_argument_contracts(&key, args, &contract);
+                        }
                     }
                 }
             }

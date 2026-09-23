@@ -537,6 +537,50 @@ export function std_string_format(tpl, vals) {
   return vStr(nfc(out));
 }
 
+export function std_string_graphemes(a) {
+  if (isFailure(a)) return a;
+  reqStr(a);
+  let parts;
+  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    parts = [...seg.segment(a.v)].map(s => s.segment);
+  } else {
+    parts = chars(a.v);
+  }
+  return vList(parts.map(p => vStr(p)));
+}
+
+export function std_string_words(a) {
+  if (isFailure(a)) return a;
+  reqStr(a);
+  let parts;
+  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+    const seg = new Intl.Segmenter(undefined, { granularity: 'word' });
+    parts = [...seg.segment(a.v)].filter(s => s.isWordLike).map(s => s.segment);
+  } else {
+    parts = a.v.match(/\w+/g) || [];
+  }
+  return vList(parts.map(p => vStr(p)));
+}
+
+export function std_string_lines(a) {
+  if (isFailure(a)) return a;
+  reqStr(a);
+  const s = a.v;
+  if (s.length === 0) return vList([]);
+  const parts = s.split(/\r\n|\r|\n/);
+  if (parts.length > 0 && parts[parts.length - 1] === '' && (s.endsWith('\n') || s.endsWith('\r'))) {
+    parts.pop();
+  }
+  return vList(parts.map(p => vStr(p)));
+}
+
+export function std_string_casefold(a) {
+  if (isFailure(a)) return a;
+  reqStr(a);
+  return vStr(nfc(a.v.toLowerCase()));
+}
+
 // ---- math ----
 function mathNum(v) {
   if (isFailure(v)) return v;
@@ -626,6 +670,91 @@ export function std_math_clamp(v, mn, mx) {
   if (ln > hn) return vFail(`math.clamp bounds are inverted: ${display(mn)} > ${display(mx)}`);
   const c = Math.min(Math.max(an, ln), hn);
   return fl ? checkFiniteFloat(c) : checkSafeInt(Math.trunc(c));
+}
+export function std_math_sin(x) {
+  if (isFailure(x)) return x;
+  const r = toF64(mathNum(x));
+  return checkFiniteFloat(Math.sin(r));
+}
+export function std_math_cos(x) {
+  if (isFailure(x)) return x;
+  const r = toF64(mathNum(x));
+  return checkFiniteFloat(Math.cos(r));
+}
+export function std_math_tan(x) {
+  if (isFailure(x)) return x;
+  const r = toF64(mathNum(x));
+  return checkFiniteFloat(Math.tan(r));
+}
+export function std_math_asin(x) {
+  if (isFailure(x)) return x;
+  const r = toF64(mathNum(x));
+  if (r < -1.0 || r > 1.0) return vFail('math.asin domain error: argument must be between -1.0 and 1.0');
+  return checkFiniteFloat(Math.asin(r));
+}
+export function std_math_acos(x) {
+  if (isFailure(x)) return x;
+  const r = toF64(mathNum(x));
+  if (r < -1.0 || r > 1.0) return vFail('math.acos domain error: argument must be between -1.0 and 1.0');
+  return checkFiniteFloat(Math.acos(r));
+}
+export function std_math_atan(x) {
+  if (isFailure(x)) return x;
+  const r = toF64(mathNum(x));
+  return checkFiniteFloat(Math.atan(r));
+}
+export function std_math_atan2(y, x) {
+  if (isFailure(y)) return y;
+  if (isFailure(x)) return x;
+  const yn = toF64(mathNum(y));
+  const xn = toF64(mathNum(x));
+  return checkFiniteFloat(Math.atan2(yn, xn));
+}
+export function std_math_hypot(x, y) {
+  if (isFailure(x)) return x;
+  if (isFailure(y)) return y;
+  const xn = toF64(mathNum(x));
+  const yn = toF64(mathNum(y));
+  return checkFiniteFloat(Math.hypot(xn, yn));
+}
+export function std_math_log(x) {
+  if (isFailure(x)) return x;
+  const r = toF64(mathNum(x));
+  if (r <= 0.0) return vFail('math.log domain error: argument must be positive');
+  return checkFiniteFloat(Math.log(r));
+}
+export function std_math_log2(x) {
+  if (isFailure(x)) return x;
+  const r = toF64(mathNum(x));
+  if (r <= 0.0) return vFail('math.log2 domain error: argument must be positive');
+  return checkFiniteFloat(Math.log2(r));
+}
+export function std_math_log10(x) {
+  if (isFailure(x)) return x;
+  const r = toF64(mathNum(x));
+  if (r <= 0.0) return vFail('math.log10 domain error: argument must be positive');
+  return checkFiniteFloat(Math.log10(r));
+}
+export function std_math_exp(x) {
+  if (isFailure(x)) return x;
+  const r = toF64(mathNum(x));
+  return checkFiniteFloat(Math.exp(r));
+}
+export function std_math_sign(x) {
+  if (isFailure(x)) return x;
+  const num = mathNum(x);
+  const s = Math.sign(toF64(num));
+  return num.t === 'int' ? checkSafeInt(s) : checkFiniteFloat(s);
+}
+export function std_math_rad(deg) {
+  if (isFailure(deg)) return deg;
+  const d = toF64(mathNum(deg));
+  return checkFiniteFloat(d * (Math.PI / 180.0));
+}
+export function std_math_deg(rad) {
+  if (isFailure(rad)) return rad;
+  const r = toF64(mathNum(rad));
+  return checkFiniteFloat(r * (180.0 / Math.PI));
 }
 
 // ---- prelude & conversions ----
@@ -888,11 +1017,93 @@ export const listNatives = {
   find(r, a) { reqList(r); const at = r.items.findIndex(x => valuesEqual(x, a[0])); return at < 0 ? vNone() : vInt(at); },
   count(r, a) { reqList(r); return vInt(r.items.filter(x => valuesEqual(x, a[0])).length); },
   first(r) { reqList(r); if (r.items.length === 0) fault('AIPO_RT_INDEX_OUT_OF_RANGE', 'index 0 out of range (len 0)'); return r.items[0]; },
+  first_or(r, a) { reqList(r); return r.items.length > 0 ? r.items[0] : a[0]; },
   last(r) { reqList(r); if (r.items.length === 0) fault('AIPO_RT_INDEX_OUT_OF_RANGE', 'index -1 out of range (len 0)'); return r.items[r.items.length - 1]; },
+  last_or(r, a) { reqList(r); return r.items.length > 0 ? r.items[r.items.length - 1] : a[0]; },
+  find_index(r, a) { return listNatives.find(r, a); },
   is_empty(r) { reqList(r); return vBool(r.items.length === 0); },
   len(r) { reqList(r); return vInt(r.items.length); },
   reverse(r) { reqList(r); return vList([...r.items].reverse()); },
   sort(r) { reqList(r); const cp = [...r.items]; cp.sort(compareValues); return vList(cp); },
+  take(r, a) {
+    reqList(r);
+    if (isFailure(a[0])) return a[0];
+    const n = widen(a[0]);
+    if (n.t !== 'int') return typeMismatch('Int', typeName(a[0]));
+    const count = Math.max(0, n.v);
+    return vList(r.items.slice(0, count));
+  },
+  skip(r, a) {
+    reqList(r);
+    if (isFailure(a[0])) return a[0];
+    const n = widen(a[0]);
+    if (n.t !== 'int') return typeMismatch('Int', typeName(a[0]));
+    const count = Math.max(0, n.v);
+    return vList(r.items.slice(count));
+  },
+  distinct(r) {
+    reqList(r);
+    const unique = [];
+    for (const item of r.items) {
+      if (!unique.some(seen => valuesEqual(seen, item))) {
+        unique.push(item);
+      }
+    }
+    return vList(unique);
+  },
+  zip(r, a) {
+    reqList(r);
+    if (isFailure(a[0])) return a[0];
+    if (a[0].t !== 'list') return typeMismatch('List', typeName(a[0]));
+    const other = a[0];
+    const len = Math.min(r.items.length, other.items.length);
+    const paired = [];
+    for (let i = 0; i < len; i++) {
+      paired.push(vList([r.items[i], other.items[i]]));
+    }
+    return vList(paired);
+  },
+  chain(r, a) {
+    reqList(r);
+    if (isFailure(a[0])) return a[0];
+    if (a[0].t !== 'list') return typeMismatch('List', typeName(a[0]));
+    return vList(r.items.concat(a[0].items));
+  },
+  chunk(r, a) {
+    reqList(r);
+    if (isFailure(a[0])) return a[0];
+    const n = widen(a[0]);
+    if (n.t !== 'int') return typeMismatch('Int', typeName(a[0]));
+    if (n.v <= 0) fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: positive Int for list.chunk size, got ${n.v}`);
+    const size = n.v;
+    const chunks = [];
+    for (let i = 0; i < r.items.length; i += size) {
+      chunks.push(vList(r.items.slice(i, i + size)));
+    }
+    return vList(chunks);
+  },
+  window(r, a) {
+    reqList(r);
+    if (isFailure(a[0])) return a[0];
+    const n = widen(a[0]);
+    if (n.t !== 'int') return typeMismatch('Int', typeName(a[0]));
+    if (n.v <= 0) fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: positive Int for list.window size, got ${n.v}`);
+    const size = n.v;
+    if (size > r.items.length) return vList([]);
+    const windows = [];
+    for (let i = 0; i <= r.items.length - size; i++) {
+      windows.push(vList(r.items.slice(i, i + size)));
+    }
+    return vList(windows);
+  },
+  enumerate(r) {
+    reqList(r);
+    const indexed = [];
+    for (let i = 0; i < r.items.length; i++) {
+      indexed.push(vList([vInt(i), r.items[i]]));
+    }
+    return vList(indexed);
+  },
   lazy(r) { reqList(r); return vSequence({ source: { type: 'list', items: [...r.items] }, ops: [] }); },
 };
 export const dictNatives = {
@@ -900,6 +1111,7 @@ export const dictNatives = {
   get(r, a) { reqDict(r); const f = dictGet(r, a[0]); return f === null ? vNone() : f; },
   keys(r) { reqDict(r); return vList(r.entries.map(([k]) => k)); },
   values(r) { reqDict(r); return vList(r.entries.map(([, v]) => v)); },
+  entries(r) { reqDict(r); return vList(r.entries.map(([k, v]) => vList([k, v]))); },
   remove(r, a) { reqDict(r); return vBool(dictRemove(r, a[0])); },
   clear(r) { reqDict(r); dictClear(r); return vNone(); },
   is_empty(r) { reqDict(r); return vBool(r.entries.length === 0); },
@@ -1038,6 +1250,116 @@ export const bytesNatives = {
     const { view, idx } = bytesView(r, a[0], 8);
     view.setFloat64(idx, f, true);
     return vNone();
+  },
+  read_i16_le(r, a) { return bytesNatives.read_i16(r, a); },
+  read_i16_be(r, a) { const { view, idx } = bytesView(r, a[0], 2); return vInt(view.getInt16(idx, false)); },
+  read_u16_le(r, a) { return bytesNatives.read_u16(r, a); },
+  read_u16_be(r, a) { const { view, idx } = bytesView(r, a[0], 2); return vInt(view.getUint16(idx, false)); },
+  read_i32_le(r, a) { return bytesNatives.read_i32(r, a); },
+  read_i32_be(r, a) { const { view, idx } = bytesView(r, a[0], 4); return vInt(view.getInt32(idx, false)); },
+  read_u32_le(r, a) { return bytesNatives.read_u32(r, a); },
+  read_u32_be(r, a) { const { view, idx } = bytesView(r, a[0], 4); return vInt(view.getUint32(idx, false)); },
+  read_i64_le(r, a) { return bytesNatives.read_i64(r, a); },
+  read_i64_be(r, a) {
+    const { view, idx } = bytesView(r, a[0], 8);
+    const bi = view.getBigInt64(idx, false);
+    if (bi < BigInt(MIN_SAFE_INT) || bi > BigInt(MAX_SAFE_INT)) {
+      return vFail(`integer ${bi} outside safe range`);
+    }
+    return vInt(Number(bi));
+  },
+  read_u64_le(r, a) { return bytesNatives.read_u64(r, a); },
+  read_u64_be(r, a) {
+    const { view, idx } = bytesView(r, a[0], 8);
+    const bu = view.getBigUint64(idx, false);
+    if (bu > BigInt(MAX_SAFE_INT)) {
+      return vFail(`unsigned integer ${bu} outside safe range`);
+    }
+    return vInt(Number(bu));
+  },
+  read_f32_le(r, a) { return bytesNatives.read_f32(r, a); },
+  read_f32_be(r, a) { const { view, idx } = bytesView(r, a[0], 4); return checkFiniteFloat(view.getFloat32(idx, false)); },
+  read_f64_le(r, a) { return bytesNatives.read_f64(r, a); },
+  read_f64_be(r, a) { const { view, idx } = bytesView(r, a[0], 8); return checkFiniteFloat(view.getFloat64(idx, false)); },
+
+  write_i16_le(r, a) { return bytesNatives.write_i16(r, a); },
+  write_i16_be(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < -32768 || val.v > 32767) return vFail(`value ${val.v} out of range for i16`);
+    const { view, idx } = bytesView(r, a[0], 2);
+    view.setInt16(idx, val.v, false);
+    return vNone();
+  },
+  write_u16_le(r, a) { return bytesNatives.write_u16(r, a); },
+  write_u16_be(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < 0 || val.v > 65535) return vFail(`value ${val.v} out of range for u16`);
+    const { view, idx } = bytesView(r, a[0], 2);
+    view.setUint16(idx, val.v, false);
+    return vNone();
+  },
+  write_i32_le(r, a) { return bytesNatives.write_i32(r, a); },
+  write_i32_be(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < -2147483648 || val.v > 2147483647) return vFail(`value ${val.v} out of range for i32`);
+    const { view, idx } = bytesView(r, a[0], 4);
+    view.setInt32(idx, val.v, false);
+    return vNone();
+  },
+  write_u32_le(r, a) { return bytesNatives.write_u32(r, a); },
+  write_u32_be(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < 0 || val.v > 4294967295) return vFail(`value ${val.v} out of range for u32`);
+    const { view, idx } = bytesView(r, a[0], 4);
+    view.setUint32(idx, val.v, false);
+    return vNone();
+  },
+  write_i64_le(r, a) { return bytesNatives.write_i64(r, a); },
+  write_i64_be(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    const { view, idx } = bytesView(r, a[0], 8);
+    view.setBigInt64(idx, BigInt(val.v), false);
+    return vNone();
+  },
+  write_u64_le(r, a) { return bytesNatives.write_u64(r, a); },
+  write_u64_be(r, a) {
+    const val = widen(a[1]);
+    if (val.t !== 'int') return typeMismatch('Int', typeName(a[1]));
+    if (val.v < 0) return vFail(`value ${val.v} must be non-negative for u64`);
+    const { view, idx } = bytesView(r, a[0], 8);
+    view.setBigUint64(idx, BigInt(val.v), false);
+    return vNone();
+  },
+  write_f32_le(r, a) { return bytesNatives.write_f32(r, a); },
+  write_f32_be(r, a) {
+    const f = toF64(widen(a[1]));
+    if (Number.isNaN(f) || !Number.isFinite(f)) return typeMismatch('Float or Int', typeName(a[1]));
+    const { view, idx } = bytesView(r, a[0], 4);
+    view.setFloat32(idx, f, false);
+    return vNone();
+  },
+  write_f64_le(r, a) { return bytesNatives.write_f64(r, a); },
+  write_f64_be(r, a) {
+    const f = toF64(widen(a[1]));
+    if (Number.isNaN(f) || !Number.isFinite(f)) return typeMismatch('Float or Int', typeName(a[1]));
+    const { view, idx } = bytesView(r, a[0], 8);
+    view.setFloat64(idx, f, false);
+    return vNone();
+  },
+  slice(r, a) {
+    const s = widen(a[0]);
+    const e = widen(a[1]);
+    if (s.t !== 'int' || e.t !== 'int') return typeMismatch('Int', s.t !== 'int' ? typeName(a[0]) : typeName(a[1]));
+    const len = r.data.byteLength;
+    const start = s.v < 0 ? Math.max(0, len + s.v) : Math.min(len, s.v);
+    const end = e.v < 0 ? Math.max(0, len + e.v) : Math.min(len, e.v);
+    if (start >= end) return vBytes(new Uint8Array(0));
+    return vBytes(r.data.slice(start, end));
   },
   decode(r) {
     reqBytes(r);
@@ -1235,6 +1557,21 @@ function makeGlobals() {
     ['sqrt', nat('math.sqrt', 1, a => std_math_sqrt(a[0]))],
     ['pow', nat('math.pow', 2, a => std_math_pow(a[0], a[1]))],
     ['clamp', nat('math.clamp', 3, a => std_math_clamp(a[0], a[1], a[2]))],
+    ['sin', nat('math.sin', 1, a => std_math_sin(a[0]))],
+    ['cos', nat('math.cos', 1, a => std_math_cos(a[0]))],
+    ['tan', nat('math.tan', 1, a => std_math_tan(a[0]))],
+    ['asin', nat('math.asin', 1, a => std_math_asin(a[0]))],
+    ['acos', nat('math.acos', 1, a => std_math_acos(a[0]))],
+    ['atan', nat('math.atan', 1, a => std_math_atan(a[0]))],
+    ['atan2', nat('math.atan2', 2, a => std_math_atan2(a[0], a[1]))],
+    ['hypot', nat('math.hypot', 2, a => std_math_hypot(a[0], a[1]))],
+    ['log', nat('math.log', 1, a => std_math_log(a[0]))],
+    ['log2', nat('math.log2', 1, a => std_math_log2(a[0]))],
+    ['log10', nat('math.log10', 1, a => std_math_log10(a[0]))],
+    ['exp', nat('math.exp', 1, a => std_math_exp(a[0]))],
+    ['sign', nat('math.sign', 1, a => std_math_sign(a[0]))],
+    ['rad', nat('math.rad', 1, a => std_math_rad(a[0]))],
+    ['deg', nat('math.deg', 1, a => std_math_deg(a[0]))],
     ['pi', checkFiniteFloat(Math.PI)],
     ['e', checkFiniteFloat(Math.E)],
   ];
@@ -1258,6 +1595,10 @@ function makeGlobals() {
     sm('replace', 3, a => std_string_replace(a[0], a[1], a[2])),
     sm('slice', 3, a => std_string_slice(a[0], a[1], a[2])),
     sm('format', 2, a => std_string_format(a[0], a[1])),
+    sm('graphemes', 1, a => std_string_graphemes(a[0])),
+    sm('words', 1, a => std_string_words(a[0])),
+    sm('lines', 1, a => std_string_lines(a[0])),
+    sm('casefold', 1, a => std_string_casefold(a[0])),
   ]));
   // io module
   const ioText = v => (v.t === 'str' ? v.v : display(v));
@@ -1265,12 +1606,1354 @@ function makeGlobals() {
     [vStr('print'), nat('io.print', 1, a => { emitText(ioText(a[0])); return vNone(); })],
     [vStr('println'), nat('io.println', 1, a => { emitText(ioText(a[0])); emitText('\n'); return vNone(); })],
   ]));
-  // time module (capability-gated clock)
+  // time module (capability-gated clock + pure types)
   g.set('time', vDict([
     [vStr('now'), nat('time.now', 0, () => clockReading('clock.wall', 'time.now', c => c.wallSeconds()))],
     [vStr('monotonic'), nat('time.monotonic', 0, () => clockReading('clock.monotonic', 'time.monotonic', c => c.monotonicSeconds()))],
+    [vStr('date'), nat('time.date', 3, a => std_time_date(a[0], a[1], a[2]))],
+    [vStr('time_of_day'), nat('time.time_of_day', -1, a => std_time_time_of_day(a))],
+    [vStr('date_time'), nat('time.date_time', -1, a => std_time_date_time(a))],
+    [vStr('parse_date'), nat('time.parse_date', 1, a => std_time_parse_date(a[0]))],
+    [vStr('parse_time'), nat('time.parse_time', 1, a => std_time_parse_time(a[0]))],
+    [vStr('parse_iso'), nat('time.parse_iso', 1, a => std_time_parse_iso(a[0]))],
+    [vStr('parse_datetime'), nat('time.parse_datetime', 1, a => std_time_parse_iso(a[0]))],
+    [vStr('duration'), nat('time.duration', 1, a => std_time_duration(a[0]))],
+  ]));
+  // random module (deterministic PRNG)
+  const defaultRng = createRngInstance(0);
+  g.set('random', vDict([
+    [vStr('create'), nat('random.create', 1, a => createRngInstance(a[0] ? widen(a[0]).v : 0))],
+    [vStr('seed'), nat('random.seed', 1, a => {
+      const s = widen(a[0]);
+      if (s.t !== 'int') fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: expected Int seed');
+      const seedEntry = defaultRng.fields.find(([k]) => k === 'seed');
+      const stepEntry = defaultRng.fields.find(([k]) => k === 'step');
+      if (seedEntry) seedEntry[1] = vInt(s.v);
+      if (stepEntry) stepEntry[1] = vInt(0);
+      return vNone();
+    })],
+    [vStr('int'), nat('random.int', 2, a => rngMethodInt(defaultRng, a[0], a[1]))],
+    [vStr('float'), nat('random.float', 0, () => rngMethodFloat(defaultRng))],
+    [vStr('bool'), nat('random.bool', 0, () => rngMethodBool(defaultRng))],
+    [vStr('choice'), nat('random.choice', 1, a => rngMethodChoice(defaultRng, a[0]))],
+    [vStr('shuffle'), nat('random.shuffle', 1, a => rngMethodShuffle(defaultRng, a[0]))],
+  ]));
+  // json module
+  g.set('json', vDict([
+    [vStr('parse'), nat('json.parse', 1, a => std_json_parse(a[0]))],
+    [vStr('stringify'), nat('json.stringify', -1, a => std_json_stringify(a[0], a[1]))],
+  ]));
+  // encoding module
+  g.set('encoding', vDict([
+    [vStr('base64_encode'), nat('encoding.base64_encode', 1, a => std_encoding_base64_encode(a[0]))],
+    [vStr('base64_decode'), nat('encoding.base64_decode', 1, a => std_encoding_base64_decode(a[0]))],
+    [vStr('base64url_encode'), nat('encoding.base64url_encode', 1, a => std_encoding_base64url_encode(a[0]))],
+    [vStr('base64url_decode'), nat('encoding.base64url_decode', 1, a => std_encoding_base64url_decode(a[0]))],
+    [vStr('hex_encode'), nat('encoding.hex_encode', 1, a => std_encoding_hex_encode(a[0]))],
+    [vStr('hex_decode'), nat('encoding.hex_decode', 1, a => std_encoding_hex_decode(a[0]))],
+    [vStr('utf8_encode'), nat('encoding.utf8_encode', 1, a => std_encoding_utf8_encode(a[0]))],
+    [vStr('utf8_decode'), nat('encoding.utf8_decode', 1, a => std_encoding_utf8_decode(a[0]))],
+  ]));
+  // binary module
+  g.set('binary', vDict([
+    [vStr('read_i8'), nat('binary.read_i8', 2, a => bytesNatives.read_i8(a[0], [a[1]]))],
+    [vStr('read_u8'), nat('binary.read_u8', 2, a => bytesNatives.read_u8(a[0], [a[1]]))],
+    [vStr('read_i16_le'), nat('binary.read_i16_le', 2, a => bytesNatives.read_i16_le(a[0], [a[1]]))],
+    [vStr('read_i16_be'), nat('binary.read_i16_be', 2, a => bytesNatives.read_i16_be(a[0], [a[1]]))],
+    [vStr('read_u16_le'), nat('binary.read_u16_le', 2, a => bytesNatives.read_u16_le(a[0], [a[1]]))],
+    [vStr('read_u16_be'), nat('binary.read_u16_be', 2, a => bytesNatives.read_u16_be(a[0], [a[1]]))],
+    [vStr('read_i32_le'), nat('binary.read_i32_le', 2, a => bytesNatives.read_i32_le(a[0], [a[1]]))],
+    [vStr('read_i32_be'), nat('binary.read_i32_be', 2, a => bytesNatives.read_i32_be(a[0], [a[1]]))],
+    [vStr('read_u32_le'), nat('binary.read_u32_le', 2, a => bytesNatives.read_u32_le(a[0], [a[1]]))],
+    [vStr('read_u32_be'), nat('binary.read_u32_be', 2, a => bytesNatives.read_u32_be(a[0], [a[1]]))],
+    [vStr('read_i64_le'), nat('binary.read_i64_le', 2, a => bytesNatives.read_i64_le(a[0], [a[1]]))],
+    [vStr('read_i64_be'), nat('binary.read_i64_be', 2, a => bytesNatives.read_i64_be(a[0], [a[1]]))],
+    [vStr('read_u64_le'), nat('binary.read_u64_le', 2, a => bytesNatives.read_u64_le(a[0], [a[1]]))],
+    [vStr('read_u64_be'), nat('binary.read_u64_be', 2, a => bytesNatives.read_u64_be(a[0], [a[1]]))],
+    [vStr('read_f32_le'), nat('binary.read_f32_le', 2, a => bytesNatives.read_f32_le(a[0], [a[1]]))],
+    [vStr('read_f32_be'), nat('binary.read_f32_be', 2, a => bytesNatives.read_f32_be(a[0], [a[1]]))],
+    [vStr('read_f64_le'), nat('binary.read_f64_le', 2, a => bytesNatives.read_f64_le(a[0], [a[1]]))],
+    [vStr('read_f64_be'), nat('binary.read_f64_be', 2, a => bytesNatives.read_f64_be(a[0], [a[1]]))],
+    [vStr('write_i8'), nat('binary.write_i8', 3, a => bytesNatives.write_i8(a[0], [a[1], a[2]]))],
+    [vStr('write_u8'), nat('binary.write_u8', 3, a => bytesNatives.write_u8(a[0], [a[1], a[2]]))],
+    [vStr('write_i16_le'), nat('binary.write_i16_le', 3, a => bytesNatives.write_i16_le(a[0], [a[1], a[2]]))],
+    [vStr('write_i16_be'), nat('binary.write_i16_be', 3, a => bytesNatives.write_i16_be(a[0], [a[1], a[2]]))],
+    [vStr('write_u16_le'), nat('binary.write_u16_le', 3, a => bytesNatives.write_u16_le(a[0], [a[1], a[2]]))],
+    [vStr('write_u16_be'), nat('binary.write_u16_be', 3, a => bytesNatives.write_u16_be(a[0], [a[1], a[2]]))],
+    [vStr('write_i32_le'), nat('binary.write_i32_le', 3, a => bytesNatives.write_i32_le(a[0], [a[1], a[2]]))],
+    [vStr('write_i32_be'), nat('binary.write_i32_be', 3, a => bytesNatives.write_i32_be(a[0], [a[1], a[2]]))],
+    [vStr('write_u32_le'), nat('binary.write_u32_le', 3, a => bytesNatives.write_u32_le(a[0], [a[1], a[2]]))],
+    [vStr('write_u32_be'), nat('binary.write_u32_be', 3, a => bytesNatives.write_u32_be(a[0], [a[1], a[2]]))],
+    [vStr('write_i64_le'), nat('binary.write_i64_le', 3, a => bytesNatives.write_i64_le(a[0], [a[1], a[2]]))],
+    [vStr('write_i64_be'), nat('binary.write_i64_be', 3, a => bytesNatives.write_i64_be(a[0], [a[1], a[2]]))],
+    [vStr('write_u64_le'), nat('binary.write_u64_le', 3, a => bytesNatives.write_u64_le(a[0], [a[1], a[2]]))],
+    [vStr('write_u64_be'), nat('binary.write_u64_be', 3, a => bytesNatives.write_u64_be(a[0], [a[1], a[2]]))],
+    [vStr('write_f32_le'), nat('binary.write_f32_le', 3, a => bytesNatives.write_f32_le(a[0], [a[1], a[2]]))],
+    [vStr('write_f32_be'), nat('binary.write_f32_be', 3, a => bytesNatives.write_f32_be(a[0], [a[1], a[2]]))],
+    [vStr('write_f64_le'), nat('binary.write_f64_le', 3, a => bytesNatives.write_f64_le(a[0], [a[1], a[2]]))],
+    [vStr('write_f64_be'), nat('binary.write_f64_be', 3, a => bytesNatives.write_f64_be(a[0], [a[1], a[2]]))],
+    [vStr('read_varint'), nat('binary.read_varint', 2, a => std_binary_read_varint(a[0], a[1]))],
+    [vStr('write_varint'), nat('binary.write_varint', 3, a => std_binary_write_varint(a[0], a[1], a[2]))],
+    [vStr('slice'), nat('binary.slice', 3, a => bytesNatives.slice(a[0], [a[1], a[2]]))],
+  ]));
+  // path module
+  g.set('path', vDict([
+    [vStr('join'), nat('path.join', -1, a => std_path_join(a))],
+    [vStr('normalize'), nat('path.normalize', 1, a => std_path_normalize(a[0]))],
+    [vStr('is_absolute'), nat('path.is_absolute', 1, a => std_path_is_absolute(a[0]))],
+    [vStr('basename'), nat('path.basename', -1, a => std_path_basename(a[0], a[1]))],
+    [vStr('dirname'), nat('path.dirname', 1, a => std_path_dirname(a[0]))],
+    [vStr('ext'), nat('path.ext', 1, a => std_path_ext(a[0]))],
+  ]));
+  // url module
+  g.set('url', vDict([
+    [vStr('parse'), nat('url.parse', 1, a => std_url_parse(a[0]))],
+  ]));
+  // regex module
+  g.set('regex', vDict([
+    [vStr('compile'), nat('regex.compile', 1, a => std_regex_compile(a[0]))],
+    [vStr('is_match'), nat('regex.is_match', 2, a => std_regex_is_match(a[0], a[1]))],
+    [vStr('replace'), nat('regex.replace', 3, a => std_regex_replace(a[0], a[1], a[2]))],
+  ]));
+  // expect and testing modules
+  const expectDict = vDict([
+    [vStr('equal'), nat('expect.equal', 2, a => std_expect_equal(a[0], a[1]))],
+    [vStr('not_equal'), nat('expect.not_equal', 2, a => std_expect_not_equal(a[0], a[1]))],
+    [vStr('true'), nat('expect.true', 1, a => std_expect_true(a[0]))],
+    [vStr('false'), nat('expect.false', 1, a => std_expect_false(a[0]))],
+    [vStr('none'), nat('expect.none', 1, a => std_expect_none(a[0]))],
+    [vStr('some'), nat('expect.some', 1, a => std_expect_some(a[0]))],
+    [vStr('failure'), nat('expect.failure', 1, a => std_expect_failure(a[0]))],
+    [vStr('contains'), nat('expect.contains', 2, a => std_expect_contains(a[0], a[1]))],
+    [vStr('approx'), nat('expect.approx', -1, a => std_expect_approx(a))],
+  ]);
+  g.set('expect', expectDict);
+  g.set('testing', vDict([
+    [vStr('expect'), expectDict],
+    [vStr('equal'), nat('testing.equal', 2, a => std_expect_equal(a[0], a[1]))],
+    [vStr('not_equal'), nat('testing.not_equal', 2, a => std_expect_not_equal(a[0], a[1]))],
+    [vStr('true'), nat('testing.true', 1, a => std_expect_true(a[0]))],
+    [vStr('false'), nat('testing.false', 1, a => std_expect_false(a[0]))],
+    [vStr('none'), nat('testing.none', 1, a => std_expect_none(a[0]))],
+    [vStr('some'), nat('testing.some', 1, a => std_expect_some(a[0]))],
+    [vStr('failure'), nat('testing.failure', 1, a => std_expect_failure(a[0]))],
+    [vStr('contains'), nat('testing.contains', 2, a => std_expect_contains(a[0], a[1]))],
+    [vStr('approx'), nat('testing.approx', -1, a => std_expect_approx(a))],
+  ]));
+  // log module
+  g.set('log', vDict([
+    [vStr('trace'), nat('log.trace', -1, a => std_log_emit('TRACE', a))],
+    [vStr('debug'), nat('log.debug', -1, a => std_log_emit('DEBUG', a))],
+    [vStr('info'), nat('log.info', -1, a => std_log_emit('INFO', a))],
+    [vStr('warning'), nat('log.warning', -1, a => std_log_emit('WARNING', a))],
+    [vStr('error'), nat('log.error', -1, a => std_log_emit('ERROR', a))],
   ]));
   return g;
+}
+
+export function std_path_is_absolute(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  const p = arg.v;
+  if (p.startsWith('/') || p.startsWith('\\')) return vBool(true);
+  if (/^[A-Za-z]:[/\\]/.test(p)) return vBool(true);
+  return vBool(false);
+}
+
+function normalizePathStr(path) {
+  if (!path) return '.';
+  const isAbs = path.startsWith('/') || path.startsWith('\\');
+  const hasTrailing = path.endsWith('/') || path.endsWith('\\');
+
+  let prefix = '';
+  let rest = path;
+  if (/^[A-Za-z]:/.test(path)) {
+    prefix = path.slice(0, 2);
+    rest = path.slice(2);
+  }
+
+  const rawSegments = rest.split(/[/\\]/).filter(s => s !== '' && s !== '.');
+  const stack = [];
+  for (const seg of rawSegments) {
+    if (seg === '..') {
+      if (stack.length > 0 && stack[stack.length - 1] !== '..') {
+        stack.pop();
+        continue;
+      }
+      if (!isAbs) {
+        stack.push('..');
+      }
+    } else {
+      stack.push(seg);
+    }
+  }
+
+  let out = '';
+  if (prefix) {
+    out = prefix + '/';
+  } else if (isAbs) {
+    out = '/';
+  }
+
+  if (stack.length === 0) {
+    if (!out) return '.';
+  } else {
+    out += stack.join('/');
+    if (hasTrailing && !out.endsWith('/')) {
+      out += '/';
+    }
+  }
+
+  return out;
+}
+
+export function std_path_normalize(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  return vStr(normalizePathStr(arg.v));
+}
+
+export function std_path_join(args) {
+  const parts = [];
+  for (const arg of args) {
+    if (isFailure(arg)) return arg;
+    if (arg.t === 'list') {
+      for (const item of arg.items) {
+        if (isFailure(item)) return item;
+        if (item.t !== 'str') return typeMismatch('String', typeName(item));
+        parts.push(item.v);
+      }
+    } else if (arg.t === 'str') {
+      parts.push(arg.v);
+    } else {
+      return typeMismatch('String or List of Strings', typeName(arg));
+    }
+  }
+
+  if (parts.length === 0) return vStr('.');
+
+  let joined = '';
+  for (const part of parts) {
+    const isAbs = part.startsWith('/') || part.startsWith('\\') || /^[A-Za-z]:[/\\]/.test(part);
+    if (isAbs) {
+      joined = part;
+    } else if (!joined || joined === '.') {
+      joined = part;
+    } else {
+      if (!joined.endsWith('/') && !joined.endsWith('\\')) {
+        joined += '/';
+      }
+      joined += part;
+    }
+  }
+
+  return vStr(normalizePathStr(joined));
+}
+
+export function std_path_basename(arg, extArg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  let ext = '';
+  if (extArg !== undefined && extArg.t !== 'none') {
+    if (extArg.t !== 'str') return typeMismatch('String', typeName(extArg));
+    ext = extArg.v;
+  }
+  const clean = arg.v.replace(/[/\\]+$/, '');
+  const at = Math.max(clean.lastIndexOf('/'), clean.lastIndexOf('\\'));
+  const base = at >= 0 ? clean.slice(at + 1) : clean;
+  if (ext && base.endsWith(ext) && base.length > ext.length) {
+    return vStr(base.slice(0, base.length - ext.length));
+  }
+  return vStr(base);
+}
+
+export function std_path_dirname(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  const p = arg.v;
+  const clean = p.replace(/[/\\]+$/, '');
+  const at = Math.max(clean.lastIndexOf('/'), clean.lastIndexOf('\\'));
+  if (at === 0) return vStr('/');
+  if (at > 0) return vStr(clean.slice(0, at));
+  const isAbs = p.startsWith('/') || p.startsWith('\\') || /^[A-Za-z]:[/\\]/.test(p);
+  return vStr(isAbs ? '/' : '.');
+}
+
+export function std_path_ext(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  const clean = arg.v.replace(/[/\\]+$/, '');
+  const at = Math.max(clean.lastIndexOf('/'), clean.lastIndexOf('\\'));
+  const base = at >= 0 ? clean.slice(at + 1) : clean;
+  const dot = base.lastIndexOf('.');
+  if (dot > 0) {
+    return vStr(base.slice(dot));
+  }
+  return vStr('');
+}
+
+export function std_url_parse(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  try {
+    const u = new URL(arg.v);
+    return vDict([
+      [vStr('href'), vStr(u.href)],
+      [vStr('origin'), vStr(u.origin)],
+      [vStr('protocol'), vStr(u.protocol)],
+      [vStr('username'), vStr(u.username)],
+      [vStr('password'), vStr(u.password)],
+      [vStr('host'), vStr(u.host)],
+      [vStr('hostname'), vStr(u.hostname)],
+      [vStr('port'), vStr(u.port)],
+      [vStr('pathname'), vStr(u.pathname)],
+      [vStr('search'), vStr(u.search)],
+      [vStr('hash'), vStr(u.hash)],
+    ]);
+  } catch (e) {
+    return vFail(`invalid URL: ${e.message}`);
+  }
+}
+
+export function std_regex_compile(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  try {
+    new RegExp(arg.v);
+    return vStruct('Pattern', [['pattern', arg]]);
+  } catch (e) {
+    return vFail(`invalid regex pattern: ${e.message}`);
+  }
+}
+
+export function std_regex_is_match(pat, text) {
+  if (isFailure(pat)) return pat;
+  if (isFailure(text)) return text;
+  if (pat.t !== 'str') return typeMismatch('String', typeName(pat));
+  if (text.t !== 'str') return typeMismatch('String', typeName(text));
+  try {
+    const re = new RegExp(pat.v);
+    return vBool(re.test(text.v));
+  } catch (e) {
+    return vFail(`invalid regex pattern: ${e.message}`);
+  }
+}
+
+export function std_regex_replace(pat, text, repl) {
+  if (isFailure(pat)) return pat;
+  if (isFailure(text)) return text;
+  if (isFailure(repl)) return repl;
+  if (pat.t !== 'str') return typeMismatch('String', typeName(pat));
+  if (text.t !== 'str') return typeMismatch('String', typeName(text));
+  if (repl.t !== 'str') return typeMismatch('String', typeName(repl));
+  try {
+    const re = new RegExp(pat.v, 'g');
+    return vStr(text.v.replace(re, repl.v));
+  } catch (e) {
+    return vFail(`invalid regex pattern: ${e.message}`);
+  }
+}
+
+function getPatternStr(obj) {
+  if (isFailure(obj)) return obj;
+  if (obj.t !== 'struct' || obj.type !== 'Pattern') return typeMismatch('Pattern struct instance', typeName(obj));
+  const f = obj.fields.find(([k]) => k === 'pattern');
+  if (!f || f[1].t !== 'str') fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: Pattern has no String pattern field');
+  return f[1].v;
+}
+
+export function patternMethodIsMatch(recv, text) {
+  if (isFailure(recv)) return recv;
+  if (isFailure(text)) return text;
+  if (text.t !== 'str') return typeMismatch('String', typeName(text));
+  const pat = getPatternStr(recv);
+  if (typeof pat !== 'string') return pat;
+  try {
+    const re = new RegExp(pat);
+    return vBool(re.test(text.v));
+  } catch (e) {
+    return vFail(`regex error: ${e.message}`);
+  }
+}
+
+export function patternMethodFind(recv, text) {
+  if (isFailure(recv)) return recv;
+  if (isFailure(text)) return text;
+  if (text.t !== 'str') return typeMismatch('String', typeName(text));
+  const pat = getPatternStr(recv);
+  if (typeof pat !== 'string') return pat;
+  try {
+    const m = text.v.match(new RegExp(pat));
+    return m ? vStr(m[0]) : vNone();
+  } catch (e) {
+    return vFail(`regex error: ${e.message}`);
+  }
+}
+
+export function patternMethodFindAll(recv, text) {
+  if (isFailure(recv)) return recv;
+  if (isFailure(text)) return text;
+  if (text.t !== 'str') return typeMismatch('String', typeName(text));
+  const pat = getPatternStr(recv);
+  if (typeof pat !== 'string') return pat;
+  try {
+    const m = [...text.v.matchAll(new RegExp(pat, 'g'))];
+    return vList(m.map(x => vStr(x[0])));
+  } catch (e) {
+    return vFail(`regex error: ${e.message}`);
+  }
+}
+
+export function patternMethodReplace(recv, text, repl) {
+  if (isFailure(recv)) return recv;
+  if (isFailure(text)) return text;
+  if (isFailure(repl)) return repl;
+  if (text.t !== 'str') return typeMismatch('String', typeName(text));
+  if (repl.t !== 'str') return typeMismatch('String', typeName(repl));
+  const pat = getPatternStr(recv);
+  if (typeof pat !== 'string') return pat;
+  try {
+    const res = text.v.replace(new RegExp(pat, 'g'), repl.v);
+    return vStr(res);
+  } catch (e) {
+    return vFail(`regex error: ${e.message}`);
+  }
+}
+
+export function patternMethodSplit(recv, text) {
+  if (isFailure(recv)) return recv;
+  if (isFailure(text)) return text;
+  if (text.t !== 'str') return typeMismatch('String', typeName(text));
+  const pat = getPatternStr(recv);
+  if (typeof pat !== 'string') return pat;
+  try {
+    const parts = text.v.split(new RegExp(pat));
+    return vList(parts.map(vStr));
+  } catch (e) {
+    return vFail(`regex error: ${e.message}`);
+  }
+}
+
+function extractDataBytes(arg, op) {
+  if (isFailure(arg)) return arg;
+  if (arg.t === 'bytes') return arg.data;
+  if (arg.t === 'str') return new TextEncoder().encode(arg.v);
+  return typeMismatch('Bytes or String', typeName(arg));
+}
+
+export function std_encoding_base64_encode(arg) {
+  const bytes = extractDataBytes(arg, 'encoding.base64_encode');
+  if (isFailure(bytes)) return bytes;
+  if (typeof Buffer !== 'undefined') {
+    return vStr(Buffer.from(bytes).toString('base64'));
+  }
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return vStr(btoa(binary));
+}
+
+export function std_encoding_base64_decode(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  const text = arg.v.trim();
+  if (text === '') return vBytes(new Uint8Array(0));
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(text) || text.length % 4 !== 0) {
+    return vFail('invalid base64 string');
+  }
+  try {
+    if (typeof Buffer !== 'undefined') {
+      return vBytes(new Uint8Array(Buffer.from(text, 'base64')));
+    }
+    const bin = atob(text);
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return vBytes(u8);
+  } catch (e) {
+    return vFail(e.message);
+  }
+}
+
+export function std_encoding_base64url_encode(arg) {
+  const bytes = extractDataBytes(arg, 'encoding.base64url_encode');
+  if (isFailure(bytes)) return bytes;
+  let b64;
+  if (typeof Buffer !== 'undefined') {
+    b64 = Buffer.from(bytes).toString('base64');
+  } else {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    b64 = btoa(binary);
+  }
+  return vStr(b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
+}
+
+export function std_encoding_base64url_decode(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  let text = arg.v.trim().replace(/-/g, '+').replace(/_/g, '/');
+  while (text.length % 4 !== 0) {
+    text += '=';
+  }
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(text)) {
+    return vFail('invalid base64url string');
+  }
+  try {
+    if (typeof Buffer !== 'undefined') {
+      return vBytes(new Uint8Array(Buffer.from(text, 'base64')));
+    }
+    const bin = atob(text);
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return vBytes(u8);
+  } catch (e) {
+    return vFail(e.message);
+  }
+}
+
+export function std_encoding_hex_encode(arg) {
+  const bytes = extractDataBytes(arg, 'encoding.hex_encode');
+  if (isFailure(bytes)) return bytes;
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0');
+  }
+  return vStr(out);
+}
+
+export function std_encoding_hex_decode(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  const text = arg.v.trim();
+  if (text.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(text)) {
+    return vFail('invalid hex string');
+  }
+  const u8 = new Uint8Array(text.length / 2);
+  for (let i = 0; i < text.length; i += 2) {
+    u8[i / 2] = parseInt(text.slice(i, i + 2), 16);
+  }
+  return vBytes(u8);
+}
+
+export function std_encoding_utf8_encode(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'str') return typeMismatch('String', typeName(arg));
+  return vBytes(new TextEncoder().encode(arg.v));
+}
+
+export function std_encoding_utf8_decode(arg) {
+  if (isFailure(arg)) return arg;
+  if (arg.t !== 'bytes') return typeMismatch('Bytes', typeName(arg));
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(arg.data);
+    return vStr(text.normalize('NFC'));
+  } catch (_) {
+    return vFail('bytes are not valid UTF-8');
+  }
+}
+
+export function std_json_parse(textVal) {
+  if (isFailure(textVal)) return textVal;
+  if (textVal.t !== 'str') fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected String text, got ${typeName(textVal)}`);
+  try {
+    return parseJsonStrict(textVal.v);
+  } catch (e) {
+    return vFail(`json.parse error: ${e.message}`);
+  }
+}
+
+function parseJsonStrict(str) {
+  let pos = 0;
+  function skipWhitespace() {
+    while (pos < str.length && /\s/.test(str[pos])) pos++;
+  }
+  function parseValue() {
+    skipWhitespace();
+    if (pos >= str.length) throw new Error('unexpected end of JSON input');
+    const ch = str[pos];
+    if (ch === 'n') {
+      if (str.slice(pos, pos + 4) === 'null') { pos += 4; return vNone(); }
+      throw new Error(`unexpected token '${str.slice(pos, pos + 4)}'`);
+    }
+    if (ch === 't') {
+      if (str.slice(pos, pos + 4) === 'true') { pos += 4; return vBool(true); }
+      throw new Error(`unexpected token '${str.slice(pos, pos + 4)}'`);
+    }
+    if (ch === 'f') {
+      if (str.slice(pos, pos + 5) === 'false') { pos += 5; return vBool(false); }
+      throw new Error(`unexpected token '${str.slice(pos, pos + 5)}'`);
+    }
+    if (ch === '"') return parseString();
+    if (ch === '[') return parseArray();
+    if (ch === '{') return parseObject();
+    if (ch === '-' || (ch >= '0' && ch <= '9')) return parseNumber();
+    throw new Error(`unexpected character '${ch}' at position ${pos}`);
+  }
+  function parseString() {
+    const start = pos;
+    pos++;
+    while (pos < str.length) {
+      if (str[pos] === '\\') {
+        pos += 2;
+      } else if (str[pos] === '"') {
+        pos++;
+        const slice = str.slice(start, pos);
+        return vStr(JSON.parse(slice));
+      } else {
+        pos++;
+      }
+    }
+    throw new Error('unterminated string in JSON');
+  }
+  function parseNumber() {
+    const start = pos;
+    if (str[pos] === '-') pos++;
+    while (pos < str.length && /[0-9.eE+-]/.test(str[pos])) pos++;
+    const slice = str.slice(start, pos);
+    const num = Number(slice);
+    if (!Number.isFinite(num)) throw new Error(`invalid number '${slice}' in JSON`);
+    if (Number.isInteger(num) && num >= MIN_SAFE_INT && num <= MAX_SAFE_INT && !slice.includes('.') && !slice.includes('e') && !slice.includes('E')) {
+      return vInt(num);
+    }
+    return vFloat(num);
+  }
+  function parseArray() {
+    pos++;
+    skipWhitespace();
+    const items = [];
+    if (pos < str.length && str[pos] === ']') { pos++; return vList(items); }
+    while (pos < str.length) {
+      items.push(parseValue());
+      skipWhitespace();
+      if (pos >= str.length) throw new Error('unclosed array in JSON');
+      if (str[pos] === ',') {
+        pos++;
+        skipWhitespace();
+      } else if (str[pos] === ']') {
+        pos++;
+        return vList(items);
+      } else {
+        throw new Error(`expected ',' or ']' in JSON array, got '${str[pos]}'`);
+      }
+    }
+    throw new Error('unclosed array in JSON');
+  }
+  function parseObject() {
+    pos++;
+    skipWhitespace();
+    const entries = [];
+    const seen = new Set();
+    if (pos < str.length && str[pos] === '}') { pos++; return vDict(entries); }
+    while (pos < str.length) {
+      skipWhitespace();
+      if (pos >= str.length || str[pos] !== '"') throw new Error(`expected string key in JSON object, got '${str[pos]}'`);
+      const keyVal = parseString();
+      const key = keyVal.v;
+      if (seen.has(key)) throw new Error(`duplicate object key: '${key}'`);
+      seen.add(key);
+      skipWhitespace();
+      if (pos >= str.length || str[pos] !== ':') throw new Error(`expected ':' after key in JSON object, got '${str[pos]}'`);
+      pos++;
+      const val = parseValue();
+      entries.push([keyVal, val]);
+      skipWhitespace();
+      if (pos >= str.length) throw new Error('unclosed object in JSON');
+      if (str[pos] === ',') {
+        pos++;
+        skipWhitespace();
+      } else if (str[pos] === '}') {
+        pos++;
+        return vDict(entries);
+      } else {
+        throw new Error(`expected ',' or '}' in JSON object, got '${str[pos]}'`);
+      }
+    }
+    throw new Error('unclosed object in JSON');
+  }
+  const result = parseValue();
+  skipWhitespace();
+  if (pos < str.length) throw new Error(`extra data after JSON input at position ${pos}`);
+  return result;
+}
+
+export function std_json_stringify(val, prettyVal) {
+  if (isFailure(val)) return val;
+  const pretty = prettyVal && prettyVal.t === 'bool' ? prettyVal.v : false;
+  const active = new Set();
+  try {
+    return vStr(stringifyJson(val, pretty, 0, active));
+  } catch (e) {
+    return vFail(`json.stringify error: ${e.message}`);
+  }
+}
+
+function stringifyJson(v, pretty, depth, active) {
+  if (isFailure(v)) return vFail(v.msg);
+  switch (v.t) {
+    case 'none': return 'null';
+    case 'bool': return v.v ? 'true' : 'false';
+    case 'int': return String(v.v);
+    case 'float': {
+      if (!Number.isFinite(v.v)) throw new Error('non-finite float cannot be serialized to JSON');
+      return Number.isInteger(v.v) ? `${v.v}.0` : String(v.v);
+    }
+    case 'str': return JSON.stringify(v.v.normalize('NFC'));
+    case 'list': {
+      if (active.has(v.id)) throw new Error('cyclic value cannot be serialized');
+      active.add(v.id);
+      try {
+        if (v.items.length === 0) return '[]';
+        if (pretty) {
+          const ind = '  '.repeat(depth + 1);
+          const inner = v.items.map(it => ind + stringifyJson(it, pretty, depth + 1, active)).join(',\n');
+          return `[\n${inner}\n${'  '.repeat(depth)}]`;
+        }
+        return `[${v.items.map(it => stringifyJson(it, pretty, depth + 1, active)).join(', ')}]`;
+      } finally {
+        active.delete(v.id);
+      }
+    }
+    case 'dict': {
+      if (active.has(v.id)) throw new Error('cyclic value cannot be serialized');
+      active.add(v.id);
+      try {
+        if (v.entries.length === 0) return '{}';
+        if (pretty) {
+          const ind = '  '.repeat(depth + 1);
+          const inner = v.entries.map(([k, val]) => {
+            if (k.t !== 'str') throw new Error(`object keys must be strings, got ${typeName(k)}`);
+            return `${ind}${JSON.stringify(k.v.normalize('NFC'))}: ${stringifyJson(val, pretty, depth + 1, active)}`;
+          }).join(',\n');
+          return `{\n${inner}\n${'  '.repeat(depth)}}`;
+        }
+        const inner = v.entries.map(([k, val]) => {
+          if (k.t !== 'str') throw new Error(`object keys must be strings, got ${typeName(k)}`);
+          return `${JSON.stringify(k.v.normalize('NFC'))}: ${stringifyJson(val, pretty, depth + 1, active)}`;
+        }).join(', ');
+        return `{${inner}}`;
+      } finally {
+        active.delete(v.id);
+      }
+    }
+    case 'struct': {
+      if (v.fields.length === 0) return '{}';
+      if (pretty) {
+        const ind = '  '.repeat(depth + 1);
+        const inner = v.fields.map(([k, val]) => {
+          return `${ind}${JSON.stringify(k)}: ${stringifyJson(val, pretty, depth + 1, active)}`;
+        }).join(',\n');
+        return `{\n${inner}\n${'  '.repeat(depth)}}`;
+      }
+      const inner = v.fields.map(([k, val]) => {
+        return `${JSON.stringify(k)}: ${stringifyJson(val, pretty, depth + 1, active)}`;
+      }).join(', ');
+      return `{${inner}}`;
+    }
+    default:
+      throw new Error(`${typeName(v)} is not serializable to JSON`);
+  }
+}
+
+export function std_binary_read_varint(bytesVal, offsetVal) {
+  if (bytesVal.t !== 'bytes') typeMismatch('Bytes', typeName(bytesVal));
+  const off = widen(offsetVal);
+  if (off.t !== 'int') typeMismatch('Int', typeName(offsetVal));
+  const b = bytesVal.data;
+  const len = b.byteLength;
+  const at = off.v < 0 ? len + off.v : off.v;
+  if (at < 0 || at >= len) {
+    fault('AIPO_RT_INDEX_OUT_OF_RANGE', `index out of range: ${off.v} for length ${len}`);
+  }
+  let result = 0n;
+  let shift = 0n;
+  let bytesRead = 0;
+  while (at + bytesRead < len) {
+    const byte = b[at + bytesRead];
+    bytesRead++;
+    const payload = BigInt(byte & 0x7F);
+    if (shift >= 64n || (shift === 63n && payload > 1n)) {
+      return vFail('varint overflow: exceeds 64-bit integer');
+    }
+    result |= (payload << shift);
+    if ((byte & 0x80) === 0) {
+      if (result > 9007199254740991n) {
+        return vFail(`varint value ${result} exceeds safe integer range`);
+      }
+      return vList([vInt(Number(result)), vInt(bytesRead)]);
+    }
+    shift += 7n;
+  }
+  return vFail('unexpected end of bytes while reading varint');
+}
+
+export function std_binary_write_varint(bytesVal, offsetVal, val) {
+  if (bytesVal.t !== 'bytes') typeMismatch('Bytes', typeName(bytesVal));
+  const off = widen(offsetVal);
+  if (off.t !== 'int') typeMismatch('Int', typeName(offsetVal));
+  const v = widen(val);
+  if (v.t !== 'int') typeMismatch('non-negative Int for binary.write_varint', typeName(val));
+  if (v.v < 0) return vFail(`varint value ${v.v} must be non-negative`);
+  const b = bytesVal.data;
+  const len = b.byteLength;
+  const at = off.v < 0 ? len + off.v : off.v;
+  if (at < 0 || at > len) {
+    fault('AIPO_RT_INDEX_OUT_OF_RANGE', `index out of range: ${off.v} for length ${len}`);
+  }
+  let cur = BigInt(v.v);
+  const encoded = [];
+  while (true) {
+    const byte = Number(cur & 0x7Fn);
+    cur >>= 7n;
+    if (cur === 0n) {
+      encoded.push(byte);
+      break;
+    }
+    encoded.push(byte | 0x80);
+  }
+  if (at + encoded.length > len) {
+    fault('AIPO_RT_INDEX_OUT_OF_RANGE', `index out of range: ${off.v} for length ${len}`);
+  }
+  for (let i = 0; i < encoded.length; i++) {
+    b[at + i] = encoded[i];
+  }
+  return vInt(encoded.length);
+}
+
+function isLeapYear(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+}
+
+function daysInMonth(year, month) {
+  switch (month) {
+    case 1: case 3: case 5: case 7: case 8: case 10: case 12: return 31;
+    case 4: case 6: case 9: case 11: return 30;
+    case 2: return isLeapYear(year) ? 29 : 28;
+    default: return 0;
+  }
+}
+
+function daysSinceEpoch(year, month, day) {
+  const y = month <= 2 ? year - 1 : year;
+  const era = Math.floor((y >= 0 ? y : y - 399) / 400);
+  const yoe = y - era * 400;
+  const m = month <= 2 ? month + 12 : month;
+  const doy = Math.floor((153 * (m - 3) + 2) / 5) + day - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return era * 146097 + doe - 719468;
+}
+
+export function vDate(year, month, day) {
+  return vStruct('Date', [
+    ['year', vInt(year)],
+    ['month', vInt(month)],
+    ['day', vInt(day)],
+  ]);
+}
+
+export function vTimeOfDay(hour, minute, second, millisecond) {
+  return vStruct('TimeOfDay', [
+    ['hour', vInt(hour)],
+    ['minute', vInt(minute)],
+    ['second', vInt(second)],
+    ['millisecond', vInt(millisecond)],
+  ]);
+}
+
+export function vDateTime(year, month, day, hour, minute, second, millisecond, offsetMinutes) {
+  return vStruct('DateTime', [
+    ['year', vInt(year)],
+    ['month', vInt(month)],
+    ['day', vInt(day)],
+    ['hour', vInt(hour)],
+    ['minute', vInt(minute)],
+    ['second', vInt(second)],
+    ['millisecond', vInt(millisecond)],
+    ['offset_minutes', vInt(offsetMinutes)],
+  ]);
+}
+
+function getStructField(inst, field) {
+  const f = inst.fields.find(([k]) => k === field);
+  return f ? f[1] : null;
+}
+
+export function std_date_to_iso(receiver) {
+  if (receiver.t !== 'struct' || receiver.type !== 'Date') {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: Date struct receiver, got ${typeName(receiver)}`);
+  }
+  const y = getStructField(receiver, 'year')?.v ?? 0;
+  const m = getStructField(receiver, 'month')?.v ?? 0;
+  const d = getStructField(receiver, 'day')?.v ?? 0;
+  const ys = String(y).padStart(4, '0');
+  const ms = String(m).padStart(2, '0');
+  const ds = String(d).padStart(2, '0');
+  return vStr(`${ys}-${ms}-${ds}`);
+}
+
+export function std_time_to_iso(receiver) {
+  if (receiver.t !== 'struct' || receiver.type !== 'TimeOfDay') {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: TimeOfDay struct receiver, got ${typeName(receiver)}`);
+  }
+  const h = String(getStructField(receiver, 'hour')?.v ?? 0).padStart(2, '0');
+  const min = String(getStructField(receiver, 'minute')?.v ?? 0).padStart(2, '0');
+  const s = String(getStructField(receiver, 'second')?.v ?? 0).padStart(2, '0');
+  const msVal = getStructField(receiver, 'millisecond')?.v ?? 0;
+  if (msVal > 0) {
+    const ms = String(msVal).padStart(3, '0');
+    return vStr(`${h}:${min}:${s}.${ms}`);
+  }
+  return vStr(`${h}:${min}:${s}`);
+}
+
+export function std_datetime_to_iso(receiver) {
+  if (receiver.t !== 'struct' || receiver.type !== 'DateTime') {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: DateTime struct receiver, got ${typeName(receiver)}`);
+  }
+  const y = String(getStructField(receiver, 'year')?.v ?? 0).padStart(4, '0');
+  const m = String(getStructField(receiver, 'month')?.v ?? 0).padStart(2, '0');
+  const d = String(getStructField(receiver, 'day')?.v ?? 0).padStart(2, '0');
+  const h = String(getStructField(receiver, 'hour')?.v ?? 0).padStart(2, '0');
+  const min = String(getStructField(receiver, 'minute')?.v ?? 0).padStart(2, '0');
+  const s = String(getStructField(receiver, 'second')?.v ?? 0).padStart(2, '0');
+  const msVal = getStructField(receiver, 'millisecond')?.v ?? 0;
+  const offVal = getStructField(receiver, 'offset_minutes')?.v ?? 0;
+
+  const timeStr = msVal > 0 ? `${h}:${min}:${s}.${String(msVal).padStart(3, '0')}` : `${h}:${min}:${s}`;
+  let offStr = 'Z';
+  if (offVal !== 0) {
+    const sign = offVal >= 0 ? '+' : '-';
+    const absOff = Math.abs(offVal);
+    const offH = String(Math.floor(absOff / 60)).padStart(2, '0');
+    const offM = String(absOff % 60).padStart(2, '0');
+    offStr = `${sign}${offH}:${offM}`;
+  }
+  return vStr(`${y}-${m}-${d}T${timeStr}${offStr}`);
+}
+
+export function std_datetime_date(receiver) {
+  if (receiver.t !== 'struct' || receiver.type !== 'DateTime') {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: DateTime struct receiver, got ${typeName(receiver)}`);
+  }
+  const y = getStructField(receiver, 'year')?.v ?? 0;
+  const m = getStructField(receiver, 'month')?.v ?? 0;
+  const d = getStructField(receiver, 'day')?.v ?? 0;
+  return vDate(y, m, d);
+}
+
+export function std_datetime_time(receiver) {
+  if (receiver.t !== 'struct' || receiver.type !== 'DateTime') {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: DateTime struct receiver, got ${typeName(receiver)}`);
+  }
+  const h = getStructField(receiver, 'hour')?.v ?? 0;
+  const min = getStructField(receiver, 'minute')?.v ?? 0;
+  const s = getStructField(receiver, 'second')?.v ?? 0;
+  const ms = getStructField(receiver, 'millisecond')?.v ?? 0;
+  return vTimeOfDay(h, min, s, ms);
+}
+
+export function std_datetime_epoch_seconds(receiver) {
+  if (receiver.t !== 'struct' || receiver.type !== 'DateTime') {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: DateTime struct receiver, got ${typeName(receiver)}`);
+  }
+  const y = getStructField(receiver, 'year')?.v ?? 0;
+  const m = getStructField(receiver, 'month')?.v ?? 0;
+  const d = getStructField(receiver, 'day')?.v ?? 0;
+  const h = getStructField(receiver, 'hour')?.v ?? 0;
+  const min = getStructField(receiver, 'minute')?.v ?? 0;
+  const s = getStructField(receiver, 'second')?.v ?? 0;
+  const ms = getStructField(receiver, 'millisecond')?.v ?? 0;
+  const off = getStructField(receiver, 'offset_minutes')?.v ?? 0;
+
+  const days = daysSinceEpoch(y, m, d);
+  const totalSec = days * 86400 + h * 3600 + min * 60 + s - (off * 60);
+  const total = totalSec + ms / 1000.0;
+  return checkFiniteFloat(total);
+}
+
+export function std_time_date(yVal, mVal, dVal) {
+  const y = widen(yVal), m = widen(mVal), d = widen(dVal);
+  if (y.t !== 'int' || m.t !== 'int' || d.t !== 'int') {
+    fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: expected Int for year, month, day');
+  }
+  if (y.v < 1 || y.v > 9999) return vFail(`year ${y.v} out of valid range 1..=9999`);
+  if (m.v < 1 || m.v > 12) return vFail(`month ${m.v} out of valid range 1..=12`);
+  const maxD = daysInMonth(y.v, m.v);
+  if (d.v < 1 || d.v > maxD) {
+    return vFail(`day ${d.v} out of valid range 1..=${maxD} for month ${m.v} in year ${y.v}`);
+  }
+  return vDate(y.v, m.v, d.v);
+}
+
+export function std_time_time_of_day(args) {
+  if (args.length < 2 || args.length > 4) {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: 2 to 4 arguments for time.time_of_day, got ${args.length}`);
+  }
+  const h = widen(args[0]), min = widen(args[1]);
+  const s = args.length >= 3 ? widen(args[2]) : vInt(0);
+  const ms = args.length >= 4 ? widen(args[3]) : vInt(0);
+  if (h.t !== 'int' || min.t !== 'int' || s.t !== 'int' || ms.t !== 'int') {
+    fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: expected Int arguments for time.time_of_day');
+  }
+  if (h.v < 0 || h.v > 23) return vFail(`hour ${h.v} out of range 0..=23`);
+  if (min.v < 0 || min.v > 59) return vFail(`minute ${min.v} out of range 0..=59`);
+  if (s.v < 0 || s.v > 59) return vFail(`second ${s.v} out of range 0..=59`);
+  if (ms.v < 0 || ms.v > 999) return vFail(`millisecond ${ms.v} out of range 0..=999`);
+  return vTimeOfDay(h.v, min.v, s.v, ms.v);
+}
+
+export function std_time_date_time(args) {
+  if (args.length === 2 || args.length === 3) {
+    const dObj = args[0], tObj = args[1];
+    if (dObj.t !== 'struct' || dObj.type !== 'Date') {
+      fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: Date struct as first argument, got ${typeName(dObj)}`);
+    }
+    if (tObj.t !== 'struct' || tObj.type !== 'TimeOfDay') {
+      fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: TimeOfDay struct as second argument, got ${typeName(tObj)}`);
+    }
+    const off = args.length === 3 ? widen(args[2]) : vInt(0);
+    if (off.t !== 'int') fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: Int for offset_minutes');
+    if (off.v < -840 || off.v > 840) return vFail(`offset_minutes ${off.v} out of range -840..=840`);
+    const y = getStructField(dObj, 'year')?.v ?? 0;
+    const m = getStructField(dObj, 'month')?.v ?? 0;
+    const d = getStructField(dObj, 'day')?.v ?? 0;
+    const h = getStructField(tObj, 'hour')?.v ?? 0;
+    const min = getStructField(tObj, 'minute')?.v ?? 0;
+    const s = getStructField(tObj, 'second')?.v ?? 0;
+    const ms = getStructField(tObj, 'millisecond')?.v ?? 0;
+    return vDateTime(y, m, d, h, min, s, ms, off.v);
+  } else if (args.length >= 4 && args.length <= 8) {
+    const y = widen(args[0]), m = widen(args[1]), d = widen(args[2]), h = widen(args[3]);
+    const min = args.length >= 5 ? widen(args[4]) : vInt(0);
+    const s = args.length >= 6 ? widen(args[5]) : vInt(0);
+    const ms = args.length >= 7 ? widen(args[6]) : vInt(0);
+    const off = args.length >= 8 ? widen(args[7]) : vInt(0);
+    if ([y, m, d, h, min, s, ms, off].some(x => x.t !== 'int')) {
+      fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: Int for date_time arguments');
+    }
+    const dateCheck = std_time_date(y, m, d);
+    if (isFailure(dateCheck)) return dateCheck;
+    const timeCheck = std_time_time_of_day([h, min, s, ms]);
+    if (isFailure(timeCheck)) return timeCheck;
+    if (off.v < -840 || off.v > 840) return vFail(`offset_minutes ${off.v} out of range -840..=840`);
+    return vDateTime(y.v, m.v, d.v, h.v, min.v, s.v, ms.v, off.v);
+  } else {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: 2, 3 or 4..=8 arguments for time.date_time, got ${args.length}`);
+  }
+}
+
+export function std_time_duration(arg) {
+  const w = widen(arg);
+  if (w.t === 'duration') return w;
+  if (w.t === 'float') return vDuration(w.v);
+  if (w.t === 'int') return vDuration(w.v);
+  fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: Float or Int for time.duration, got ${typeName(arg)}`);
+}
+
+export function std_time_parse_date(arg) {
+  if (arg.t !== 'str') fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: String for time.parse_date, got ${typeName(arg)}`);
+  const text = arg.v.trim();
+  const parts = text.split('-');
+  if (parts.length !== 3) return vFail(`invalid date format "${text}", expected YYYY-MM-DD`);
+  const y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+  if (!Number.isInteger(y)) return vFail(`invalid year in date: "${parts[0]}"`);
+  if (!Number.isInteger(m)) return vFail(`invalid month in date: "${parts[1]}"`);
+  if (!Number.isInteger(d)) return vFail(`invalid day in date: "${parts[2]}"`);
+  return std_time_date(vInt(y), vInt(m), vInt(d));
+}
+
+export function std_time_parse_time(arg) {
+  if (arg.t !== 'str') fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: String for time.parse_time, got ${typeName(arg)}`);
+  const text = arg.v.trim();
+  const parts = text.split(':');
+  if (parts.length < 2 || parts.length > 3) {
+    return vFail(`invalid time format "${text}", expected HH:MM[:SS[.sss]]`);
+  }
+  const h = Number(parts[0]), min = Number(parts[1]);
+  if (!Number.isInteger(h)) return vFail(`invalid hour in time: "${parts[0]}"`);
+  if (!Number.isInteger(min)) return vFail(`invalid minute in time: "${parts[1]}"`);
+  let s = 0, ms = 0;
+  if (parts.length === 3) {
+    const secStr = parts[2];
+    const dot = secStr.indexOf('.');
+    if (dot >= 0) {
+      const secP = Number(secStr.slice(0, dot));
+      if (!Number.isInteger(secP)) return vFail(`invalid second: "${secStr.slice(0, dot)}"`);
+      s = secP;
+      let msText = secStr.slice(dot + 1);
+      if (msText.length > 3) msText = msText.slice(0, 3);
+      while (msText.length < 3) msText += '0';
+      ms = Number(msText) || 0;
+    } else {
+      const secP = Number(secStr);
+      if (!Number.isInteger(secP)) return vFail(`invalid second: "${secStr}"`);
+      s = secP;
+    }
+  }
+  return std_time_time_of_day([vInt(h), vInt(min), vInt(s), vInt(ms)]);
+}
+
+function parseOffsetMinutes(s, sign) {
+  const colon = s.indexOf(':');
+  if (colon >= 0) {
+    const h = Number(s.slice(0, colon)) || 0;
+    const m = Number(s.slice(colon + 1)) || 0;
+    return sign * (h * 60 + m);
+  } else if (s.length === 4) {
+    const h = Number(s.slice(0, 2)) || 0;
+    const m = Number(s.slice(2)) || 0;
+    return sign * (h * 60 + m);
+  } else if (s.length === 2) {
+    const h = Number(s) || 0;
+    return sign * (h * 60);
+  }
+  return 0;
+}
+
+export function std_time_parse_iso(arg) {
+  if (arg.t !== 'str') fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: String for time.parse_iso, got ${typeName(arg)}`);
+  const text = arg.v.trim();
+  let sepIdx = text.indexOf('T');
+  if (sepIdx < 0) sepIdx = text.indexOf('t');
+  if (sepIdx < 0) sepIdx = text.indexOf(' ');
+  if (sepIdx < 0) {
+    return vFail(`invalid ISO 8601 string "${text}": missing 'T' separator`);
+  }
+  const dateStr = text.slice(0, sepIdx);
+  const timeAndOffset = text.slice(sepIdx + 1);
+
+  const dVal = std_time_parse_date(vStr(dateStr));
+  if (isFailure(dVal)) return dVal;
+
+  let timeStr = timeAndOffset;
+  let offsetMinutes = 0;
+  if (timeAndOffset.endsWith('Z') || timeAndOffset.endsWith('z')) {
+    timeStr = timeAndOffset.slice(0, -1);
+    offsetMinutes = 0;
+  } else {
+    const plus = timeAndOffset.lastIndexOf('+');
+    const minus = timeAndOffset.lastIndexOf('-');
+    if (plus >= 0) {
+      timeStr = timeAndOffset.slice(0, plus);
+      offsetMinutes = parseOffsetMinutes(timeAndOffset.slice(plus + 1), 1);
+    } else if (minus >= 0) {
+      timeStr = timeAndOffset.slice(0, minus);
+      offsetMinutes = parseOffsetMinutes(timeAndOffset.slice(minus + 1), -1);
+    }
+  }
+
+  const tVal = std_time_parse_time(vStr(timeStr));
+  if (isFailure(tVal)) return tVal;
+
+  const y = getStructField(dVal, 'year')?.v ?? 0;
+  const m = getStructField(dVal, 'month')?.v ?? 0;
+  const d = getStructField(dVal, 'day')?.v ?? 0;
+  const h = getStructField(tVal, 'hour')?.v ?? 0;
+  const min = getStructField(tVal, 'minute')?.v ?? 0;
+  const s = getStructField(tVal, 'second')?.v ?? 0;
+  const ms = getStructField(tVal, 'millisecond')?.v ?? 0;
+
+  return vDateTime(y, m, d, h, min, s, ms, offsetMinutes);
+}
+
+export function std_expect_equal(actual, expected) {
+  if (valuesEqual(actual, expected)) {
+    return vNone();
+  }
+  return vFail(`expect.equal failed: expected ${display(expected)}, got ${display(actual)}`);
+}
+
+export function std_expect_not_equal(actual, expected) {
+  if (!valuesEqual(actual, expected)) {
+    return vNone();
+  }
+  return vFail(`expect.not_equal failed: expected values to differ, both are ${display(actual)}`);
+}
+
+export function std_expect_true(val) {
+  if (val.t === 'bool' && val.v === true) {
+    return vNone();
+  }
+  return vFail(`expect.true failed: expected true, got ${display(val)}`);
+}
+
+export function std_expect_false(val) {
+  if (val.t === 'bool' && val.v === false) {
+    return vNone();
+  }
+  return vFail(`expect.false failed: expected false, got ${display(val)}`);
+}
+
+export function std_expect_none(val) {
+  if (val.t === 'none') {
+    return vNone();
+  }
+  return vFail(`expect.none failed: expected none, got ${display(val)}`);
+}
+
+export function std_expect_some(val) {
+  if (val.t !== 'none') {
+    return vNone();
+  }
+  return vFail('expect.some failed: expected a value, got none');
+}
+
+export function std_expect_failure(val) {
+  if (isFailure(val)) {
+    return vNone();
+  }
+  return vFail(`expect.failure failed: expected Failure, got ${display(val)}`);
+}
+
+export function std_expect_contains(coll, elem) {
+  let found = false;
+  switch (coll.t) {
+    case 'str': {
+      if (elem.t !== 'str') typeMismatch('String substring', typeName(elem));
+      found = coll.v.includes(elem.v);
+      break;
+    }
+    case 'list': {
+      found = coll.items.some(x => valuesEqual(x, elem));
+      break;
+    }
+    case 'dict': {
+      found = dictGet(coll, elem) !== null;
+      break;
+    }
+    case 'set': {
+      found = coll.items.some(x => valuesEqual(x, elem));
+      break;
+    }
+    case 'bytes': {
+      const e = widen(elem);
+      if (e.t !== 'int' || e.v < 0 || e.v > 255) {
+        typeMismatch('Byte or Int in 0..=255', typeName(elem));
+      }
+      found = coll.data.includes(e.v);
+      break;
+    }
+    default:
+      typeMismatch('String, List, Dict, Set, or Bytes for expect.contains', typeName(coll));
+  }
+  if (found) {
+    return vNone();
+  }
+  return vFail(`expect.contains failed: collection does not contain ${display(elem)}`);
+}
+
+export function std_expect_approx(args) {
+  if (args.length < 2 || args.length > 3) {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: 2 or 3 arguments for expect.approx, got ${args.length}`);
+  }
+  const toNum = (v, name) => {
+    const w = widen(v);
+    if (w.t === 'int') return w.v;
+    if (w.t === 'float') return w.v;
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: Float or Int for ${name}, got ${typeName(v)}`);
+  };
+  const act = toNum(args[0], 'actual');
+  const exp = toNum(args[1], 'expected');
+  const tol = args.length === 3 ? toNum(args[2], 'tolerance') : 0.0001;
+  const diff = Math.abs(act - exp);
+  if (diff <= tol) {
+    return vNone();
+  }
+  return vFail(`expect.approx failed: difference ${diff} exceeds tolerance ${tol}`);
+}
+
+export function std_log_emit(level, args) {
+  if (args.length === 0 || args.length > 2) {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: 1 or 2 arguments (message, [fields]) for log, got ${args.length}`);
+  }
+  const msg = args[0].t === 'str' ? args[0].v : display(args[0]);
+  let line;
+  if (args.length === 2) {
+    const fieldsStr = display(args[1]);
+    line = `[${level}] ${msg} ${fieldsStr}`;
+  } else {
+    line = `[${level}] ${msg}`;
+  }
+  emitText(line + '\n');
+  return vNone();
+}
+
+const MASK64 = 0xFFFFFFFFFFFFFFFFn;
+const SPLITMIX_INC = 0x9e3779b97f4a7c15n;
+const SPLITMIX_MUL1 = 0xbf58476d1ce4e5b9n;
+const SPLITMIX_MUL2 = 0x94d049bb133111ebn;
+
+export function splitmix64Step(seed, step) {
+  const s = (BigInt(seed) + BigInt(step) * SPLITMIX_INC) & MASK64;
+  let z = s;
+  z = ((z ^ (z >> 30n)) * SPLITMIX_MUL1) & MASK64;
+  z = ((z ^ (z >> 27n)) * SPLITMIX_MUL2) & MASK64;
+  return (z ^ (z >> 31n)) & MASK64;
+}
+
+export function createRngInstance(seed) {
+  const s = (seed !== undefined && seed !== null) ? Number(widen(seed).v !== undefined ? widen(seed).v : seed) : 0;
+  return vStruct('Rng', [
+    ['seed', vInt(s)],
+    ['step', vInt(0)],
+  ]);
+}
+
+function rngStepWord(recv) {
+  if (recv.t !== 'struct' || recv.type !== 'Rng') {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected Rng struct receiver, got ${typeName(recv)}`);
+  }
+  const seedEntry = recv.fields.find(([k]) => k === 'seed');
+  const stepEntry = recv.fields.find(([k]) => k === 'step');
+  const seed = seedEntry ? seedEntry[1].v : 0;
+  const step = stepEntry ? stepEntry[1].v : 0;
+  const word = splitmix64Step(seed, step);
+  if (stepEntry) {
+    stepEntry[1] = vInt((step + 1) & 0x1FFFFFFFFFFFFF);
+  }
+  return word;
+}
+
+function rngMethodInt(recv, minVal, maxVal) {
+  const mn = widen(minVal), mx = widen(maxVal);
+  if (mn.t !== 'int' || mx.t !== 'int') fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: expected Int for min and max');
+  if (mn.v > mx.v) return vFail('random.int: min must be <= max');
+  if (mn.v === mx.v) return mn;
+  const word = rngStepWord(recv);
+  const span = BigInt(mx.v - mn.v + 1);
+  const n = Number(word % span);
+  return vInt(mn.v + n);
+}
+
+function rngMethodFloat(recv) {
+  const word = rngStepWord(recv);
+  const bits = word >> 11n;
+  const f = Number(bits) * (1 / 9007199254740992);
+  return checkFiniteFloat(f);
+}
+
+function rngMethodBool(recv) {
+  const word = rngStepWord(recv);
+  return vBool((word & 1n) === 1n);
+}
+
+function rngMethodChoice(recv, listVal) {
+  if (listVal.t !== 'list') fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: expected List');
+  if (listVal.items.length === 0) return vFail('random.choice: cannot choose from empty list');
+  const word = rngStepWord(recv);
+  const idx = Number(word % BigInt(listVal.items.length));
+  return listVal.items[idx];
+}
+
+function rngMethodShuffle(recv, listVal) {
+  if (listVal.t !== 'list') fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: expected List');
+  const items = [...listVal.items];
+  for (let i = items.length - 1; i > 0; i--) {
+    const word = rngStepWord(recv);
+    const j = Number(word % BigInt(i + 1));
+    const tmp = items[i];
+    items[i] = items[j];
+    items[j] = tmp;
+  }
+  return vList(items);
 }
 
 function mPush(m, v) {
@@ -1293,9 +2976,19 @@ function bindMethod(m, recv, name) {
     if (name === 'wait') return { t: 'bound', name, arity: 0, recv, kind: 'group' };
     return null;
   }
-  const tn = recv.t === 'struct' ? 'struct' : typeName(recv);
+  const tn = recv.t === 'struct' ? recv.type : typeName(recv);
   const key = `${tn}.${name}`;
   const table = {
+    'Rng.int': [2, a => rngMethodInt(a[0], a[1], a[2])],
+    'Rng.float': [0, a => rngMethodFloat(a[0])],
+    'Rng.bool': [0, a => rngMethodBool(a[0])],
+    'Rng.choice': [1, a => rngMethodChoice(a[0], a[1])],
+    'Rng.shuffle': [1, a => rngMethodShuffle(a[0], a[1])],
+    'Pattern.is_match': [1, a => patternMethodIsMatch(a[0], a[1])],
+    'Pattern.find': [1, a => patternMethodFind(a[0], a[1])],
+    'Pattern.find_all': [1, a => patternMethodFindAll(a[0], a[1])],
+    'Pattern.replace': [2, a => patternMethodReplace(a[0], a[1], a[2])],
+    'Pattern.split': [1, a => patternMethodSplit(a[0], a[1])],
     'String.len': [0, a => std_string_len(a[0])],
     'String.byte_len': [0, a => std_string_byte_len(a[0])],
     'String.contains': [1, a => std_string_contains(a[0], a[1])],
@@ -1312,7 +3005,12 @@ function bindMethod(m, recv, name) {
     'String.replace': [2, a => std_string_replace(a[0], a[1], a[2])],
     'String.slice': [2, a => std_string_slice(a[0], a[1], a[2])],
     'String.format': [1, a => std_string_format(a[0], a[1])],
+    'String.graphemes': [0, a => std_string_graphemes(a[0])],
+    'String.words': [0, a => std_string_words(a[0])],
+    'String.lines': [0, a => std_string_lines(a[0])],
+    'String.casefold': [0, a => std_string_casefold(a[0])],
     'String.encode': [0, a => { reqStr(a[0]); return vBytes(new TextEncoder().encode(a[0].v)); }],
+    'String.encode_utf8': [0, a => { reqStr(a[0]); return vBytes(new TextEncoder().encode(a[0].v)); }],
     'Duration.total_seconds': [0, a => { if (a[0].t !== 'duration') return typeMismatch('Duration', typeName(a[0])); return checkFiniteFloat(a[0].v); }],
     'List.add': [1, a => listNatives.add(a[0], a.slice(1))],
     'List.insert': [2, a => listNatives.insert(a[0], a.slice(1))],
@@ -1322,18 +3020,30 @@ function bindMethod(m, recv, name) {
     'List.clear': [0, a => listNatives.clear(a[0], a.slice(1))],
     'List.contains': [1, a => listNatives.contains(a[0], a.slice(1))],
     'List.find': [1, a => listNatives.find(a[0], a.slice(1))],
+    'List.find_index': [1, a => listNatives.find_index(a[0], a.slice(1))],
     'List.count': [1, a => listNatives.count(a[0], a.slice(1))],
     'List.first': [0, a => listNatives.first(a[0], a.slice(1))],
+    'List.first_or': [1, a => listNatives.first_or(a[0], a.slice(1))],
     'List.last': [0, a => listNatives.last(a[0], a.slice(1))],
+    'List.last_or': [1, a => listNatives.last_or(a[0], a.slice(1))],
     'List.is_empty': [0, a => listNatives.is_empty(a[0], a.slice(1))],
     'List.reverse': [0, a => listNatives.reverse(a[0], a.slice(1))],
     'List.sort': [0, a => listNatives.sort(a[0], a.slice(1))],
     'List.len': [0, a => listNatives.len(a[0], a.slice(1))],
+    'List.take': [1, a => listNatives.take(a[0], a.slice(1))],
+    'List.skip': [1, a => listNatives.skip(a[0], a.slice(1))],
+    'List.distinct': [0, a => listNatives.distinct(a[0], a.slice(1))],
+    'List.zip': [1, a => listNatives.zip(a[0], a.slice(1))],
+    'List.chain': [1, a => listNatives.chain(a[0], a.slice(1))],
+    'List.chunk': [1, a => listNatives.chunk(a[0], a.slice(1))],
+    'List.window': [1, a => listNatives.window(a[0], a.slice(1))],
+    'List.enumerate': [0, a => listNatives.enumerate(a[0], a.slice(1))],
     'List.lazy': [0, a => listNatives.lazy(a[0])],
     'Dict.has': [1, a => dictNatives.has(a[0], a.slice(1))],
     'Dict.get': [1, a => dictNatives.get(a[0], a.slice(1))],
     'Dict.keys': [0, a => dictNatives.keys(a[0], a.slice(1))],
     'Dict.values': [0, a => dictNatives.values(a[0], a.slice(1))],
+    'Dict.entries': [0, a => dictNatives.entries(a[0], a.slice(1))],
     'Dict.remove': [1, a => dictNatives.remove(a[0], a.slice(1))],
     'Dict.clear': [0, a => dictNatives.clear(a[0], a.slice(1))],
     'Dict.is_empty': [0, a => dictNatives.is_empty(a[0], a.slice(1))],
@@ -1347,6 +3057,7 @@ function bindMethod(m, recv, name) {
     'Set.len': [0, a => setNatives.len(a[0])],
     'Set.to_list': [0, a => setNatives.to_list(a[0])],
     'Set.lazy': [0, a => setNatives.lazy(a[0])],
+    'Bytes.len': [0, a => vInt(a[0].data.byteLength)],
     'Bytes.read_i8': [1, a => bytesNatives.read_i8(a[0], a.slice(1))],
     'Bytes.read_u8': [1, a => bytesNatives.read_u8(a[0], a.slice(1))],
     'Bytes.read_i16': [1, a => bytesNatives.read_i16(a[0], a.slice(1))],
@@ -1368,14 +3079,63 @@ function bindMethod(m, recv, name) {
     'Bytes.write_f32': [2, a => bytesNatives.write_f32(a[0], a.slice(1))],
     'Bytes.write_f64': [2, a => bytesNatives.write_f64(a[0], a.slice(1))],
     'Bytes.decode': [0, a => bytesNatives.decode(a[0])],
+    'Bytes.decode_utf8': [0, a => bytesNatives.decode(a[0])],
+    'Bytes.slice': [2, a => bytesNatives.slice(a[0], a.slice(1))],
+    'Bytes.read_i16_le': [1, a => bytesNatives.read_i16_le(a[0], a.slice(1))],
+    'Bytes.read_i16_be': [1, a => bytesNatives.read_i16_be(a[0], a.slice(1))],
+    'Bytes.read_u16_le': [1, a => bytesNatives.read_u16_le(a[0], a.slice(1))],
+    'Bytes.read_u16_be': [1, a => bytesNatives.read_u16_be(a[0], a.slice(1))],
+    'Bytes.read_i32_le': [1, a => bytesNatives.read_i32_le(a[0], a.slice(1))],
+    'Bytes.read_i32_be': [1, a => bytesNatives.read_i32_be(a[0], a.slice(1))],
+    'Bytes.read_u32_le': [1, a => bytesNatives.read_u32_le(a[0], a.slice(1))],
+    'Bytes.read_u32_be': [1, a => bytesNatives.read_u32_be(a[0], a.slice(1))],
+    'Bytes.read_i64_le': [1, a => bytesNatives.read_i64_le(a[0], a.slice(1))],
+    'Bytes.read_i64_be': [1, a => bytesNatives.read_i64_be(a[0], a.slice(1))],
+    'Bytes.read_u64_le': [1, a => bytesNatives.read_u64_le(a[0], a.slice(1))],
+    'Bytes.read_u64_be': [1, a => bytesNatives.read_u64_be(a[0], a.slice(1))],
+    'Bytes.read_f32_le': [1, a => bytesNatives.read_f32_le(a[0], a.slice(1))],
+    'Bytes.read_f32_be': [1, a => bytesNatives.read_f32_be(a[0], a.slice(1))],
+    'Bytes.read_f64_le': [1, a => bytesNatives.read_f64_le(a[0], a.slice(1))],
+    'Bytes.read_f64_be': [1, a => bytesNatives.read_f64_be(a[0], a.slice(1))],
+    'Bytes.write_i16_le': [2, a => bytesNatives.write_i16_le(a[0], a.slice(1))],
+    'Bytes.write_i16_be': [2, a => bytesNatives.write_i16_be(a[0], a.slice(1))],
+    'Bytes.write_u16_le': [2, a => bytesNatives.write_u16_le(a[0], a.slice(1))],
+    'Bytes.write_u16_be': [2, a => bytesNatives.write_u16_be(a[0], a.slice(1))],
+    'Bytes.write_i32_le': [2, a => bytesNatives.write_i32_le(a[0], a.slice(1))],
+    'Bytes.write_i32_be': [2, a => bytesNatives.write_i32_be(a[0], a.slice(1))],
+    'Bytes.write_u32_le': [2, a => bytesNatives.write_u32_le(a[0], a.slice(1))],
+    'Bytes.write_u32_be': [2, a => bytesNatives.write_u32_be(a[0], a.slice(1))],
+    'Bytes.write_i64_le': [2, a => bytesNatives.write_i64_le(a[0], a.slice(1))],
+    'Bytes.write_i64_be': [2, a => bytesNatives.write_i64_be(a[0], a.slice(1))],
+    'Bytes.write_u64_le': [2, a => bytesNatives.write_u64_le(a[0], a.slice(1))],
+    'Bytes.write_u64_be': [2, a => bytesNatives.write_u64_be(a[0], a.slice(1))],
+    'Bytes.write_f32_le': [2, a => bytesNatives.write_f32_le(a[0], a.slice(1))],
+    'Bytes.write_f32_be': [2, a => bytesNatives.write_f32_be(a[0], a.slice(1))],
+    'Bytes.write_f64_le': [2, a => bytesNatives.write_f64_le(a[0], a.slice(1))],
+    'Bytes.write_f64_be': [2, a => bytesNatives.write_f64_be(a[0], a.slice(1))],
+    'Duration.total_milliseconds': [0, a => { if (a[0].t !== 'duration') return typeMismatch('Duration', typeName(a[0])); return checkFiniteFloat(a[0].v * 1000); }],
+    'Duration.to_string': [0, a => { if (a[0].t !== 'duration') return typeMismatch('Duration', typeName(a[0])); return vStr(`${a[0].v}s`); }],
+    'Date.to_iso': [0, a => std_date_to_iso(a[0])],
+    'Date.to_string': [0, a => std_date_to_iso(a[0])],
+    'TimeOfDay.to_iso': [0, a => std_time_to_iso(a[0])],
+    'TimeOfDay.to_string': [0, a => std_time_to_iso(a[0])],
+    'DateTime.to_iso': [0, a => std_datetime_to_iso(a[0])],
+    'DateTime.to_string': [0, a => std_datetime_to_iso(a[0])],
+    'DateTime.date': [0, a => std_datetime_date(a[0])],
+    'DateTime.time': [0, a => std_datetime_time(a[0])],
+    'DateTime.epoch_seconds': [0, a => std_datetime_epoch_seconds(a[0])],
   };
   if (table[key]) {
     const [arity, fn] = table[key];
     return { t: 'bound', name, arity, recv, kind: 'native', fn };
   }
-  if ((name === 'filter' || name === 'transform' || name === 'sort_by') &&
+  if ((name === 'filter' || name === 'transform' || name === 'map' || name === 'sort_by' || name === 'any' || name === 'all' || name === 'flat_map') &&
       (recv.t === 'list' || recv.t === 'dict' || recv.t === 'set' || recv.t === 'str' || recv.t === 'range')) {
     return { t: 'bound', name, arity: 1, recv, kind: 'higher' };
+  }
+  if (name === 'reduce' &&
+      (recv.t === 'list' || recv.t === 'dict' || recv.t === 'set' || recv.t === 'str' || recv.t === 'range')) {
+    return { t: 'bound', name, arity: 2, recv, kind: 'higher' };
   }
   return null;
 }
@@ -1392,6 +3152,8 @@ function doGetField(m, target, field) {
     if (sm) {
       return { t: 'bound', name: `${target.type}.${field}`, arity: Math.max(0, m.module.functions[sm.idx].params.length - 1), recv: target, kind: 'ufunc', idx: sm.idx, total: sm.total };
     }
+    const b = bindMethod(m, target, field);
+    if (b) return b;
     fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: ${target.type} has no field '${field}'`);
   }
   if (target.t === 'dict') {
@@ -1422,6 +3184,7 @@ function convertViaType(tag, args) {
 }
 
 function checkArity(got, want, what) {
+  if (want === -1 || want === undefined) return;
   if (got !== want) fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected ${want} arguments${what ? ` for ${what}` : ''}, got ${got}`);
 }
 
@@ -1434,12 +3197,15 @@ function beginCall(m, argc) {
     mPush(m, f[0]);
     return;
   }
-  for (let i = 0; i < argc; i++) {
-    if (isFailure(m.stack[calleeIdx + 1 + i])) {
-      const f = m.stack[calleeIdx + 1 + i];
-      m.stack.length = calleeIdx;
-      mPush(m, f);
-      return;
+  const isFailureInspector = callee.t === 'native' && (callee.name === 'expect.failure' || callee.name === 'testing.failure');
+  if (!isFailureInspector) {
+    for (let i = 0; i < argc; i++) {
+      if (isFailure(m.stack[calleeIdx + 1 + i])) {
+        const f = m.stack[calleeIdx + 1 + i];
+        m.stack.length = calleeIdx;
+        mPush(m, f);
+        return;
+      }
     }
   }
   const args = m.stack.slice(calleeIdx + 1, calleeIdx + 1 + argc);
@@ -1503,9 +3269,8 @@ function beginCall(m, argc) {
       m.frames.push({ fn, ip: 0, vars: v, cells: null, base: calleeIdx, journalStart: m.journal.length });
       m.stack.length = calleeIdx + 1 + argc;
     } else if (callee.kind === 'higher') {
-      const callable = args[0] !== undefined ? args[0] : vNone();
       m.stack.length = calleeIdx;
-      const r = higherOrder(m, callee.name, callee.recv, callable);
+      const r = higherOrder(m, callee.name, callee.recv, args);
       mPush(m, r);
     }
   } else {
@@ -1570,12 +3335,13 @@ function invokeSame(m, callee, args) {
   return r;
 }
 
-function higherOrder(m, name, recv, callable) {
+function higherOrder(m, name, recv, args) {
   const items = iterableItems(m, recv);
   const guardId = (recv.t === 'list' || recv.t === 'dict' || recv.t === 'set') ? recv.id : null;
   if (guardId !== null) m.active.push(guardId);
   try {
     if (name === 'filter') {
+      const callable = args[0] !== undefined ? args[0] : vNone();
       const kept = [];
       for (const it of items) {
         let r;
@@ -1586,7 +3352,8 @@ function higherOrder(m, name, recv, callable) {
       }
       return vList(kept);
     }
-    if (name === 'transform') {
+    if (name === 'transform' || name === 'map') {
+      const callable = args[0] !== undefined ? args[0] : vNone();
       const out = [];
       for (const it of items) {
         try { out.push(invokeSame(m, callable, [it])); }
@@ -1594,7 +3361,60 @@ function higherOrder(m, name, recv, callable) {
       }
       return vList(out);
     }
+    if (name === 'any') {
+      const callable = args[0] !== undefined ? args[0] : vNone();
+      for (const it of items) {
+        let r;
+        try { r = invokeSame(m, callable, [it]); }
+        catch (e) { if (e instanceof AipoFault) throw e; throw new AipoFault('AIPO_RT_TYPE_MISMATCH', `type mismatch: ${e && e.uncaught ? e.uncaught : 'failure in predicate'}`); }
+        if (r.t !== 'bool') fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected Bool predicate result, got ${typeName(r)}`);
+        if (r.v) return vBool(true);
+      }
+      return vBool(false);
+    }
+    if (name === 'all') {
+      const callable = args[0] !== undefined ? args[0] : vNone();
+      for (const it of items) {
+        let r;
+        try { r = invokeSame(m, callable, [it]); }
+        catch (e) { if (e instanceof AipoFault) throw e; throw new AipoFault('AIPO_RT_TYPE_MISMATCH', `type mismatch: ${e && e.uncaught ? e.uncaught : 'failure in predicate'}`); }
+        if (r.t !== 'bool') fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected Bool predicate result, got ${typeName(r)}`);
+        if (!r.v) return vBool(false);
+      }
+      return vBool(true);
+    }
+    if (name === 'flat_map') {
+      const callable = args[0] !== undefined ? args[0] : vNone();
+      const flat = [];
+      for (const it of items) {
+        let sub;
+        try { sub = invokeSame(m, callable, [it]); }
+        catch (e) { if (e instanceof AipoFault) throw e; throw new AipoFault('AIPO_RT_TYPE_MISMATCH', `type mismatch: ${e && e.uncaught ? e.uncaught : 'failure in flat_map'}`); }
+        if (sub.t !== 'list') fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected List result from flat_map callback, got ${typeName(sub)}`);
+        flat.push(...sub.items);
+      }
+      return vList(flat);
+    }
+    if (name === 'reduce') {
+      if (args.length < 2) {
+        fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected 2 arguments for reduce: initial, callable, got ${args.length} arguments`);
+      }
+      let acc = args[0];
+      const callable = args[1];
+      if (isFailure(acc)) return acc;
+      for (const it of items) {
+        try {
+          acc = invokeSame(m, callable, [acc, it]);
+        } catch (e) {
+          if (e instanceof AipoFault) throw e;
+          acc = vFail(e && e.uncaught ? e.uncaught : 'failure in reduce');
+        }
+        if (isFailure(acc)) break;
+      }
+      return acc;
+    }
     if (name === 'sort_by') {
+      const callable = args[0] !== undefined ? args[0] : vNone();
       const keyed = [];
       for (const it of items) {
         let k;
@@ -1605,7 +3425,7 @@ function higherOrder(m, name, recv, callable) {
       keyed.sort((a, b) => sortKeyCompare(a[0], b[0]));
       return vList(keyed.map(([, it]) => it));
     }
-    return typeMismatch('filter, transform, or sort_by', name);
+    return typeMismatch('collection method', name);
   } finally {
     if (guardId !== null) {
       const at = m.active.lastIndexOf(guardId);
@@ -2808,6 +4628,18 @@ function stepFn(m) {
       const tag = mPop(m);
       const v = mPop(m);
       if (isFailure(v)) { mPush(m, v); break; }
+      if (tag.t !== 'type') return typeMismatch('type value on the right of is', typeName(tag));
+      mPush(m, vBool(tagMatches(tag.name, v)));
+      break;
+    }
+    case 'TypeIsNullable': {
+      const tag = mPop(m);
+      const v = mPop(m);
+      if (isFailure(v)) { mPush(m, v); break; }
+      if (v.t === 'none') {
+        mPush(m, vBool(true));
+        break;
+      }
       if (tag.t !== 'type') return typeMismatch('type value on the right of is', typeName(tag));
       mPush(m, vBool(tagMatches(tag.name, v)));
       break;

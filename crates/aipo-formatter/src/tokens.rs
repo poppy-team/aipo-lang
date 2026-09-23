@@ -71,6 +71,7 @@ pub fn classify(kind: &TokenKind) -> Class {
         | TokenKind::Greater
         | TokenKind::GreaterEqual
         | TokenKind::Equal
+        | TokenKind::FatArrow
         | TokenKind::Pipeline
         | TokenKind::And
         | TokenKind::Or
@@ -269,6 +270,7 @@ pub fn keyword_text(kind: &TokenKind) -> &'static str {
         TokenKind::Greater => ">",
         TokenKind::GreaterEqual => ">=",
         TokenKind::Equal => "=",
+        TokenKind::FatArrow => "=>",
         TokenKind::Pipeline => "|>",
         TokenKind::DotDot => "..",
         TokenKind::Dot => ".",

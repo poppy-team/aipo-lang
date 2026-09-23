@@ -10,7 +10,7 @@ pub mod module;
 pub mod opcode;
 pub mod verifier;
 
-pub use disasm::disassemble;
+pub use disasm::{disassemble, disassemble_with_source};
 pub use emitter::BytecodeEmitter;
 pub use module::{AIBC_MAGIC, AIBC_VERSION, BytecodeModule, FunctionInfo, StructInfo};
 pub use opcode::{Constant, OpCode};
@@ -167,5 +167,61 @@ mod tests {
         let res = compile(&module);
         assert!(res.is_err());
         assert!(res.unwrap_err()[0].contains("is negative"));
+    }
+
+    #[test]
+    fn test_binary_serialization_roundtrip() {
+        let src = Source::new(
+            SourceId::next(),
+            "test.aipo",
+            "struct Point\n    x\n    y\nend\n\nfn add(a: Int, b: Int) -> Int\n    return a + b\nend\n\nlet p = Point{x = 1, y = 2}\nadd(p.x, p.y)\n",
+        );
+        let (ast, diags) = parse(&src);
+        assert!(diags.is_empty(), "fixture must parse cleanly: {diags:?}");
+        let hir = lower(ast);
+        let ir = lower_to_ir(&hir);
+        let bc = compile(&ir).expect("compilation must succeed");
+
+        // Serialize to bytes
+        let bytes = bc.to_bytes();
+        assert!(bytes.starts_with(b"AIBC"));
+
+        // Deserialize from bytes
+        let roundtrip = BytecodeModule::from_bytes(&bytes).expect("deserialization must succeed");
+        assert_eq!(bc, roundtrip);
+
+        // Verification of deserialized module succeeds
+        BytecodeVerifier::verify(&roundtrip).expect("roundtrip module must be valid bytecode");
+    }
+
+    #[test]
+    fn test_binary_deserialization_rejects_bad_magic_and_version() {
+        let mut bytes = BytecodeModule::new().to_bytes();
+        bytes[0] = b'X';
+        assert!(BytecodeModule::from_bytes(&bytes).is_err());
+
+        let mut bytes = BytecodeModule::new().to_bytes();
+        bytes[4] = 0xFF; // bad version
+        assert!(BytecodeModule::from_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_disassemble_with_source_annotates_lines() {
+        let src = Source::new(
+            SourceId::next(),
+            "sample.aipo",
+            "let a = 1\nlet b = 2\nlet c = a + b\n",
+        );
+        let (ast, diags) = parse(&src);
+        assert!(diags.is_empty());
+        let hir = lower(ast);
+        let ir = lower_to_ir(&hir);
+        let bc = compile(&ir).expect("compilation must succeed");
+
+        let text = disassemble_with_source(&bc, &src);
+        assert!(text.contains("== Disassembly =="));
+        // Verify line annotation [line:col] is present for instructions
+        assert!(text.contains("[1:"));
+        assert!(text.contains("OpConstant"));
     }
 }

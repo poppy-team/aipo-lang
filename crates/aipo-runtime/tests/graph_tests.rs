@@ -206,7 +206,7 @@ fn test_error_display_and_codes_cover_all_variants() {
                 module: "m".to_string(),
                 reason: "boom".to_string(),
             },
-            DiagnosticCode::AIPO_RT_TYPE_MISMATCH,
+            DiagnosticCode::AIPO_RT_MODULE_INIT_FAILED,
             "boom",
         ),
     ];

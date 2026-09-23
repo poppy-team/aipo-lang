@@ -536,3 +536,487 @@ fn test_denied_clock_faults_identically_on_both_backends() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_short_lambdas_differential() {
+    let code = r#"
+let double = x => x * 2
+let add = (a, b) => a + b
+let get_42 = () => 42
+let sink = _ => 99
+
+io.println(double(21))
+io.println(add(10, 32))
+io.println(get_42())
+io.println(sink(123))
+"#;
+    let compiled = compile_code("short_lambdas.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("short_lambdas.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "42\n42\n42\n99\n");
+}
+
+#[test]
+fn test_elided_comparisons_differential() {
+    let code = r#"
+let x = 50
+let in_range = x >= 0 and <= 100
+let out_of_range = x < 0 or x > 100
+let typed_in_range = x is Int and >= 0 and <= 100
+
+io.println(in_range)
+io.println(out_of_range)
+io.println(typed_in_range)
+"#;
+    let compiled = compile_code("elided_comparisons.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("elided_comparisons.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "true\nfalse\ntrue\n");
+}
+
+#[test]
+fn test_collection_methods_differential() {
+    let code = r#"
+let nums = [1, 2, 3, 4, 5]
+let doubled = nums.map(x => x * 2)
+io.println(doubled)
+
+let has_even = nums.any(x => x % 2 == 0)
+let all_pos = nums.all(x => x > 0)
+let all_even = nums.all(x => x % 2 == 0)
+io.println(has_even)
+io.println(all_pos)
+io.println(all_even)
+
+let nested = [[1, 2], [3], [4, 5]]
+let flattened = nested.flat_map(x => x)
+io.println(flattened)
+
+let sum = nums.reduce(0, (acc, x) => acc + x)
+io.println(sum)
+
+let product = nums.reduce(1, (acc, x) => acc * x)
+io.println(product)
+
+let d = {"a": 1, "b": 2}
+let entries = d.entries()
+io.println(entries)
+
+let empty = []
+io.println(empty.first_or(999))
+io.println(empty.last_or(999))
+io.println(nums.first_or(999))
+io.println(nums.last_or(999))
+io.println(nums.find_index(3))
+io.println(nums.find_index(99))
+"#;
+    let compiled = compile_code("collection_methods.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("collection_methods.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "[2, 4, 6, 8, 10]\ntrue\ntrue\nfalse\n[1, 2, 3, 4, 5]\n15\n120\n[[a, 1], [b, 2]]\n999\n999\n1\n5\n2\nnone\n"
+    );
+}
+
+#[test]
+fn test_math_extensions_differential() {
+    let code = r#"
+io.println(math.sin(0))
+io.println(math.cos(0))
+io.println(math.tan(0))
+io.println(math.hypot(3, 4))
+io.println(math.log2(8))
+io.println(math.log10(100))
+io.println(math.exp(0))
+
+io.println(math.sign(42))
+io.println(math.sign(-42))
+io.println(math.sign(0))
+io.println(math.sign(3.14))
+io.println(math.sign(-3.14))
+
+attempt
+    let asin_err = math.asin(2.0)
+    io.println(asin_err)
+failed err
+    io.println(err.message)
+end
+
+let log_fallback = math.log(-1.0) or_else -999.0
+io.println(log_fallback)
+"#;
+    let compiled = compile_code("math_extensions.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("math_extensions.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "0.0\n1.0\n0.0\n5.0\n3.0\n2.0\n1.0\n1\n-1\n0\n1.0\n-1.0\nmath.asin domain error: argument must be between -1.0 and 1.0\n-999.0\n"
+    );
+}
+
+#[test]
+fn test_random_deterministic_differential() {
+    let code = r#"
+let rng = random.create(42)
+
+let n1 = rng.int(1, 100)
+let n2 = rng.int(1, 100)
+let n3 = rng.int(1, 100)
+io.println(n1)
+io.println(n2)
+io.println(n3)
+
+let b = rng.bool()
+io.println(b)
+
+let items = ["apple", "banana", "cherry", "date"]
+let chosen = rng.choice(items)
+io.println(chosen)
+
+let nums = [1, 2, 3, 4, 5]
+let shuffled = rng.shuffle(nums)
+io.println(shuffled)
+"#;
+    let compiled = compile_code("random_deterministic.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("random_deterministic.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+}
+
+#[test]
+fn test_json_module_differential() {
+    let code = r#"
+let text = "{\"name\": \"Aipo\", \"ver\": 1, \"active\": true}"
+let parsed = json.parse(text)
+io.println(parsed["name"])
+io.println(parsed["ver"])
+io.println(parsed["active"])
+
+let encoded = json.stringify(parsed)
+io.println(encoded)
+
+attempt
+    let bad = json.parse("{\"dup\": 1, \"dup\": 2}")
+    io.println(bad)
+failed err
+    io.println("duplicate key caught")
+end
+"#;
+    let compiled = compile_code("json_differential.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("json_differential.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "Aipo\n1\ntrue\n{\"name\": \"Aipo\", \"ver\": 1, \"active\": true}\nduplicate key caught\n"
+    );
+}
+
+#[test]
+fn test_encoding_module_differential() {
+    let code = r#"
+let orig = "Hello, Aipo 2026!"
+let b64 = encoding.base64_encode(orig)
+io.println(b64)
+
+let dec_b64 = encoding.base64_decode(b64)
+io.println(encoding.utf8_decode(dec_b64))
+
+let b64url = encoding.base64url_encode(orig)
+io.println(b64url)
+
+let dec_b64url = encoding.base64url_decode(b64url)
+io.println(encoding.utf8_decode(dec_b64url))
+
+let hex = encoding.hex_encode(orig)
+io.println(hex)
+
+let dec_hex = encoding.hex_decode(hex)
+io.println(encoding.utf8_decode(dec_hex))
+
+attempt
+    let bad = encoding.hex_decode("123")
+    io.println(bad)
+failed err
+    io.println("invalid hex caught")
+end
+"#;
+    let compiled = compile_code("encoding_differential.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("encoding_differential.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "SGVsbG8sIEFpcG8gMjAyNiE=\nHello, Aipo 2026!\nSGVsbG8sIEFpcG8gMjAyNiE\nHello, Aipo 2026!\n48656c6c6f2c204169706f203230323621\nHello, Aipo 2026!\ninvalid hex caught\n"
+    );
+}
+
+#[test]
+fn test_path_module_differential() {
+    let code = r#"
+let p = path.join("config", "app.json")
+io.println(p)
+
+let norm = path.normalize("src/utils/../main.aipo")
+io.println(norm)
+
+let is_abs1 = path.is_absolute("/home/user")
+let is_abs2 = path.is_absolute("relative/path")
+io.println(is_abs1)
+io.println(is_abs2)
+
+let full = "/var/log/system.log"
+io.println(path.basename(full))
+io.println(path.basename(full, ".log"))
+io.println(path.dirname(full))
+io.println(path.ext(full))
+"#;
+    let compiled = compile_code("path_differential.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("path_differential.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "config/app.json\nsrc/main.aipo\ntrue\nfalse\nsystem.log\nsystem\n/var/log\n.log\n"
+    );
+}
+
+#[test]
+fn test_string_human_facing_differential() {
+    let code = r#"
+let s = "café"
+io.println(s.graphemes())
+
+let sentence = "Hello, world! 2026"
+io.println(sentence.words())
+
+let multiline = "line1\nline2\nline3"
+io.println(multiline.lines())
+
+let upper = "AIPO CAFÉ"
+io.println(upper.casefold())
+
+let encoded = "UTF-8 text".encode_utf8()
+let decoded = encoded.decode_utf8()
+io.println(decoded)
+"#;
+    let compiled = compile_code("string_human_facing.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("string_human_facing.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "[c, a, f, é]\n[Hello, world, 2026]\n[line1, line2, line3]\naipo café\nUTF-8 text\n"
+    );
+}
+
+#[test]
+fn test_url_module_differential() {
+    let code = r#"
+let endpoint = url.parse("https://api.example.com/v1/users?page=1#details")
+io.println(endpoint.protocol)
+io.println(endpoint.hostname)
+io.println(endpoint.pathname)
+io.println(endpoint.search)
+io.println(endpoint.hash)
+io.println(endpoint.href)
+
+let bad = url.parse("not a url") or_else "fallback"
+io.println(bad)
+"#;
+    let compiled = compile_code("url_differential.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("url_differential.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "https:\napi.example.com\n/v1/users\n?page=1\n#details\nhttps://api.example.com/v1/users?page=1#details\nfallback\n"
+    );
+}
+
+#[test]
+fn test_eager_list_methods_differential() {
+    let code = r#"
+let nums = [1, 2, 2, 3, 4, 5]
+io.println(nums.take(3))
+io.println(nums.skip(3))
+io.println(nums.distinct())
+io.println([1, 2].zip(["a", "b"]))
+io.println([1, 2].chain([3, 4]))
+io.println([1, 2, 3, 4, 5].chunk(2))
+io.println([1, 2, 3, 4].window(2))
+io.println(["x", "y"].enumerate())
+"#;
+    let compiled = compile_code("eager_list_methods.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("eager_list_methods.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "[1, 2, 2]\n[3, 4, 5]\n[1, 2, 3, 4, 5]\n[[1, a], [2, b]]\n[1, 2, 3, 4]\n[[1, 2], [3, 4], [5]]\n[[1, 2], [2, 3], [3, 4]]\n[[0, x], [1, y]]\n"
+    );
+}
+
+#[test]
+fn test_regex_module_differential() {
+    let code = r##"
+let p = regex.compile("^[a-z0-9_]+$") or_else "invalid"
+io.println(p.is_match("user_123"))
+io.println(p.is_match("user 123!"))
+
+let digits = regex.compile("\\d+") or_else "invalid"
+let s = "items: 12, 34, 56"
+io.println(digits.find(s))
+io.println(digits.find_all(s))
+io.println(digits.replace(s, "#"))
+io.println(digits.split(s))
+
+let bad = regex.compile("[invalid") or_else "fallback_error"
+io.println(bad)
+"##;
+    let compiled = compile_code("regex_differential.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("regex_differential.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "true\nfalse\n12\n[12, 34, 56]\nitems: #, #, #\n[items: , , , , , ]\nfallback_error\n"
+    );
+}
+
+#[test]
+fn test_binary_module_differential() {
+    let code = r#"
+let buf = Bytes(16)
+binary.write_i16_be(buf, 0, 4660)
+binary.write_u32_be(buf, 2, 305419896)
+binary.write_f64_be(buf, 6, 3.141592653589793)
+
+io.println(binary.read_i16_be(buf, 0))
+io.println(binary.read_u32_be(buf, 2))
+io.println(binary.read_f64_be(buf, 6))
+
+let varbuf = Bytes(10)
+let written = binary.write_varint(varbuf, 0, 624485)
+io.println(written)
+let read = binary.read_varint(varbuf, 0)
+io.println(read)
+
+let sub = binary.slice(buf, 0, 6)
+io.println(sub.len())
+"#;
+    let compiled = compile_code("binary_differential.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("binary_differential.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "4660\n305419896\n3.141592653589793\n3\n[624485, 3]\n6\n"
+    );
+}
+
+#[test]
+fn test_time_pure_types_differential() {
+    let code = r#"
+let d = time.date(2026, 9, 22)
+io.println(d.to_iso())
+io.println(d.year)
+io.println(d.month)
+io.println(d.day)
+
+let t = time.time_of_day(14, 30, 45, 500)
+io.println(t.to_iso())
+
+let dt = time.date_time(d, t, 0)
+io.println(dt.to_iso())
+io.println(dt.epoch_seconds())
+
+let parsed = time.parse_iso("2026-09-22T14:30:45.500Z") or_else "invalid"
+io.println(parsed.to_iso())
+io.println(parsed.date().to_iso())
+io.println(parsed.time().to_iso())
+"#;
+    let compiled = compile_code("time_pure_types_differential.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("time_pure_types_differential.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "2026-09-22\n2026\n9\n22\n14:30:45.500\n2026-09-22T14:30:45.500Z\n1790087445.5\n2026-09-22T14:30:45.500Z\n2026-09-22\n14:30:45.500\n"
+    );
+}
+
+#[test]
+fn test_expect_and_testing_differential() {
+    let code = r#"
+io.println(expect.equal(10, 10))
+io.println(expect.not_equal(10, 20))
+io.println(expect.true(true))
+io.println(expect.false(false))
+io.println(expect.none(none))
+io.println(expect.some(42))
+io.println(expect.failure(fail("err")))
+io.println(expect.contains([1, 2, 3], 2))
+io.println(expect.approx(3.14159, 3.1415, 0.001))
+
+let mismatch = expect.equal(1, 2) or_else "recovered"
+io.println(mismatch)
+"#;
+    let compiled = compile_code("expect_differential.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("expect_differential.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "none\nnone\nnone\nnone\nnone\nnone\nnone\nnone\nnone\nrecovered\n"
+    );
+}
+
+#[test]
+fn test_log_module_differential() {
+    let code = r#"
+log.info("system started")
+log.error("failure detected", {"code": 500})
+"#;
+    let compiled = compile_code("log_differential.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("log_differential.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(
+        vm_out,
+        "[INFO] system started\n[ERROR] failure detected #{code: 500}\n"
+    );
+}
+
+#[test]
+fn test_is_nullable_and_multiple_is_differential() {
+    let code = r#"
+let a = none
+let b = 100
+let c = "hello"
+
+io.println(a is Int?)
+io.println(b is Int?)
+io.println(c is Int?)
+
+let x = 10
+let y = 20
+let z = 30
+let ok1 = x, y, z is Int
+let ok2 = x, "str", z is Int
+let ok3 = (x, none is Int?)
+io.println(ok1)
+io.println(ok2)
+io.println(ok3)
+"#;
+    let compiled = compile_code("is_differential.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("is_differential.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "true\ntrue\nfalse\ntrue\nfalse\ntrue\n");
+}

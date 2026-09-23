@@ -14,16 +14,25 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod binary;
 pub mod bytes;
 pub mod collections;
 pub mod convert;
 pub mod duration;
+pub mod encoding;
 pub mod io;
+pub mod json;
+pub mod log;
 pub mod math;
+pub mod path;
 pub mod prelude;
+pub mod random;
+pub mod regex;
 pub mod string;
 pub mod task;
+pub mod testing;
 pub mod time;
+pub mod url;
 
 use aipo_runtime::{NativeFunctionMeta, NativeRegistry};
 use aipo_vm::{TypeTag, Value, Vm, VmFault};
@@ -36,6 +45,15 @@ pub fn register_stdlib(vm: &mut Vm, registry: &mut NativeRegistry) {
     register_io(registry);
     register_task(registry);
     register_time(registry);
+    register_random(registry);
+    register_json(registry);
+    register_encoding(registry);
+    register_binary(registry);
+    register_path(registry);
+    register_url(registry);
+    register_regex(registry);
+    register_testing(registry);
+    register_log(registry);
     register_modules(vm);
     register_methods(vm);
 }
@@ -73,6 +91,10 @@ receiver_first!(method_string_join, string::string_join);
 receiver_first!(method_string_replace, string::string_replace);
 receiver_first!(method_string_slice, string::string_slice);
 receiver_first!(method_string_format, string::string_format);
+receiver_first!(method_string_graphemes, string::string_graphemes);
+receiver_first!(method_string_words, string::string_words);
+receiver_first!(method_string_lines, string::string_lines);
+receiver_first!(method_string_casefold, string::string_casefold);
 
 /// Registers dot-call sugar for the core types so `text.upper()` and `list.len()` resolve.
 ///
@@ -96,10 +118,17 @@ fn register_methods(vm: &mut Vm) {
     vm.register_method_native("String", "replace", 2, method_string_replace);
     vm.register_method_native("String", "slice", 2, method_string_slice);
     vm.register_method_native("String", "format", 1, method_string_format);
+    vm.register_method_native("String", "graphemes", 0, method_string_graphemes);
+    vm.register_method_native("String", "words", 0, method_string_words);
+    vm.register_method_native("String", "lines", 0, method_string_lines);
+    vm.register_method_native("String", "casefold", 0, method_string_casefold);
 
     collections::register_methods(vm);
     bytes::register_methods(vm);
     duration::register_methods(vm);
+    time::register_methods(vm);
+    random::register_methods(vm);
+    regex::register_methods(vm);
 }
 
 fn native(
@@ -270,6 +299,96 @@ fn register_math(registry: &mut NativeRegistry) {
         3,
         Some("math"),
         "Constrains a number to the inclusive [min, max] interval.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "sin",
+        1,
+        Some("math"),
+        "Computes sine of angle in radians.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "cos",
+        1,
+        Some("math"),
+        "Computes cosine of angle in radians.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "tan",
+        1,
+        Some("math"),
+        "Computes tangent of angle in radians.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "asin",
+        1,
+        Some("math"),
+        "Computes arc sine in radians.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "acos",
+        1,
+        Some("math"),
+        "Computes arc cosine in radians.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "atan",
+        1,
+        Some("math"),
+        "Computes arc tangent in radians.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "atan2",
+        2,
+        Some("math"),
+        "Computes two-argument arc tangent.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "hypot",
+        2,
+        Some("math"),
+        "Computes Euclidean distance sqrt(x^2 + y^2).",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "log",
+        1,
+        Some("math"),
+        "Computes natural logarithm (base e).",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "log2",
+        1,
+        Some("math"),
+        "Computes base-2 logarithm.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "log10",
+        1,
+        Some("math"),
+        "Computes base-10 logarithm.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "exp",
+        1,
+        Some("math"),
+        "Computes exponential e^x.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "sign",
+        1,
+        Some("math"),
+        "Returns the sign of a number (-1, 0, or 1).",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "rad",
+        1,
+        Some("math"),
+        "Converts degrees to radians.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "deg",
+        1,
+        Some("math"),
+        "Converts radians to degrees.",
     ));
 }
 
@@ -442,6 +561,434 @@ fn register_modules(vm: &mut Vm) {
     vm.define_global("io", io::create_module());
     vm.define_global("task", task::create_module());
     vm.define_global("time", time::create_module());
+    vm.define_global("random", random::create_module());
+    vm.define_global("json", json::create_module());
+    vm.define_global("encoding", encoding::create_module());
+    vm.define_global("binary", binary::create_module());
+    vm.define_global("path", path::create_module());
+    vm.define_global("url", url::create_module());
+    vm.define_global("regex", regex::create_module());
+    vm.define_global("expect", testing::create_expect_module());
+    vm.define_global("testing", testing::create_module());
+    vm.define_global("log", log::create_module());
+}
+
+/// Registers `testing` module metadata.
+fn register_testing(registry: &mut NativeRegistry) {
+    macro_rules! reg {
+        ($name:expr, $arity:expr, $doc:expr) => {
+            registry.register(NativeFunctionMeta::new($name, $arity, Some("expect"), $doc));
+            registry.register(NativeFunctionMeta::new(
+                $name,
+                $arity,
+                Some("testing"),
+                $doc,
+            ));
+        };
+    }
+    reg!(
+        "equal",
+        2,
+        "Asserts actual == expected, returning none or Failure."
+    );
+    reg!(
+        "not_equal",
+        2,
+        "Asserts actual != expected, returning none or Failure."
+    );
+    reg!(
+        "true",
+        1,
+        "Asserts value is true, returning none or Failure."
+    );
+    reg!(
+        "false",
+        1,
+        "Asserts value is false, returning none or Failure."
+    );
+    reg!(
+        "none",
+        1,
+        "Asserts value is none, returning none or Failure."
+    );
+    reg!(
+        "some",
+        1,
+        "Asserts value is not none, returning none or Failure."
+    );
+    reg!(
+        "failure",
+        1,
+        "Asserts value is a Failure, returning none or Failure."
+    );
+    reg!(
+        "contains",
+        2,
+        "Asserts collection contains element, returning none or Failure."
+    );
+    reg!(
+        "approx",
+        2,
+        "Asserts floating point difference <= tolerance, returning none or Failure."
+    );
+}
+
+/// Registers `log` module metadata.
+fn register_log(registry: &mut NativeRegistry) {
+    macro_rules! reg {
+        ($name:expr, $doc:expr) => {
+            registry.register(NativeFunctionMeta::new($name, 1, Some("log"), $doc));
+        };
+    }
+    reg!("trace", "Emits structured log at TRACE level.");
+    reg!("debug", "Emits structured log at DEBUG level.");
+    reg!("info", "Emits structured log at INFO level.");
+    reg!("warning", "Emits structured log at WARNING level.");
+    reg!("error", "Emits structured log at ERROR level.");
+}
+
+/// Registers `binary` module metadata.
+fn register_binary(registry: &mut NativeRegistry) {
+    macro_rules! reg {
+        ($name:expr, $arity:expr, $doc:expr) => {
+            registry.register(NativeFunctionMeta::new($name, $arity, Some("binary"), $doc));
+        };
+    }
+    reg!("read_i8", 2, "Reads a signed 8-bit integer at offset.");
+    reg!("read_u8", 2, "Reads an unsigned 8-bit integer at offset.");
+    reg!(
+        "read_i16_le",
+        2,
+        "Reads a signed 16-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "read_i16_be",
+        2,
+        "Reads a signed 16-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "read_u16_le",
+        2,
+        "Reads an unsigned 16-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "read_u16_be",
+        2,
+        "Reads an unsigned 16-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "read_i32_le",
+        2,
+        "Reads a signed 32-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "read_i32_be",
+        2,
+        "Reads a signed 32-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "read_u32_le",
+        2,
+        "Reads an unsigned 32-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "read_u32_be",
+        2,
+        "Reads an unsigned 32-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "read_i64_le",
+        2,
+        "Reads a signed 64-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "read_i64_be",
+        2,
+        "Reads a signed 64-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "read_u64_le",
+        2,
+        "Reads an unsigned 64-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "read_u64_be",
+        2,
+        "Reads an unsigned 64-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "read_f32_le",
+        2,
+        "Reads a 32-bit float (little-endian) at offset."
+    );
+    reg!(
+        "read_f32_be",
+        2,
+        "Reads a 32-bit float (big-endian) at offset."
+    );
+    reg!(
+        "read_f64_le",
+        2,
+        "Reads a 64-bit float (little-endian) at offset."
+    );
+    reg!(
+        "read_f64_be",
+        2,
+        "Reads a 64-bit float (big-endian) at offset."
+    );
+
+    reg!("write_i8", 3, "Writes a signed 8-bit integer at offset.");
+    reg!("write_u8", 3, "Writes an unsigned 8-bit integer at offset.");
+    reg!(
+        "write_i16_le",
+        3,
+        "Writes a signed 16-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "write_i16_be",
+        3,
+        "Writes a signed 16-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "write_u16_le",
+        3,
+        "Writes an unsigned 16-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "write_u16_be",
+        3,
+        "Writes an unsigned 16-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "write_i32_le",
+        3,
+        "Writes a signed 32-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "write_i32_be",
+        3,
+        "Writes a signed 32-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "write_u32_le",
+        3,
+        "Writes an unsigned 32-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "write_u32_be",
+        3,
+        "Writes an unsigned 32-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "write_i64_le",
+        3,
+        "Writes a signed 64-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "write_i64_be",
+        3,
+        "Writes a signed 64-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "write_u64_le",
+        3,
+        "Writes an unsigned 64-bit integer (little-endian) at offset."
+    );
+    reg!(
+        "write_u64_be",
+        3,
+        "Writes an unsigned 64-bit integer (big-endian) at offset."
+    );
+    reg!(
+        "write_f32_le",
+        3,
+        "Writes a 32-bit float (little-endian) at offset."
+    );
+    reg!(
+        "write_f32_be",
+        3,
+        "Writes a 32-bit float (big-endian) at offset."
+    );
+    reg!(
+        "write_f64_le",
+        3,
+        "Writes a 64-bit float (little-endian) at offset."
+    );
+    reg!(
+        "write_f64_be",
+        3,
+        "Writes a 64-bit float (big-endian) at offset."
+    );
+
+    reg!(
+        "read_varint",
+        2,
+        "Reads an unsigned LEB128 varint returning [value, bytes_read]."
+    );
+    reg!(
+        "write_varint",
+        3,
+        "Writes an unsigned LEB128 varint returning bytes_written."
+    );
+    reg!(
+        "slice",
+        3,
+        "Slices a byte buffer with tolerant bounds returning new Bytes."
+    );
+}
+
+/// Registers `path` module metadata.
+fn register_path(registry: &mut NativeRegistry) {
+    registry.register(NativeFunctionMeta::new(
+        "join",
+        1,
+        Some("path"),
+        "Joins multiple path segments into a normalized path.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "normalize",
+        1,
+        Some("path"),
+        "Logically normalizes a path resolving '.' and '..' segments.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "is_absolute",
+        1,
+        Some("path"),
+        "Returns true if the path starts with a root separator or drive letter.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "basename",
+        1,
+        Some("path"),
+        "Returns the final component of a path, optionally stripping an extension.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "dirname",
+        1,
+        Some("path"),
+        "Returns the directory component of a path.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "ext",
+        1,
+        Some("path"),
+        "Returns the extension portion of a path including the dot.",
+    ));
+}
+
+/// Registers `encoding` module metadata.
+fn register_encoding(registry: &mut NativeRegistry) {
+    registry.register(NativeFunctionMeta::new(
+        "base64_encode",
+        1,
+        Some("encoding"),
+        "Encodes Bytes or String into standard Base64 string.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "base64_decode",
+        1,
+        Some("encoding"),
+        "Decodes standard Base64 string into Bytes, returning Failure on error.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "base64url_encode",
+        1,
+        Some("encoding"),
+        "Encodes Bytes or String into unpadded URL-safe Base64 string.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "base64url_decode",
+        1,
+        Some("encoding"),
+        "Decodes URL-safe Base64 string into Bytes, returning Failure on error.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "hex_encode",
+        1,
+        Some("encoding"),
+        "Encodes Bytes or String into lowercase hexadecimal string.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "hex_decode",
+        1,
+        Some("encoding"),
+        "Decodes hexadecimal string into Bytes, returning Failure on error.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "utf8_encode",
+        1,
+        Some("encoding"),
+        "Encodes String into UTF-8 Bytes.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "utf8_decode",
+        1,
+        Some("encoding"),
+        "Decodes UTF-8 Bytes into String, returning Failure on error.",
+    ));
+}
+
+/// Registers `json` module metadata.
+fn register_json(registry: &mut NativeRegistry) {
+    registry.register(NativeFunctionMeta::new(
+        "parse",
+        1,
+        Some("json"),
+        "Parses JSON text into an Aipo value, returning Failure on error.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "stringify",
+        1,
+        Some("json"),
+        "Serializes an Aipo value to a JSON string (optional pretty = false).",
+    ));
+}
+
+/// Registers `random` module metadata.
+fn register_random(registry: &mut NativeRegistry) {
+    registry.register(NativeFunctionMeta::new(
+        "create",
+        1,
+        Some("random"),
+        "Creates a deterministic Rng generator instance.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "seed",
+        1,
+        Some("random"),
+        "Seeds the default generator.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "int",
+        2,
+        Some("random"),
+        "Generates a random integer in inclusive [min, max].",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "float",
+        0,
+        Some("random"),
+        "Generates a random float in [0.0, 1.0).",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "bool",
+        0,
+        Some("random"),
+        "Generates a random boolean.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "choice",
+        1,
+        Some("random"),
+        "Selects a random element from a list.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "shuffle",
+        1,
+        Some("random"),
+        "Returns a new list with elements shuffled.",
+    ));
 }
 
 /// Registers `time` module metadata.
@@ -460,5 +1007,85 @@ fn register_time(registry: &mut NativeRegistry) {
         0,
         Some("time"),
         "Reads the monotonic clock (capability `clock.monotonic`).",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "date",
+        3,
+        Some("time"),
+        "Creates a Date struct instance (year, month, day).",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "time_of_day",
+        2,
+        Some("time"),
+        "Creates a TimeOfDay struct instance (hour, minute, [second, millisecond]).",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "date_time",
+        2,
+        Some("time"),
+        "Creates a DateTime struct instance from date/time components or objects.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "parse_date",
+        1,
+        Some("time"),
+        "Parses a date string in YYYY-MM-DD format into a Date struct.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "parse_time",
+        1,
+        Some("time"),
+        "Parses a time string in HH:MM[:SS[.sss]] format into a TimeOfDay struct.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "parse_iso",
+        1,
+        Some("time"),
+        "Parses an ISO 8601 string into a DateTime struct.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "parse_datetime",
+        1,
+        Some("time"),
+        "Parses an ISO 8601 string into a DateTime struct.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "duration",
+        1,
+        Some("time"),
+        "Creates a Duration value with given seconds.",
+    ));
+}
+
+/// Registers `url` module metadata.
+fn register_url(registry: &mut NativeRegistry) {
+    registry.register(NativeFunctionMeta::new(
+        "parse",
+        1,
+        Some("url"),
+        "Parses a URL string into components according to WHATWG model.",
+    ));
+}
+
+/// Registers `regex` module metadata.
+fn register_regex(registry: &mut NativeRegistry) {
+    registry.register(NativeFunctionMeta::new(
+        "compile",
+        1,
+        Some("regex"),
+        "Compiles a regular expression string into a Pattern struct.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "is_match",
+        2,
+        Some("regex"),
+        "Tests if a regex pattern matches text.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "replace",
+        3,
+        Some("regex"),
+        "Replaces regex matches in text with replacement string.",
     ));
 }

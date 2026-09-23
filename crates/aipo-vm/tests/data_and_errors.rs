@@ -1,7 +1,7 @@
 //! Comprehensive unit tests for Data & Errors (Slice S8).
 
-use aipo_bytecode::BytecodeModule;
 use aipo_bytecode::opcode::{Constant, OpCode};
+use aipo_bytecode::{BytecodeModule, FunctionInfo};
 use aipo_diagnostics::DiagnosticCode;
 use aipo_vm::{Value, Vm, VmError, VmFault, execute};
 use byteorder::{BigEndian, ByteOrder};
@@ -304,14 +304,8 @@ fn test_or_else_fallback_recovery() {
     );
 
     let mut vm = Vm::new();
-    vm.globals.insert(
-        "fail".to_string(),
-        Value::Native {
-            name: "fail".to_string(),
-            arity: 1,
-            func: fail_native,
-        },
-    );
+    vm.globals
+        .insert("fail".to_string(), Value::native("fail", 1, fail_native));
     let result = vm.run(&module).expect("or_else should recover");
     assert_eq!(result, Value::Int(404));
 }
@@ -623,4 +617,136 @@ fn test_string_concatenation_preserves_nfc() {
         "String",
         "the normalized result is still a String"
     );
+}
+
+#[test]
+fn test_higher_order_method_propagates_fault() {
+    let mut code = Vec::new();
+
+    // 1. [1, 2, 3]
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&1u16.to_be_bytes());
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&2u16.to_be_bytes());
+    code.push(OpCode::BuildList as u8);
+    code.extend_from_slice(&3u16.to_be_bytes());
+
+    // 2. items.filter(predicate)
+    code.push(OpCode::GetField as u8);
+    code.extend_from_slice(&0u16.to_be_bytes()); // "filter"
+    code.push(OpCode::MakeFunction as u8);
+    code.extend_from_slice(&0u16.to_be_bytes()); // function 0: predicate
+    code.push(OpCode::Call as u8);
+    code.push(1);
+    code.push(OpCode::Return as u8);
+
+    // Predicate function body: 10 / 0 (div by zero fault!)
+    let pred_entry = code.len();
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&0u16.to_be_bytes()); // 10
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&3u16.to_be_bytes()); // 0
+    code.push(OpCode::IntDiv as u8);
+    code.push(OpCode::Return as u8);
+
+    let mut module = make_test_module(
+        code,
+        vec![
+            Constant::Int(10),
+            Constant::Int(2),
+            Constant::Int(3),
+            Constant::Int(0),
+        ],
+        vec!["filter".to_string()],
+    );
+    module.functions.push(FunctionInfo {
+        name: "pred".to_string(),
+        entry_ip: pred_entry,
+        params: 1,
+        locals: 0,
+        upvalues: 0,
+        is_async: false,
+    });
+
+    let err = execute(&module).expect_err("predicate division by zero must propagate fault");
+    assert_eq!(err.diagnostic_code(), DiagnosticCode::AIPO_RT_DIV_ZERO);
+    assert_eq!(err, VmError::Fault(VmFault::DivisionByZero));
+}
+
+#[test]
+fn test_reduce_propagates_fault_and_releases_iteration_guard() {
+    let mut code = Vec::new();
+
+    // 1. var items = [1, 2]
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&0u16.to_be_bytes()); // 1
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&1u16.to_be_bytes()); // 2
+    code.push(OpCode::BuildList as u8);
+    code.extend_from_slice(&2u16.to_be_bytes());
+    code.push(OpCode::SetGlobal as u8);
+    code.extend_from_slice(&0u16.to_be_bytes()); // "items"
+
+    // 2. items.reduce(0, fn(acc, item): acc + (10 / 0))
+    code.push(OpCode::GetGlobal as u8);
+    code.extend_from_slice(&0u16.to_be_bytes()); // "items"
+    code.push(OpCode::GetField as u8);
+    code.extend_from_slice(&1u16.to_be_bytes()); // "reduce"
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&2u16.to_be_bytes()); // 0 (initial)
+    code.push(OpCode::MakeFunction as u8);
+    code.extend_from_slice(&0u16.to_be_bytes()); // function 0: callback
+    code.push(OpCode::Call as u8);
+    code.push(2);
+    code.push(OpCode::Return as u8);
+
+    // Callback function body: 10 / 0
+    let fn_entry = code.len();
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&3u16.to_be_bytes()); // 10
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&2u16.to_be_bytes()); // 0
+    code.push(OpCode::IntDiv as u8);
+    code.push(OpCode::Return as u8);
+
+    let mut module = make_test_module(
+        code,
+        vec![
+            Constant::Int(1),
+            Constant::Int(2),
+            Constant::Int(0),
+            Constant::Int(10),
+        ],
+        vec!["items".to_string(), "reduce".to_string(), "add".to_string()],
+    );
+    module.functions.push(FunctionInfo {
+        name: "cb".to_string(),
+        entry_ip: fn_entry,
+        params: 2,
+        locals: 0,
+        upvalues: 0,
+        is_async: false,
+    });
+
+    let mut vm = Vm::new();
+    let err = vm
+        .run(&module)
+        .expect_err("reduce with div by zero must fault");
+    assert_eq!(err.diagnostic_code(), DiagnosticCode::AIPO_RT_DIV_ZERO);
+
+    // Verify that the iteration guard on `items` was released even after the fault:
+    let items_val = vm
+        .globals
+        .get("items")
+        .cloned()
+        .expect("items global exists");
+    if let Value::List(l) = items_val {
+        // Mutating the list directly must succeed without MutationDuringIteration
+        l.borrow_mut().push(Value::Int(99));
+        assert_eq!(l.borrow().len(), 3);
+    } else {
+        panic!("expected list in global");
+    }
 }

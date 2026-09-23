@@ -147,8 +147,8 @@ impl LoweringContext {
             Some(first) => {
                 let mut acc = self.lower_expr(first);
                 for next in conditions {
-                    let span = acc.span();
                     let right = self.lower_expr(next);
+                    let span = acc.span().merge(right.span());
                     acc = HirExpr::Binary(BinaryOp::And, Box::new(acc), Box::new(right), span);
                 }
                 acc

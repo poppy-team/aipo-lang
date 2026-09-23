@@ -150,7 +150,12 @@ impl Source {
         };
 
         let line_start = self.line_starts[line_idx];
-        let line_slice = self.text.get(line_start..offset)?;
+        let mut aligned = offset.min(self.text.len());
+        while !self.text.is_char_boundary(aligned) {
+            aligned -= 1;
+        }
+        let aligned_offset = aligned.max(line_start);
+        let line_slice = &self.text[line_start..aligned_offset];
         let column = line_slice.chars().count() + 1;
         let line = line_idx + 1;
 

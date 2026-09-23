@@ -120,6 +120,7 @@ impl BytecodeEmitter {
             entry_ip: 0,
             params: 0,
             locals: module.top_level.locals.len(),
+            upvalues: 0,
             is_async: false,
         });
 
@@ -147,6 +148,7 @@ impl BytecodeEmitter {
                 entry_ip: entry,
                 params: function.params.len(),
                 locals: function.locals.len(),
+                upvalues: function.upvalues.len(),
                 is_async: function.is_async,
             });
             self.emit_slot_prologue(function);
@@ -399,9 +401,12 @@ impl BytecodeEmitter {
                     BinaryOp::Greater => OpCode::Greater,
                     BinaryOp::GreaterEqual => OpCode::GreaterEqual,
                     BinaryOp::OrElse => OpCode::OrElse,
-                    // `and`/`or`/`is`/ranges/pipelines are lowered to control flow before
-                    // reaching the emitter, so this fallback is unreachable for valid IR.
-                    _ => OpCode::Add,
+                    other => {
+                        self.errors.push(format!(
+                            "unlowered binary operator {other:?} at offset {offset}"
+                        ));
+                        return;
+                    }
                 };
                 self.code.push(opcode as u8);
             }
@@ -572,6 +577,10 @@ impl BytecodeEmitter {
             CoreInst::TypeIs(span) => {
                 self.spans.push((offset, *span));
                 self.code.push(OpCode::TypeIs as u8);
+            }
+            CoreInst::TypeIsNullable(span) => {
+                self.spans.push((offset, *span));
+                self.code.push(OpCode::TypeIsNullable as u8);
             }
             CoreInst::IterGuard(span) => {
                 self.spans.push((offset, *span));

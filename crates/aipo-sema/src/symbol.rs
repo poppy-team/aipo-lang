@@ -31,11 +31,28 @@ pub enum SymbolKind {
         /// Fields and their immutability (`is_fixed`).
         fields: HashMap<String, bool>,
     },
-    /// Interface declaration with required method names and arities (name -> (min, max)).
+    /// Interface declaration with required method signatures.
     Interface {
-        /// Required methods and their arity bounds.
-        methods: HashMap<String, (usize, usize)>,
+        /// Required methods and their signatures.
+        methods: HashMap<String, MethodSignature>,
     },
+}
+
+/// Method signature in an interface or struct implementation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MethodSignature {
+    /// Minimum required positional arguments.
+    pub min_args: usize,
+    /// Maximum allowed arguments.
+    pub max_args: usize,
+    /// Whether receiver is mutable (`self!`).
+    pub is_mut_self: bool,
+    /// Whether method is async.
+    pub is_async: bool,
+    /// Parameter types: list of (param_name, optional type annotation).
+    pub param_types: Vec<(String, Option<aipo_ast::TypeAnnotation>)>,
+    /// Return type annotation.
+    pub return_type: Option<aipo_ast::TypeAnnotation>,
 }
 
 /// Resolved semantic symbol.

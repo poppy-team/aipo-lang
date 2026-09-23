@@ -81,6 +81,8 @@
 | AIPO_RT_CAPABILITY_DENIED | fault | host operation attempted without the capability it requires (Wave 4) |
 | AIPO_RT_STALE_HANDLE | fault | host handle addressed after its slot was released or reused (Wave 4) |
 | AIPO_RT_SCOPE_ESCAPE | fault | scoped host binding reached a heap-publication point outside its scope (Wave 4). Enforced at `SetGlobal`, `Return`, `SetField`, `SetIndex`, `BuildList` and `BuildDict`, each of which names its site in the message; the check is skipped entirely while no host scope has closed. |
+| AIPO_RT_MODULE_INIT_FAILED | fault | module top-level evaluation failed during initialization (maturity audit) |
+| AIPO_RT_INVALID_SCHEMA | fault | host surface description is internally inconsistent (maturity audit) |
 
 ### Runtime failure (AIPO_RT_FAILURE_*)
 | Code | Severity | Trigger |

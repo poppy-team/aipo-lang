@@ -43,8 +43,20 @@
     "budget_profile": "medium",
     "max_delegation_depth": 1
   },
-  "dependencies": [],
-  "evidence": [],
+  "evidence": [
+    {
+      "description": "cargo test --workspace --all-targets: 377 passed, 0 failed; cargo test -p aipo-host: 37 unit + 1 doctest passed; cargo test -p aipo-vm --test host_scope_escape: 9 passed; cargo test -p aipo-vm --test host_capability_and_handles: 5 passed",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check exit 0, cargo clippy --workspace --all-targets -- -D warnings zero warnings, cargo doc --workspace --no-deps zero warnings. Node runtime selftest all assertions passed; CLI conformance suite (programs 1-28, diagnostics 1-29) passed",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/evidence/P03-G01-host-abi.md records the full certification; docs/PRUMO.md, CHANGELOG.md, and PROJECT_STATE.md updated",
+      "kind": "doc"
+    }
+  ],
   "gates": {
     "build": "required",
     "documentation_impact": "required",
@@ -85,6 +97,27 @@
       "from": "LOCKED",
       "reason": "",
       "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-22T01:26:15.751120574Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-22T01:26:18.846897037Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-22T01:26:41.803318985Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
     }
   ],
   "id": "P03-G01",
@@ -102,6 +135,6 @@
   "objective": "Prove the host-neutral ABI defined by Wave 4: consume an AHS (host surface description as data), a deny-by-default capability model, host values that copy by value with host-owned external identity, and generational handles that never use-after-free (stale access yields none or a Failure per contract). General abstractions only: bytecode and IR must never know about a specific engine, and the VM reaches host services solely through the capability layer.",
   "phase": "P03",
   "revision": 2,
-  "state": "EXECUTING",
+  "state": "DONE",
   "title": "Host ABI: capability model, host values and generational handles"
 }

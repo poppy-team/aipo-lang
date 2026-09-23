@@ -70,6 +70,11 @@ Gate evidence records live under `docs/evidence/`, one per completed goal:
 - [P00-G16 — Wave 1 exit review](evidence/P00-G16-wave-1-exit-review.md)
 - [P01-G01 — JS parity for the full MVP subset](evidence/P01-G01-js-parity-mvp-subset.md)
 - [P01-G02 — Deep quality gauntlet](evidence/P01-G02-deep-quality-gauntlet.md)
+- [P02-G01 — Wave 3 tipos e valores](evidence/P02-G01-wave3-types-and-values.md)
+- [P02-G02 — Wave 3 combinadores assíncronos e scheduler](evidence/P02-G02-wave3-stdlib-async.md)
+- [P02-G03 — Wave 3 infra assíncrona](evidence/P02-G03-wave3-async-syntax-and-diagnostics.md)
+- [P03-G01 — Host ABI: capability model, host values and generational handles](evidence/P03-G01-host-abi.md)
+- [P03-G02 — Poppy adapter and deterministic headless demo](evidence/P03-G02-poppy-adapter-and-headless-demo.md)
 
 ## Goals
 

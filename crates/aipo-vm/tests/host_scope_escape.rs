@@ -193,3 +193,14 @@ fn test_closing_a_scope_releases_the_slot_before_anything_is_published() {
         "the live handle is publishable"
     );
 }
+
+#[test]
+fn test_closure_upvalue_catches_an_escaped_binding() {
+    assert_scope_escape(
+        run_with_escaped_handle(
+            "fn make_leak()\n    var local_leak = leaked\n    return () => local_leak\nend\nvar f = make_leak()\n",
+            true,
+        ),
+        "a return value",
+    );
+}

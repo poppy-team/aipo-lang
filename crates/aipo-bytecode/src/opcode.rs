@@ -148,6 +148,8 @@ pub enum OpCode {
     /// ready tasks resolve immediately, failed ones propagate `Failure`, and
     /// cancelled ones fault (never capturable by `attempt`).
     Await = 57,
+    /// Runtime nullable type test of a value against a core-type value (`is ...?`).
+    TypeIsNullable = 58,
 }
 
 impl TryFrom<u8> for OpCode {
@@ -212,6 +214,7 @@ impl TryFrom<u8> for OpCode {
             55 => Ok(OpCode::CheckMutations),
             56 => Ok(OpCode::FillSelfCapture),
             57 => Ok(OpCode::Await),
+            58 => Ok(OpCode::TypeIsNullable),
             other => Err(other),
         }
     }

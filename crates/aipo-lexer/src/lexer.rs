@@ -10,8 +10,7 @@ use crate::token::{StringPrefix, Token, TokenKind};
 /// Lexer state scanning over an immutable Aipo source.
 pub struct Lexer<'a> {
     source: &'a Source,
-    chars: Vec<(usize, char)>,
-    cursor: usize,
+    byte_offset: usize,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -19,11 +18,9 @@ impl<'a> Lexer<'a> {
     /// Creates a new lexer for the given source.
     #[must_use]
     pub fn new(source: &'a Source) -> Self {
-        let chars = source.text().char_indices().collect();
         Self {
             source,
-            chars,
-            cursor: 0,
+            byte_offset: 0,
             diagnostics: Vec::new(),
         }
     }
@@ -45,26 +42,25 @@ impl<'a> Lexer<'a> {
     }
 
     fn peek(&self) -> Option<char> {
-        self.chars.get(self.cursor).map(|&(_, ch)| ch)
+        self.source.text()[self.byte_offset..].chars().next()
     }
 
     fn peek_ahead(&self, offset: usize) -> Option<char> {
-        self.chars.get(self.cursor + offset).map(|&(_, ch)| ch)
+        let mut it = self.source.text()[self.byte_offset..].chars();
+        for _ in 0..offset {
+            it.next()?;
+        }
+        it.next()
     }
 
     fn current_offset(&self) -> usize {
-        self.chars
-            .get(self.cursor)
-            .map(|&(off, _)| off)
-            .unwrap_or_else(|| self.source.len())
+        self.byte_offset
     }
 
     fn advance(&mut self) -> Option<char> {
-        let item = self.chars.get(self.cursor).map(|&(_, ch)| ch);
-        if item.is_some() {
-            self.cursor += 1;
-        }
-        item
+        let ch = self.source.text()[self.byte_offset..].chars().next()?;
+        self.byte_offset += ch.len_utf8();
+        Some(ch)
     }
 
     fn next_token(&mut self) -> Token {
@@ -191,6 +187,9 @@ impl<'a> Lexer<'a> {
                 if self.peek() == Some('=') {
                     self.advance();
                     TokenKind::EqualEqual
+                } else if self.peek() == Some('>') {
+                    self.advance();
+                    TokenKind::FatArrow
                 } else {
                     TokenKind::Equal
                 }
@@ -275,28 +274,26 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn lex_identifier_or_keyword(&mut self, start: usize, first_ch: char) -> Token {
-        let mut name = String::new();
-        name.push(first_ch);
-
+    fn lex_identifier_or_keyword(&mut self, start: usize, _first_ch: char) -> Token {
         while let Some(ch) = self.peek() {
             if is_ident_continue(ch) {
-                name.push(ch);
                 self.advance();
             } else {
                 break;
             }
         }
 
+        let raw = &self.source.text()[start..self.current_offset()];
+
         // Check for self!
-        if name == "self" && self.peek() == Some('!') {
+        if raw == "self" && self.peek() == Some('!') {
             self.advance();
             let end = self.current_offset();
             return Token::new(TokenKind::SelfMut, SourceSpan::new(start, end));
         }
 
         // Check for div=
-        if name == "div" && self.peek() == Some('=') {
+        if raw == "div" && self.peek() == Some('=') {
             self.advance();
             let end = self.current_offset();
             return Token::new(TokenKind::DivEq, SourceSpan::new(start, end));
@@ -305,11 +302,11 @@ impl<'a> Lexer<'a> {
         let end = self.current_offset();
         let span = SourceSpan::new(start, end);
 
-        if name == "_" {
+        if raw == "_" {
             return Token::new(TokenKind::Discard, span);
         }
 
-        let kind = match name.as_str() {
+        let kind = match raw {
             "let" => TokenKind::Let,
             "var" => TokenKind::Var,
             "fixed" => TokenKind::Fixed,
@@ -354,7 +351,7 @@ impl<'a> Lexer<'a> {
             "self" => TokenKind::SelfVal,
             "do" => TokenKind::Do,
             "div" => TokenKind::Div,
-            _ => TokenKind::Identifier(name),
+            _ => TokenKind::Identifier(raw.to_string()),
         };
 
         Token::new(kind, span)
@@ -403,23 +400,27 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Check for float dot: only if followed by digit (not `..`)
-        let is_float =
-            if self.peek() == Some('.') && self.peek_ahead(1).is_some_and(|c| c.is_ascii_digit()) {
-                raw.push('.');
-                self.advance(); // consume '.'
-                while let Some(ch) = self.peek() {
-                    if ch.is_ascii_digit() || ch == '_' {
-                        raw.push(ch);
-                        self.advance();
-                    } else {
-                        break;
-                    }
+        // Check for float dot: only if followed by digit, `_`, or exponent (not `..` range or method call)
+        let is_float = if self.peek() == Some('.')
+            && (self.peek_ahead(1).is_some_and(|c| c.is_ascii_digit())
+                || self.peek_ahead(1) == Some('_')
+                || self.peek_ahead(1) == Some('e')
+                || self.peek_ahead(1) == Some('E'))
+        {
+            raw.push('.');
+            self.advance(); // consume '.'
+            while let Some(ch) = self.peek() {
+                if ch.is_ascii_digit() || ch == '_' {
+                    raw.push(ch);
+                    self.advance();
+                } else {
+                    break;
                 }
-                true
-            } else {
-                false
-            };
+            }
+            true
+        } else {
+            false
+        };
 
         // Scientific exponent e/E
         let is_float_exp = if self.peek() == Some('e') || self.peek() == Some('E') {

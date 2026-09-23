@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn test_malformed_numbers_report_invalid_number() {
         for code in [
-            "0x", "0b102", "0o8", "1_", "1__0", "1e", "1e_5", "0x_FF", "1_.5",
+            "0x", "0b102", "0o8", "1_", "1__0", "1e", "1e_5", "0x_FF", "1_.5", "1._5", "1.e5",
         ] {
             let source = Source::new(SourceId(1), "test.aipo", code);
             let (_, diags) = Lexer::new(&source).tokenize();

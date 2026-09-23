@@ -484,6 +484,8 @@ pub enum BinaryOp {
     GreaterEqual,
     /// `is`
     Is,
+    /// `is ...?`
+    IsNullable,
 
     // Logic & fallbacks
     /// `and`

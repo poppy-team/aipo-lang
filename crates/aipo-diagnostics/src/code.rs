@@ -108,6 +108,10 @@ pub enum DiagnosticCode {
     AIPO_RT_STALE_HANDLE,
     /// Scoped host binding reached a heap-publication point outside its scope.
     AIPO_RT_SCOPE_ESCAPE,
+    /// Module top-level evaluation failed during initialization.
+    AIPO_RT_MODULE_INIT_FAILED,
+    /// Host surface description is internally inconsistent.
+    AIPO_RT_INVALID_SCHEMA,
 
     // --- Runtime failure (AIPO_RT_FAILURE_*) ---
     /// Uncaught failure value reached top level.
@@ -162,6 +166,8 @@ impl DiagnosticCode {
             Self::AIPO_RT_CAPABILITY_DENIED => "AIPO_RT_CAPABILITY_DENIED",
             Self::AIPO_RT_STALE_HANDLE => "AIPO_RT_STALE_HANDLE",
             Self::AIPO_RT_SCOPE_ESCAPE => "AIPO_RT_SCOPE_ESCAPE",
+            Self::AIPO_RT_MODULE_INIT_FAILED => "AIPO_RT_MODULE_INIT_FAILED",
+            Self::AIPO_RT_INVALID_SCHEMA => "AIPO_RT_INVALID_SCHEMA",
             Self::AIPO_RT_FAILURE_UNCAUGHT => "AIPO_RT_FAILURE_UNCAUGHT",
         }
     }
@@ -214,7 +220,9 @@ impl DiagnosticCode {
             | Self::AIPO_RT_AWAIT_IN_CALLBACK
             | Self::AIPO_RT_CAPABILITY_DENIED
             | Self::AIPO_RT_STALE_HANDLE
-            | Self::AIPO_RT_SCOPE_ESCAPE => Severity::Fault,
+            | Self::AIPO_RT_SCOPE_ESCAPE
+            | Self::AIPO_RT_MODULE_INIT_FAILED
+            | Self::AIPO_RT_INVALID_SCHEMA => Severity::Fault,
         }
     }
 }

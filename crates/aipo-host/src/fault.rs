@@ -91,7 +91,7 @@ impl HostFault {
             // a boundary, which canon classifies as a type mismatch.
             Self::InvalidHostValue { .. } => DiagnosticCode::AIPO_RT_TYPE_MISMATCH,
             // A rejected host description is a malformed input to the boundary.
-            Self::Schema { .. } => DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+            Self::Schema { .. } => DiagnosticCode::AIPO_RT_INVALID_SCHEMA,
         }
     }
 

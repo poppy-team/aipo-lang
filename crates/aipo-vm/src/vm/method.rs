@@ -22,12 +22,12 @@ impl Vm {
                 .iter()
                 .find(|(name, _)| *name == method)
             {
-                return Some(Value::BoundMethod {
-                    name: method.to_string(),
-                    arity: *arity,
-                    receiver: Box::new(receiver.clone()),
-                    kind: MethodKind::HigherOrder,
-                });
+                return Some(Value::bound_method(
+                    method,
+                    *arity,
+                    receiver.clone(),
+                    MethodKind::HigherOrder,
+                ));
             }
             return None;
         }
@@ -38,28 +38,39 @@ impl Vm {
                 "wait" => 0,
                 _ => return None,
             };
-            return Some(Value::BoundMethod {
-                name: method.to_string(),
+            return Some(Value::bound_method(
+                method,
                 arity,
-                receiver: Box::new(receiver.clone()),
-                kind: MethodKind::HigherOrder,
-            });
+                receiver.clone(),
+                MethodKind::HigherOrder,
+            ));
         }
         if let Some((arity, func)) = self.method_natives.get(&(type_name, method.to_string())) {
-            return Some(Value::BoundMethod {
-                name: method.to_string(),
-                arity: *arity,
-                receiver: Box::new(receiver.clone()),
-                kind: MethodKind::Native(*func),
-            });
+            return Some(Value::bound_method(
+                method,
+                *arity,
+                receiver.clone(),
+                MethodKind::Native(*func),
+            ));
         }
-        if matches!(method, "filter" | "transform" | "sort_by") {
-            return Some(Value::BoundMethod {
-                name: method.to_string(),
-                arity: 1,
-                receiver: Box::new(receiver.clone()),
-                kind: MethodKind::HigherOrder,
-            });
+        if matches!(
+            method,
+            "filter" | "transform" | "map" | "sort_by" | "any" | "all" | "flat_map"
+        ) {
+            return Some(Value::bound_method(
+                method,
+                1,
+                receiver.clone(),
+                MethodKind::HigherOrder,
+            ));
+        }
+        if method == "reduce" {
+            return Some(Value::bound_method(
+                method,
+                2,
+                receiver.clone(),
+                MethodKind::HigherOrder,
+            ));
         }
         None
     }
@@ -81,14 +92,14 @@ impl Vm {
         }
     }
 
-    /// Executes the canonical higher-order collection methods (`filter`, `transform`,
-    /// `sort_by`) by applying the Aipo callable through [`Vm::invoke`].
+    /// Executes the canonical higher-order collection methods (`filter`, `transform`, `map`,
+    /// `sort_by`, `any`, `all`, `flat_map`, `reduce`) by applying the Aipo callable through [`Vm::invoke`].
     pub(super) fn higher_order(
         &mut self,
         module: &BytecodeModule,
         method: &str,
         receiver: &Value,
-        callable: &Value,
+        args: &[Value],
     ) -> Result<Value, VmError> {
         let items = iterable_items(receiver)?;
         let guard = collection_identity(receiver);
@@ -98,6 +109,7 @@ impl Vm {
 
         let outcome = match method {
             "filter" => {
+                let callable = args.first().cloned().unwrap_or(Value::None);
                 let mut kept = Vec::new();
                 let mut error = None;
                 for item in items {
@@ -105,27 +117,28 @@ impl Vm {
                         Ok(Value::Bool(true)) => kept.push(item),
                         Ok(Value::Bool(false)) => {}
                         Ok(other) => {
-                            error = Some(VmFault::TypeMismatch {
-                                expected: "Bool predicate result".to_string(),
-                                actual: other.type_name().to_string(),
-                            });
+                            error = Some(
+                                VmFault::TypeMismatch {
+                                    expected: "Bool predicate result".to_string(),
+                                    actual: other.type_name().to_string(),
+                                }
+                                .into(),
+                            );
                             break;
                         }
                         Err(err) => {
-                            error = Some(VmFault::StackUnderflow);
-                            if let VmError::Fault(fault) = err {
-                                error = Some(fault);
-                            }
+                            error = Some(err);
                             break;
                         }
                     }
                 }
                 match error {
-                    Some(fault) => Err(VmError::Fault(fault)),
+                    Some(err) => Err(err),
                     None => Ok(Value::List(Rc::new(RefCell::new(kept)))),
                 }
             }
-            "transform" => {
+            "transform" | "map" => {
+                let callable = args.first().cloned().unwrap_or(Value::None);
                 let mut mapped = Vec::new();
                 let mut error = None;
                 for item in items {
@@ -142,7 +155,139 @@ impl Vm {
                     None => Ok(Value::List(Rc::new(RefCell::new(mapped)))),
                 }
             }
+            "any" => {
+                let callable = args.first().cloned().unwrap_or(Value::None);
+                let mut found = false;
+                let mut error = None;
+                for item in items {
+                    match self.invoke(module, callable.clone(), std::slice::from_ref(&item)) {
+                        Ok(Value::Bool(b)) => {
+                            if b {
+                                found = true;
+                                break;
+                            }
+                        }
+                        Ok(other) => {
+                            error = Some(
+                                VmFault::TypeMismatch {
+                                    expected: "Bool predicate result".to_string(),
+                                    actual: other.type_name().to_string(),
+                                }
+                                .into(),
+                            );
+                            break;
+                        }
+                        Err(err) => {
+                            error = Some(err);
+                            break;
+                        }
+                    }
+                }
+                match error {
+                    Some(err) => Err(err),
+                    None => Ok(Value::Bool(found)),
+                }
+            }
+            "all" => {
+                let callable = args.first().cloned().unwrap_or(Value::None);
+                let mut all_true = true;
+                let mut error = None;
+                for item in items {
+                    match self.invoke(module, callable.clone(), std::slice::from_ref(&item)) {
+                        Ok(Value::Bool(b)) => {
+                            if !b {
+                                all_true = false;
+                                break;
+                            }
+                        }
+                        Ok(other) => {
+                            error = Some(
+                                VmFault::TypeMismatch {
+                                    expected: "Bool predicate result".to_string(),
+                                    actual: other.type_name().to_string(),
+                                }
+                                .into(),
+                            );
+                            break;
+                        }
+                        Err(err) => {
+                            error = Some(err);
+                            break;
+                        }
+                    }
+                }
+                match error {
+                    Some(err) => Err(err),
+                    None => Ok(Value::Bool(all_true)),
+                }
+            }
+            "flat_map" => {
+                let callable = args.first().cloned().unwrap_or(Value::None);
+                let mut flat = Vec::new();
+                let mut error = None;
+                for item in items {
+                    match self.invoke(module, callable.clone(), &[item]) {
+                        Ok(Value::List(sub_list)) => {
+                            flat.extend(sub_list.borrow().clone());
+                        }
+                        Ok(other) => {
+                            error = Some(
+                                VmFault::TypeMismatch {
+                                    expected: "List result from flat_map callback".to_string(),
+                                    actual: other.type_name().to_string(),
+                                }
+                                .into(),
+                            );
+                            break;
+                        }
+                        Err(err) => {
+                            error = Some(err);
+                            break;
+                        }
+                    }
+                }
+                match error {
+                    Some(err) => Err(err),
+                    None => Ok(Value::List(Rc::new(RefCell::new(flat)))),
+                }
+            }
+            "reduce" => {
+                if args.len() < 2 {
+                    Err(VmFault::TypeMismatch {
+                        expected: "2 arguments for reduce: initial, callable".to_string(),
+                        actual: format!("{} arguments", args.len()),
+                    }
+                    .into())
+                } else {
+                    let mut acc = args[0].clone();
+                    let callable = &args[1];
+                    if acc.is_failure() {
+                        Ok(acc)
+                    } else {
+                        let mut error = None;
+                        for item in items {
+                            match self.invoke(module, callable.clone(), &[acc.clone(), item]) {
+                                Ok(next) => {
+                                    acc = next;
+                                    if acc.is_failure() {
+                                        break;
+                                    }
+                                }
+                                Err(err) => {
+                                    error = Some(err);
+                                    break;
+                                }
+                            }
+                        }
+                        match error {
+                            Some(err) => Err(err),
+                            None => Ok(acc),
+                        }
+                    }
+                }
+            }
             "sort_by" => {
+                let callable = args.first().cloned().unwrap_or(Value::None);
                 let mut keyed: Vec<(Value, Value)> = Vec::with_capacity(items.len());
                 let mut error = None;
                 for item in items {
@@ -177,7 +322,7 @@ impl Vm {
                 }
             }
             other => Err(VmError::Fault(VmFault::TypeMismatch {
-                expected: "filter, transform, or sort_by".to_string(),
+                expected: "collection method".to_string(),
                 actual: other.to_string(),
             })),
         };

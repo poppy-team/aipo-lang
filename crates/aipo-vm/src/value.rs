@@ -398,16 +398,7 @@ pub enum Value {
         is_async: bool,
     },
     /// Closure capturing upvalues.
-    Closure {
-        /// Entry instruction pointer.
-        entry_ip: usize,
-        /// Expected number of parameters.
-        arity: usize,
-        /// Captured upvalues.
-        upvalues: Vec<Rc<RefCell<Value>>>,
-        /// `true` for `async fn` closures: calling produces a `Task`.
-        is_async: bool,
-    },
+    Closure(Rc<ClosureData>),
     /// Native host function callable by the VM.
     Native {
         /// Native function name.
@@ -433,16 +424,7 @@ pub enum Value {
     },
     /// Method already bound to its receiver, produced by field access on a
     /// collection, string or struct instance.
-    BoundMethod {
-        /// Method name.
-        name: String,
-        /// Arguments expected after the receiver.
-        arity: usize,
-        /// Receiver value the method operates on.
-        receiver: Box<Value>,
-        /// How the method is executed.
-        kind: MethodKind,
-    },
+    BoundMethod(Rc<BoundMethodData>),
     /// Recoverable failure (Model B).
     Failure(Rc<FailureValue>),
     /// Insertion-ordered set of unique values (structural equality).
@@ -469,6 +451,45 @@ pub enum Value {
     Unset,
 }
 
+/// Closure metadata and captured upvalues allocated on the heap.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClosureData {
+    /// Entry instruction pointer.
+    pub entry_ip: usize,
+    /// Expected number of parameters.
+    pub arity: usize,
+    /// Captured upvalues.
+    pub upvalues: Vec<Rc<RefCell<Value>>>,
+    /// `true` for `async fn` closures: calling produces a `Task`.
+    pub is_async: bool,
+}
+
+/// Method already bound to its receiver, produced by field access on a
+/// collection, string or struct instance.
+#[derive(Clone)]
+pub struct BoundMethodData {
+    /// Method name.
+    pub name: String,
+    /// Arguments expected after the receiver.
+    pub arity: usize,
+    /// Receiver value the method operates on.
+    pub receiver: Value,
+    /// How the method is executed.
+    pub kind: MethodKind,
+}
+
+impl PartialEq for BoundMethodData {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.arity == other.arity && self.receiver == other.receiver
+    }
+}
+
+impl fmt::Debug for BoundMethodData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<bound method {}>", self.name)
+    }
+}
+
 /// Execution strategy of a bound method.
 #[derive(Clone)]
 pub enum MethodKind {
@@ -488,6 +509,52 @@ pub enum MethodKind {
 }
 
 impl Value {
+    /// Constructs a new closure value.
+    #[must_use]
+    pub fn closure(
+        entry_ip: usize,
+        arity: usize,
+        upvalues: Vec<Rc<RefCell<Value>>>,
+        is_async: bool,
+    ) -> Self {
+        Self::Closure(Rc::new(ClosureData {
+            entry_ip,
+            arity,
+            upvalues,
+            is_async,
+        }))
+    }
+
+    /// Constructs a new native function value.
+    #[must_use]
+    pub fn native(
+        name: impl Into<String>,
+        arity: usize,
+        func: fn(&[Value]) -> Result<Value, VmFault>,
+    ) -> Self {
+        Self::Native {
+            name: name.into(),
+            arity,
+            func,
+        }
+    }
+
+    /// Constructs a new bound method value.
+    #[must_use]
+    pub fn bound_method(
+        name: impl Into<String>,
+        arity: usize,
+        receiver: Value,
+        kind: MethodKind,
+    ) -> Self {
+        Self::BoundMethod(Rc::new(BoundMethodData {
+            name: name.into(),
+            arity,
+            receiver,
+            kind,
+        }))
+    }
+
     /// Returns the language-level type name for diagnostics.
     #[must_use]
     pub fn type_name(&self) -> &'static str {
@@ -501,9 +568,9 @@ impl Value {
             Self::Dict(_) => "Dict",
             Self::Struct(_) => "struct",
             Self::Function { .. }
-            | Self::Closure { .. }
+            | Self::Closure(_)
             | Self::Native { .. }
-            | Self::BoundMethod { .. } => "Function",
+            | Self::BoundMethod(_) => "Function",
             Self::Byte(_) => "Byte",
             Self::Bytes(_) => "Bytes",
             Self::Type(_) => "Type",
@@ -997,20 +1064,7 @@ impl PartialEq for Value {
             (Self::Group(a), Self::Group(b)) => a == b,
             (Self::HostHandle(a), Self::HostHandle(b)) => a == b,
             (Self::Duration(a), Self::Duration(b)) => a == b,
-            (
-                Self::BoundMethod {
-                    name: n1,
-                    arity: a1,
-                    receiver: r1,
-                    ..
-                },
-                Self::BoundMethod {
-                    name: n2,
-                    arity: a2,
-                    receiver: r2,
-                    ..
-                },
-            ) => n1 == n2 && a1 == a2 && r1 == r2,
+            (Self::BoundMethod(a), Self::BoundMethod(b)) => a == b,
             (Self::List(a), Self::List(b)) => *a.borrow() == *b.borrow(),
             (Self::Dict(a), Self::Dict(b)) => *a.borrow() == *b.borrow(),
             (Self::Struct(a), Self::Struct(b)) => {
@@ -1060,10 +1114,8 @@ impl fmt::Debug for Value {
             } => {
                 write!(f, "<fn@{entry_ip} arity={arity}>")
             }
-            Self::Closure {
-                entry_ip, arity, ..
-            } => {
-                write!(f, "<closure@{entry_ip} arity={arity}>")
+            Self::Closure(c) => {
+                write!(f, "<closure@{} arity={}>", c.entry_ip, c.arity)
             }
             Self::Native { name, arity, .. } => {
                 write!(f, "<native fn {name} arity={arity}>")
@@ -1072,8 +1124,8 @@ impl fmt::Debug for Value {
             Self::Bytes(b) => write!(f, "Bytes({} bytes)", b.borrow().len()),
             Self::Type(tag) => write!(f, "<type {}>", tag.name()),
             Self::Range { start, end } => write!(f, "{start}..{end}"),
-            Self::BoundMethod { name, arity, .. } => {
-                write!(f, "<method {name} arity={arity}>")
+            Self::BoundMethod(b) => {
+                write!(f, "<method {} arity={}>", b.name, b.arity)
             }
             Self::Failure(err) => write!(f, "failure({:?})", err.message),
             Self::HostHandle(handle) => write!(f, "HostHandle({handle})"),
@@ -1130,7 +1182,7 @@ impl fmt::Display for Value {
                 write!(f, "}}")
             }
             Self::Function { entry_ip, .. } => write!(f, "<fn@{entry_ip}>"),
-            Self::Closure { entry_ip, .. } => write!(f, "<closure@{entry_ip}>"),
+            Self::Closure(c) => write!(f, "<closure@{}>", c.entry_ip),
             Self::Native { name, .. } => write!(f, "<fn {name}>"),
             Self::Byte(b) => write!(f, "{b}"),
             Self::Bytes(_) => write!(f, "<bytes>"),
@@ -1157,7 +1209,7 @@ impl fmt::Display for Value {
                     write!(f, "{seconds}s")
                 }
             }
-            Self::BoundMethod { name, .. } => write!(f, "<fn {name}>"),
+            Self::BoundMethod(b) => write!(f, "<fn {}>", b.name),
             Self::Failure(err) => write!(f, "fail(\"{}\")", err.message),
             Self::HostHandle(handle) => write!(f, "<{handle}>"),
             Self::Unset => write!(f, "<unset>"),

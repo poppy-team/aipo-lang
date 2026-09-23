@@ -32,12 +32,18 @@ impl Vm {
             self.push(callee)?;
             return Ok(());
         }
-        for i in 0..arg_count {
-            if self.stack[callee_idx + 1 + i].is_failure() {
-                let failure = self.stack[callee_idx + 1 + i].clone();
-                self.stack.truncate(callee_idx);
-                self.push(failure)?;
-                return Ok(());
+        let is_failure_inspector = match &callee {
+            Value::Native { name, .. } => name == "expect.failure" || name == "testing.failure",
+            _ => false,
+        };
+        if !is_failure_inspector {
+            for i in 0..arg_count {
+                if self.stack[callee_idx + 1 + i].is_failure() {
+                    let failure = self.stack[callee_idx + 1 + i].clone();
+                    self.stack.truncate(callee_idx);
+                    self.push(failure)?;
+                    return Ok(());
+                }
             }
         }
 
@@ -74,20 +80,10 @@ impl Vm {
                 );
                 self.ip = entry_ip;
             }
-            Value::Closure {
-                entry_ip,
-                arity,
-                upvalues,
-                is_async,
-            } => {
-                self.check_arity(arg_count, arity)?;
-                if is_async {
-                    let callee = Value::Closure {
-                        entry_ip,
-                        arity,
-                        upvalues,
-                        is_async,
-                    };
+            Value::Closure(closure) => {
+                self.check_arity(arg_count, closure.arity)?;
+                if closure.is_async {
+                    let callee = Value::Closure(closure.clone());
                     let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
                     let id = self.spawn_task(callee, args, None)?;
                     self.stack.truncate(callee_idx);
@@ -102,9 +98,9 @@ impl Vm {
                     self.ip,
                     callee_idx,
                     arg_count,
-                    Some(Rc::new(upvalues)),
+                    Some(Rc::new(closure.upvalues.clone())),
                 );
-                self.ip = entry_ip;
+                self.ip = closure.entry_ip;
             }
             Value::Native { name, arity, func } => {
                 self.check_arity(arg_count, arity)?;
@@ -132,28 +128,23 @@ impl Vm {
                 self.stack.truncate(callee_idx);
                 self.push(result)?;
             }
-            Value::BoundMethod {
-                name,
-                arity,
-                receiver,
-                kind,
-            } => {
-                self.check_arity(arg_count, arity)?;
-                self.ensure_mutation_allowed(&receiver, &name)?;
+            Value::BoundMethod(bm) => {
+                self.check_arity(arg_count, bm.arity)?;
+                self.ensure_mutation_allowed(&bm.receiver, &bm.name)?;
                 // `Sequence` and `Group` methods need the scheduler or the
                 // driving interpreter, so they dispatch before the kind match.
-                if matches!(&*receiver, Value::Sequence(_)) {
+                if matches!(&bm.receiver, Value::Sequence(_)) {
                     let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
-                    return self.sequence_method(module, &name, &receiver, &args, callee_idx);
+                    return self.sequence_method(module, &bm.name, &bm.receiver, &args, callee_idx);
                 }
-                if matches!(&*receiver, Value::Group(_)) {
+                if matches!(&bm.receiver, Value::Group(_)) {
                     let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
-                    return self.group_method(&name, &receiver, &args, callee_idx);
+                    return self.group_method(&bm.name, &bm.receiver, &args, callee_idx);
                 }
-                match kind {
+                match bm.kind {
                     MethodKind::Native(func) => {
                         let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
-                        let result = func(&receiver, &args)?;
+                        let result = func(&bm.receiver, &args)?;
                         self.stack.truncate(callee_idx);
                         self.push(result)?;
                     }
@@ -164,7 +155,7 @@ impl Vm {
                     } => {
                         if arg_count + 1 != total_arity {
                             return Err(VmFault::TypeMismatch {
-                                expected: format!("{} arguments for {name}", total_arity - 1),
+                                expected: format!("{} arguments for {}", total_arity - 1, bm.name),
                                 actual: format!("{arg_count} arguments"),
                             }
                             .into());
@@ -178,7 +169,7 @@ impl Vm {
                                 is_async,
                             };
                             let mut args = Vec::with_capacity(total_arity);
-                            args.push((*receiver).clone());
+                            args.push(bm.receiver.clone());
                             args.extend(
                                 self.stack[callee_idx + 1..callee_idx + 1 + arg_count]
                                     .iter()
@@ -190,7 +181,7 @@ impl Vm {
                             return Ok(());
                         }
                         // The receiver takes the callee slot and becomes argument 0.
-                        self.stack[callee_idx] = (*receiver).clone();
+                        self.stack[callee_idx] = bm.receiver.clone();
                         let journal_start = self.mutation_journal.len();
                         self.frames.push(CallFrame::method(
                             self.ip,
@@ -202,12 +193,9 @@ impl Vm {
                         self.ip = entry_ip;
                     }
                     MethodKind::HigherOrder => {
-                        let callable = self.stack[callee_idx + 1..callee_idx + 1 + arg_count]
-                            .first()
-                            .cloned()
-                            .unwrap_or(Value::None);
+                        let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
                         self.stack.truncate(callee_idx);
-                        let result = self.higher_order(module, &name, &receiver, &callable)?;
+                        let result = self.higher_order(module, &bm.name, &bm.receiver, &args)?;
                         self.push(result)?;
                     }
                 }
@@ -224,7 +212,7 @@ impl Vm {
     }
 
     pub(super) fn check_arity(&self, provided: usize, expected: usize) -> Result<(), VmFault> {
-        if provided == expected {
+        if expected == usize::MAX || provided == expected {
             Ok(())
         } else {
             Err(VmFault::TypeMismatch {
@@ -265,10 +253,22 @@ impl Vm {
         for arg in args {
             self.push(arg.clone())?;
         }
-        self.begin_call(module, args.len())?;
+        if let Err(err) = self.begin_call(module, args.len()) {
+            self.stack.truncate(stack_base);
+            self.rollback_mutations(journal_base);
+            return Err(err);
+        }
         while self.frames.len() > frame_base {
-            if self.step(module)? {
-                break;
+            match self.step(module) {
+                Ok(true) => break,
+                Ok(false) => {}
+                Err(err) => {
+                    self.stack.truncate(stack_base);
+                    self.frames.truncate(frame_base);
+                    self.upvalue_frames.truncate(frame_base);
+                    self.rollback_mutations(journal_base);
+                    return Err(err);
+                }
             }
         }
         let result = self.pop()?;

@@ -117,4 +117,32 @@ mod tests {
             matches!(&hir.statements[2], HirStmt::Let(name, HirExpr::Dot(_, member, _), _) if name == "y" && member == "y")
         );
     }
+
+    #[test]
+    fn test_lower_invariant_hook_merged_span() {
+        let code = "struct Pos\n  x\n  y\nend\n\nimpl Pos\n  invariant()\n    x >= 0\n    y <= 100\n  end\nend";
+        let src = Source::new(SourceId::next(), "test.aipo", code);
+        let (ast, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {:?}", diags);
+
+        let hir = lower(ast);
+        let impl_item = hir
+            .items
+            .iter()
+            .find_map(|item| match item {
+                HirItem::Impl(i) => Some(i),
+                _ => None,
+            })
+            .expect("expected impl block");
+
+        let inv = impl_item.invariant.as_ref().expect("expected invariant");
+        assert_eq!(inv.body.len(), 1);
+        if let HirStmt::Return(Some(HirExpr::Binary(op, left, right, span)), _) = &inv.body[0] {
+            assert_eq!(*op, aipo_ast::BinaryOp::And);
+            assert_eq!(span.start, left.span().start);
+            assert_eq!(span.end, right.span().end);
+        } else {
+            panic!("expected binary and return in invariant");
+        }
+    }
 }

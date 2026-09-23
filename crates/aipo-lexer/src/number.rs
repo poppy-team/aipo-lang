@@ -47,15 +47,21 @@ pub fn number_is_well_formed(raw: &str) -> bool {
 /// overflow fault instead of a silent `0`.
 #[must_use]
 pub fn parse_int_literal(raw: &str) -> Option<i64> {
-    let cleaned = raw.replace('_', "");
-    if let Some(digits) = strip_base_prefix(&cleaned, 'x') {
+    let cleaned;
+    let s = if raw.contains('_') {
+        cleaned = raw.replace('_', "");
+        &cleaned
+    } else {
+        raw
+    };
+    if let Some(digits) = strip_base_prefix(s, 'x') {
         i64::from_str_radix(digits, 16).ok()
-    } else if let Some(digits) = strip_base_prefix(&cleaned, 'b') {
+    } else if let Some(digits) = strip_base_prefix(s, 'b') {
         i64::from_str_radix(digits, 2).ok()
-    } else if let Some(digits) = strip_base_prefix(&cleaned, 'o') {
+    } else if let Some(digits) = strip_base_prefix(s, 'o') {
         i64::from_str_radix(digits, 8).ok()
     } else {
-        cleaned.parse::<i64>().ok()
+        s.parse::<i64>().ok()
     }
 }
 
@@ -65,40 +71,54 @@ pub fn parse_int_literal(raw: &str) -> Option<i64> {
 /// infinity, which the runtime reports as `AIPO_RT_NON_FINITE_FLOAT` on both backends.
 #[must_use]
 pub fn parse_float_literal(raw: &str) -> Option<f64> {
-    raw.replace('_', "").parse::<f64>().ok()
+    if raw.contains('_') {
+        raw.replace('_', "").parse::<f64>().ok()
+    } else {
+        raw.parse::<f64>().ok()
+    }
 }
 
 /// Validates a digit run: at least one digit, and `_` only between two digits of the base.
 fn radix_digits_ok(digits: &str, radix: u32) -> bool {
-    let chars: Vec<char> = digits.chars().collect();
+    let bytes = digits.as_bytes();
     let mut cursor = 0;
-    let consumed = consume_digit_run(&chars, &mut cursor, radix);
-    consumed && cursor == chars.len()
+    let consumed = consume_digit_run(bytes, &mut cursor, radix);
+    consumed && cursor == bytes.len()
 }
 
 /// Validates the decimal form `digits[.digits][(e|E)[+|-]digits]`.
 fn decimal_is_well_formed(text: &str) -> bool {
-    let chars: Vec<char> = text.chars().collect();
+    let bytes = text.as_bytes();
     let mut cursor = 0;
-    if !consume_digit_run(&chars, &mut cursor, 10) {
+    if !consume_digit_run(bytes, &mut cursor, 10) {
         return false;
     }
-    if chars.get(cursor) == Some(&'.') {
+    if bytes.get(cursor) == Some(&b'.') {
         cursor += 1;
-        if !consume_digit_run(&chars, &mut cursor, 10) {
+        if !consume_digit_run(bytes, &mut cursor, 10) {
             return false;
         }
     }
-    if matches!(chars.get(cursor), Some('e' | 'E')) {
+    if matches!(bytes.get(cursor), Some(b'e' | b'E')) {
         cursor += 1;
-        if matches!(chars.get(cursor), Some('+' | '-')) {
+        if matches!(bytes.get(cursor), Some(b'+' | b'-')) {
             cursor += 1;
         }
-        if !consume_digit_run(&chars, &mut cursor, 10) {
+        if !consume_digit_run(bytes, &mut cursor, 10) {
             return false;
         }
     }
-    cursor == chars.len()
+    cursor == bytes.len()
+}
+
+fn is_radix_digit(b: u8, radix: u32) -> bool {
+    match radix {
+        2 => matches!(b, b'0' | b'1'),
+        8 => matches!(b, b'0'..=b'7'),
+        10 => b.is_ascii_digit(),
+        16 => b.is_ascii_hexdigit(),
+        _ => false,
+    }
 }
 
 /// Consumes digits and well-placed `_` separators, reporting whether a digit was seen.
@@ -106,18 +126,19 @@ fn decimal_is_well_formed(text: &str) -> bool {
 /// An underscore is well placed when the character before and after it are digits of the
 /// same base, so `1_000` and `0xFF_FF` are literal text while `_1`, `1_`, `1__0` and
 /// `1e_5` are not.
-fn consume_digit_run(chars: &[char], cursor: &mut usize, radix: u32) -> bool {
-    let is_digit = |ch: char| ch.is_digit(radix);
+fn consume_digit_run(bytes: &[u8], cursor: &mut usize, radix: u32) -> bool {
     let mut saw_digit = false;
-    while let Some(&ch) = chars.get(*cursor) {
-        if is_digit(ch) {
+    while let Some(&b) = bytes.get(*cursor) {
+        if is_radix_digit(b, radix) {
             saw_digit = true;
             *cursor += 1;
-        } else if ch == '_' {
-            let before = cursor.checked_sub(1).and_then(|i| chars.get(i)).copied();
-            let after = chars.get(*cursor + 1).copied();
+        } else if b == b'_' {
+            let before = cursor.checked_sub(1).and_then(|i| bytes.get(i)).copied();
+            let after = bytes.get(*cursor + 1).copied();
             match (before, after) {
-                (Some(before), Some(after)) if is_digit(before) && is_digit(after) => {
+                (Some(before), Some(after))
+                    if is_radix_digit(before, radix) && is_radix_digit(after, radix) =>
+                {
                     *cursor += 1;
                 }
                 _ => return false,

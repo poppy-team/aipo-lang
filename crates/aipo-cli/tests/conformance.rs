@@ -431,3 +431,162 @@ fn test_missing_end_fixture_reports_a_parse_diagnostic() {
     assert_eq!(code, EXIT_LANGUAGE_FAILURE);
     assert!(stderr.contains("AIPO_PARSE_"));
 }
+
+// ---------------------------------------------------------------------------
+// `.aibc` bytecode execution and `disasm` command (Wave 4 expansion)
+// ---------------------------------------------------------------------------
+
+/// Compiles a `.aipo` fixture to `.aibc` via the `build` pipeline (in-process), writes
+/// the serialized bytes to a temp file, and returns the temp path.
+fn compile_to_aibc(source_path: &Path) -> PathBuf {
+    let text = std::fs::read_to_string(source_path).expect("source is readable");
+    let source = aipo_source::Source::new(
+        aipo_source::SourceId::next(),
+        source_path.display().to_string(),
+        &text,
+    );
+    let (program, diags) = aipo_syntax::parse(&source);
+    assert!(diags.is_empty(), "fixture must parse cleanly: {diags:?}");
+    let hir = aipo_hir::lower(program);
+    let ir = aipo_ir::lower_to_ir(&hir);
+    let module = aipo_bytecode::compile(&ir).expect("compilation must succeed");
+    let bytes = module.to_bytes();
+
+    let temp = std::env::temp_dir().join(
+        source_path
+            .file_stem()
+            .expect("fixture has a stem")
+            .to_string_lossy()
+            .into_owned()
+            + ".aibc",
+    );
+    std::fs::write(&temp, &bytes).expect("temp file is writable");
+    temp
+}
+
+#[test]
+fn test_run_aibc_produces_same_output_as_source() {
+    let source = conformance_dir().join("programs/01_hello.aipo");
+    let aibc = compile_to_aibc(&source);
+
+    // Run the source file.
+    let (code_src, stdout_src, _stderr_src) = run_program(&source);
+    assert_eq!(code_src, EXIT_SUCCESS);
+
+    // Run the .aibc file — must produce the same output.
+    let (code_bc, stdout_bc, stderr_bc) = {
+        let _serialized = run_lock();
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        aipo_cli::set_output_sink(Some(Box::new(CaptureSink(Arc::clone(&captured)))));
+        let result = run_cli_inner(&["run", &aibc.to_string_lossy()]);
+        aipo_cli::set_output_sink(None);
+        let output = {
+            let buffer = captured
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            String::from_utf8_lossy(&buffer).into_owned()
+        };
+        (result.0, output, result.2)
+    };
+    assert_eq!(
+        code_bc, EXIT_SUCCESS,
+        "aibc must run successfully: {stderr_bc}"
+    );
+    assert_eq!(
+        stdout_src, stdout_bc,
+        "source and aibc must produce identical output"
+    );
+
+    let _ = std::fs::remove_file(&aibc);
+}
+
+#[test]
+fn test_run_nonexistent_aibc_returns_usage_error() {
+    let (code, _stdout, stderr) = run_cli(&["run", "/tmp/definitely_not_here.aibc"]);
+    assert_eq!(code, EXIT_USAGE, "missing .aibc must be a usage error");
+    assert!(stderr.contains("error:"));
+}
+
+#[test]
+fn test_run_corrupt_aibc_returns_language_failure() {
+    let temp = std::env::temp_dir().join("corrupt_test.aibc");
+    std::fs::write(&temp, b"NOT_AIBC_DATA_AT_ALL").expect("temp file writable");
+    let (code, _stdout, stderr) = run_cli(&["run", &temp.to_string_lossy()]);
+    assert_eq!(
+        code, EXIT_LANGUAGE_FAILURE,
+        "corrupt .aibc must be a language failure: {stderr}"
+    );
+    let _ = std::fs::remove_file(&temp);
+}
+
+#[test]
+fn test_check_aibc_returns_usage_error() {
+    // `check` is a frontend operation and does not apply to pre-compiled bytecode.
+    let source = conformance_dir().join("programs/01_hello.aipo");
+    let aibc = compile_to_aibc(&source);
+    let (code, _stdout, stderr) = run_cli(&["check", &aibc.to_string_lossy()]);
+    assert_eq!(
+        code, EXIT_USAGE,
+        "check on .aibc must be a usage error: {stderr}"
+    );
+    let _ = std::fs::remove_file(&aibc);
+}
+
+#[test]
+fn test_disasm_source_file_produces_listing() {
+    let source = conformance_dir().join("programs/01_hello.aipo");
+    let (code, stdout, stderr) = run_cli(&["disasm", &source.to_string_lossy()]);
+    assert_eq!(
+        code, EXIT_SUCCESS,
+        "disasm on source must succeed: {stderr}"
+    );
+    assert!(
+        stdout.contains("== Disassembly =="),
+        "disasm must produce a listing header"
+    );
+    assert!(
+        stdout.contains("[1:"),
+        "disasm on .aipo must include source annotations"
+    );
+}
+
+#[test]
+fn test_disasm_aibc_file_produces_listing() {
+    let source = conformance_dir().join("programs/01_hello.aipo");
+    let aibc = compile_to_aibc(&source);
+    let (code, stdout, stderr) = run_cli(&["disasm", &aibc.to_string_lossy()]);
+    assert_eq!(code, EXIT_SUCCESS, "disasm on .aibc must succeed: {stderr}");
+    assert!(
+        stdout.contains("== Disassembly =="),
+        "disasm must produce a listing header"
+    );
+    let _ = std::fs::remove_file(&aibc);
+}
+
+#[test]
+fn test_disasm_nonexistent_file_returns_usage_error() {
+    let (code, _stdout, stderr) = run_cli(&["disasm", "/tmp/no_such_file.aipo"]);
+    assert_eq!(code, EXIT_USAGE, "missing file must be a usage error");
+    assert!(stderr.contains("error:"));
+}
+
+#[test]
+fn test_disasm_corrupt_aibc_returns_language_failure() {
+    let temp = std::env::temp_dir().join("corrupt_disasm_test.aibc");
+    std::fs::write(&temp, b"GARBAGE").expect("temp writable");
+    let (code, _stdout, stderr) = run_cli(&["disasm", &temp.to_string_lossy()]);
+    assert_eq!(
+        code, EXIT_LANGUAGE_FAILURE,
+        "corrupt .aibc disasm must be a language failure: {stderr}"
+    );
+    let _ = std::fs::remove_file(&temp);
+}
+
+#[test]
+fn test_disasm_requires_a_path_argument() {
+    let (code, _stdout, _stderr) = run_cli(&["disasm"]);
+    assert_eq!(
+        code, EXIT_USAGE,
+        "disasm without path must be a usage error"
+    );
+}

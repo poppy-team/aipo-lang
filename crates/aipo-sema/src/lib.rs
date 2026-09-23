@@ -10,7 +10,7 @@ pub mod symbol;
 
 pub use analyzer::{SemanticAnalyzer, SemanticFacts};
 pub use prelude::PreludeSurface;
-pub use symbol::{Mutability, Scope, ScopeTree, Symbol, SymbolKind};
+pub use symbol::{MethodSignature, Mutability, Scope, ScopeTree, Symbol, SymbolKind};
 
 use aipo_diagnostics::Diagnostic;
 use aipo_hir::HirProgram;
@@ -185,6 +185,106 @@ mod tests {
     fn test_await_of_a_call_is_not_reported() {
         let code =
             "async fn worker()\n  return 1\nend\n\nfn caller()\n  return await worker()\nend";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    #[test]
+    fn test_assignment_await_not_reported() {
+        let code = "async fn worker()\n  return 1\nend\n\nfn caller()\n  var x = 0\n  x = await worker()\nend";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    #[test]
+    fn test_immutable_receiver_mutation() {
+        let code = "struct Point\n  x\n  y\nend\n\nimpl Point\n  fn set_x(self, val)\n    self.x = val\n  end\nend";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_READONLY_MUTATION);
+    }
+
+    #[test]
+    fn test_mutable_path_mutation_allowed() {
+        let code = "var items = [1, 2, 3]\nitems[0] = 10";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    #[test]
+    fn test_fixed_field_reassignment_reported() {
+        let code = "struct User\n  fixed id\n  name\nend\n\nimpl User\n  fn change_id(self!, new_id)\n    self.id = new_id\n  end\nend";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_FIXED_REASSIGN);
+    }
+
+    #[test]
+    fn test_async_method_forgotten_task_reported() {
+        let code = "struct Service\nend\n\nimpl Service\n  async fn fetch(self)\n    return 42\n  end\nend\n\nlet s = Service{}\ns.fetch()";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_FORGOTTEN_TASK);
+    }
+
+    #[test]
+    fn test_immutable_binding_field_mutation_allowed() {
+        let code = "struct Point\n  x\n  y\nend\n\nlet p = Point{x = 1, y = 2}\np.x = 10";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    #[test]
+    fn test_immutable_binding_index_mutation_allowed() {
+        let code = "let items = [1, 2, 3]\nitems[0] = 99";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    #[test]
+    fn test_fixed_field_instance_mutation_reported() {
+        let code = "struct User\n  fixed id\n  name\nend\n\nvar u = User{id = 1, name = \"Alice\"}\nu.id = 2";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_FIXED_REASSIGN);
+    }
+
+    #[test]
+    fn test_satisfy_return_type_mismatch() {
+        let code = "interface Getter\n  fn get() -> Int\nend\n\nstruct Boxed\nend\n\nimpl Boxed\n  fn get() -> String\n    return \"hi\"\n  end\nend\n\nsatisfy Boxed: Getter";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(
+            diags[0].code,
+            DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC
+        );
+    }
+
+    #[test]
+    fn test_satisfy_receiver_mutability_mismatch() {
+        let code = "interface Mutator\n  fn mutate(self!)\nend\n\nstruct State\nend\n\nimpl State\n  fn mutate(self)\n  end\nend\n\nsatisfy State: Mutator";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(
+            diags[0].code,
+            DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC
+        );
+    }
+
+    #[test]
+    fn test_satisfy_async_mismatch() {
+        let code = "interface Fetcher\n  async fn fetch()\nend\n\nstruct Service\nend\n\nimpl Service\n  fn fetch()\n    return 1\n  end\nend\n\nsatisfy Service: Fetcher";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(
+            diags[0].code,
+            DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC
+        );
+    }
+
+    #[test]
+    fn test_destructuring_list_valid() {
+        let code = "let [a, b] = [1, 2]";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }

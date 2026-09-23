@@ -520,6 +520,89 @@ pub fn string_reverse(args: &[Value]) -> Result<Value, VmFault> {
     Ok(Value::String(Rc::new(normalized)))
 }
 
+/// Returns extended grapheme clusters of a string as a List of Strings.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not String.
+pub fn string_graphemes(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(arity_error("string.graphemes", 1, args.len()));
+    }
+
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+
+    let s = expect_string(&args[0], "string.graphemes")?;
+    let clusters: Vec<Value> = s
+        .graphemes(true)
+        .map(|g| Value::String(Rc::new(g.to_string())))
+        .collect();
+
+    Ok(Value::List(Rc::new(RefCell::new(clusters))))
+}
+
+/// Returns words of a string as a List of Strings using Unicode word segmentation.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not String.
+pub fn string_words(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(arity_error("string.words", 1, args.len()));
+    }
+
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+
+    let s = expect_string(&args[0], "string.words")?;
+    let words: Vec<Value> = s
+        .unicode_words()
+        .map(|w| Value::String(Rc::new(w.to_string())))
+        .collect();
+
+    Ok(Value::List(Rc::new(RefCell::new(words))))
+}
+
+/// Splits a string by line breaks (`\r\n`, `\n`, `\r`) into a List of Strings.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not String.
+pub fn string_lines(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(arity_error("string.lines", 1, args.len()));
+    }
+
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+
+    let s = expect_string(&args[0], "string.lines")?;
+    let lines: Vec<Value> = s
+        .lines()
+        .map(|l| Value::String(Rc::new(l.to_string())))
+        .collect();
+
+    Ok(Value::List(Rc::new(RefCell::new(lines))))
+}
+
+/// Converts string using locale-neutral Unicode case folding.
+///
+/// # Errors
+/// Returns `VmFault::TypeMismatch` if operand is not String.
+pub fn string_casefold(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() != 1 {
+        return Err(arity_error("string.casefold", 1, args.len()));
+    }
+
+    if let Value::Failure(f) = &args[0] {
+        return Ok(Value::Failure(Rc::clone(f)));
+    }
+
+    let s = expect_string(&args[0], "string.casefold")?;
+    Ok(Value::String(Rc::new(nfc(s.to_lowercase()))))
+}
+
 /// Splits a string into `(prefix, braced)` segments for `format`.
 fn is_simple_placeholder_name(name: &str) -> bool {
     let mut chars = name.chars();
@@ -761,6 +844,38 @@ pub fn create_module() -> Value {
                 name: "string.slice".to_string(),
                 arity: 3,
                 func: string_slice,
+            },
+        ),
+        (
+            Value::String(Rc::new("graphemes".to_string())),
+            Value::Native {
+                name: "string.graphemes".to_string(),
+                arity: 1,
+                func: string_graphemes,
+            },
+        ),
+        (
+            Value::String(Rc::new("words".to_string())),
+            Value::Native {
+                name: "string.words".to_string(),
+                arity: 1,
+                func: string_words,
+            },
+        ),
+        (
+            Value::String(Rc::new("lines".to_string())),
+            Value::Native {
+                name: "string.lines".to_string(),
+                arity: 1,
+                func: string_lines,
+            },
+        ),
+        (
+            Value::String(Rc::new("casefold".to_string())),
+            Value::Native {
+                name: "string.casefold".to_string(),
+                arity: 1,
+                func: string_casefold,
             },
         ),
     ];

@@ -329,8 +329,59 @@ impl HostContext {
                 }
                 Ok(())
             }
-            // Everything else is a plain value, a callable or an opaque host-owned kind that
-            // cannot hold a handle.
+            Value::Closure(closure) => {
+                for cell in &closure.upvalues {
+                    if visited.insert(Rc::as_ptr(cell) as usize) {
+                        self.walk(&cell.borrow(), site, visited)?;
+                    }
+                }
+                Ok(())
+            }
+            Value::BoundMethod(bm) => self.walk(&bm.receiver, site, visited),
+            Value::Sequence(pipeline) => {
+                if !visited.insert(Rc::as_ptr(pipeline) as usize) {
+                    return Ok(());
+                }
+                if let Some(cached) = pipeline.cached.borrow().as_ref() {
+                    for item in cached {
+                        self.walk(item, site, visited)?;
+                    }
+                }
+                match &pipeline.source {
+                    crate::value::SequenceSource::List(items)
+                    | crate::value::SequenceSource::Dict(items)
+                    | crate::value::SequenceSource::Set(items) => {
+                        items
+                            .iter()
+                            .try_for_each(|item| self.walk(item, site, visited))?;
+                    }
+                    crate::value::SequenceSource::Range { .. } => {}
+                }
+                for op in &pipeline.ops {
+                    match op {
+                        crate::value::SeqOp::Map(v)
+                        | crate::value::SeqOp::Filter(v)
+                        | crate::value::SeqOp::FlatMap(v)
+                        | crate::value::SeqOp::Find(v)
+                        | crate::value::SeqOp::Any(v)
+                        | crate::value::SeqOp::All(v)
+                        | crate::value::SeqOp::GroupBy(v) => self.walk(v, site, visited)?,
+                        crate::value::SeqOp::Count(Some(v)) => self.walk(v, site, visited)?,
+                        crate::value::SeqOp::Reduce { initial, func } => {
+                            self.walk(initial, site, visited)?;
+                            self.walk(func, site, visited)?;
+                        }
+                        crate::value::SeqOp::Zip(items) | crate::value::SeqOp::Chain(items) => {
+                            for item in items {
+                                self.walk(item, site, visited)?;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(())
+            }
+            // Everything else is a plain value or an opaque host-owned kind that cannot hold a handle.
             _ => Ok(()),
         }
     }

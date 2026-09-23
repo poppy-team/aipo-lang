@@ -1,6 +1,6 @@
 //! Bytecode verifier checking structural invariants, bounds, and jump targets.
 
-use crate::module::{AIBC_MAGIC, AIBC_VERSION, BytecodeModule};
+use crate::module::{AIBC_MAGIC, AIBC_VERSION, BytecodeModule, FunctionInfo};
 use crate::opcode::OpCode;
 use byteorder::{BigEndian, ByteOrder};
 use std::collections::HashSet;
@@ -119,6 +119,17 @@ impl BytecodeVerifier {
                 }
                 OpCode::JumpIfSetLocal => {
                     if cursor + 5 <= module.code.len() {
+                        let slot =
+                            BigEndian::read_u16(&module.code[cursor + 1..cursor + 3]) as usize;
+                        if let Some(func) = Self::enclosing_function(module, cursor) {
+                            let limit = func.params + func.locals;
+                            if slot >= limit {
+                                errors.push(format!(
+                                    "JumpIfSetLocal slot {slot} out of bounds for function '{}' (limit {limit}) at offset {cursor}",
+                                    func.name
+                                ));
+                            }
+                        }
                         let rel =
                             BigEndian::read_i16(&module.code[cursor + 3..cursor + 5]) as isize;
                         let target = (cursor as isize) + 5 + rel;
@@ -146,6 +157,19 @@ impl BytecodeVerifier {
                                 type_idx,
                                 module.names.len()
                             ));
+                        }
+                        let field_count =
+                            BigEndian::read_u16(&module.code[cursor + 3..cursor + 5]) as usize;
+                        if let Some(type_name) = module.names.get(type_idx) {
+                            if let Some(info) = module.structs.iter().find(|s| s.name == *type_name)
+                            {
+                                if field_count != info.fields.len() {
+                                    errors.push(format!(
+                                        "BuildStruct for {type_name} expected {} fields, got {field_count} at offset {cursor}",
+                                        info.fields.len()
+                                    ));
+                                }
+                            }
                         }
                         let defer_fixed = module.code[cursor + 5];
                         if defer_fixed > 1 {
@@ -258,12 +282,41 @@ impl BytecodeVerifier {
                     }
                     cursor += Self::assert_contract_size(&module.code[cursor..]);
                 }
-                OpCode::BuildList
-                | OpCode::BuildDict
-                | OpCode::GetLocal
-                | OpCode::SetLocal
-                | OpCode::GetUpvalue
-                | OpCode::SetUpvalue => {
+                OpCode::GetLocal | OpCode::SetLocal => {
+                    if cursor + 3 <= module.code.len() {
+                        let slot =
+                            BigEndian::read_u16(&module.code[cursor + 1..cursor + 3]) as usize;
+                        if let Some(func) = Self::enclosing_function(module, cursor) {
+                            let limit = func.params + func.locals;
+                            if slot >= limit {
+                                errors.push(format!(
+                                    "{} slot {slot} out of bounds for function '{}' (limit {limit}) at offset {cursor}",
+                                    if opcode == OpCode::GetLocal { "GetLocal" } else { "SetLocal" },
+                                    func.name
+                                ));
+                            }
+                        }
+                    }
+                    cursor += 3;
+                }
+                OpCode::GetUpvalue | OpCode::SetUpvalue => {
+                    if cursor + 3 <= module.code.len() {
+                        let slot =
+                            BigEndian::read_u16(&module.code[cursor + 1..cursor + 3]) as usize;
+                        if let Some(func) = Self::enclosing_function(module, cursor) {
+                            if slot >= func.upvalues {
+                                errors.push(format!(
+                                    "{} slot {slot} out of bounds for function '{}' (limit {}) at offset {cursor}",
+                                    if opcode == OpCode::GetUpvalue { "GetUpvalue" } else { "SetUpvalue" },
+                                    func.name,
+                                    func.upvalues
+                                ));
+                            }
+                        }
+                    }
+                    cursor += 3;
+                }
+                OpCode::BuildList | OpCode::BuildDict => {
                     cursor += 3;
                 }
                 _ => cursor += 1,
@@ -275,6 +328,11 @@ impl BytecodeVerifier {
         } else {
             Err(errors)
         }
+    }
+
+    /// Finds the enclosing compiled function metadata for an instruction offset.
+    fn enclosing_function(module: &BytecodeModule, cursor: usize) -> Option<&FunctionInfo> {
+        module.functions.iter().rev().find(|f| f.entry_ip <= cursor)
     }
 
     /// Size of an `AssertContract` instruction: the opcode, five fixed operands and the operation

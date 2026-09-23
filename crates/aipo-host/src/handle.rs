@@ -212,14 +212,21 @@ impl<T> HandleTable<T> {
 
     /// Drops every value and invalidates every handle.
     pub fn clear(&mut self) {
-        for slot in self.slots.iter_mut().flatten() {
-            if slot.generation == u32::MAX {
+        self.free.clear();
+        for (index, slot) in self.slots.iter_mut().enumerate() {
+            let Some(entry) = slot.as_mut() else {
+                // Slot was already retired (generation exhausted); skip it.
+                continue;
+            };
+            if entry.generation == u32::MAX {
+                // Exhausted: retire the slot instead of wrapping.
+                *slot = None;
                 continue;
             }
-            slot.generation += 1;
-            slot.value = None;
+            entry.generation += 1;
+            entry.value = None;
+            self.free.push(index);
         }
-        self.free.clear();
         self.live = 0;
     }
 }

@@ -20,6 +20,8 @@ pub fn emit_bundle(
     let dir = std::env::temp_dir().join(format!("aipo-testkit-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("bundle dir is writable");
+    std::fs::write(dir.join("package.json"), "{\"type\": \"module\"}\n")
+        .expect("package.json is writable");
     std::fs::write(dir.join("app.js"), &bundle.app_js).expect("app.js is writable");
     std::fs::write(dir.join("aipo-runtime.js"), &bundle.runtime_js).expect("shim is writable");
     std::fs::write(dir.join("app.js.map"), &bundle.source_map).expect("map is writable");

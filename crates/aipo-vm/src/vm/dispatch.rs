@@ -317,16 +317,26 @@ impl Vm {
                                 let entry_ip = *entry_ip;
                                 let total_arity = *total_arity;
                                 let is_async = *is_async;
-                                self.push(Value::BoundMethod {
-                                    name: format!("{type_name}.{field_name}"),
-                                    arity: total_arity.saturating_sub(1),
-                                    receiver: Box::new(target.clone()),
-                                    kind: MethodKind::Function {
+                                self.push(Value::bound_method(
+                                    format!("{type_name}.{field_name}"),
+                                    total_arity.saturating_sub(1),
+                                    target.clone(),
+                                    MethodKind::Function {
                                         entry_ip,
                                         total_arity,
                                         is_async,
                                     },
-                                })?;
+                                ))?;
+                            } else if let Some((arity, func)) = self
+                                .method_natives
+                                .get(&(type_name.clone(), field_name.clone()))
+                            {
+                                self.push(Value::bound_method(
+                                    format!("{type_name}.{field_name}"),
+                                    *arity,
+                                    target.clone(),
+                                    MethodKind::Native(*func),
+                                ))?;
                             } else {
                                 return Err(VmFault::NoSuchField {
                                     type_name,
@@ -858,12 +868,7 @@ impl Vm {
                     upvalues.push(Rc::new(RefCell::new(self.pop()?)));
                 }
                 upvalues.reverse();
-                self.push(Value::Closure {
-                    entry_ip,
-                    arity,
-                    upvalues,
-                    is_async,
-                })?;
+                self.push(Value::closure(entry_ip, arity, upvalues, is_async))?;
             }
             OpCode::GetUpvalue => {
                 let idx = self.read_u16(module)? as usize;
@@ -930,6 +935,24 @@ impl Vm {
                     }
                 }
             }
+            OpCode::TypeIsNullable => {
+                let tag = self.pop()?;
+                let value = self.pop()?;
+                if matches!(value, Value::None) {
+                    self.push(Value::Bool(true))?;
+                } else {
+                    match tag {
+                        Value::Type(tag) => self.push(Value::Bool(tag.matches(&value)))?,
+                        other => {
+                            return Err(VmFault::TypeMismatch {
+                                expected: "type value on the right of `is`".to_string(),
+                                actual: other.type_name().to_string(),
+                            }
+                            .into());
+                        }
+                    }
+                }
+            }
             OpCode::IterGuard => {
                 let value = self.pop()?;
                 if let Some(id) = collection_identity(&value) {
@@ -956,7 +979,7 @@ impl Vm {
                 // and no other capture can hold the sentinel at creation time, because
                 // captures snapshot already-initialized bindings.
                 let cells = match &closure {
-                    Value::Closure { upvalues, .. } => upvalues.clone(),
+                    Value::Closure(closure) => closure.upvalues.clone(),
                     other => {
                         return Err(VmFault::TypeMismatch {
                             expected: "closure".to_string(),

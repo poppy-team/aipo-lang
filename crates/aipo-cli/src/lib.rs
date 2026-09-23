@@ -5,6 +5,7 @@
 //! aipo run <path> [--message-format=<human|jsonl>]
 //! aipo check <path> [--message-format=<human|jsonl>]
 //! aipo build <path> [--out <dir>] [--message-format=<human|jsonl>]
+//! aipo disasm <path> [--message-format=<human|jsonl>]
 //! aipo fmt <paths...> [--check]
 //! aipo --version
 //! aipo --help
@@ -57,14 +58,16 @@ USAGE:
     aipo run <path> [--message-format=<human|jsonl>]
     aipo check <path> [--message-format=<human|jsonl>]
     aipo build <path> [--out <dir>] [--message-format=<human|jsonl>]
+    aipo disasm <path> [--message-format=<human|jsonl>]
     aipo fmt <paths...> [--check]
     aipo --version
     aipo --help
 
 COMMANDS:
-    run      Compile and execute an Aipo source file
+    run      Compile and execute an Aipo source file (.aipo) or bytecode file (.aibc)
     check    Run the frontend, semantic analysis and bytecode verification
     build    Emit a JavaScript bundle (app.js + aipo-runtime.js + app.js.map)
+    disasm   Disassemble a source file (.aipo) or bytecode file (.aibc)
     fmt      Format source files in place; --check reports drift without writing
 
 EXIT CODES:
@@ -112,6 +115,7 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             out_dir,
             format,
         } => build_bundle(&path, out_dir.as_deref(), format, out, err),
+        Command::Disasm { path, format } => disassemble_command(&path, format, out, err),
         Command::Fmt { paths, check } => format_files(&paths, check, out, err),
     }
 }
@@ -134,6 +138,10 @@ enum Command {
         out_dir: Option<PathBuf>,
         format: MessageFormat,
     },
+    Disasm {
+        path: PathBuf,
+        format: MessageFormat,
+    },
     Fmt {
         paths: Vec<PathBuf>,
         check: bool,
@@ -149,7 +157,7 @@ impl Command {
         match first.as_str() {
             "--help" | "-h" | "help" => Ok(Self::Help),
             "--version" | "-V" | "version" => Ok(Self::Version),
-            "run" | "check" => {
+            "run" | "check" | "disasm" => {
                 let mut path = None;
                 let mut format = MessageFormat::Human;
                 let rest = &args[1..];
@@ -177,8 +185,10 @@ impl Command {
                 let path = path.ok_or_else(|| format!("'{first}' requires a path argument"))?;
                 if first == "run" {
                     Ok(Self::Run { path, format })
-                } else {
+                } else if first == "check" {
                     Ok(Self::Check { path, format })
+                } else {
+                    Ok(Self::Disasm { path, format })
                 }
             }
             "build" => {
@@ -340,6 +350,15 @@ fn execute(
     err: &mut dyn Write,
     action: Action,
 ) -> u8 {
+    // Pre-compiled `.aibc` files skip the frontend pipeline entirely.
+    if path.extension().and_then(|ext| ext.to_str()) == Some("aibc") {
+        if action == Action::Check {
+            let _ = writeln!(err, "error: `check` is not supported for .aibc files");
+            return EXIT_USAGE;
+        }
+        return execute_bytecode(path, format, out, err);
+    }
+
     let text = match read_source(path) {
         Ok(text) => text,
         Err(message) => {
@@ -371,6 +390,109 @@ fn execute(
             emit_diagnostics(format, &source, std::slice::from_ref(&diagnostic), out, err);
             EXIT_LANGUAGE_FAILURE
         }
+    }
+}
+
+/// Loads a pre-compiled `.aibc` file, verifies its bytecode, and executes it.
+fn execute_bytecode(
+    path: &Path,
+    format: MessageFormat,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = writeln!(err, "error: {}: {error}", path.display());
+            return EXIT_USAGE;
+        }
+    };
+
+    let module = match aipo_bytecode::BytecodeModule::from_bytes(&bytes) {
+        Ok(module) => module,
+        Err(error) => {
+            let diagnostic = verification_diagnostic(&format!("malformed .aibc: {error}"));
+            let source = Source::new(SourceId::next(), path.display().to_string(), "");
+            emit_diagnostics(format, &source, std::slice::from_ref(&diagnostic), out, err);
+            return EXIT_LANGUAGE_FAILURE;
+        }
+    };
+
+    if let Err(errors) = aipo_bytecode::BytecodeVerifier::verify(&module) {
+        let source = Source::new(SourceId::next(), path.display().to_string(), "");
+        let diagnostics: Vec<Diagnostic> =
+            errors.iter().map(|e| verification_diagnostic(e)).collect();
+        emit_diagnostics(format, &source, &diagnostics, out, err);
+        return EXIT_LANGUAGE_FAILURE;
+    }
+
+    match execute_module(&module) {
+        Ok(()) => EXIT_SUCCESS,
+        Err(error) => {
+            let source = Source::new(SourceId::next(), path.display().to_string(), "");
+            let diagnostic = runtime_diagnostic(&source, &error);
+            emit_diagnostics(format, &source, std::slice::from_ref(&diagnostic), out, err);
+            EXIT_LANGUAGE_FAILURE
+        }
+    }
+}
+
+/// Disassembles a source file or bytecode file and prints the listing.
+fn disassemble_command(
+    path: &Path,
+    format: MessageFormat,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    if path.extension().and_then(|ext| ext.to_str()) == Some("aibc") {
+        // For .aibc files: read bytes, deserialize, disassemble without source.
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let _ = writeln!(err, "error: {}: {error}", path.display());
+                return EXIT_USAGE;
+            }
+        };
+
+        let module = match aipo_bytecode::BytecodeModule::from_bytes(&bytes) {
+            Ok(module) => module,
+            Err(error) => {
+                let diagnostic = verification_diagnostic(&format!("malformed .aibc: {error}"));
+                let source = Source::new(SourceId::next(), path.display().to_string(), "");
+                emit_diagnostics(format, &source, std::slice::from_ref(&diagnostic), out, err);
+                return EXIT_LANGUAGE_FAILURE;
+            }
+        };
+
+        let listing = aipo_bytecode::disassemble(&module);
+        let _ = write!(out, "{listing}");
+        EXIT_SUCCESS
+    } else {
+        // For .aipo files: compile first, then disassemble with source annotations.
+        let text = match read_source(path) {
+            Ok(text) => text,
+            Err(message) => {
+                let _ = writeln!(err, "error: {message}");
+                return EXIT_USAGE;
+            }
+        };
+
+        let source = Source::new(SourceId::next(), path.display().to_string(), &text);
+        let compiled = analyze(&source, path);
+        let has_errors = compiled
+            .diagnostics
+            .iter()
+            .any(|diag| diag.severity == Severity::Error);
+
+        emit_diagnostics(format, &source, &compiled.diagnostics, out, err);
+
+        if has_errors {
+            return EXIT_LANGUAGE_FAILURE;
+        }
+
+        let listing = aipo_bytecode::disassemble_with_source(&compiled.module, &source);
+        let _ = write!(out, "{listing}");
+        EXIT_SUCCESS
     }
 }
 

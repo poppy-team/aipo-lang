@@ -24,7 +24,11 @@ pub fn set_output_sink(sink: Option<Box<dyn Write + Send>>) {
     }
 }
 
-fn write_output(text: &str, newline: bool) -> Result<(), VmFault> {
+/// Writes text to the configured output sink, or stdout if none is configured.
+///
+/// # Errors
+/// Returns `VmFault::CorruptedBytecode` if an I/O error occurs during write.
+pub fn write_output(text: &str, newline: bool) -> Result<(), VmFault> {
     if let Ok(mut guard) = OUTPUT_SINK.lock() {
         if let Some(sink) = guard.as_mut() {
             if newline {

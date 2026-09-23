@@ -911,7 +911,12 @@ impl IrBuilder {
                     out.push(CoreInst::SetIndex(*idx_span));
                 }
                 _ => {
-                    let _ = span;
+                    // Invalid targets are rejected statically by
+                    // `sema::check_assignment_target`; reaching IR means a broken
+                    // frontend invariant. Fail loudly instead of silently dropping
+                    // the assignment (auditoria IR-2).
+                    self.build_value(value, out);
+                    out.push(CoreInst::Fail(*span));
                 }
             },
             HirStmt::CompoundAssign(op, target, value, span) => match target {
@@ -933,17 +938,37 @@ impl IrBuilder {
                     self.mark_field_mutation(*dot_span, out);
                 }
                 HirExpr::Index(base, idx, idx_span) => {
+                    // Save base and index into hidden locals to avoid double evaluation.
+                    // Without this, expressions with side effects (e.g. `list[f()] += 1`)
+                    // would execute the side effect twice.
+                    let base_slot = self.hidden_local("cai_base");
+                    let idx_slot = self.hidden_local("cai_idx");
+                    let base_name = self.hidden_name(base_slot);
+                    let idx_name = self.hidden_name(idx_slot);
+
                     self.build_expr(base, out);
+                    out.push(CoreInst::Store(base_name.clone(), *idx_span));
                     self.build_expr(idx, out);
-                    self.build_expr(base, out);
-                    self.build_expr(idx, out);
+                    out.push(CoreInst::Store(idx_name.clone(), *idx_span));
+
+                    // Stack for SetIndex: [base, idx, new_value]
+                    out.push(CoreInst::Load(base_name.clone(), *idx_span));
+                    out.push(CoreInst::Load(idx_name.clone(), *idx_span));
+
+                    // Stack for GetIndex to compute old value: [base, idx, base, idx]
+                    out.push(CoreInst::Load(base_name, *idx_span));
+                    out.push(CoreInst::Load(idx_name, *idx_span));
                     out.push(CoreInst::GetIndex(*idx_span));
                     self.build_value(value, out);
                     out.push(CoreInst::Binary(*op, *span));
                     out.push(CoreInst::PropagateFailure(*span));
                     out.push(CoreInst::SetIndex(*idx_span));
                 }
-                _ => {}
+                _ => {
+                    // Same invariant as `Assign` above (auditoria IR-2).
+                    self.build_value(value, out);
+                    out.push(CoreInst::Fail(*span));
+                }
             },
             HirStmt::If(s) => {
                 self.fn_stack
@@ -1538,6 +1563,11 @@ impl IrBuilder {
                     self.build_expr(right, out);
                     out.push(CoreInst::TypeIs(*span));
                 }
+                BinaryOp::IsNullable => {
+                    self.build_expr(left, out);
+                    self.build_expr(right, out);
+                    out.push(CoreInst::TypeIsNullable(*span));
+                }
                 BinaryOp::Pipeline => {
                     self.build_expr(right, out);
                     self.build_expr(left, out);
@@ -1778,9 +1808,13 @@ fn collect_free_stmt(stmt: &HirStmt, seen: &mut HashSet<String>, out: &mut Vec<S
                 collect_free_stmt(stmt, seen, out);
             }
         }
-        HirStmt::FnDecl(_) => {
+        HirStmt::FnDecl(f) => {
             // A nested local function declares its own name; its body is collected when the
             // closure itself is built, not as free references of the enclosing frame.
+            // Still, the declared name binds in the enclosing block, so record it in
+            // `seen` to avoid a later sibling use being misclassified as free
+            // (auditoria IR-4).
+            seen.insert(f.name.clone());
         }
         HirStmt::Attempt(s) => {
             for stmt in &s.body {

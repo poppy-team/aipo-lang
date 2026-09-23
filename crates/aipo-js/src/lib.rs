@@ -156,6 +156,7 @@ fn inst_to_json(inst: &CoreInst) -> Json {
         CoreInst::Range(_) => json!({"op":"Range"}),
         CoreInst::Len(_) => json!({"op":"Len"}),
         CoreInst::TypeIs(_) => json!({"op":"TypeIs"}),
+        CoreInst::TypeIsNullable(_) => json!({"op":"TypeIsNullable"}),
         CoreInst::IterGuard(_) => json!({"op":"IterGuard"}),
         CoreInst::IterGuardEnd(_) => json!({"op":"IterGuardEnd"}),
         CoreInst::Fail(_) => json!({"op":"Fail"}),
