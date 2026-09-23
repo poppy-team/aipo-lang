@@ -2,7 +2,7 @@
 // ESM. Mirrors the Rust VM value model and Core IR interpreter semantics:
 // divergence between VM and JS backends is a bug.
 // RUNTIME_VERSION must match aipo-js RUNTIME_VERSION in src/lib.rs.
-export const RUNTIME_VERSION = '1.1.0';
+export const RUNTIME_VERSION = '1.2.0';
 
 const MAX_SAFE_INT = 9007199254740991;
 const MIN_SAFE_INT = -9007199254740991;
@@ -951,6 +951,28 @@ export function valGetIndex(target, index, activeIterations) {
   }
   return typeMismatch('indexable collection or string', typeName(target));
 }
+/**
+ * One `each` binding: mode 0 is the natural element, 1 the key/index, 2 the value.
+ *
+ * A dict projects key/value at the ordinal position; every other iterable projects
+ * its element for modes 0 and 2 and the positional Int for mode 1.
+ */
+export function iterAt(m, coll, ordinal, mode) {
+  if (coll.t === 'dict') {
+    const len = coll.entries.length;
+    const i = resolveIndex(len, ordinal);
+    if (i < 0 || i >= len) fault('AIPO_RT_INDEX_OUT_OF_RANGE', `index ${ordinal} out of range (len ${len})`);
+    return mode === 1 ? coll.entries[i][0] : coll.entries[i][1];
+  }
+  if (mode === 1) {
+    const lenV = valLen(coll);
+    const len = lenV.t === 'int' ? lenV.v : 0;
+    const i = resolveIndex(len, ordinal);
+    if (i < 0 || i >= len) fault('AIPO_RT_INDEX_OUT_OF_RANGE', `index ${ordinal} out of range (len ${len})`);
+    return vInt(i);
+  }
+  return valGetIndex(coll, vInt(ordinal), m.active);
+}
 export function valSetIndex(target, index, value) {
   if (isFailure(target)) return target;
   if (isFailure(index)) return index;
@@ -974,7 +996,9 @@ export function valSetIndex(target, index, value) {
     if (i < 0 || i >= target.data.length) fault('AIPO_RT_INDEX_OUT_OF_RANGE', `index ${xi.v} out of range (len ${target.data.length})`);
     const xv = widen(value);
     if (xv.t !== 'int') return typeMismatch('Byte or Int value', typeName(value));
-    if (xv.v < 0 || xv.v > 255) return vFail(`byte value out of range: ${xv.v}`);
+    // Out-of-range ints are a type problem at the boundary, matching the VM's fault
+    // instead of silently continuing with a dropped recoverable Failure.
+    if (xv.v < 0 || xv.v > 255) return typeMismatch('Byte or Int in 0..=255', String(xv.v));
     target.data[i] = xv.v;
     return vNone();
   }
@@ -4481,8 +4505,9 @@ function stepFn(m) {
     case 'SetField': {
       const nv = mPop(m);
       const t = mPop(m);
+      if (isFailure(t)) { handleFailure(m, t); break; }
+      if (isFailure(nv)) { handleFailure(m, nv); break; }
       if (t.t !== 'struct') return typeMismatch('struct instance', typeName(t));
-      if (isFailure(nv)) { mPush(m, nv); break; }
       const at = t.fields.findIndex(([k]) => k === inst.f);
       if (at < 0) fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: ${t.type} has no field '${inst.f}'`);
       if (!t.constructing && t.fixed.has(inst.f)) fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: fixed field '${t.type}.${inst.f}' cannot be reassigned`);
@@ -4492,7 +4517,6 @@ function stepFn(m) {
         }
       }
       t.fields[at][1] = nv;
-      mPush(m, vNone());
       break;
     }
     case 'GetIndex': {
@@ -4505,8 +4529,10 @@ function stepFn(m) {
       const v = mPop(m);
       const ix = mPop(m);
       const t = mPop(m);
+      if (isFailure(t)) { handleFailure(m, t); break; }
+      if (isFailure(ix)) { handleFailure(m, ix); break; }
+      if (isFailure(v)) { handleFailure(m, v); break; }
       valSetIndex(t, ix, v);
-      mPush(m, vNone());
       break;
     }
     case 'BuildList': {
@@ -4562,6 +4588,9 @@ function stepFn(m) {
     }
     case 'CheckMutations': checkMutations(m); break;
     case 'PropagateFailure': {
+      // An empty operand stack means this boundary produced no value to check,
+      // exactly like the VM's `stack.last()` guard.
+      if (m.stack.length === 0) break;
       const v = mPeek(m);
       if (isFailure(v)) {
         mPop(m);
@@ -4646,10 +4675,19 @@ function stepFn(m) {
     }
     case 'IterGuard': {
       const v = mPop(m);
-      if (v.t === 'list' || v.t === 'dict' || v.t === 'bytes' || v.t === 'set') m.active.push(v.id);
+      // Always push so `IterGuardEnd` stays balanced for unguarded values (ranges,
+      // strings); `null` never matches a real collection id.
+      m.active.push((v.t === 'list' || v.t === 'dict' || v.t === 'bytes' || v.t === 'set') ? v.id : null);
       break;
     }
     case 'IterGuardEnd': m.active.pop(); break;
+    case 'IterAt': {
+      const ix = mPop(m);
+      const coll = mPop(m);
+      if (ix.t !== 'int') return typeMismatch('Int iteration index', typeName(ix));
+      mPush(m, iterAt(m, coll, ix.v, inst.mode));
+      break;
+    }
     case 'PushUnset': mPush(m, vUnset()); break;
     default: fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: unknown instruction ${op}`);
   }

@@ -77,9 +77,10 @@ pub enum CoreInst {
         /// Source span.
         span: SourceSpan,
     },
-    /// Unconditional relative jump offset.
+    /// Unconditional jump to an absolute instruction index (the bytecode emitter
+    /// converts it to a relative offset).
     Jump(isize, SourceSpan),
-    /// Relative jump offset if top of stack is false.
+    /// Jump to an absolute instruction index if the top of stack is false.
     JumpIfFalse(isize, SourceSpan),
     /// Pop top of stack and discard.
     Pop(SourceSpan),
@@ -88,10 +89,17 @@ pub enum CoreInst {
     /// Field get: `obj.field`.
     GetField(String, SourceSpan),
     /// Field set: `obj.field = val`.
+    ///
+    /// Pops the value and then the receiver; on success the stack is exactly as it was.
+    /// A `Failure` on either side propagates through the handler stack instead of being
+    /// left behind or turned into a type fault.
     SetField(String, SourceSpan),
     /// Index get: `coll[idx]`.
     GetIndex(SourceSpan),
     /// Index set: `coll[idx] = val`.
+    ///
+    /// Pops the value, the index and the collection; on success the stack is exactly as
+    /// it was. A `Failure` in any of the three propagates like [`CoreInst::SetField`].
     SetIndex(SourceSpan),
     /// Construct list with count items.
     BuildList(usize, SourceSpan),
@@ -206,11 +214,14 @@ pub enum CoreInst {
     TypeIsNullable(SourceSpan),
     /// Register the collection on top of the stack as actively iterated.
     IterGuard(SourceSpan),
+    /// Read one `each` binding at an ordinal position: pops the index and then the
+    /// collection, pushes the requested projection (auditoria IR-10).
+    IterAt(IterMode, SourceSpan),
     /// Unregister the innermost active iteration.
     IterGuardEnd(SourceSpan),
     /// Failure propagation.
     Fail(SourceSpan),
-    /// Register a failure recovery handler jumping to relative target.
+    /// Register a failure recovery handler targeting an absolute instruction index.
     PushHandler(isize, SourceSpan),
     /// Unregister the topmost failure recovery handler.
     PopHandler(SourceSpan),
@@ -240,6 +251,17 @@ pub enum CoreInst {
         span: SourceSpan,
     },
 }
+/// Which `each` binding `CoreInst::IterAt` projects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IterMode {
+    /// The natural one-name binding: the key of a `Dict`, the element otherwise.
+    Primary,
+    /// The two-name first binding: the key of a `Dict`, the positional Int otherwise.
+    Key,
+    /// The two-name second binding: the value of a `Dict`, the element otherwise.
+    Value,
+}
+
 /// Target-neutral literal constant value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CoreConstant {

@@ -117,6 +117,17 @@ impl BytecodeVerifier {
                     }
                     cursor += 3;
                 }
+                OpCode::IterAt => {
+                    if cursor + 2 <= module.code.len() {
+                        let mode = module.code[cursor + 1];
+                        if mode > 2 {
+                            errors.push(format!(
+                                "IterAt mode {mode} must be 0 (primary), 1 (key) or 2 (value) at offset {cursor}"
+                            ));
+                        }
+                    }
+                    cursor += 2;
+                }
                 OpCode::JumpIfSetLocal => {
                     if cursor + 5 <= module.code.len() {
                         let slot =
@@ -366,6 +377,7 @@ impl BytecodeVerifier {
             OpCode::JumpIfSetLocal => 5,
             OpCode::AssertContract => Self::assert_contract_size(slice),
             OpCode::Call => 2,
+            OpCode::IterAt => 2,
             OpCode::BuildStruct => 6,
             OpCode::MakeClosure => 5,
             _ => 1,

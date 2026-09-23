@@ -26,6 +26,11 @@ pub const INT_MIN: i64 = -INT_MAX;
 /// compares what it sent with what came back. Language-level equality rules (`Float` zeros,
 /// ordering, `same` versus `==`) belong to the VM's value layer and are deliberately not
 /// encoded here.
+///
+/// The `Int`/`Float` variants are public, so constructing them directly is unchecked
+/// (auditoria N-1). Crossing the boundary is not: [`crate::HostValue::validate`] and the VM
+/// conversion both re-check ±(2^53−1) and finiteness, so a hand-built out-of-range value is
+/// refused at the boundary instead of reaching the script.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HostValue {
     /// `none`.
@@ -104,6 +109,42 @@ impl HostValue {
     pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
+
+    /// Re-checks the value against the boundary contract.
+    ///
+    /// [`HostValue::int`] and [`HostValue::float`] already enforce this; `validate` is the
+    /// canonical check for values built through the public variants directly, and it is the
+    /// same rule the VM applies when the value crosses into the language.
+    ///
+    /// # Errors
+    ///
+    /// [`HostFault::InvalidHostValue`] when an `Int` leaves ±(2^53−1) or a `Float` is not
+    /// finite.
+    pub fn validate(&self) -> Result<(), HostFault> {
+        match self {
+            Self::Int(value) => {
+                if (INT_MIN..=INT_MAX).contains(value) {
+                    Ok(())
+                } else {
+                    Err(HostFault::InvalidHostValue {
+                        detail: format!(
+                            "Int {value} is outside ±{INT_MAX}; the language has no widening Int"
+                        ),
+                    })
+                }
+            }
+            Self::Float(value) => {
+                if value.is_finite() {
+                    Ok(())
+                } else {
+                    Err(HostFault::InvalidHostValue {
+                        detail: format!("Float {value} is not finite; NaN and Infinity are faults"),
+                    })
+                }
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -155,5 +196,28 @@ mod tests {
         let original = HostValue::String("aipo".to_string());
         let copy = original.clone();
         assert_eq!(original, copy);
+    }
+
+    /// The variants are public, so a host can build them directly; `validate` closes the
+    /// boundary for exactly that case (auditoria N-1).
+    #[test]
+    fn test_validate_rechecks_directly_constructed_variants() {
+        assert!(HostValue::Int(INT_MAX).validate().is_ok());
+        assert!(HostValue::Float(1.5).validate().is_ok());
+        assert!(HostValue::validate(&HostValue::Int(i64::MAX)).is_err());
+        assert!(HostValue::Float(f64::NAN).validate().is_err());
+        assert!(HostValue::Float(f64::INFINITY).validate().is_err());
+        assert!(HostValue::None.validate().is_ok());
+    }
+
+    #[test]
+    fn test_is_none_and_full_type_names() {
+        assert!(HostValue::None.is_none());
+        assert!(!HostValue::Bool(false).is_none());
+        assert_eq!(HostValue::Int(1).type_name(), "Int");
+        assert_eq!(HostValue::Float(1.0).type_name(), "Float");
+        assert_eq!(HostValue::String("s".to_string()).type_name(), "String");
+        let mut table: crate::HandleTable<u8> = crate::HandleTable::new();
+        assert_eq!(HostValue::Handle(table.insert(0)).type_name(), "Handle");
     }
 }

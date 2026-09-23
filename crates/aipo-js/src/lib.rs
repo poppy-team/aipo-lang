@@ -23,7 +23,7 @@ use serde_json::{Value as Json, json};
 ///
 /// Bumped whenever `runtime/aipo-runtime.js` semantics change; the emitted
 /// `app.js` records it so a stale shim is detectable.
-pub const RUNTIME_VERSION: &str = "1.1.0";
+pub const RUNTIME_VERSION: &str = "1.2.0";
 
 /// The versioned runtime shim source, embedded at compile time.
 pub const RUNTIME_JS: &str = include_str!("../runtime/aipo-runtime.js");
@@ -158,6 +158,14 @@ fn inst_to_json(inst: &CoreInst) -> Json {
         CoreInst::TypeIs(_) => json!({"op":"TypeIs"}),
         CoreInst::TypeIsNullable(_) => json!({"op":"TypeIsNullable"}),
         CoreInst::IterGuard(_) => json!({"op":"IterGuard"}),
+        CoreInst::IterAt(mode, _) => json!({
+            "op":"IterAt",
+            "mode": match mode {
+                aipo_ir::IterMode::Primary => 0,
+                aipo_ir::IterMode::Key => 1,
+                aipo_ir::IterMode::Value => 2,
+            }
+        }),
         CoreInst::IterGuardEnd(_) => json!({"op":"IterGuardEnd"}),
         CoreInst::Fail(_) => json!({"op":"Fail"}),
         CoreInst::PushHandler(t, _) => json!({"op":"PushHandler","t": target_usize(*t)}),

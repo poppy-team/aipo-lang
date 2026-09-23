@@ -294,6 +294,56 @@ mod tests {
             Err(CapabilityError::InvalidSegment(String::new()))
         );
         assert!(Capability::parse("poppy.ecs-scope").is_ok());
+        assert!(Capability::parse("poppy.2d").is_err());
+        // Boundary and adversarial shapes stay total: dots, whitespace, unicode and
+        // numeric-first segments are rejected, never panicking.
+        assert_eq!(
+            Capability::parse("."),
+            Err(CapabilityError::InvalidSegment(String::new()))
+        );
+        assert_eq!(
+            Capability::parse("clock."),
+            Err(CapabilityError::InvalidSegment(String::new()))
+        );
+        assert_eq!(
+            Capability::parse(".clock"),
+            Err(CapabilityError::InvalidSegment(String::new()))
+        );
+        assert!(Capability::parse("clock.wall ").is_err());
+        assert!(Capability::parse("clock.wáll").is_err());
+        assert!(Capability::parse("2clock").is_err());
+        assert!(Capability::parse(&"a".repeat(4096)).is_ok());
+    }
+
+    #[test]
+    fn test_parent_and_from_str_round_trip() {
+        let wall = capability("clock.wall");
+        assert_eq!(wall.parent(), Some(capability("clock")));
+        assert_eq!(capability("clock").parent(), None);
+        assert_eq!("clock.wall".parse::<Capability>().unwrap(), wall);
+        assert!("".parse::<Capability>().is_err());
+        assert_eq!(wall.to_string(), "clock.wall");
+        // A namespace is its own display and name round-trip.
+        assert_eq!(capability("poppy").name(), "poppy");
+    }
+
+    #[test]
+    fn test_set_iter_len_and_from_iter_are_deterministic() {
+        let set: CapabilitySet = vec![
+            capability("poppy.ecs"),
+            capability("clock"),
+            capability("poppy"),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(set.len(), 2, "poppy covers poppy.ecs");
+        let names: Vec<&str> = set.iter().map(Capability::name).collect();
+        assert_eq!(names, vec!["clock", "poppy"]);
+        let policy: CapabilitySet = vec![capability("poppy")].into_iter().collect();
+        let narrowed = set.narrow(&policy);
+        assert_eq!(narrowed.len(), 1);
+        assert!(narrowed.allows(&capability("poppy.ecs")));
+        assert!(!narrowed.allows(&capability("clock")));
     }
 
     #[test]

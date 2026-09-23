@@ -1020,3 +1020,243 @@ io.println(ok3)
     assert_eq!(vm_out, js_out);
     assert_eq!(vm_out, "true\ntrue\nfalse\ntrue\nfalse\ntrue\n");
 }
+
+#[test]
+fn test_safe_navigation_differential() {
+    // Canon: `a?.b` is `none` when the receiver is `none`, and the call form skips the
+    // access and the arguments. Both backends must agree byte for byte.
+    let code = r#"
+struct Player
+    name
+end
+fn label(p)
+    return p?.name
+end
+io.println(String(label(none)))
+io.println(String(label(Player{name = "ana"})))
+
+struct Doubler
+    n
+end
+impl Doubler
+    fn twice(self)
+        return self.n * 2
+    end
+end
+fn run(d)
+    return d?.twice()
+end
+io.println(String(run(none)))
+io.println(String(run(Doubler{n = 21})))
+"#;
+    let compiled = compile_code("safe_navigation.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("safe_navigation.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "none\nana\nnone\n42\n");
+}
+
+#[test]
+fn test_or_else_is_lazy_differential() {
+    // Canon: the fallback runs only when the left side ends in a `Failure`, and a failed
+    // fallback propagates instead of being swallowed.
+    let code = r#"
+var calls = 0
+fn fallback()
+    calls = calls + 1
+    return 7
+end
+fn ok()
+    return 1
+end
+fn bad()
+    return Int("nope")
+end
+io.println(String(ok() or_else fallback()))
+io.println(String(calls))
+io.println(String(bad() or_else fallback()))
+io.println(String(calls))
+attempt
+    let x = bad() or_else bad()
+    io.println(String(x))
+failed error
+    io.println("double failure caught")
+end
+"#;
+    let compiled = compile_code("or_else_lazy.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("or_else_lazy.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "1\n0\n7\n1\ndouble failure caught\n");
+}
+
+#[test]
+fn test_failure_in_conditions_propagates_differential() {
+    // A recoverable `Failure` in a condition must propagate to `attempt`, not turn into a
+    // type fault at the branch.
+    let code = r#"
+fn value(flag)
+    if flag
+        return Int("12")
+    end
+    return Int("bad")
+end
+attempt
+    var v = value(false)
+    if v > 0
+        io.println("positive")
+    end
+failed error
+    io.println("condition failure caught")
+end
+var count = 0
+while count < 3
+    attempt
+        if count == 1
+            count = count + 1
+            continue
+        end
+    failed error
+        io.println("nope")
+    end
+    count = count + 1
+end
+io.println(String(count))
+"#;
+    let compiled = compile_code("condition_failure.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("condition_failure.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "condition failure caught\n3\n");
+}
+
+#[test]
+fn test_each_over_dict_and_unwind_differential() {
+    // `each key[, value] in dict` follows insertion order; leaving a loop body with
+    // `break`/`continue` must not leak handlers or iteration guards.
+    let code = r#"
+var d = {"a": 1, "b": 2}
+var out = ""
+each k, v in d
+    out = out + k + String(v)
+end
+io.println(out)
+each k in d
+    io.println(k)
+end
+each i in 0..3
+    if i == 1
+        break
+    end
+end
+each i in 0..3
+    io.println(String(i))
+end
+"#;
+    let compiled = compile_code("each_dict.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("each_dict.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "a1b2\n1\n2\n0\n1\n2\n");
+}
+
+#[test]
+fn test_assignment_failure_and_pipeline_order_differential() {
+    // A `Failure` stored or read through an assignment propagates; `a |> f` evaluates `a`
+    // before `f`, which source order makes observable.
+    let code = r#"
+struct P
+    x
+end
+fn set_bad(p)
+    p.x = Int("bad")
+end
+attempt
+    set_bad(P{x = 1})
+failed error
+    io.println("field failure caught")
+end
+var log = ""
+fn left()
+    log = log + "L"
+    return 1
+end
+fn right(x)
+    log = log + "R"
+    return x + 1
+end
+io.println(String(left() |> right()))
+io.println(log)
+"#;
+    let compiled = compile_code("assign_pipeline.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("assign_pipeline.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "field failure caught\n2\nLR\n");
+}
+
+#[test]
+fn test_await_do_covers_block_statements_differential() {
+    // `await do` awaits tasks produced by assignments inside `while` and by `return`.
+    let code = r#"
+async fn pick(n)
+    return n + 1
+end
+async fn looped()
+    var total = 0
+    await do
+        while total < 3
+            total = pick(total)
+        end
+        return pick(total)
+    end
+end
+let result = await looped()
+io.println(String(result))
+"#;
+    let compiled = compile_code("await_do_blocks.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("await_do_blocks.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "4\n");
+}
+
+#[test]
+fn test_loop_unwind_does_not_leak_handlers_or_guards_differential() {
+    // `break`/`continue` leaving an `attempt` must pop its handler, and `return` leaving an
+    // `each` must release the iteration guard: a later failure is caught by the *outer*
+    // handler, and the collection is mutable again.
+    let code = r#"
+attempt
+    each i in 0..3
+        attempt
+            break
+        failed error
+            io.println("inner handler must not run")
+        end
+    end
+    let bad = Int("boom")
+    io.println("not reached")
+failed error
+    io.println("outer: " + error.message)
+end
+
+var items = [1, 2, 3]
+fn first_two()
+    each v in items
+        if v == 2
+            return v
+        end
+    end
+    return -1
+end
+io.println(String(first_two()))
+items.add(4)
+io.println(String(items.len()))
+"#;
+    let compiled = compile_code("loop_unwind.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("loop_unwind.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "outer: invalid integer text: \"boom\"\n2\n4\n");
+}

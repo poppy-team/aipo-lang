@@ -439,6 +439,9 @@ fn test_missing_end_fixture_reports_a_parse_diagnostic() {
 /// Compiles a `.aipo` fixture to `.aibc` via the `build` pipeline (in-process), writes
 /// the serialized bytes to a temp file, and returns the temp path.
 fn compile_to_aibc(source_path: &Path) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
     let text = std::fs::read_to_string(source_path).expect("source is readable");
     let source = aipo_source::Source::new(
         aipo_source::SourceId::next(),
@@ -452,14 +455,17 @@ fn compile_to_aibc(source_path: &Path) -> PathBuf {
     let module = aipo_bytecode::compile(&ir).expect("compilation must succeed");
     let bytes = module.to_bytes();
 
-    let temp = std::env::temp_dir().join(
+    // Unique per call: tests run in parallel and two of them compiling the same
+    // fixture must not share (and then remove) one temp file.
+    let temp = std::env::temp_dir().join(format!(
+        "{}-{}-{}.aibc",
         source_path
             .file_stem()
             .expect("fixture has a stem")
-            .to_string_lossy()
-            .into_owned()
-            + ".aibc",
-    );
+            .to_string_lossy(),
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::write(&temp, &bytes).expect("temp file is writable");
     temp
 }

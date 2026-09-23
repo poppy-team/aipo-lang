@@ -16,7 +16,7 @@
 
 use crate::module::{AIBC_MAGIC, AIBC_VERSION, BytecodeModule, FunctionInfo, StructInfo};
 use crate::opcode::{Constant, OpCode};
-use aipo_ir::{BinaryOp, CoreConstant, CoreFunction, CoreInst, CoreModule, UnaryOp};
+use aipo_ir::{BinaryOp, CoreConstant, CoreFunction, CoreInst, CoreModule, IterMode, UnaryOp};
 use aipo_source::SourceSpan;
 use byteorder::{BigEndian, ByteOrder};
 use std::collections::HashMap;
@@ -585,6 +585,15 @@ impl BytecodeEmitter {
             CoreInst::IterGuard(span) => {
                 self.spans.push((offset, *span));
                 self.code.push(OpCode::IterGuard as u8);
+            }
+            CoreInst::IterAt(mode, span) => {
+                self.spans.push((offset, *span));
+                self.code.push(OpCode::IterAt as u8);
+                self.code.push(match mode {
+                    IterMode::Primary => 0,
+                    IterMode::Key => 1,
+                    IterMode::Value => 2,
+                });
             }
             CoreInst::IterGuardEnd(span) => {
                 self.spans.push((offset, *span));

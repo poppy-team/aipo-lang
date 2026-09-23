@@ -150,6 +150,10 @@ pub enum OpCode {
     Await = 57,
     /// Runtime nullable type test of a value against a core-type value (`is ...?`).
     TypeIsNullable = 58,
+    /// Read one `each` binding: `u8` mode (`0` primary, `1` key, `2` value).
+    ///
+    /// Pops the ordinal index and then the collection, pushes the requested projection.
+    IterAt = 59,
 }
 
 impl TryFrom<u8> for OpCode {
@@ -215,6 +219,7 @@ impl TryFrom<u8> for OpCode {
             56 => Ok(OpCode::FillSelfCapture),
             57 => Ok(OpCode::Await),
             58 => Ok(OpCode::TypeIsNullable),
+            59 => Ok(OpCode::IterAt),
             other => Err(other),
         }
     }

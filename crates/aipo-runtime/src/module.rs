@@ -33,6 +33,10 @@ pub struct ModuleRecord {
 
 impl ModuleRecord {
     /// Creates a new uninitialized module record.
+    ///
+    /// The path is used verbatim as the graph key; [`crate::ModuleGraph::register`]
+    /// rejects empty, untrimmed or duplicate paths, so callers that build records by
+    /// hand still get the deterministic canonical form enforced at registration.
     #[must_use]
     pub fn new(
         path: impl Into<String>,

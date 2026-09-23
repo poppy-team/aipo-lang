@@ -216,5 +216,104 @@ fn test_error_display_and_codes_cover_all_variants() {
             error.to_string().contains(fragment),
             "Display names the participant: {error}"
         );
+        assert!(
+            error.to_string().contains(code.as_str()),
+            "Display carries the stable code [{code}]: {error}"
+        );
     }
+}
+
+#[test]
+fn test_module_graph_self_cycle_reports_the_node() {
+    let mut graph = ModuleGraph::new();
+    assert!(graph.register(ModuleRecord::new("a", vec!["a".to_string()], None)));
+
+    let err = graph.topological_init_order().unwrap_err();
+    match err {
+        RuntimeError::CyclicDependency { cycle } => {
+            assert_eq!(cycle, vec!["a".to_string(), "a".to_string()]);
+        }
+        other => panic!("expected CyclicDependency, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_module_graph_rejects_duplicate_and_malformed_paths() {
+    let mut graph = ModuleGraph::new();
+    assert!(graph.register(ModuleRecord::new("app", vec![], None)));
+    assert!(
+        !graph.register(ModuleRecord::new("app", vec![], None)),
+        "duplicate registration is rejected"
+    );
+    assert_eq!(graph.len(), 1);
+
+    assert!(
+        !graph.register(ModuleRecord::new("", vec![], None)),
+        "empty path is rejected"
+    );
+    assert!(
+        !graph.register(ModuleRecord::new(" app", vec![], None)),
+        "untrimmed path is rejected"
+    );
+    assert!(
+        !graph.register(ModuleRecord::new("a..b", vec![], None)),
+        "empty segment is rejected"
+    );
+    assert!(
+        !graph.register(ModuleRecord::new("x", vec!["".to_string()], None)),
+        "empty dependency is rejected"
+    );
+    assert!(
+        !graph.register(ModuleRecord::new(
+            "y",
+            vec!["d".to_string(), "d".to_string()],
+            None
+        )),
+        "duplicate dependency is rejected"
+    );
+    assert_eq!(graph.len(), 1);
+}
+
+#[test]
+fn test_module_graph_missing_dependency_is_deterministic() {
+    let mut graph = ModuleGraph::new();
+    graph.register(ModuleRecord::new(
+        "m",
+        vec!["zeta".to_string(), "alpha".to_string()],
+        None,
+    ));
+    // The lexicographically smallest missing dependency wins regardless of the
+    // declaration order inside the record.
+    match graph.topological_init_order().unwrap_err() {
+        RuntimeError::ModuleNotFound { name } => assert_eq!(name, "alpha"),
+        other => panic!("expected ModuleNotFound, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_native_registry_collisions_and_ordering_are_deterministic() {
+    let mut registry = NativeRegistry::new();
+    assert!(!registry.register(NativeFunctionMeta::new("b", 1, Some("math"), "bee")));
+    assert!(!registry.register(NativeFunctionMeta::new("a", 1, Some("math"), "ay")));
+    assert!(!registry.register(NativeFunctionMeta::new("z", 1, None, "zed")));
+    // Replacing a module entry is reported and the newest metadata wins.
+    assert!(registry.register(NativeFunctionMeta::new("a", 2, Some("math"), "ay v2")));
+
+    let names: Vec<&str> = registry
+        .list_module("math")
+        .iter()
+        .map(|meta| meta.name.as_str())
+        .collect();
+    assert_eq!(names, vec!["a", "b"]);
+    assert_eq!(registry.get(Some("math"), "a").unwrap().arity, 2);
+
+    // An empty module string normalizes to the Prelude slot.
+    assert!(!registry.register(NativeFunctionMeta::new("p", 0, Some(""), "prelude")));
+    assert_eq!(registry.list_prelude().len(), 2);
+    assert_eq!(registry.list_modules(), vec!["math"]);
+    assert!(registry.get(Some(""), "p").is_none());
+    assert!(registry.get(None, "p").is_some());
+    // Lookup is exact and case-sensitive.
+    assert!(registry.get(Some("Math"), "a").is_none());
+    assert!(registry.get(Some("math"), "A").is_none());
 }

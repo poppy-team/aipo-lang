@@ -52,36 +52,53 @@ impl NativeRegistry {
     }
 
     /// Registers a native function.
-    pub fn register(&mut self, meta: NativeFunctionMeta) {
+    ///
+    /// Returns `true` when an entry with the same `(module, name)` was replaced, and
+    /// `false` on a fresh insert, so callers can detect collisions instead of losing
+    /// the previous metadata silently (auditoria N-3). An empty module string is
+    /// normalized to `None`, the Prelude slot (auditoria N-7); names are matched
+    /// exactly (case-sensitive).
+    pub fn register(&mut self, mut meta: NativeFunctionMeta) -> bool {
+        if meta.module.as_deref() == Some("") {
+            meta.module = None;
+        }
         let key = (meta.module.clone(), meta.name.clone());
-        self.functions.insert(key, meta);
+        self.functions.insert(key, meta).is_some()
     }
 
     /// Looks up a native function by optional module path and name.
+    ///
+    /// The module comparison is exact and case-sensitive.
     #[must_use]
     pub fn get(&self, module: Option<&str>, name: &str) -> Option<&NativeFunctionMeta> {
         let key = (module.map(ToString::to_string), name.to_string());
         self.functions.get(&key)
     }
 
-    /// Lists all native functions belonging to the global Prelude.
+    /// Lists all native functions belonging to the global Prelude, ordered by name.
     #[must_use]
     pub fn list_prelude(&self) -> Vec<&NativeFunctionMeta> {
-        self.functions
+        let mut found: Vec<&NativeFunctionMeta> = self
+            .functions
             .iter()
             .filter(|((m, _), _)| m.is_none())
             .map(|(_, meta)| meta)
-            .collect()
+            .collect();
+        found.sort_by(|a, b| a.name.cmp(&b.name));
+        found
     }
 
-    /// Lists all native functions belonging to a specific built-in module.
+    /// Lists all native functions belonging to a specific built-in module, ordered by name.
     #[must_use]
     pub fn list_module(&self, module: &str) -> Vec<&NativeFunctionMeta> {
-        self.functions
+        let mut found: Vec<&NativeFunctionMeta> = self
+            .functions
             .iter()
             .filter(|((m, _), _)| m.as_deref() == Some(module))
             .map(|(_, meta)| meta)
-            .collect()
+            .collect();
+        found.sort_by(|a, b| a.name.cmp(&b.name));
+        found
     }
 
     /// Returns a list of distinct built-in module names registered.

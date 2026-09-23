@@ -211,13 +211,23 @@ impl<T> HandleTable<T> {
     }
 
     /// Drops every value and invalidates every handle.
+    ///
+    /// Only live entries burn a generation: a slot that was already free stays reusable
+    /// as-is, so repeated `clear()` calls cannot exhaust a generation that no handle ever
+    /// observed (auditoria N-6). Live entries at `u32::MAX` are retired instead of wrapping,
+    /// exactly like [`HandleTable::remove`].
     pub fn clear(&mut self) {
-        self.free.clear();
+        let mut free = Vec::with_capacity(self.slots.len());
         for (index, slot) in self.slots.iter_mut().enumerate() {
             let Some(entry) = slot.as_mut() else {
                 // Slot was already retired (generation exhausted); skip it.
                 continue;
             };
+            if entry.value.is_none() {
+                // Already free: keep the slot reusable without burning a generation.
+                free.push(index);
+                continue;
+            }
             if entry.generation == u32::MAX {
                 // Exhausted: retire the slot instead of wrapping.
                 *slot = None;
@@ -225,8 +235,9 @@ impl<T> HandleTable<T> {
             }
             entry.generation += 1;
             entry.value = None;
-            self.free.push(index);
+            free.push(index);
         }
+        self.free = free;
         self.live = 0;
     }
 }
@@ -329,6 +340,39 @@ mod tests {
         table.clear();
         assert!(table.is_empty());
         assert_eq!(table.get(handle), None);
+    }
+
+    #[test]
+    fn test_clear_keeps_already_free_slots_reusable_without_burning_generations() {
+        let mut table = HandleTable::new();
+        let released = table.insert(1);
+        assert_eq!(table.remove(released), Some(1));
+
+        table.clear();
+        // The released slot was already free before `clear`, so it must not burn another
+        // generation: the reuse lands on generation 2 (the release bump) and not 3.
+        let a = table.insert(10);
+        let b = table.insert(20);
+        assert_eq!(a.index(), released.index());
+        assert_eq!(a.generation(), 2);
+        assert_eq!(table.get(a), Some(&10));
+        assert_eq!(table.get(b), Some(&20));
+        assert!(table.get(released).is_none());
+    }
+
+    #[test]
+    fn test_clear_retires_a_live_exhausted_slot() {
+        let mut table: HandleTable<u8> = HandleTable::new();
+        let index = table.insert(0).index();
+        table.slots[index] = Some(Slot {
+            generation: u32::MAX,
+            value: Some(1),
+        });
+        table.clear();
+        assert!(table.is_empty());
+        // The exhausted slot is retired, never reused with a wrapped generation.
+        let fresh = table.insert(2);
+        assert_ne!(fresh.index(), index);
     }
 
     #[test]

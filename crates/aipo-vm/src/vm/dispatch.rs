@@ -387,6 +387,21 @@ impl Vm {
 
                 let new_val = self.pop()?;
                 let target = self.pop()?;
+
+                // A `Failure` on either side propagates instead of faulting, exactly like
+                // the indexed form (auditoria IR-11). Propagation is immediate because an
+                // assignment is a statement, and the model's statement boundary is where
+                // an unconsumed `Failure` ends the path; leaving it on the operand stack
+                // would expose the frame's reserved local slots.
+                if target.is_failure() {
+                    self.handle_failure(target)?;
+                    return Ok(false);
+                }
+                if new_val.is_failure() {
+                    self.handle_failure(new_val)?;
+                    return Ok(false);
+                }
+
                 // Publication point: the field outlives the assignment's scope.
                 self.publish_check(&new_val, || format!("field '{field_name}'"))?;
 
@@ -541,15 +556,15 @@ impl Vm {
                 let target = self.pop()?;
 
                 if target.is_failure() {
-                    self.push(target)?;
+                    self.handle_failure(target)?;
                     return Ok(false);
                 }
                 if index.is_failure() {
-                    self.push(index)?;
+                    self.handle_failure(index)?;
                     return Ok(false);
                 }
                 if new_val.is_failure() {
-                    self.push(new_val)?;
+                    self.handle_failure(new_val)?;
                     return Ok(false);
                 }
                 // Publication point: the stored element outlives the assignment's scope.
@@ -955,12 +970,21 @@ impl Vm {
             }
             OpCode::IterGuard => {
                 let value = self.pop()?;
-                if let Some(id) = collection_identity(&value) {
-                    self.active_iterations.push(id);
-                }
+                // Always push so `IterGuardEnd` stays balanced for values without a
+                // collection identity (ranges, strings). The sentinel can never match a
+                // real collection id, so the mutation guard ignores it.
+                self.active_iterations
+                    .push(collection_identity(&value).unwrap_or(usize::MAX));
             }
             OpCode::IterGuardEnd => {
                 self.active_iterations.pop();
+            }
+            OpCode::IterAt => {
+                let mode = self.read_u8(module)?;
+                let index = self.pop()?;
+                let collection = self.pop()?;
+                let projected = self.iter_at(module, &collection, &index, mode)?;
+                self.push(projected)?;
             }
             OpCode::Fail => {
                 let err_val = self.pop()?;
@@ -1072,5 +1096,175 @@ impl Vm {
         let val = BigEndian::read_i16(&module.code[self.ip..self.ip + 2]);
         self.ip += 2;
         Ok(val)
+    }
+
+    /// Reads one `each` binding: mode `0` is the natural element, `1` the key/index and
+    /// `2` the value.
+    ///
+    /// A `Dict` projects its key at the ordinal position for modes 0 and 1 and its value
+    /// for mode 2; every other iterable projects its element for modes 0 and 2 and the
+    /// ordinal `Int` for mode 1, which is what makes `each index, item in list` and
+    /// `each key, value in dict` share one loop shape (auditoria IR-10).
+    fn iter_at(
+        &mut self,
+        module: &BytecodeModule,
+        collection: &Value,
+        index: &Value,
+        mode: u8,
+    ) -> Result<Value, VmError> {
+        let ordinal = match index {
+            Value::Int(value) => *value,
+            other => {
+                return Err(VmFault::TypeMismatch {
+                    expected: "Int iteration index".to_string(),
+                    actual: other.type_name().to_string(),
+                }
+                .into());
+            }
+        };
+
+        if let Value::Dict(dict) = collection {
+            let entries = dict.borrow();
+            let len = entries.len();
+            #[allow(clippy::cast_possible_wrap)]
+            let actual = if ordinal < 0 {
+                (len as i64) + ordinal
+            } else {
+                ordinal
+            };
+            let position = usize::try_from(actual)
+                .ok()
+                .filter(|position| *position < len)
+                .ok_or(VmFault::IndexOutOfRange {
+                    index: ordinal,
+                    len,
+                })?;
+            let (key, value) = &entries.entries()[position];
+            return Ok(if mode == 1 {
+                key.clone()
+            } else {
+                value.clone()
+            });
+        }
+
+        if mode == 1 {
+            // The two-name first binding is the positional index for every non-Dict
+            // iterable.
+            let len = match length_of(collection).map_err(|_| VmFault::TypeMismatch {
+                expected: "iterable collection".to_string(),
+                actual: collection.type_name().to_string(),
+            })? {
+                Value::Int(len) => usize::try_from(len).unwrap_or(0),
+                _ => 0,
+            };
+            #[allow(clippy::cast_possible_wrap)]
+            let actual = if ordinal < 0 {
+                (len as i64) + ordinal
+            } else {
+                ordinal
+            };
+            let position = usize::try_from(actual)
+                .ok()
+                .filter(|position| *position < len)
+                .ok_or(VmFault::IndexOutOfRange {
+                    index: ordinal,
+                    len,
+                })?;
+            #[allow(clippy::cast_possible_wrap)]
+            return Ok(Value::Int(position as i64));
+        }
+
+        // Modes 0 and 2 reuse the canonical indexed read, so Lists, Strings, Bytes,
+        // Ranges and Sequences keep their existing semantics.
+        self.index_value(module, collection, ordinal)
+    }
+
+    /// Indexed read shared by `GetIndex` and `IterAt`: positional for indexable values,
+    /// keyed never.
+    fn index_value(
+        &mut self,
+        module: &BytecodeModule,
+        target: &Value,
+        index: i64,
+    ) -> Result<Value, VmError> {
+        match target {
+            Value::List(list) => {
+                let len = list.borrow().len();
+                #[allow(clippy::cast_possible_wrap)]
+                let actual = if index < 0 {
+                    (len as i64) + index
+                } else {
+                    index
+                };
+                let position = usize::try_from(actual)
+                    .ok()
+                    .filter(|position| *position < len)
+                    .ok_or(VmFault::IndexOutOfRange { index, len })?;
+                Ok(list.borrow()[position].clone())
+            }
+            Value::String(text) => {
+                let chars: Vec<char> = text.chars().collect();
+                let len = chars.len();
+                #[allow(clippy::cast_possible_wrap)]
+                let actual = if index < 0 {
+                    (len as i64) + index
+                } else {
+                    index
+                };
+                let position = usize::try_from(actual)
+                    .ok()
+                    .filter(|position| *position < len)
+                    .ok_or(VmFault::IndexOutOfRange { index, len })?;
+                Ok(Value::String(Rc::new(chars[position].to_string())))
+            }
+            Value::Bytes(bytes) => {
+                let len = bytes.borrow().len();
+                #[allow(clippy::cast_possible_wrap)]
+                let actual = if index < 0 {
+                    (len as i64) + index
+                } else {
+                    index
+                };
+                let position = usize::try_from(actual)
+                    .ok()
+                    .filter(|position| *position < len)
+                    .ok_or(VmFault::IndexOutOfRange { index, len })?;
+                Ok(Value::Byte(bytes.borrow()[position]))
+            }
+            Value::Range { start, end } => {
+                let len = usize::try_from((*end - *start).max(0)).unwrap_or(0);
+                #[allow(clippy::cast_possible_wrap)]
+                let actual = if index < 0 {
+                    (len as i64) + index
+                } else {
+                    index
+                };
+                let position = usize::try_from(actual)
+                    .ok()
+                    .filter(|position| *position < len)
+                    .ok_or(VmFault::IndexOutOfRange { index, len })?;
+                Ok(Value::Int(start + position as i64))
+            }
+            Value::Sequence(pipeline) => {
+                let items = self.sequence_items(module, pipeline)?;
+                let len = items.len();
+                #[allow(clippy::cast_possible_wrap)]
+                let actual = if index < 0 {
+                    (len as i64) + index
+                } else {
+                    index
+                };
+                let position = usize::try_from(actual)
+                    .ok()
+                    .filter(|position| *position < len)
+                    .ok_or(VmFault::IndexOutOfRange { index, len })?;
+                Ok(items[position].clone())
+            }
+            other => Err(VmFault::TypeMismatch {
+                expected: "iterable collection".to_string(),
+                actual: other.type_name().to_string(),
+            }
+            .into()),
+        }
     }
 }

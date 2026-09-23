@@ -45,6 +45,11 @@ struct LoopCtx {
     break_jumps: Vec<usize>,
     /// Indices of `Jump` or `JumpIfFalse` instructions emitted by `continue`.
     continue_jumps: Vec<usize>,
+    /// Active failure handlers when the loop started; a `break`/`continue` emitted with
+    /// more than this open inside the body pops the difference first.
+    handler_depth_at_entry: usize,
+    /// Active iteration guards when the loop started (auditoria IR-8/IR-12).
+    iter_depth_at_entry: usize,
 }
 
 /// Per-function lowering state.
@@ -58,6 +63,10 @@ struct FnCtx {
     /// `true` for the module entry script, whose root-scope declarations are
     /// module-scoped globals rather than frame slots.
     module_scope: bool,
+    /// Failure handlers open at this point of the frame, lexically counted.
+    handler_depth: usize,
+    /// Iteration guards open at this point of the frame, lexically counted.
+    iter_depth: usize,
     /// Return contract of the function being lowered, checked at every `return`.
     return_contract: Option<TypeAnnotation>,
     /// Span of the last `Type.field = ...` assignment in this frame, if any.
@@ -77,6 +86,8 @@ impl FnCtx {
             scopes: vec![Vec::new()],
             loops: Vec::new(),
             module_scope: false,
+            handler_depth: 0,
+            iter_depth: 0,
             return_contract: None,
             mutations: None,
         }
@@ -807,12 +818,24 @@ impl IrBuilder {
     }
 
     fn hidden_local(&mut self, purpose: &str) -> usize {
-        let name = format!("__t_{purpose}_{}", self.hidden_counter);
-        self.hidden_counter += 1;
-        self.fn_stack
-            .last_mut()
-            .expect("a function context is always active")
-            .declare(&name)
+        // Skip names the user already bound in this frame: a hidden local that collides
+        // with a real identifier would shadow it and miscompile the user's reference
+        // (auditoria IR-18).
+        loop {
+            let name = format!("__t_{purpose}_{}", self.hidden_counter);
+            self.hidden_counter += 1;
+            let ctx = self
+                .fn_stack
+                .last()
+                .expect("a function context is always active");
+            if ctx.lookup(&name).is_none() {
+                return self
+                    .fn_stack
+                    .last_mut()
+                    .expect("a function context is always active")
+                    .declare(&name);
+            }
+        }
     }
 
     fn current_loop_mut(&mut self) -> Option<&mut LoopCtx> {
@@ -825,14 +848,23 @@ impl IrBuilder {
 
     /// Builds an expression that must yield a usable value at this point.
     ///
-    /// Canon propagates recoverable failures automatically, so a statement whose value is an
-    /// unconsumed `Failure` ends the enclosing path. `or_else` is the canonical local
-    /// fallback and therefore already consumes the failure it inspects.
+    /// Canon propagates recoverable failures automatically, so an unconsumed `Failure`
+    /// ends the enclosing path. `or_else` consumes the failure it inspects, and its
+    /// fallback propagates its own failure, so one check after the whole expression is
+    /// still correct and catches a fallback that failed too.
     fn build_value(&mut self, expr: &HirExpr, out: &mut Vec<CoreInst>) {
         self.build_expr(expr, out);
-        if !matches!(expr, HirExpr::OrElse(..)) {
-            out.push(CoreInst::PropagateFailure(expr.span()));
-        }
+        out.push(CoreInst::PropagateFailure(expr.span()));
+    }
+
+    /// Builds a value used as a condition, target or count.
+    ///
+    /// Canon propagates a recoverable `Failure` instead of letting a type test turn it
+    /// into an uncatchable fault, so every control-flow condition goes through the
+    /// statement-boundary check first (auditoria IR-9).
+    fn build_condition(&mut self, expr: &HirExpr, out: &mut Vec<CoreInst>) {
+        self.build_expr(expr, out);
+        out.push(CoreInst::PropagateFailure(expr.span()));
     }
 
     fn build_stmt(&mut self, stmt: &HirStmt, out: &mut Vec<CoreInst>) {
@@ -898,11 +930,13 @@ impl IrBuilder {
                     out.push(CoreInst::SetField(field.clone(), *dot_span));
                     self.mark_field_mutation(*dot_span, out);
                 }
-                HirExpr::QuestionDot(base, field, dot_span) => {
-                    self.build_expr(base, out);
+                HirExpr::QuestionDot(..) => {
+                    // `a?.b = v` is not a canonical assignment target: sema rejects it in
+                    // `check_assignment_target`, and `CompoundAssign` has no arm for it.
+                    // Emitting `Fail` keeps the three layers consistent instead of giving
+                    // `=` a different safe-navigation story than `+=` (auditoria IR-15).
                     self.build_value(value, out);
-                    out.push(CoreInst::SetField(field.clone(), *dot_span));
-                    self.mark_field_mutation(*dot_span, out);
+                    out.push(CoreInst::Fail(*span));
                 }
                 HirExpr::Index(base, idx, idx_span) => {
                     self.build_expr(base, out);
@@ -978,7 +1012,7 @@ impl IrBuilder {
                 let mut next_test_jumps: Vec<usize> = Vec::new();
                 let mut end_jumps: Vec<usize> = Vec::new();
 
-                self.build_expr(&s.condition, out);
+                self.build_condition(&s.condition, out);
                 next_test_jumps.push(out.len());
                 out.push(CoreInst::JumpIfFalse(0, s.span));
                 self.build_block(&s.then_branch, out);
@@ -988,7 +1022,7 @@ impl IrBuilder {
                 for (cond, body) in &s.elif_branches {
                     let here = out.len();
                     out[next_test_jumps.remove(0)] = CoreInst::JumpIfFalse(here as isize, s.span);
-                    self.build_expr(cond, out);
+                    self.build_condition(cond, out);
                     next_test_jumps.push(out.len());
                     out.push(CoreInst::JumpIfFalse(0, s.span));
                     self.build_block(body, out);
@@ -1026,7 +1060,7 @@ impl IrBuilder {
                     .push_scope();
                 let target_slot = self.hidden_local("match");
                 let target_name = self.hidden_name(target_slot);
-                self.build_expr(&s.target, out);
+                self.build_condition(&s.target, out);
                 out.push(CoreInst::Store(target_name.clone(), s.span));
 
                 let mut end_jumps: Vec<usize> = Vec::new();
@@ -1115,7 +1149,7 @@ impl IrBuilder {
                     .expect("a function context is always active")
                     .push_scope();
                 let loop_start = out.len();
-                self.build_expr(cond, out);
+                self.build_condition(cond, out);
                 let exit_jump = out.len();
                 out.push(CoreInst::JumpIfFalse(0, *span));
                 self.push_loop_ctx(Some(loop_start));
@@ -1137,7 +1171,7 @@ impl IrBuilder {
                     .push_scope();
                 let count_slot = self.hidden_local("repeat_count");
                 let index_slot = self.hidden_local("repeat_index");
-                self.build_expr(count, out);
+                self.build_condition(count, out);
                 out.push(CoreInst::Store(self.hidden_name(count_slot), *span));
                 out.push(CoreInst::Constant(CoreConstant::Int(0), *span));
                 out.push(CoreInst::Store(self.hidden_name(index_slot), *span));
@@ -1187,10 +1221,14 @@ impl IrBuilder {
                 let index_slot = self.hidden_local("iter_index");
                 let name_ref = self.hidden_name(coll_slot);
 
-                self.build_expr(iterable, out);
+                self.build_condition(iterable, out);
                 out.push(CoreInst::Store(name_ref.clone(), *span));
                 out.push(CoreInst::Load(name_ref.clone(), *span));
                 out.push(CoreInst::IterGuard(*span));
+                self.fn_stack
+                    .last_mut()
+                    .expect("a function context is always active")
+                    .iter_depth += 1;
                 out.push(CoreInst::Constant(CoreConstant::Int(0), *span));
                 out.push(CoreInst::Store(self.hidden_name(index_slot), *span));
 
@@ -1205,10 +1243,8 @@ impl IrBuilder {
                 let index_name = self.hidden_name(index_slot);
                 match names.len() {
                     0 => {
-                        out.push(CoreInst::Load(name_ref.clone(), *span));
-                        out.push(CoreInst::Load(index_name.clone(), *span));
-                        out.push(CoreInst::GetIndex(*span));
-                        out.push(CoreInst::Pop(*span));
+                        // No binding to produce: iterating for the body's effects must
+                        // not read the collection (auditoria IR-18).
                     }
                     1 => {
                         let value = names[0].clone();
@@ -1216,24 +1252,31 @@ impl IrBuilder {
                             .last_mut()
                             .expect("a function context is always active")
                             .declare(&value);
+                        // One name binds the natural element: the key of a Dict, the
+                        // element of anything else (auditoria IR-10).
                         out.push(CoreInst::Load(name_ref.clone(), *span));
                         out.push(CoreInst::Load(index_name.clone(), *span));
-                        out.push(CoreInst::GetIndex(*span));
+                        out.push(CoreInst::IterAt(IterMode::Primary, *span));
                         out.push(CoreInst::Store(value, *span));
                     }
                     _ => {
-                        let index_binding = names[0].clone();
+                        let key_binding = names[0].clone();
                         let value_binding = names[1].clone();
-                        for name in [&index_binding, &value_binding] {
+                        for name in [&key_binding, &value_binding] {
                             self.fn_stack
                                 .last_mut()
                                 .expect("a function context is always active")
                                 .declare(name);
                         }
-                        out.push(CoreInst::Load(index_name.clone(), *span));
-                        out.push(CoreInst::Store(index_binding, *span));
+                        // First name: the positional index for a List, the key for a
+                        // Dict. Second name: read through the collection, so a Dict
+                        // value stays live and a List element is the element.
                         out.push(CoreInst::Load(name_ref.clone(), *span));
                         out.push(CoreInst::Load(index_name.clone(), *span));
+                        out.push(CoreInst::IterAt(IterMode::Key, *span));
+                        out.push(CoreInst::Store(key_binding.clone(), *span));
+                        out.push(CoreInst::Load(name_ref.clone(), *span));
+                        out.push(CoreInst::Load(key_binding, *span));
                         out.push(CoreInst::GetIndex(*span));
                         out.push(CoreInst::Store(value_binding, *span));
                     }
@@ -1254,12 +1297,15 @@ impl IrBuilder {
                 self.patch_continue_jumps(out, increment_start);
                 self.finish_loop_ctx(out, end_idx);
                 out.push(CoreInst::IterGuardEnd(*span));
-                self.fn_stack
+                let ctx = self
+                    .fn_stack
                     .last_mut()
-                    .expect("a function context is always active")
-                    .pop_scope();
+                    .expect("a function context is always active");
+                ctx.iter_depth = ctx.iter_depth.saturating_sub(1);
+                ctx.pop_scope();
             }
             HirStmt::Break(span) => {
+                self.emit_loop_unwind(out, *span);
                 let jump = out.len();
                 out.push(CoreInst::Jump(0, *span));
                 if let Some(ctx) = self.current_loop_mut() {
@@ -1267,6 +1313,7 @@ impl IrBuilder {
                 }
             }
             HirStmt::Continue(span) => {
+                self.emit_loop_unwind(out, *span);
                 let jump = out.len();
                 out.push(CoreInst::Jump(0, *span));
                 if let Some(ctx) = self.current_loop_mut() {
@@ -1286,12 +1333,28 @@ impl IrBuilder {
                     // A returning operation is a stable mutable boundary, so its provisional
                     // mutations are verified before the frame ends.
                     self.build_mutation_boundary(out);
+                    self.emit_frame_unwind(out, *span);
                     out.push(CoreInst::Return {
                         has_value: true,
                         span: *span,
                     });
                 } else {
+                    // A bare `return` yields `none`, and a non-nullable return contract
+                    // rejects it: emit the value and the check so the violation surfaces
+                    // as a contract fault instead of a silent `none` (auditoria IR-17).
+                    if self
+                        .fn_stack
+                        .last()
+                        .is_some_and(|ctx| ctx.return_contract.is_some())
+                    {
+                        out.push(CoreInst::Constant(CoreConstant::None, *span));
+                        self.build_return_contract(*span, out);
+                        // `AssertContract` inspects in place; the valueless `Return`
+                        // supplies its own `none`, so drop the checked value.
+                        out.push(CoreInst::Pop(*span));
+                    }
                     self.build_mutation_boundary(out);
+                    self.emit_frame_unwind(out, *span);
                     out.push(CoreInst::Return {
                         has_value: false,
                         span: *span,
@@ -1305,12 +1368,24 @@ impl IrBuilder {
             HirStmt::Attempt(s) => {
                 let push_handler_idx = out.len();
                 out.push(CoreInst::PushHandler(0, s.span));
+                self.fn_stack
+                    .last_mut()
+                    .expect("a function context is always active")
+                    .handler_depth += 1;
 
                 for st in &s.body {
                     self.build_stmt(st, out);
                 }
 
                 out.push(CoreInst::PopHandler(s.span));
+                // The handler is closed here on the success path and popped by
+                // `handle_failure` on the failure path, so the handler body runs with
+                // the depth it had before the `attempt`.
+                let ctx = self
+                    .fn_stack
+                    .last_mut()
+                    .expect("a function context is always active");
+                ctx.handler_depth = ctx.handler_depth.saturating_sub(1);
                 let jump_end_idx = out.len();
                 out.push(CoreInst::Jump(0, s.span));
 
@@ -1357,8 +1432,16 @@ impl IrBuilder {
                 HirExpr::Call(callee, _, _) => match &**callee {
                     HirExpr::Identifier(name, _) => async_fns.contains(name),
                     HirExpr::Dot(target, member, _) => {
-                        matches!(&**target, HirExpr::Identifier(name, _) if name == "task")
-                            && matches!(member.as_str(), "spawn" | "all" | "race")
+                        if let HirExpr::Identifier(name, _) = &**target {
+                            if name == "task" {
+                                return matches!(member.as_str(), "spawn" | "all" | "race");
+                            }
+                            // Async methods are registered as `Type.method`; a receiver
+                            // written as the type name is the resolvable form
+                            // (auditoria IR-13).
+                            return async_fns.contains(&format!("{name}.{member}"));
+                        }
+                        false
                     }
                     _ => false,
                 },
@@ -1418,6 +1501,38 @@ impl IrBuilder {
                     desugar_block(body, async_fns),
                     *span,
                 ),
+                // Every block-bearing form recurses; a task produced as a whole
+                // statement value is awaited (auditoria IR-13).
+                HirStmt::While(cond, body, span) => {
+                    HirStmt::While(cond.clone(), desugar_block(body, async_fns), *span)
+                }
+                HirStmt::Loop(body, span) => HirStmt::Loop(desugar_block(body, async_fns), *span),
+                HirStmt::Repeat(count, index, body, span) => HirStmt::Repeat(
+                    count.clone(),
+                    index.clone(),
+                    desugar_block(body, async_fns),
+                    *span,
+                ),
+                HirStmt::Attempt(s) => HirStmt::Attempt(HirAttemptStmt {
+                    body: desugar_block(&s.body, async_fns),
+                    error_binding: s.error_binding.clone(),
+                    handler: desugar_block(&s.handler, async_fns),
+                    span: s.span,
+                }),
+                HirStmt::Assign(target, value, span) if is_task_producing(value, async_fns) => {
+                    HirStmt::Assign(target.clone(), await_expr(value.clone()), *span)
+                }
+                HirStmt::CompoundAssign(op, target, value, span)
+                    if is_task_producing(value, async_fns) =>
+                {
+                    HirStmt::CompoundAssign(*op, target.clone(), await_expr(value.clone()), *span)
+                }
+                HirStmt::Return(Some(expr), span) if is_task_producing(expr, async_fns) => {
+                    HirStmt::Return(Some(await_expr(expr.clone())), *span)
+                }
+                HirStmt::Fail(expr, span) if is_task_producing(expr, async_fns) => {
+                    HirStmt::Fail(await_expr(expr.clone()), *span)
+                }
                 other => other.clone(),
             }
         }
@@ -1450,15 +1565,60 @@ impl IrBuilder {
     }
 
     fn push_loop_ctx(&mut self, continue_target: Option<usize>) {
-        self.fn_stack
+        let ctx = self
+            .fn_stack
             .last_mut()
-            .expect("a function context is always active")
-            .loops
-            .push(LoopCtx {
-                continue_target,
-                break_jumps: Vec::new(),
-                continue_jumps: Vec::new(),
-            });
+            .expect("a function context is always active");
+        let handler_depth_at_entry = ctx.handler_depth;
+        let iter_depth_at_entry = ctx.iter_depth;
+        ctx.loops.push(LoopCtx {
+            continue_target,
+            break_jumps: Vec::new(),
+            continue_jumps: Vec::new(),
+            handler_depth_at_entry,
+            iter_depth_at_entry,
+        });
+    }
+
+    /// Pops failure handlers and iteration guards opened inside the current loop body.
+    ///
+    /// A `break`/`continue` leaving the body must undo them: jumping out of an `attempt`
+    /// or an `each` without their lexical `PopHandler`/`IterGuardEnd` would leave stale
+    /// entries behind (auditoria IR-8/IR-12).
+    fn emit_loop_unwind(&mut self, out: &mut Vec<CoreInst>, span: SourceSpan) {
+        let Some(ctx) = self.fn_stack.last() else {
+            return;
+        };
+        let Some(loop_ctx) = ctx.loops.last() else {
+            return;
+        };
+        let handlers = ctx
+            .handler_depth
+            .saturating_sub(loop_ctx.handler_depth_at_entry);
+        let guards = ctx.iter_depth.saturating_sub(loop_ctx.iter_depth_at_entry);
+        for _ in 0..handlers {
+            out.push(CoreInst::PopHandler(span));
+        }
+        for _ in 0..guards {
+            out.push(CoreInst::IterGuardEnd(span));
+        }
+    }
+
+    /// Pops every failure handler and iteration guard the frame opened.
+    ///
+    /// `return` ends the frame without running the lexical cleanup of each `attempt` and
+    /// `each`, and the VM keeps handlers and guards machine-wide, so the frame must undo
+    /// them explicitly (auditoria IR-8/IR-12).
+    fn emit_frame_unwind(&mut self, out: &mut Vec<CoreInst>, span: SourceSpan) {
+        let Some(ctx) = self.fn_stack.last() else {
+            return;
+        };
+        for _ in 0..ctx.handler_depth {
+            out.push(CoreInst::PopHandler(span));
+        }
+        for _ in 0..ctx.iter_depth {
+            out.push(CoreInst::IterGuardEnd(span));
+        }
     }
 
     fn patch_continue_jumps(&mut self, out: &mut [CoreInst], target: usize) {
@@ -1498,6 +1658,53 @@ impl IrBuilder {
             };
             out[jump] = CoreInst::Jump(end as isize, span);
         }
+    }
+
+    /// Lowers `base?.member` and its call form with existing instructions.
+    ///
+    /// The receiver is stored once; the expression is `none` when it holds `none`, and the
+    /// access (plus any arguments) only runs otherwise. A `Failure` receiver propagates
+    /// instead of activating the safe path.
+    fn build_question_dot(
+        &mut self,
+        base: &HirExpr,
+        member: &str,
+        span: SourceSpan,
+        call: Option<(&[HirCallArg], SourceSpan)>,
+        out: &mut Vec<CoreInst>,
+    ) {
+        let slot = self.hidden_local("safe_base");
+        let name = self.hidden_name(slot);
+
+        self.build_expr(base, out);
+        out.push(CoreInst::Store(name.clone(), span));
+        out.push(CoreInst::Load(name.clone(), span));
+        out.push(CoreInst::Constant(CoreConstant::None, span));
+        out.push(CoreInst::Binary(BinaryOp::Equal, span));
+        out.push(CoreInst::PropagateFailure(span));
+        let jump_false = out.len();
+        out.push(CoreInst::JumpIfFalse(0, span));
+
+        // Receiver is `none`: the whole expression is `none`.
+        out.push(CoreInst::Constant(CoreConstant::None, span));
+        let jump_end = out.len();
+        out.push(CoreInst::Jump(0, span));
+
+        let access_target = out.len() as isize;
+        out[jump_false] = CoreInst::JumpIfFalse(access_target, span);
+        out.push(CoreInst::Load(name, span));
+        out.push(CoreInst::GetField(member.to_string(), span));
+        if let Some((args, call_span)) = call {
+            for arg in args {
+                self.build_expr(&arg.value, out);
+            }
+            out.push(CoreInst::Call {
+                arg_count: args.len(),
+                span: call_span,
+            });
+        }
+        let end_target = out.len() as isize;
+        out[jump_end] = CoreInst::Jump(end_target, span);
     }
 
     fn build_expr(&mut self, expr: &HirExpr, out: &mut Vec<CoreInst>) {
@@ -1569,8 +1776,16 @@ impl IrBuilder {
                     out.push(CoreInst::TypeIsNullable(*span));
                 }
                 BinaryOp::Pipeline => {
-                    self.build_expr(right, out);
+                    // `a |> f` is `f(a)`, and source order evaluates the argument before
+                    // the callee. The value is parked in a hidden local so the callee can
+                    // be built first on the stack without reordering effects
+                    // (auditoria IR-16).
+                    let slot = self.hidden_local("pip_arg");
+                    let name = self.hidden_name(slot);
                     self.build_expr(left, out);
+                    out.push(CoreInst::Store(name.clone(), *span));
+                    self.build_expr(right, out);
+                    out.push(CoreInst::Load(name, *span));
                     out.push(CoreInst::Call {
                         arg_count: 1,
                         span: *span,
@@ -1583,6 +1798,12 @@ impl IrBuilder {
                 }
             },
             HirExpr::Call(callee, args, span) => {
+                if let HirExpr::QuestionDot(base, member, member_span) = &**callee {
+                    // `service?.load(args)`: the receiver is evaluated once; if it is
+                    // `none` neither the access nor the arguments run (auditoria IR-5).
+                    self.build_question_dot(base, member, *member_span, Some((args, *span)), out);
+                    return;
+                }
                 // Canonical evaluation order: callee first, then arguments left to right, once.
                 self.build_expr(callee, out);
                 match self.resolve_arguments(callee, args) {
@@ -1611,9 +1832,15 @@ impl IrBuilder {
                     }
                 }
             }
-            HirExpr::Dot(base, member, span) | HirExpr::QuestionDot(base, member, span) => {
+            HirExpr::Dot(base, member, span) => {
                 self.build_expr(base, out);
                 out.push(CoreInst::GetField(member.clone(), *span));
+            }
+            HirExpr::QuestionDot(base, member, span) => {
+                // Canon: if the receiver is `none`, the access does not happen and the
+                // expression is `none` (Language Reference §143). Desugared with existing
+                // instructions so both backends share the semantics (auditoria IR-5).
+                self.build_question_dot(base, member, *span, None, out);
             }
             HirExpr::Index(base, idx, span) => {
                 self.build_expr(base, out);
@@ -1687,7 +1914,7 @@ impl IrBuilder {
                 }
             }
             HirExpr::If(cond, then_b, else_b, span) => {
-                self.build_expr(cond, out);
+                self.build_condition(cond, out);
                 let jump_false_idx = out.len();
                 out.push(CoreInst::JumpIfFalse(0, *span));
 
@@ -1703,9 +1930,27 @@ impl IrBuilder {
                 out[jump_end_idx] = CoreInst::Jump(end_offset, *span);
             }
             HirExpr::OrElse(left, right, span) => {
-                self.build_expr(left, out);
-                self.build_expr(right, out);
-                out.push(CoreInst::Binary(BinaryOp::OrElse, *span));
+                // Canon: `or_else` is lazy — the fallback runs only when the left side
+                // ends in a `Failure`, and a runtime fault never activates it. The
+                // handler is the same mechanism `attempt` uses: the left side's own
+                // propagation check jumps here with the failure on the stack, which the
+                // fallback drops before producing its value (auditoria IR-6).
+                let push_handler_idx = out.len();
+                out.push(CoreInst::PushHandler(0, *span));
+                self.build_value(left, out);
+                out.push(CoreInst::PopHandler(*span));
+                let jump_end_idx = out.len();
+                out.push(CoreInst::Jump(0, *span));
+
+                let fallback_target = out.len() as isize;
+                out[push_handler_idx] = CoreInst::PushHandler(fallback_target, *span);
+                out.push(CoreInst::Pop(*span));
+                // A failed fallback propagates normally; `build_value` emits that check,
+                // so a double failure reaches the enclosing handler (auditoria IR-7).
+                self.build_value(right, out);
+
+                let end_target = out.len() as isize;
+                out[jump_end_idx] = CoreInst::Jump(end_target, *span);
             }
             HirExpr::Await(inner, span) => {
                 self.build_expr(inner, out);
@@ -1879,12 +2124,12 @@ fn collect_free_expr(expr: &HirExpr, seen: &mut HashSet<String>, out: &mut Vec<S
             collect_free_expr(then_b, seen, out);
             collect_free_expr(else_b, seen, out);
         }
-        HirExpr::Fn(f) => {
-            // Nested closures resolve through the enclosing function at their own
-            // creation site, so this body's free names are collected when it is built.
-            for stmt in &f.body {
-                collect_free_stmt(stmt, seen, out);
-            }
+        HirExpr::Fn(_) => {
+            // A nested closure declares its own parameters and locals and resolves its
+            // captures transitively in `build_closure`/`ensure_capture` when it is built.
+            // Walking the body here would leak the closure's internal bindings into the
+            // enclosing collection and misclassify sibling references (auditoria IR-14),
+            // so this mirrors the `HirStmt::FnDecl` arm.
         }
         HirExpr::Literal(_, _) => {}
     }

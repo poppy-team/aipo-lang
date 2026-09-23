@@ -70,7 +70,7 @@ impl fmt::Display for RuntimeError {
             Self::InitializationFailed { module, reason } => {
                 write!(
                     f,
-                    "runtime error: initialization of module '{module}' failed: {reason}"
+                    "runtime error [AIPO_RT_MODULE_INIT_FAILED]: initialization of module '{module}' failed: {reason}"
                 )
             }
         }

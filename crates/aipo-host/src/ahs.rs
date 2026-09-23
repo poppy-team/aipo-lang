@@ -148,6 +148,9 @@ pub struct FunctionSchema {
     #[serde(default)]
     pub is_async: bool,
     /// Whether the function mutates its receiver.
+    ///
+    /// V1 module functions have no receiver, so this flag is informational; the AHS keeps
+    /// it for handle methods a future version may describe (auditoria N-7).
     #[serde(default)]
     pub mutates_receiver: bool,
     /// Capabilities this function requires, on top of the module's.
@@ -234,6 +237,10 @@ impl HostSchema {
     /// The result is a [`CapabilitySet`], so a surface that declares both `poppy` and
     /// `poppy.ecs` reports the single covering grant: the question this answers is what a
     /// profile must grant, and a redundant entry would invite a wrong "missing" reading.
+    ///
+    /// Only well-formed capabilities are reported: a malformed name is a [`HostSchema::validate`]
+    /// problem, so this method assumes a validated surface (which [`HostSchema::from_json`]
+    /// guarantees) and silently ignores leftovers instead of inventing a grant (auditoria N-5).
     #[must_use]
     pub fn declared_capabilities(&self) -> CapabilitySet {
         let mut declared = CapabilitySet::none();
@@ -307,18 +314,34 @@ impl ModuleSchema {
 
         let mut names = BTreeSet::new();
         for ty in &self.types {
+            let ty_path = format!("{}.{}", self.name, ty.name);
+            if ty.name.trim().is_empty() {
+                problems.push(SchemaProblem::new(
+                    format!("{}.types[]", self.name),
+                    "type name is empty",
+                ));
+            }
             if !names.insert(("type", ty.name.as_str())) {
                 problems.push(SchemaProblem::new(
-                    format!("{}.{}", self.name, ty.name),
+                    ty_path.clone(),
                     "type is declared more than once",
                 ));
             }
+            let mut field_names = BTreeSet::new();
             for field in &ty.fields {
-                check_type_ref(
-                    &format!("{}.{}.{}", self.name, ty.name, field.name),
-                    &field.ty,
-                    problems,
-                );
+                if field.name.trim().is_empty() {
+                    problems.push(SchemaProblem::new(
+                        format!("{ty_path}.fields[]"),
+                        "field name is empty",
+                    ));
+                }
+                if !field_names.insert(field.name.as_str()) {
+                    problems.push(SchemaProblem::new(
+                        format!("{ty_path}.{}", field.name),
+                        "field is declared more than once",
+                    ));
+                }
+                check_type_ref(&format!("{ty_path}.{}", field.name), &field.ty, problems);
             }
         }
         for handle in &self.handles {
@@ -339,8 +362,29 @@ impl ModuleSchema {
                     "handle name is empty",
                 ));
             }
+            let mut operations = BTreeSet::new();
+            for operation in &handle.operations {
+                if operation.trim().is_empty() {
+                    problems.push(SchemaProblem::new(
+                        format!("{}.{}.operations[]", self.name, handle.name),
+                        "operation name is empty",
+                    ));
+                }
+                if !operations.insert(operation.as_str()) {
+                    problems.push(SchemaProblem::new(
+                        format!("{}.{}.{}", self.name, handle.name, operation),
+                        "operation is declared more than once",
+                    ));
+                }
+            }
         }
         for value in &self.values {
+            if value.name.trim().is_empty() {
+                problems.push(SchemaProblem::new(
+                    format!("{}.values[]", self.name),
+                    "value name is empty",
+                ));
+            }
             if !names.insert(("value", value.name.as_str())) {
                 problems.push(SchemaProblem::new(
                     format!("{}.{}", self.name, value.name),
@@ -378,7 +422,15 @@ impl FunctionSchema {
         check_capabilities(&path, &self.capabilities, problems);
 
         let mut param_names = BTreeSet::new();
+        let mut optional_params: BTreeSet<String> = BTreeSet::new();
+        let mut seen_optional = false;
         for param in &self.params {
+            if param.name.trim().is_empty() {
+                problems.push(SchemaProblem::new(
+                    format!("{path}.params[]"),
+                    "parameter name is empty",
+                ));
+            }
             if !param_names.insert(param.name.as_str()) {
                 problems.push(SchemaProblem::new(
                     format!("{path}({})", param.name),
@@ -386,6 +438,15 @@ impl FunctionSchema {
                 ));
             }
             check_type_ref(&format!("{path}({})", param.name), &param.ty, problems);
+            if param.is_optional {
+                seen_optional = true;
+                optional_params.insert(param.name.clone());
+            } else if seen_optional {
+                problems.push(SchemaProblem::new(
+                    format!("{path}({})", param.name),
+                    "a required parameter cannot follow an optional one",
+                ));
+            }
         }
         if let Some(returns) = &self.returns {
             check_type_ref(&format!("{path} -> {}", returns.name), returns, problems);
@@ -396,6 +457,13 @@ impl FunctionSchema {
                 problems.push(SchemaProblem::new(
                     &path,
                     format!("subject '{subject}' is not a parameter of this function"),
+                ));
+            } else if optional_params.contains(subject.as_str()) {
+                problems.push(SchemaProblem::new(
+                    &path,
+                    format!(
+                        "subject '{subject}' is optional; a block form needs a required parameter"
+                    ),
                 ));
             }
         }
@@ -417,13 +485,38 @@ fn check_capabilities(path: &str, names: &[String], problems: &mut Vec<SchemaPro
     }
 }
 
+/// Maximum nesting of parametric contract arguments accepted by the validator.
+///
+/// V1 source has no parametric contracts at all, so anything deeper than this is a
+/// malformed or adversarial description; the cap keeps `validate` total (auditoria N-4).
+const MAX_TYPE_REF_DEPTH: usize = 32;
+
 /// Validates a contract reference.
 fn check_type_ref(path: &str, ty: &TypeRef, problems: &mut Vec<SchemaProblem>) {
+    check_type_ref_at(path, ty, problems, 0);
+}
+
+fn check_type_ref_at(path: &str, ty: &TypeRef, problems: &mut Vec<SchemaProblem>, depth: usize) {
+    if depth > MAX_TYPE_REF_DEPTH {
+        problems.push(SchemaProblem::new(
+            path,
+            format!("contract nesting exceeds the supported depth of {MAX_TYPE_REF_DEPTH}"),
+        ));
+        return;
+    }
     if ty.name.trim().is_empty() {
         problems.push(SchemaProblem::new(path, "contract name is empty"));
+    } else if ty.name.trim() != ty.name || ty.name.chars().any(char::is_whitespace) {
+        problems.push(SchemaProblem::new(
+            path,
+            format!(
+                "contract name '{}' has surrounding or embedded whitespace",
+                ty.name
+            ),
+        ));
     }
     for argument in &ty.args {
-        check_type_ref(path, argument, problems);
+        check_type_ref_at(path, argument, problems, depth + 1);
     }
 }
 
@@ -588,5 +681,182 @@ mod tests {
             fault.code(),
             aipo_diagnostics::DiagnosticCode::AIPO_RT_TYPE_MISMATCH
         );
+    }
+
+    #[test]
+    fn test_empty_names_are_rejected_across_categories() {
+        let cases = [
+            (
+                r#"{ "host": "h", "version": "1", "modules": [ { "name": "m",
+                    "types": [ { "name": "", "fields": [] } ] } ] }"#,
+                "type name is empty",
+            ),
+            (
+                r#"{ "host": "h", "version": "1", "modules": [ { "name": "m",
+                    "values": [ { "name": "", "type": { "name": "Int" } } ] } ] }"#,
+                "value name is empty",
+            ),
+            (
+                r#"{ "host": "h", "version": "1", "modules": [ { "name": "m",
+                    "functions": [ { "name": "f", "params": [
+                        { "name": "", "type": { "name": "Int" } } ] } ] } ] }"#,
+                "parameter name is empty",
+            ),
+            (
+                r#"{ "host": "h", "version": "1", "modules": [ { "name": "m",
+                    "types": [ { "name": "T", "fields": [
+                        { "name": "", "type": { "name": "Int" } } ] } ] } ] }"#,
+                "field name is empty",
+            ),
+        ];
+        for (text, expected) in cases {
+            let fault = HostSchema::from_json(text).expect_err("empty name");
+            assert!(
+                fault.message().contains(expected),
+                "expected '{expected}' in: {}",
+                fault.message()
+            );
+        }
+    }
+
+    #[test]
+    fn test_duplicate_fields_and_operations_are_rejected() {
+        let duplicate_field = r#"{ "host": "h", "version": "1", "modules": [ { "name": "m",
+            "types": [ { "name": "T", "fields": [
+                { "name": "x", "type": { "name": "Int" } },
+                { "name": "x", "type": { "name": "Int" } } ] } ] } ] }"#;
+        let fault = HostSchema::from_json(duplicate_field).expect_err("duplicate field");
+        assert!(
+            fault.message().contains("field is declared more than once"),
+            "{}",
+            fault.message()
+        );
+
+        let duplicate_operation = r#"{ "host": "h", "version": "1", "modules": [ { "name": "m",
+            "handles": [ { "name": "E", "operations": ["pos", "pos"] } ] } ] }"#;
+        let fault = HostSchema::from_json(duplicate_operation).expect_err("duplicate operation");
+        assert!(
+            fault
+                .message()
+                .contains("operation is declared more than once"),
+            "{}",
+            fault.message()
+        );
+
+        let empty_operation = r#"{ "host": "h", "version": "1", "modules": [ { "name": "m",
+            "handles": [ { "name": "E", "operations": [""] } ] } ] }"#;
+        let fault = HostSchema::from_json(empty_operation).expect_err("empty operation");
+        assert!(
+            fault.message().contains("operation name is empty"),
+            "{}",
+            fault.message()
+        );
+    }
+
+    #[test]
+    fn test_required_parameter_cannot_follow_an_optional_one() {
+        let text = r#"{ "host": "h", "version": "1", "modules": [ { "name": "m",
+            "functions": [ { "name": "f", "params": [
+                { "name": "a", "type": { "name": "Int" }, "is_optional": true },
+                { "name": "b", "type": { "name": "Int" } } ] } ] } ] }"#;
+        let fault = HostSchema::from_json(text).expect_err("optional order");
+        assert!(
+            fault
+                .message()
+                .contains("required parameter cannot follow an optional"),
+            "{}",
+            fault.message()
+        );
+    }
+
+    #[test]
+    fn test_subject_cannot_be_optional() {
+        let text = r#"{ "host": "h", "version": "1", "modules": [ { "name": "m",
+            "functions": [ { "name": "f", "params": [
+                { "name": "body", "type": { "name": "Function" }, "is_optional": true } ],
+              "subject": "body" } ] } ] }"#;
+        let fault = HostSchema::from_json(text).expect_err("optional subject");
+        assert!(
+            fault.message().contains("subject 'body' is optional"),
+            "{}",
+            fault.message()
+        );
+    }
+
+    #[test]
+    fn test_contract_name_shape_and_depth_are_bounded() {
+        let spaced = r#"{ "host": "h", "version": "1", "modules": [ { "name": "m",
+            "values": [ { "name": "v", "type": { "name": " Int" } } ] } ] }"#;
+        let fault = HostSchema::from_json(spaced).expect_err("spaced contract");
+        assert!(
+            fault.message().contains("whitespace"),
+            "{}",
+            fault.message()
+        );
+
+        // Deeply nested parametric arguments must not recurse without bound. Built as a
+        // struct literal because serde_json has its own recursion guard; the validator
+        // must be total on any already-parsed description.
+        let mut ty = TypeRef {
+            name: "T".to_string(),
+            nullable: false,
+            args: vec![],
+        };
+        for _ in 0..(MAX_TYPE_REF_DEPTH + 8) {
+            ty = TypeRef {
+                name: "T".to_string(),
+                nullable: false,
+                args: vec![ty],
+            };
+        }
+        let schema = HostSchema {
+            host: "h".to_string(),
+            version: "1".to_string(),
+            modules: vec![ModuleSchema {
+                name: "m".to_string(),
+                docs: None,
+                capabilities: vec![],
+                types: vec![],
+                handles: vec![],
+                values: vec![ValueSchema {
+                    name: "v".to_string(),
+                    ty,
+                    docs: None,
+                }],
+                functions: vec![],
+            }],
+        };
+        let fault = schema.validate().expect_err("deep nesting");
+        assert!(
+            fault.message().contains("nesting exceeds"),
+            "{}",
+            fault.message()
+        );
+    }
+
+    #[test]
+    fn test_declared_capabilities_ignore_malformed_names() {
+        // `declared_capabilities` assumes a validated surface; on a hand-built schema the
+        // malformed entry grants nothing instead of inventing a capability (auditoria N-5).
+        let schema = HostSchema {
+            host: "h".to_string(),
+            version: "1".to_string(),
+            modules: vec![ModuleSchema {
+                name: "m".to_string(),
+                docs: None,
+                capabilities: vec!["Clock.Wall".to_string(), "clock".to_string()],
+                types: vec![],
+                handles: vec![],
+                values: vec![],
+                functions: vec![],
+            }],
+        };
+        assert!(schema.validate().is_err());
+        let declared: Vec<String> = schema
+            .declared_capabilities()
+            .iter()
+            .map(|capability| capability.name().to_string())
+            .collect();
+        assert_eq!(declared, vec!["clock".to_string()]);
     }
 }

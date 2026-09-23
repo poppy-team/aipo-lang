@@ -137,3 +137,21 @@ fn test_return_contract_matrix() {
         }
     }
 }
+
+#[test]
+fn test_bare_return_respects_the_return_contract() {
+    // A bare `return` yields `none`; a non-nullable contract must reject it instead of
+    // silently returning `none` (auditoria IR-17). A nullable contract accepts it.
+    let violated = check_program("fn f() -> Int\nreturn\nend\nf()\n");
+    assert!(
+        violated.is_err(),
+        "bare return under `-> Int` must fault: {violated:?}"
+    );
+    assert!(
+        violated.unwrap_err().contains("AIPO_RT_TYPE_MISMATCH"),
+        "the violation is a contract fault"
+    );
+
+    let accepted = check_program("fn f() -> Int?\nreturn\nend\nf()\n");
+    assert!(accepted.is_ok(), "`-> Int?` accepts none: {accepted:?}");
+}

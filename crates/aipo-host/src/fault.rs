@@ -120,7 +120,13 @@ impl HostFault {
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join("; ");
-                format!("host surface description is invalid: {detail}")
+                if detail.is_empty() {
+                    // `validate` never produces an empty list; a hand-built fault should
+                    // still render a complete sentence (auditoria N-9).
+                    "host surface description is invalid: no details provided".to_string()
+                } else {
+                    format!("host surface description is invalid: {detail}")
+                }
             }
         }
     }
@@ -164,6 +170,32 @@ mod tests {
         };
         let rendered = fault.to_string();
         assert!(rendered.starts_with("AIPO_RT_SCOPE_ESCAPE"), "{rendered}");
+    }
+
+    #[test]
+    fn test_empty_schema_problem_list_still_renders_a_sentence() {
+        let fault = HostFault::Schema { problems: vec![] };
+        assert!(
+            fault.message().contains("no details provided"),
+            "{}",
+            fault.message()
+        );
+    }
+
+    #[test]
+    fn test_stale_handle_and_invalid_value_messages_name_the_cause() {
+        let stale = HostFault::StaleHandle {
+            handle: sample_handle(),
+        };
+        assert!(stale.message().contains("stale"), "{}", stale.message());
+        let invalid = HostFault::InvalidHostValue {
+            detail: "Int out of range".to_string(),
+        };
+        assert!(
+            invalid.message().contains("Int out of range"),
+            "{}",
+            invalid.message()
+        );
     }
 
     #[test]
