@@ -1,0 +1,10 @@
+# Default ownership
+* @poppy-team
+
+# Security- and supply-chain-sensitive files
+/.github/ @poppy-team
+/Cargo.toml @poppy-team
+/Cargo.lock @poppy-team
+/deny.toml @poppy-team
+/SECURITY.md @poppy-team
+/fuzz/ @poppy-team
