@@ -43,7 +43,20 @@ pub fn parse(source: &Source) -> (Program, Vec<Diagnostic>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aipo_source::SourceId;
+    use aipo_source::{SourceId, SourceSpan};
+
+    fn parse_import(text: &str) -> aipo_ast::ImportDecl {
+        let src = Source::new(SourceId::next(), "test.aipo", text);
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {:?}", diags);
+        prog.items
+            .into_iter()
+            .find_map(|item| match item {
+                aipo_ast::Item::Import(import) => Some(import),
+                _ => None,
+            })
+            .expect("expected an import declaration")
+    }
 
     #[test]
     fn test_parse_simple_program() {
@@ -51,6 +64,55 @@ mod tests {
         let (prog, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);
         assert_eq!(prog.statements.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_qualified_import_path() {
+        let import = parse_import("import acme.http");
+        assert_eq!(
+            import
+                .module_name
+                .iter()
+                .map(|segment| segment.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["acme", "http"]
+        );
+        assert_eq!(import.span, SourceSpan::new(0, "import acme.http".len()));
+    }
+
+    #[test]
+    fn test_parse_qualified_import_alias() {
+        let import = parse_import("import acme.http as h");
+        assert_eq!(
+            import.alias.as_ref().map(|alias| alias.name.as_str()),
+            Some("h")
+        );
+    }
+
+    #[test]
+    fn test_parse_qualified_import_selective_names() {
+        let import = parse_import("import acme.http: name, other");
+        assert_eq!(
+            import
+                .names
+                .iter()
+                .map(|name| name.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["name", "other"]
+        );
+    }
+
+    #[test]
+    fn test_parse_unqualified_import_remains_supported() {
+        let import = parse_import("import math");
+        assert_eq!(
+            import
+                .module_name
+                .iter()
+                .map(|segment| segment.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["math"]
+        );
     }
 
     #[test]

@@ -1,0 +1,25 @@
+[package]
+name = "aipo-package"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Package coordinates, manifests, lockfiles, and deterministic local/pinned GitHub resolution for Aipo"
+publish = false
+
+[features]
+default = []
+http = ["dep:ureq"]
+
+[lints]
+workspace = true
+
+[dependencies]
+aipo-host = { path = "../aipo-host" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+toml = { workspace = true }
+ureq = { version = "=3.4.2", default-features = false, features = ["rustls"], optional = true }

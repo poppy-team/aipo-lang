@@ -20,6 +20,7 @@ aipo-formatter = { path = "../aipo-formatter" }
 aipo-hir = { path = "../aipo-hir" }
 aipo-ir = { path = "../aipo-ir" }
 aipo-js = { path = "../aipo-js" }
+aipo-package = { path = "../aipo-package" }
 aipo-runtime = { path = "../aipo-runtime" }
 aipo-sema = { path = "../aipo-sema" }
 aipo-source = { path = "../aipo-source" }
@@ -30,6 +31,10 @@ aipo-vm = { path = "../aipo-vm" }
 [dev-dependencies]
 aipo-testkit = { path = "../aipo-testkit" }
 aipo-lexer = { path = "../aipo-lexer" }
+
+[features]
+default = []
+github-http = ["aipo-package/http"]
 
 [lints]
 workspace = true

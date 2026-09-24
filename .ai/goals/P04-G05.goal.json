@@ -1,0 +1,151 @@
+{
+  "acceptance": [
+    "HTTP support is optional and disabled by default; enabling the feature adds one pinned Rustls-based client dependency and does not affect local path package commands.",
+    "The client constructs URLs only from a validated PackageSource::GitHub, performs public GET requests without Authorization or credentials, rejects redirects and unexpected hosts, sets a timeout and a bounded response size, and returns typed transport/status errors.",
+    "A local cache writes only beneath an explicitly supplied cache root, derives paths from validated repository/revision/subpath data, writes atomically, verifies cached manifest/entry bytes against the package digest, and fails closed on corruption or traversal.",
+    "An explicit CLI package fetch command accepts a repository slug, exact commit revision, optional subpath, cache directory and output directory; it never runs lifecycle code and never fetches private/authenticated content.",
+    "The fetched manifest and entry are parsed through aipo-package before output; source provenance, revision and digest remain visible in the resulting package and lock data.",
+    "Tests use a fake HTTP transport/cache fixtures for success, timeout/status/oversize/redirect/host rejection, cache hit, corruption, traversal, atomic write and no-network default behavior; no test contacts GitHub.",
+    "Security and user documentation define cache ownership, retention, public-only policy, resource limits and the explicit command required to enable network access; repository gates remain green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-24T03:18:33.363631306Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "HTTP support is optional and disabled by default; enabling the feature adds one pinned Rustls-based client dependency and does not affect local path package commands.",
+          "The client constructs URLs only from a validated PackageSource::GitHub, performs public GET requests without Authorization or credentials, rejects redirects and unexpected hosts, sets a timeout and a bounded response size, and returns typed transport/status errors.",
+          "A local cache writes only beneath an explicitly supplied cache root, derives paths from validated repository/revision/subpath data, writes atomically, verifies cached manifest/entry bytes against the package digest, and fails closed on corruption or traversal.",
+          "An explicit CLI package fetch command accepts a repository slug, exact commit revision, optional subpath, cache directory and output directory; it never runs lifecycle code and never fetches private/authenticated content.",
+          "The fetched manifest and entry are parsed through aipo-package before output; source provenance, revision and digest remain visible in the resulting package and lock data.",
+          "Tests use a fake HTTP transport/cache fixtures for success, timeout/status/oversize/redirect/host rejection, cache hit, corruption, traversal, atomic write and no-network default behavior; no test contacts GitHub.",
+          "Security and user documentation define cache ownership, retention, public-only policy, resource limits and the explicit command required to enable network access; repository gates remain green."
+        ],
+        "non_goals": [
+          "Private repositories, tokens, OAuth, credentials or authenticated GitHub API requests",
+          "Automatic dependency downloads from aipo.toml and background network activity",
+          "Persistent cache eviction, registry publication, signatures or provenance attestations",
+          "Web/JS fallback for host-only package fetching"
+        ]
+      },
+      "digest": "a31911398c7f5e8f588c8196087f851f0957e9b390fbdbc0ef33678f79ef1fe3",
+      "goal_id": "P04-G05",
+      "id": "AMD-002",
+      "reason": "Lock the opt-in read-only GitHub HTTP/cache slice",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "aipo-package with the http feature passed 39 tests, including fake-transport success, redirect/status/timeout/oversize rejection, bounded response enforcement, cache round-trip, digest corruption and symlink/path safety.",
+      "kind": "test"
+    },
+    {
+      "description": "aipo-cli with github-http passed 15 package integration tests, including explicit fetch argument validation; default package tests remain network-free.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo test --workspace --all-targets and cargo test --workspace --all-targets --all-features both passed; the default dependency tree contains no ureq, while the opt-in feature contains pinned ureq 3.4.2 with Rustls.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo deny check advisories bans licenses sources and cargo audit both passed with the new optional dependency graph.",
+      "kind": "gate"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets --all-features -- -D warnings, cargo doc --workspace --no-deps, cargo doc --workspace --no-deps --all-features, node crates/aipo-js/runtime/selftest.mjs, prumo validate . and prumo doctor . all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/reference/cli.md, docs/security/github-package-fetch.md, docs/security/security-contract.md, docs/diagnostics/catalog.md and docs/adp/ADP-007-package-identity-and-distribution.md record the public-only policy, cache ownership, limits, diagnostic and explicit feature boundary.",
+      "kind": "doc"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T03:18:13.634759263Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T03:18:17.846731428Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T03:18:17.854552898Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T03:18:33.363631306Z",
+      "event": "amended",
+      "reason": "Lock the opt-in read-only GitHub HTTP/cache slice",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-24T03:18:33.373830198Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-24T03:50:17.951880613Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T03:50:17.975637829Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T03:50:17.996205166Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G05",
+  "lock": {
+    "digest": "a31911398c7f5e8f588c8196087f851f0957e9b390fbdbc0ef33678f79ef1fe3",
+    "locked_at": "2026-09-24T03:18:33.363631306Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "Private repositories, tokens, OAuth, credentials or authenticated GitHub API requests",
+    "Automatic dependency downloads from aipo.toml and background network activity",
+    "Persistent cache eviction, registry publication, signatures or provenance attestations",
+    "Web/JS fallback for host-only package fetching"
+  ],
+  "objective": "Add an opt-in public GitHub HTTP fetcher with bounded responses, strict host/redirect policy, no credentials, and an atomic local cache; keep normal local package commands network-free.",
+  "phase": "P04",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Read-only GitHub HTTP and local cache"
+}

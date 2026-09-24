@@ -16,6 +16,7 @@
 
 use aipo_diagnostics::{Diagnostic, DiagnosticCode};
 use aipo_hir::*;
+use aipo_package::{PackageId, PackagePathMap};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -41,6 +42,16 @@ struct ImportBinding {
     names: Vec<String>,
 }
 
+impl ImportBinding {
+    fn local_namespace(&self) -> &str {
+        self.alias.as_deref().unwrap_or_else(|| {
+            self.module
+                .rsplit_once('.')
+                .map_or(self.module.as_str(), |(_, local)| local)
+        })
+    }
+}
+
 /// A loaded module and the metadata needed to merge it.
 struct LoadedModule {
     name: String,
@@ -57,7 +68,11 @@ struct LoadedModule {
 ///
 /// Returns the merged program, the names the importing surface may reference, and any
 /// diagnostics about missing modules, cycles or unknown exported names.
-pub(crate) fn resolve(entry: &Path, entry_program: HirProgram) -> ResolvedProgram {
+pub(crate) fn resolve(
+    entry: &Path,
+    entry_program: HirProgram,
+    package_paths: Option<&PackagePathMap>,
+) -> ResolvedProgram {
     let mut diagnostics = Vec::new();
     let mut loaded: Vec<LoadedModule> = Vec::new();
     let mut visiting: Vec<String> = Vec::new();
@@ -74,6 +89,7 @@ pub(crate) fn resolve(entry: &Path, entry_program: HirProgram) -> ResolvedProgra
     load_imports(
         &entry_program,
         &base_dir,
+        package_paths,
         &mut loaded,
         &mut visiting,
         &mut seen,
@@ -124,12 +140,7 @@ pub(crate) fn resolve(entry: &Path, entry_program: HirProgram) -> ResolvedProgra
         // Only the module name (or its alias) needs a surface entry: names selected by
         // `import m: name` are already global because the declaring module's items were merged
         // into the program, and `alias.member` was rewritten to the declaration itself.
-        imported_names.insert(
-            binding
-                .alias
-                .clone()
-                .unwrap_or_else(|| binding.module.clone()),
-        );
+        imported_names.insert(binding.local_namespace().to_string());
     }
 
     let mut items: Vec<HirItem> = Vec::new();
@@ -217,6 +228,7 @@ pub(crate) fn resolve(entry: &Path, entry_program: HirProgram) -> ResolvedProgra
 fn load_imports(
     program: &HirProgram,
     base_dir: &Path,
+    package_paths: Option<&PackagePathMap>,
     loaded: &mut Vec<LoadedModule>,
     visiting: &mut Vec<String>,
     seen: &mut HashSet<String>,
@@ -238,7 +250,17 @@ fn load_imports(
             continue;
         }
 
-        let path = base_dir.join(format!("{name}.aipo"));
+        let path = match import_module_path(&name, base_dir, package_paths) {
+            Ok(path) => path,
+            Err(message) => {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::AIPO_SEM_UNKNOWN_MODULE,
+                    message,
+                ));
+                continue;
+            }
+        };
+        let module_base_dir = path.parent().unwrap_or(base_dir);
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(error) => {
@@ -266,7 +288,8 @@ fn load_imports(
         visiting.push(name.clone());
         load_imports(
             &module_program,
-            base_dir,
+            module_base_dir,
+            package_paths,
             loaded,
             visiting,
             seen,
@@ -302,6 +325,26 @@ fn load_imports(
             imports,
         });
     }
+}
+
+fn import_module_path(
+    module: &str,
+    base_dir: &Path,
+    package_paths: Option<&PackagePathMap>,
+) -> Result<PathBuf, String> {
+    if package_paths.is_some() && module.contains('.') {
+        let coordinate = PackageId::parse(module)
+            .map_err(|error| format!("cannot load module '{module}': {error}"))?;
+        return package_paths
+            .and_then(|paths| paths.get(&coordinate))
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "cannot load module '{module}': package is not present in the resolved local graph"
+                )
+            });
+    }
+    Ok(base_dir.join(format!("{module}.aipo")))
 }
 
 /// The `import` declarations a program carries, in source order.
@@ -440,8 +483,8 @@ impl ModuleScope {
 
 /// Builds the namespace bindings an importing surface gets from its imports.
 ///
-/// `import module` and `import module as alias` both bind a namespace, under the module's own
-/// name or under the alias. `import module: names` binds only the selected names, so it
+/// `import module` and `import module as alias` both bind a namespace, under the module's final
+/// segment or under the alias. `import module: names` binds only the selected names, so it
 /// introduces no namespace — which is why it is skipped here.
 fn namespace_bindings(
     bindings: &[ImportBinding],
@@ -451,7 +494,7 @@ fn namespace_bindings(
     for binding in bindings {
         let local = match &binding.alias {
             Some(alias) => alias.clone(),
-            None if binding.names.is_empty() => binding.module.clone(),
+            None if binding.names.is_empty() => binding.local_namespace().to_string(),
             None => continue,
         };
         let exported = exported_by_module

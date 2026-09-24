@@ -7,6 +7,8 @@
 //! aipo build <path> [--out <dir>] [--message-format=<human|jsonl>]
 //! aipo disasm <path> [--message-format=<human|jsonl>]
 //! aipo fmt <paths...> [--check]
+//! aipo package lock <package-dir>
+//! aipo package audit <package-dir>
 //! aipo --version
 //! aipo --help
 //! ```
@@ -15,8 +17,8 @@
 //!
 //! - `0` — success (the program ran to completion, `check` found no error, or formatting
 //!   either wrote the files or verified them unchanged);
-//! - `1` — language failure (lexical/parse/semantic diagnostic, bytecode verification
-//!   error, uncaught runtime fault, or a `--check` run that would rewrite a file);
+//! - `1` — language/package failure (lexical/parse/semantic or package diagnostic, bytecode
+//!   verification error, uncaught runtime fault, or a `--check` run that would rewrite a file);
 //! - `2` — usage error (unknown command or flag, missing argument, unreadable file).
 //!
 //! The command surface is a thin orchestrator over the existing pipeline stages:
@@ -26,16 +28,29 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use aipo_diagnostics::{Diagnostic, DiagnosticEmitter, MessageFormat, Severity};
+use aipo_diagnostics::{Diagnostic, DiagnosticCode, DiagnosticEmitter, MessageFormat, Severity};
+#[cfg(feature = "github-http")]
+use aipo_package::{
+    CachedGitHubFetcher, GitHubCache, GitHubFetchError, GitHubGraphError, GitHubHttpFetcher,
+    PackageSource, resolve_github_package_graph,
+};
+use aipo_package::{
+    LOCK_FILE_NAME, LocalPackageResolver, Lockfile, MANIFEST_FILE_NAME, PackagePathMap,
+    ResolveError, ResolvedLocalPackages, ResolvedPackageGraph,
+};
 use aipo_runtime::NativeRegistry;
 use aipo_sema::PreludeSurface;
 use aipo_source::{Source, SourceId, SourceMap};
 use aipo_vm::{Vm, VmError};
-use std::io::Write;
+use std::fs::OpenOptions;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 mod modules;
+
+static NEXT_LOCK_TEMP: AtomicU64 = AtomicU64::new(0);
 
 /// Redirects the standard library's `io` output away from the process streams.
 ///
@@ -60,6 +75,8 @@ USAGE:
     aipo build <path> [--out <dir>] [--message-format=<human|jsonl>]
     aipo disasm <path> [--message-format=<human|jsonl>]
     aipo fmt <paths...> [--check]
+    aipo package lock <package-dir>
+    aipo package audit <package-dir>
     aipo --version
     aipo --help
 
@@ -69,12 +86,16 @@ COMMANDS:
     build    Emit a JavaScript bundle (app.js + aipo-runtime.js + app.js.map)
     disasm   Disassemble a source file (.aipo) or bytecode file (.aibc)
     fmt      Format source files in place; --check reports drift without writing
+    package  Create or audit a local package lockfile
 
 EXIT CODES:
     0  success
     1  language failure (diagnostics, runtime fault, or formatting drift)
     2  usage error (bad arguments or unreadable file)
 ";
+
+#[cfg(feature = "github-http")]
+const GITHUB_HTTP_USAGE: &str = "\n    aipo package fetch-github <owner/repository> <40-hex-commit> [subpath] --cache <dir> --out <dir>\n";
 
 /// Runs the CLI for an argument vector that excludes the program name.
 pub fn run(args: &[String]) -> ExitCode {
@@ -83,6 +104,17 @@ pub fn run(args: &[String]) -> ExitCode {
     let mut out = stdout.lock();
     let mut err = stderr.lock();
     ExitCode::from(run_with(args, &mut out, &mut err))
+}
+
+fn usage_text() -> String {
+    #[cfg(feature = "github-http")]
+    {
+        format!("{USAGE}{GITHUB_HTTP_USAGE}")
+    }
+    #[cfg(not(feature = "github-http"))]
+    {
+        USAGE.to_string()
+    }
 }
 
 /// Runs the CLI with explicit output streams, returning the process exit code.
@@ -94,14 +126,14 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
         Ok(command) => command,
         Err(usage) => {
             let _ = writeln!(err, "error: {usage}");
-            let _ = writeln!(err, "\n{USAGE}");
+            let _ = writeln!(err, "\n{}", usage_text());
             return EXIT_USAGE;
         }
     };
 
     match parsed {
         Command::Help => {
-            let _ = write!(out, "{USAGE}");
+            let _ = write!(out, "{}", usage_text());
             EXIT_SUCCESS
         }
         Command::Version => {
@@ -117,6 +149,26 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
         } => build_bundle(&path, out_dir.as_deref(), format, out, err),
         Command::Disasm { path, format } => disassemble_command(&path, format, out, err),
         Command::Fmt { paths, check } => format_files(&paths, check, out, err),
+        Command::Package {
+            operation,
+            package_dir,
+        } => package_command(operation, &package_dir, out, err),
+        #[cfg(feature = "github-http")]
+        Command::PackageFetchGitHub {
+            repository,
+            revision,
+            subpath,
+            cache_dir,
+            out_dir,
+        } => package_fetch_github(
+            &repository,
+            &revision,
+            &subpath,
+            &cache_dir,
+            &out_dir,
+            out,
+            err,
+        ),
     }
 }
 
@@ -146,6 +198,35 @@ enum Command {
         paths: Vec<PathBuf>,
         check: bool,
     },
+    Package {
+        operation: PackageOperation,
+        package_dir: PathBuf,
+    },
+    #[cfg(feature = "github-http")]
+    PackageFetchGitHub {
+        repository: String,
+        revision: String,
+        subpath: String,
+        cache_dir: PathBuf,
+        out_dir: PathBuf,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PackageOperation {
+    Lock,
+    Audit,
+}
+
+enum CliError {
+    Usage(String),
+    Diagnostic(Box<Diagnostic>),
+}
+
+impl CliError {
+    fn diagnostic(code: DiagnosticCode, message: impl Into<String>) -> Self {
+        Self::Diagnostic(Box::new(Diagnostic::error(code, message)))
+    }
 }
 
 impl Command {
@@ -232,6 +313,39 @@ impl Command {
                     format,
                 })
             }
+            "package" => {
+                #[cfg(feature = "github-http")]
+                if args
+                    .get(1)
+                    .is_some_and(|operation| operation == "fetch-github")
+                {
+                    return parse_fetch_github(&args[1..]);
+                }
+                if args.len() < 3 {
+                    return Err(
+                        "'package' requires 'lock' or 'audit' and a package directory".to_string(),
+                    );
+                }
+                if args.len() > 3 {
+                    return Err(format!("unexpected argument '{}'", args[3]));
+                }
+                let operation = match args[1].as_str() {
+                    "lock" => PackageOperation::Lock,
+                    "audit" => PackageOperation::Audit,
+                    other => {
+                        return Err(format!(
+                            "unrecognized package operation '{other}': expected 'lock' or 'audit'"
+                        ));
+                    }
+                };
+                if args[2].starts_with('-') {
+                    return Err(format!("unrecognized flag '{}'", args[2]));
+                }
+                Ok(Self::Package {
+                    operation,
+                    package_dir: PathBuf::from(&args[2]),
+                })
+            }
             "fmt" => {
                 let mut paths = Vec::new();
                 let mut check = false;
@@ -254,6 +368,67 @@ impl Command {
     }
 }
 
+#[cfg(feature = "github-http")]
+fn parse_fetch_github(args: &[String]) -> Result<Command, String> {
+    if args.len() < 5 {
+        return Err(
+            "'package fetch-github' requires repository, revision, --cache and --out".to_string(),
+        );
+    }
+    if args[0] != "fetch-github" {
+        return Err("expected 'fetch-github' package operation".to_string());
+    }
+    let repository = args[1].clone();
+    let revision = args[2].clone();
+    if repository.starts_with('-') || revision.starts_with('-') {
+        return Err("repository and revision cannot start with '-'".to_string());
+    }
+    let mut subpath = ".".to_string();
+    let mut index = 3;
+    if args.get(index).is_some_and(|value| !value.starts_with('-')) {
+        subpath = args[index].clone();
+        index += 1;
+    }
+    let mut cache_dir = None;
+    let mut out_dir = None;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--cache" => {
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| "'--cache' requires a directory".to_string())?;
+                if cache_dir.is_some() {
+                    return Err("'--cache' was provided more than once".to_string());
+                }
+                cache_dir = Some(PathBuf::from(value));
+            }
+            "--out" => {
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| "'--out' requires a directory".to_string())?;
+                if out_dir.is_some() {
+                    return Err("'--out' was provided more than once".to_string());
+                }
+                out_dir = Some(PathBuf::from(value));
+            }
+            value if value.starts_with('-') => {
+                return Err(format!("unrecognized fetch-github flag '{value}'"));
+            }
+            value => return Err(format!("unexpected fetch-github argument '{value}'")),
+        }
+        index += 1;
+    }
+    Ok(Command::PackageFetchGitHub {
+        repository,
+        revision,
+        subpath,
+        cache_dir: cache_dir.ok_or_else(|| "'--cache' is required".to_string())?,
+        out_dir: out_dir.ok_or_else(|| "'--out' is required".to_string())?,
+    })
+}
+
 fn parse_format(value: &str) -> Result<MessageFormat, String> {
     match value {
         "human" => Ok(MessageFormat::Human),
@@ -271,6 +446,11 @@ enum Action {
     Check,
 }
 
+struct LoadedSource {
+    source: Source,
+    package_paths: Option<PackagePathMap>,
+}
+
 /// Result of compiling a source file down to verified bytecode.
 struct Compiled {
     module: aipo_bytecode::BytecodeModule,
@@ -281,7 +461,7 @@ struct Compiled {
 ///
 /// `analyze` never executes the program: `check` stops here, while `run` continues with
 /// [`execute_module`].
-fn analyze(source: &Source, path: &Path) -> Compiled {
+fn analyze(source: &Source, path: &Path, package_paths: Option<&PackagePathMap>) -> Compiled {
     let (program, mut diagnostics) = aipo_syntax::parse(source);
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Compiled {
@@ -293,7 +473,7 @@ fn analyze(source: &Source, path: &Path) -> Compiled {
     // Every module reachable from this file is merged first, so semantic analysis sees one
     // program with the imported declarations already in place.
     let hir = aipo_hir::lower(program);
-    let resolved = modules::resolve(path, hir);
+    let resolved = modules::resolve(path, hir, package_paths);
     diagnostics.extend(resolved.diagnostics);
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Compiled {
@@ -343,6 +523,334 @@ fn verification_diagnostic(reason: &str) -> Diagnostic {
     Diagnostic::error(fault.diagnostic_code(), fault.to_string())
 }
 
+fn report_cli_error(
+    error: CliError,
+    format: MessageFormat,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    match error {
+        CliError::Usage(message) => {
+            let _ = writeln!(err, "error: {message}");
+            EXIT_USAGE
+        }
+        CliError::Diagnostic(diagnostic) => {
+            let source = Source::new(SourceId::next(), "<package>", "");
+            emit_diagnostics(
+                format,
+                &source,
+                std::slice::from_ref(diagnostic.as_ref()),
+                out,
+                err,
+            );
+            EXIT_LANGUAGE_FAILURE
+        }
+    }
+}
+
+fn package_command(
+    operation: PackageOperation,
+    package_dir: &Path,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let resolved = match resolve_local_package(package_dir, package_dir) {
+        Ok(resolved) => resolved,
+        Err(error) => return report_cli_error(error, MessageFormat::Human, out, err),
+    };
+
+    match operation {
+        PackageOperation::Lock => {
+            let lockfile = match generated_lockfile(&resolved.graph) {
+                Ok(lockfile) => lockfile,
+                Err(error) => return report_cli_error(error, MessageFormat::Human, out, err),
+            };
+            let contents = match lockfile.to_toml() {
+                Ok(contents) => contents,
+                Err(error) => {
+                    return report_cli_error(
+                        CliError::diagnostic(
+                            DiagnosticCode::AIPO_PKG_LOCK_STALE,
+                            format!("package lockfile could not be serialized: {error}"),
+                        ),
+                        MessageFormat::Human,
+                        out,
+                        err,
+                    );
+                }
+            };
+            if let Err(error) = write_lockfile(package_dir, &contents) {
+                return report_cli_error(error, MessageFormat::Human, out, err);
+            }
+            let _ = writeln!(
+                out,
+                "locked {} at {}",
+                resolved.graph.root,
+                package_dir.join(LOCK_FILE_NAME).display()
+            );
+            EXIT_SUCCESS
+        }
+        PackageOperation::Audit => {
+            let lock_path = package_dir.join(LOCK_FILE_NAME);
+            if let Err(error) = validate_existing_lock(&lock_path, &resolved.graph, true) {
+                return report_cli_error(error, MessageFormat::Human, out, err);
+            }
+            let _ = writeln!(out, "audit passed: {}", resolved.graph.root);
+            EXIT_SUCCESS
+        }
+    }
+}
+
+#[cfg(feature = "github-http")]
+fn package_fetch_github(
+    repository: &str,
+    revision: &str,
+    subpath: &str,
+    cache_dir: &Path,
+    out_dir: &Path,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let source = match PackageSource::github_at(repository, revision, subpath) {
+        Ok(source) => source,
+        Err(error) => {
+            return report_cli_error(
+                CliError::Usage(format!("invalid GitHub source: {error}")),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    let cache = GitHubCache::new(cache_dir);
+    let transport = GitHubHttpFetcher::new();
+    let fetcher = CachedGitHubFetcher::new(&cache, transport);
+    let resolved = match resolve_github_package_graph(source.clone(), &fetcher) {
+        Ok(resolved) => resolved,
+        Err(GitHubGraphError::Fetch(error)) => return report_fetch_error(error, out, err),
+        Err(GitHubGraphError::Resolve(error)) => {
+            return report_cli_error(
+                CliError::diagnostic(DiagnosticCode::AIPO_PKG_RESOLUTION, error.to_string()),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    if let Err(error) = write_fetched_package(out_dir, &resolved) {
+        return report_cli_error(error, MessageFormat::Human, out, err);
+    }
+    let _ = writeln!(
+        out,
+        "fetched {}@{} graph from {}",
+        resolved.root.manifest.name,
+        resolved.root.manifest.version,
+        source.location()
+    );
+    EXIT_SUCCESS
+}
+
+#[cfg(feature = "github-http")]
+fn report_fetch_error(error: GitHubFetchError, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    report_cli_error(
+        CliError::diagnostic(DiagnosticCode::AIPO_PKG_FETCH, error.to_string()),
+        MessageFormat::Human,
+        out,
+        err,
+    )
+}
+
+#[cfg(feature = "github-http")]
+fn write_fetched_package(
+    output_dir: &Path,
+    resolved: &aipo_package::GitHubPackageGraph,
+) -> Result<(), CliError> {
+    prepare_output_dir(output_dir)?;
+    let manifest = resolved.root.manifest.to_toml().map_err(|error| {
+        CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_FETCH,
+            format!("fetched manifest could not be serialized: {error}"),
+        )
+    })?;
+    let entry_path = safe_output_path(output_dir, &resolved.root.manifest.entry)?;
+    let lock = resolved.graph.to_lockfile().map_err(|error| {
+        CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_FETCH,
+            format!("fetched package graph lockfile is invalid: {error}"),
+        )
+    })?;
+    let lock = lock.to_toml().map_err(|error| {
+        CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_FETCH,
+            format!("fetched package lockfile could not be serialized: {error}"),
+        )
+    })?;
+    write_new_output_file(&output_dir.join(MANIFEST_FILE_NAME), manifest.as_bytes())?;
+    write_new_output_file(&entry_path, &resolved.root.entry_bytes)?;
+    write_new_output_file(&output_dir.join(LOCK_FILE_NAME), lock.as_bytes())
+}
+
+#[cfg(feature = "github-http")]
+fn prepare_output_dir(path: &Path) -> Result<(), CliError> {
+    if path.exists() {
+        let metadata = std::fs::symlink_metadata(path)
+            .map_err(|error| CliError::Usage(format!("{}: {error}", path.display())))?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(CliError::Usage(format!(
+                "{} is not a safe output directory",
+                path.display()
+            )));
+        }
+        if std::fs::read_dir(path)
+            .map_err(|error| CliError::Usage(format!("{}: {error}", path.display())))?
+            .next()
+            .is_some()
+        {
+            return Err(CliError::Usage(format!("{} must be empty", path.display())));
+        }
+        return Ok(());
+    }
+    std::fs::create_dir_all(path)
+        .map_err(|error| CliError::Usage(format!("{}: {error}", path.display())))
+}
+
+#[cfg(feature = "github-http")]
+fn safe_output_path(root: &Path, relative: &str) -> Result<PathBuf, CliError> {
+    if relative.is_empty()
+        || relative.starts_with('/')
+        || relative.contains('\\')
+        || relative.chars().any(char::is_control)
+    {
+        return Err(CliError::Usage(format!(
+            "unsafe package entry path '{relative}'"
+        )));
+    }
+    let mut path = root.to_path_buf();
+    for segment in relative.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                return Err(CliError::Usage(format!(
+                    "unsafe package entry path '{relative}'"
+                )));
+            }
+            segment => path.push(segment),
+        }
+    }
+    Ok(path)
+}
+
+#[cfg(feature = "github-http")]
+fn write_new_output_file(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| CliError::Usage(format!("{}: {error}", parent.display())))?;
+    }
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| CliError::Usage(format!("{}: {error}", path.display())))?;
+    file.write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|error| CliError::Usage(format!("{}: {error}", path.display())))
+}
+
+fn resolve_local_package(
+    package_root: &Path,
+    context: &Path,
+) -> Result<ResolvedLocalPackages, CliError> {
+    LocalPackageResolver::new(package_root)
+        .resolve_with_paths()
+        .map_err(|error| classify_package_error(error, context))
+}
+
+fn classify_package_error(error: ResolveError, context: &Path) -> CliError {
+    let code = match &error {
+        ResolveError::Io { .. } => {
+            return CliError::Usage(format!("{}: {error}", context.display()));
+        }
+        ResolveError::Lockfile(_) => DiagnosticCode::AIPO_PKG_LOCK_STALE,
+        _ => DiagnosticCode::AIPO_PKG_RESOLUTION,
+    };
+    CliError::diagnostic(code, format!("{}: {error}", context.display()))
+}
+
+fn generated_lockfile(graph: &ResolvedPackageGraph) -> Result<Lockfile, CliError> {
+    graph.to_lockfile().map_err(|error| {
+        CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_LOCK_STALE,
+            format!("resolved package graph could not produce a lockfile: {error}"),
+        )
+    })
+}
+
+fn validate_existing_lock(
+    lock_path: &Path,
+    graph: &ResolvedPackageGraph,
+    required: bool,
+) -> Result<(), CliError> {
+    let bytes = match std::fs::read(lock_path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            if required {
+                return Err(CliError::diagnostic(
+                    DiagnosticCode::AIPO_PKG_LOCK_STALE,
+                    format!("lockfile '{}' is missing", lock_path.display()),
+                ));
+            }
+            return Ok(());
+        }
+        Err(error) => {
+            return Err(CliError::Usage(format!("{}: {error}", lock_path.display())));
+        }
+    };
+
+    let actual = Lockfile::from_bytes(&bytes).map_err(|error| {
+        CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_LOCK_STALE,
+            format!("lockfile '{}' is invalid: {error}", lock_path.display()),
+        )
+    })?;
+    let expected = generated_lockfile(graph)?;
+    if actual != expected {
+        return Err(CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_LOCK_STALE,
+            format!(
+                "lockfile '{}' is stale: it does not match the resolved local package graph",
+                lock_path.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn write_lockfile(package_root: &Path, contents: &str) -> Result<(), CliError> {
+    let lock_path = package_root.join(LOCK_FILE_NAME);
+    let temp_path = package_root.join(format!(
+        ".aipo.lock.tmp-{}-{}",
+        std::process::id(),
+        NEXT_LOCK_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    let write_result = (|| -> std::io::Result<()> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)?;
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()
+    })();
+    if let Err(error) = write_result {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(CliError::Usage(format!("{}: {error}", temp_path.display())));
+    }
+    if let Err(error) = std::fs::rename(&temp_path, &lock_path) {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(CliError::Usage(format!("{}: {error}", lock_path.display())));
+    }
+    Ok(())
+}
+
 fn execute(
     path: &Path,
     format: MessageFormat,
@@ -359,16 +867,15 @@ fn execute(
         return execute_bytecode(path, format, out, err);
     }
 
-    let text = match read_source(path) {
-        Ok(text) => text,
-        Err(message) => {
-            let _ = writeln!(err, "error: {message}");
-            return EXIT_USAGE;
-        }
+    let LoadedSource {
+        source,
+        package_paths,
+    } = match load_source_entry(path) {
+        Ok(loaded) => loaded,
+        Err(error) => return report_cli_error(error, format, out, err),
     };
 
-    let source = Source::new(SourceId::next(), path.display().to_string(), &text);
-    let compiled = analyze(&source, path);
+    let compiled = analyze(&source, path, package_paths.as_ref());
     let has_errors = compiled
         .diagnostics
         .iter()
@@ -469,16 +976,14 @@ fn disassemble_command(
         EXIT_SUCCESS
     } else {
         // For .aipo files: compile first, then disassemble with source annotations.
-        let text = match read_source(path) {
-            Ok(text) => text,
-            Err(message) => {
-                let _ = writeln!(err, "error: {message}");
-                return EXIT_USAGE;
-            }
+        let LoadedSource {
+            source,
+            package_paths,
+        } = match load_source_entry(path) {
+            Ok(loaded) => loaded,
+            Err(error) => return report_cli_error(error, format, out, err),
         };
-
-        let source = Source::new(SourceId::next(), path.display().to_string(), &text);
-        let compiled = analyze(&source, path);
+        let compiled = analyze(&source, path, package_paths.as_ref());
         let has_errors = compiled
             .diagnostics
             .iter()
@@ -508,19 +1013,18 @@ fn build_bundle(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
-    let text = match read_source(path) {
-        Ok(text) => text,
-        Err(message) => {
-            let _ = writeln!(err, "error: {message}");
-            return EXIT_USAGE;
-        }
+    let LoadedSource {
+        source,
+        package_paths,
+    } = match load_source_entry(path) {
+        Ok(loaded) => loaded,
+        Err(error) => return report_cli_error(error, format, out, err),
     };
 
-    let source = Source::new(SourceId::next(), path.display().to_string(), &text);
     let (program, mut diagnostics) = aipo_syntax::parse(&source);
     if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
         let hir = aipo_hir::lower(program);
-        let resolved = modules::resolve(path, hir);
+        let resolved = modules::resolve(path, hir, package_paths.as_ref());
         diagnostics.extend(resolved.diagnostics);
         if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
             let mut surface = prelude_surface();
@@ -536,7 +1040,7 @@ fn build_bundle(
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("main.aipo");
-                let bundle = aipo_js::emit_js(file_name, &text, &ir);
+                let bundle = aipo_js::emit_js(file_name, source.text(), &ir);
                 let dir: PathBuf = match out_dir {
                     Some(dir) => dir.to_path_buf(),
                     None => path
@@ -711,6 +1215,36 @@ fn format_files(paths: &[PathBuf], check: bool, out: &mut dyn Write, err: &mut d
         let _ = writeln!(out, "formatted {changed} {verb}");
     }
     exit
+}
+
+fn load_source_entry(path: &Path) -> Result<LoadedSource, CliError> {
+    let text = read_source(path).map_err(CliError::Usage)?;
+    let package_paths = resolve_local_package_paths(path)?;
+    let source = Source::new(SourceId::next(), path.display().to_string(), &text);
+    Ok(LoadedSource {
+        source,
+        package_paths,
+    })
+}
+
+fn resolve_local_package_paths(entry: &Path) -> Result<Option<PackagePathMap>, CliError> {
+    let Some(manifest_path) = find_ancestor_manifest(entry) else {
+        return Ok(None);
+    };
+    let package_root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    let resolved = resolve_local_package(package_root, &manifest_path)?;
+    let lock_path = package_root.join(LOCK_FILE_NAME);
+    validate_existing_lock(&lock_path, &resolved.graph, false)?;
+    Ok(Some(resolved.paths))
+}
+
+fn find_ancestor_manifest(entry: &Path) -> Option<PathBuf> {
+    entry
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .ancestors()
+        .map(|ancestor| ancestor.join(MANIFEST_FILE_NAME))
+        .find(|manifest| manifest.is_file())
 }
 
 fn read_source(path: &Path) -> Result<String, String> {

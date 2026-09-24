@@ -21,6 +21,9 @@ impl Vm {
     /// # Errors
     /// Returns `VmError` on runtime fault or invalid instruction.
     pub fn step(&mut self, module: &BytecodeModule) -> Result<bool, VmError> {
+        if self.host_task.is_some() {
+            return self.drive_host_task();
+        }
         if self.ip >= module.code.len() || self.halted_with.is_some() {
             return Ok(self.finish_current());
         }

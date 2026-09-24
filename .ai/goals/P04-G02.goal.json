@@ -1,0 +1,143 @@
+{
+  "acceptance": [
+    "Capability-aware native callbacks execute against the current Vm HostContext instead of a process-global service, so two VMs can have different grants and providers without cross-run leakage.",
+    "The stdlib exposes a deny-by-default env module with get/has operations; both require env.read and never fabricate a value when the capability or provider is absent.",
+    "A deterministic EnvironmentSource can be installed per VM for tests and embedding, while the CLI default remains denied for env.read unless an explicit host profile grants it.",
+    "Native/module metadata or AHS records the env.read capability so tooling and package manifests can audit the requirement before execution.",
+    "A package declaring env.read is only an upper bound: host/project policy may narrow it, and a runtime call still faults with AIPO_RT_CAPABILITY_DENIED when the effective grant is absent.",
+    "Positive and negative tests cover denied access, granted deterministic reads, missing names, per-VM isolation, package capability declarations and VM↔host policy narrowing.",
+    "The capability boundary is documented, no filesystem/network/process/crypto surface is added accidentally, and fmt/clippy/test/doc gates remain green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-24T02:00:44.775870016Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "Capability-aware native callbacks execute against the current Vm HostContext instead of a process-global service, so two VMs can have different grants and providers without cross-run leakage.",
+          "The stdlib exposes a deny-by-default env module with get/has operations; both require env.read and never fabricate a value when the capability or provider is absent.",
+          "A deterministic EnvironmentSource can be installed per VM for tests and embedding, while the CLI default remains denied for env.read unless an explicit host profile grants it.",
+          "Native/module metadata or AHS records the env.read capability so tooling and package manifests can audit the requirement before execution.",
+          "A package declaring env.read is only an upper bound: host/project policy may narrow it, and a runtime call still faults with AIPO_RT_CAPABILITY_DENIED when the effective grant is absent.",
+          "Positive and negative tests cover denied access, granted deterministic reads, missing names, per-VM isolation, package capability declarations and VM↔host policy narrowing.",
+          "The capability boundary is documented, no filesystem/network/process/crypto surface is added accidentally, and fmt/clippy/test/doc gates remain green."
+        ],
+        "non_goals": [
+          "Async filesystem read/write and filesystem roots",
+          "Network, process, crypto and raw environment mutation",
+          "CLI flags that grant capabilities or a general configuration policy language",
+          "GitHub/registry transport and package publication"
+        ]
+      },
+      "digest": "2273146b5b017179139d73dccaf71f845c47489c096c960c11aa8377f4cc5cbb",
+      "goal_id": "P04-G02",
+      "id": "AMD-002",
+      "reason": "Lock the per-VM capability service and env.read slice",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "aipo-vm host-native and environment tests plus aipo-stdlib env tests passed, including denied grants, missing providers, copied values, missing names, metadata, revocability and per-VM isolation.",
+      "kind": "test"
+    },
+    {
+      "description": "aipo-cli package integration passed 13 tests, including env.read lockfile preservation and CLI default denial.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets --all-features -- -D warnings, cargo test --workspace --all-targets, cargo doc --workspace --no-deps, node crates/aipo-js/runtime/selftest.mjs, prumo validate . and prumo doctor . all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/stdlib/mvp-subset.md, docs/canon/Aipo — Standard Library Architecture and docs/adp/ADP-007-package-identity-and-distribution.md record the per-VM env provider, env.read policy and next async filesystem slice.",
+      "kind": "doc"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T02:00:22.325308476Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T02:00:29.896675453Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T02:00:29.905637707Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T02:00:44.775870016Z",
+      "event": "amended",
+      "reason": "Lock the per-VM capability service and env.read slice",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-24T02:00:44.782223905Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-24T02:27:58.634515749Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T02:27:58.643432721Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T02:27:58.649881874Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G02",
+  "lock": {
+    "digest": "2273146b5b017179139d73dccaf71f845c47489c096c960c11aa8377f4cc5cbb",
+    "locked_at": "2026-09-24T02:00:44.775870016Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "Async filesystem read/write and filesystem roots",
+    "Network, process, crypto and raw environment mutation",
+    "CLI flags that grant capabilities or a general configuration policy language",
+    "GitHub/registry transport and package publication"
+  ],
+  "objective": "Add a per-VM host-service boundary for capability-aware native modules, expose a deny-by-default env.read module, and prove manifest declarations, host narrowing and runtime denial without process-global state.",
+  "phase": "P04",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Capability service boundary and env.read"
+}

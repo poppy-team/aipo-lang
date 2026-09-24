@@ -1,6 +1,44 @@
 {
   "acceptance": [
-    "Replace this placeholder with objective acceptance criteria."
+    "Performance, security, conformance, accessibility and generated-program validation are reproducible through checked-in harnesses and documented commands.",
+    "The quality inventory covers the frontend, VM and JavaScript backend without changing canonical language semantics.",
+    "The gauntlet records the adopted tools, residual risks and open ADPs for unresolved execution-budget and identifier-policy questions.",
+    "The documented gate set, including fmt, check, clippy, tests, docs, MSRV, dependency audit, deny policy and Miri where available, is green or explicitly records an environment limitation.",
+    "docs/evidence/P01-G02-deep-quality-gauntlet.md and the linked testing, performance and diagnostic-accessibility records publish the reproducible hand-off."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-23T23:18:56.144927242Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "Performance, security, conformance, accessibility and generated-program validation are reproducible through checked-in harnesses and documented commands.",
+          "The quality inventory covers the frontend, VM and JavaScript backend without changing canonical language semantics.",
+          "The gauntlet records the adopted tools, residual risks and open ADPs for unresolved execution-budget and identifier-policy questions.",
+          "The documented gate set, including fmt, check, clippy, tests, docs, MSRV, dependency audit, deny policy and Miri where available, is green or explicitly records an environment limitation.",
+          "docs/evidence/P01-G02-deep-quality-gauntlet.md and the linked testing, performance and diagnostic-accessibility records publish the reproducible hand-off."
+        ],
+        "evidence": [
+          {
+            "description": "cargo test --workspace --all-targets: 253 passed, 0 failed, 46 suites; generated and metamorphic differential suites, security/resource/unicode suites, UI diagnostic goldens, conformance and examples are included. See docs/evidence/P01-G02-deep-quality-gauntlet.md.",
+            "kind": "test"
+          },
+          {
+            "description": "fmt, check, clippy -D warnings, doc, prumo validate/doctor green; MSRV 1.85 green; cargo audit and cargo deny clean; cargo +nightly miri test -p aipo-vm green, as recorded in docs/evidence/P01-G02-deep-quality-gauntlet.md.",
+            "kind": "gate"
+          },
+          {
+            "description": "ADP-003, ADP-004 and ADP-005, gap matrix, tooling decisions, CI tiers, diagnostic accessibility rubric/protocol, performance baseline and the P01-G02 evidence record publish the results and residual risks.",
+            "kind": "doc"
+          }
+        ]
+      },
+      "digest": "f1b30c66e63c4245fa90dd978b308d1ed102a029d1418ab91d63c36c9879ae4d",
+      "goal_id": "P01-G02",
+      "id": "AMD-002",
+      "reason": "Record the completed quality gauntlet acceptance criteria and evidence for review closure",
+      "revision": 2
+    }
   ],
   "constraints": [],
   "context": {
@@ -8,7 +46,20 @@
     "max_delegation_depth": 1
   },
   "dependencies": [],
-  "evidence": [],
+  "evidence": [
+    {
+      "description": "cargo test --workspace --all-targets: 253 passed, 0 failed, 46 suites; generated and metamorphic differential suites, security/resource/unicode suites, UI diagnostic goldens, conformance and examples are included. See docs/evidence/P01-G02-deep-quality-gauntlet.md.",
+      "kind": "test"
+    },
+    {
+      "description": "fmt, check, clippy -D warnings, doc, prumo validate/doctor green; MSRV 1.85 green; cargo audit and cargo deny clean; cargo +nightly miri test -p aipo-vm green, as recorded in docs/evidence/P01-G02-deep-quality-gauntlet.md.",
+      "kind": "gate"
+    },
+    {
+      "description": "ADP-003, ADP-004 and ADP-005, gap matrix, tooling decisions, CI tiers, diagnostic accessibility rubric/protocol, performance baseline and the P01-G02 evidence record publish the results and residual risks.",
+      "kind": "doc"
+    }
+  ],
   "gates": {
     "build": "required",
     "documentation_impact": "required",
@@ -42,18 +93,46 @@
       "from": "LOCKED",
       "reason": "",
       "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-23T23:18:56.144927242Z",
+      "event": "amended",
+      "reason": "Record the completed quality gauntlet acceptance criteria and evidence for review closure",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-23T23:19:19.307791629Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-23T23:19:28.502122395Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-23T23:19:28.526291012Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
     }
   ],
   "id": "P01-G02",
   "lock": {
-    "digest": "8767deb617229393339b6cd07508152f43292ca23e6f146cc70bd52a52bb8484",
-    "locked_at": "2026-09-20T00:14:31.13159248Z",
-    "revision": 1
+    "digest": "f1b30c66e63c4245fa90dd978b308d1ed102a029d1418ab91d63c36c9879ae4d",
+    "locked_at": "2026-09-23T23:18:56.144927242Z",
+    "revision": 2
   },
   "non_goals": [],
   "objective": "Establish reproducible performance, security, conformance, accessibility and generated-program validation infrastructure for the Aipo frontend, VM and JavaScript backend without changing canonical language semantics; record evidence and open ADPs for genuine ambiguities.",
   "phase": "P01",
-  "revision": 1,
-  "state": "EXECUTING",
+  "revision": 2,
+  "state": "DONE",
   "title": "Deep quality gauntlet: performance, security, conformance and accessibility validation"
 }

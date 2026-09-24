@@ -13,6 +13,8 @@
 - O Prelude é mínimo e não vira depósito de conveniências.
 - APIs portáteis devem ter a mesma semântica observável na VM Rust e no backend JavaScript.
 - APIs dependentes do ambiente usam capabilities e target checking.
+- Uma API host-only não ganha fallback no backend: o target deve anunciar a capability que pode
+  cumprir; o slice `fs` é uma exceção explícita à paridade VM↔JS.
 - O caminho simples deve ser o caminho seguro.
 - Async I/O é async-first; evitar pares artificiais `foo`/`foo_async` como API principal.
 - Um conceito recebe um nome canônico; não duplicar `map/select/transform`, `reduce/fold/inject`, etc.
@@ -219,14 +221,26 @@ URL parsing/normalization é separado de HTTP e de filesystem paths.
 ## Path e FS
 
 `path` é puro e portátil para composição/normalização lógica. `fs` é capability-aware e async-first.
+No slice host-only atual, a superfície é deliberadamente menor que a visão futura:
 
 ```
 let config_path = path.join("config", "app.json")
 let text = await fs.read_text(config_path)
-await fs.write_text(config_path, text)
+let visible_roots = fs.roots()
 ```
 
-Capabilities distinguem leitura/escrita e podem restringir roots. Operações avançadas usam handles opacos. APIs de abertura escopada podem usar trailing block para fechamento determinístico sem nova sintaxe.
+`fs.read_text(path)` é uma task assíncrona: a chamada devolve `Task` imediatamente e o provider
+só é consultado quando o scheduler executa a task. `fs.roots()` é síncrono, exige a capability
+separada `filesystem.roots` e devolve `List[String]` ordenado. A policy de roots e de paths pertence
+ao provider; a trait `FilesystemSource` copia strings e devolve erros tipados. Não há
+`write_text`, `open`, `delete`, handle bruto, operação recursiva ou fallback de filesystem no
+JavaScript/Web. A CLI não instala provider nem concede `filesystem.read`/`filesystem.roots`.
+
+Arquivo ausente e erro de leitura do provider são `Failure` recuperável. Provider ausente ou
+capability ausente é o fault estável `AIPO_RT_CAPABILITY_DENIED`. Cancelamento continua sendo
+fault, nunca `Failure`. A metadata nativa declara asyncness e capabilities; o schema AHS
+(`aipo_stdlib::fs::schema`) é a descrição para tooling, enquanto `NativeRegistry` permanece apenas
+catálogo.
 
 ## Time
 

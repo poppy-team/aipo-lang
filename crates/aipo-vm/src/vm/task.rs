@@ -20,7 +20,7 @@
 //! that task with a `Failure` value, which waiters observe through Model B
 //! propagation.
 
-use super::{MutationEntry, UpvalueFrame, Vm};
+use super::{HostNativeCallback, MutationEntry, UpvalueFrame, Vm};
 use crate::fault::{VmError, VmFault};
 use crate::frame::{CallFrame, HandlerFrame};
 use crate::value::{
@@ -96,6 +96,14 @@ impl TaskOutcome {
     }
 }
 
+/// Callback payload for a task owned by the host-native scheduler.
+pub(super) struct HostTask {
+    /// Callback to execute when the task is loaded.
+    pub(super) callback: HostNativeCallback,
+    /// Owned arguments captured at call time.
+    pub(super) args: Vec<Value>,
+}
+
 /// Saved machine state of a suspended task.
 pub(super) struct TaskState {
     /// Lifecycle state.
@@ -111,6 +119,7 @@ pub(super) struct TaskState {
     result: Option<Value>,
     /// Deadline for tasks that suspended on `task.sleep`.
     pub(super) sleeping_until: Option<u64>,
+    host_task: Option<HostTask>,
 }
 
 impl TaskState {
@@ -127,6 +136,7 @@ impl TaskState {
             ip: 0,
             result: None,
             sleeping_until: None,
+            host_task: None,
         }
     }
 }
@@ -205,6 +215,7 @@ impl Vm {
             ip: self.ip,
             result: None,
             sleeping_until,
+            host_task: self.host_task.take(),
         };
         self.tasks.insert(id, state);
         if matches!(status, TaskStatus::Sleeping { .. }) && !self.run_queue.contains(&id) {
@@ -233,6 +244,7 @@ impl Vm {
         std::mem::swap(&mut self.upvalue_frames, &mut state.upvalues);
         std::mem::swap(&mut self.mutation_journal, &mut state.journal);
         std::mem::swap(&mut self.active_iterations, &mut state.iterations);
+        self.host_task = state.host_task.take();
         self.ip = state.ip;
         state.stack.clear();
         state.frames.clear();
@@ -249,6 +261,7 @@ impl Vm {
     /// affected joins. Returns `true` when the entry script completed.
     pub(super) fn complete_current(&mut self, outcome: TaskOutcome) -> bool {
         let id = self.current.take().unwrap_or(MAIN_TASK);
+        self.host_task = None;
         let outcome = match self.tasks.get(&id) {
             Some(state) if state.status == TaskStatus::Cancelled => TaskOutcome::Cancelled,
             _ => outcome,
@@ -277,7 +290,10 @@ impl Vm {
         {
             let state = self.tasks.get_mut(&id).expect("finished task is tracked");
             match &outcome {
-                TaskOutcome::Cancelled => state.status = TaskStatus::Cancelled,
+                TaskOutcome::Cancelled => {
+                    state.status = TaskStatus::Cancelled;
+                    state.host_task = None;
+                }
                 TaskOutcome::Ready(value) => {
                     state.status = TaskStatus::Ready;
                     state.result = Some(value.clone());
@@ -287,6 +303,7 @@ impl Vm {
                     state.result = Some(failure.clone());
                 }
             }
+            state.host_task = None;
             let _ = waiter_value;
         }
         if let Some(waiters) = self.waiters.remove(&id) {
@@ -851,6 +868,7 @@ impl Vm {
                 ip: entry_ip,
                 result: None,
                 sleeping_until: None,
+                host_task: None,
             },
         );
         self.run_queue.push_back(id);
@@ -877,6 +895,62 @@ impl Vm {
             }
         }
         Ok(id)
+    }
+
+    pub(super) fn spawn_host_task_state(
+        &mut self,
+        callback: HostNativeCallback,
+        args: Vec<Value>,
+    ) -> Result<TaskId, VmError> {
+        let id = self.next_task;
+        self.next_task += 1;
+        self.tasks.insert(
+            id,
+            TaskState {
+                status: TaskStatus::Pending,
+                stack: Vec::new(),
+                frames: Vec::new(),
+                handlers: Vec::new(),
+                upvalues: Vec::new(),
+                journal: Vec::new(),
+                iterations: Vec::new(),
+                ip: 0,
+                result: None,
+                sleeping_until: None,
+                host_task: Some(HostTask { callback, args }),
+            },
+        );
+        self.run_queue.push_back(id);
+        Ok(id)
+    }
+
+    pub(super) fn drive_host_task(&mut self) -> Result<bool, VmError> {
+        let Some(host_task) = self.host_task.take() else {
+            return Ok(false);
+        };
+        let result = (host_task.callback)(self, &host_task.args);
+        match result {
+            Ok(value) => Ok(self.complete_current(TaskOutcome::from_value(value))),
+            Err(VmError::Suspended) => Err(VmFault::AwaitInCallback {
+                operation: "host async native".to_string(),
+            }
+            .into()),
+            Err(error) => {
+                let cancelled = self.current.is_some()
+                    && self.current != Some(MAIN_TASK)
+                    && matches!(
+                        self.tasks
+                            .get(&self.current.unwrap_or(MAIN_TASK))
+                            .map(|state| state.status),
+                        Some(TaskStatus::Cancelled)
+                    );
+                if cancelled {
+                    Ok(self.complete_current(TaskOutcome::Cancelled))
+                } else {
+                    Err(error)
+                }
+            }
+        }
     }
 
     /// Resolves a `task.*` call inline: truncates the callee/args and pushes

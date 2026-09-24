@@ -81,6 +81,13 @@ console
 
 O compilador/tooling deve conseguir explicar quando um target/host não oferece uma capability requerida.
 
+O slice `env.read` segue essa fronteira: `env.get` e `env.has` são callbacks nativos que recebem o
+`Vm` corrente, consultam o `EnvironmentSource` instalado no `HostContext` desse VM e exigem a
+capability efetiva `env.read`. A instalação de um provider não concede a capability; a ausência
+do provider é negada com `AIPO_RT_CAPABILITY_DENIED`, enquanto a ausência de uma variável é um
+`none`/`false` normal. O metadata de native functions registra `env.read` para auditoria, mas o
+registry de metadata continua sendo catálogo, não autorização.
+
 ### 5. Host Profiles
 
 Host profiles adicionam APIs próprias sem mudar a linguagem.

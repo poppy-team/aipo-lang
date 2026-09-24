@@ -19,6 +19,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::rc::Rc;
 
 use aipo_host::{Capability, CapabilitySet, Handle, HandleTable, HostFault, HostValue};
@@ -26,6 +27,141 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::fault::VmFault;
 use crate::value::{Value, check_finite_float, check_safe_int};
+
+/// A typed failure returned by a filesystem provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FilesystemError {
+    /// The requested path is not present in the provider.
+    NotFound {
+        /// Path that was not found.
+        path: String,
+    },
+    /// The provider could not complete the requested operation.
+    Provider {
+        /// Operation that failed, such as `read_text` or `roots`.
+        operation: String,
+        /// Provider-defined explanation.
+        message: String,
+    },
+    /// The path does not satisfy the provider's path policy.
+    InvalidPath {
+        /// Rejected path.
+        path: String,
+        /// Policy explanation.
+        reason: String,
+    },
+    /// A configured root does not satisfy the provider's root policy.
+    InvalidRoot {
+        /// Rejected root.
+        root: String,
+        /// Policy explanation.
+        reason: String,
+    },
+}
+
+impl fmt::Display for FilesystemError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound { path } => write!(formatter, "filesystem path not found: {path}"),
+            Self::Provider { operation, message } => {
+                write!(
+                    formatter,
+                    "filesystem provider failed during {operation}: {message}"
+                )
+            }
+            Self::InvalidPath { path, reason } => {
+                write!(formatter, "invalid filesystem path '{path}': {reason}")
+            }
+            Self::InvalidRoot { root, reason } => {
+                write!(formatter, "invalid filesystem root '{root}': {reason}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for FilesystemError {}
+
+impl FilesystemError {
+    /// Creates a missing-file error.
+    #[must_use]
+    pub fn not_found(path: impl Into<String>) -> Self {
+        Self::NotFound { path: path.into() }
+    }
+
+    /// Creates a provider-operation error.
+    #[must_use]
+    pub fn provider(operation: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::Provider {
+            operation: operation.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Creates an invalid-path error.
+    #[must_use]
+    pub fn invalid_path(path: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::InvalidPath {
+            path: path.into(),
+            reason: reason.into(),
+        }
+    }
+
+    /// Creates an invalid-root error.
+    #[must_use]
+    pub fn invalid_root(root: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::InvalidRoot {
+            root: root.into(),
+            reason: reason.into(),
+        }
+    }
+}
+
+/// Descriptive alias for [`FilesystemError`].
+pub type FilesystemSourceError = FilesystemError;
+
+/// A filesystem policy and data source owned by one VM host context.
+///
+/// Implementations return owned strings and never expose provider-owned references. The VM
+/// stores the trait object per VM; this module deliberately does not choose a filesystem
+/// implementation or perform host I/O.
+pub trait FilesystemSource {
+    /// Reads text from `path`, returning `Ok(None)` when the path is absent.
+    fn read_text(&self, path: &str) -> Result<Option<String>, FilesystemError>;
+
+    /// Returns the roots exposed by this provider in deterministic order.
+    fn roots(&self) -> Result<Vec<String>, FilesystemError>;
+}
+
+impl<T> FilesystemSource for Box<T>
+where
+    T: FilesystemSource + ?Sized,
+{
+    fn read_text(&self, path: &str) -> Result<Option<String>, FilesystemError> {
+        (**self).read_text(path)
+    }
+
+    fn roots(&self) -> Result<Vec<String>, FilesystemError> {
+        (**self).roots()
+    }
+}
+
+/// A source of environment values owned by one VM host context.
+///
+/// The source is consulted only by capability-aware host callbacks. It returns an owned value so
+/// no provider-owned reference or allocation escapes the read boundary.
+pub trait EnvironmentSource {
+    /// Returns a copy of the value stored under `name`, if present.
+    fn get(&self, name: &str) -> Option<String>;
+}
+
+impl<T> EnvironmentSource for Box<T>
+where
+    T: EnvironmentSource + ?Sized,
+{
+    fn get(&self, name: &str) -> Option<String> {
+        (**self).get(name)
+    }
+}
 
 /// Converts a host value into a language value.
 ///
@@ -125,7 +261,7 @@ impl ScopeId {
 /// Holds what the profile granted and the host objects those services hand out. A host object
 /// is reachable only through a [`Handle`], and the table is the only thing that resolves one,
 /// so a script cannot address host memory directly.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct HostContext {
     granted: CapabilitySet,
     objects: HandleTable<HostValue>,
@@ -138,6 +274,27 @@ pub struct HostContext {
     escaped: HashSet<Handle>,
     /// Next scope ordinal.
     next_scope: u64,
+    /// Environment provider installed for this VM, if any.
+    environment: Option<Box<dyn EnvironmentSource>>,
+    /// Filesystem provider installed for this VM, if any.
+    filesystem: Option<Box<dyn FilesystemSource>>,
+}
+
+impl fmt::Debug for HostContext {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("HostContext")
+            .field("granted", &self.granted)
+            .field("objects", &self.objects)
+            .field(
+                "environment",
+                &self.environment.as_ref().map(|_| "installed"),
+            )
+            .field("filesystem", &self.filesystem.as_ref().map(|_| "installed"))
+            .field("open_scopes", &self.open_scopes)
+            .field("next_scope", &self.next_scope)
+            .finish()
+    }
 }
 
 impl HostContext {
@@ -157,6 +314,8 @@ impl HostContext {
             minted: HashMap::new(),
             escaped: HashSet::new(),
             next_scope: 1,
+            environment: None,
+            filesystem: None,
         }
     }
 
@@ -186,6 +345,94 @@ impl HostContext {
         self.granted
             .require(capability, operation)
             .map_err(|fault| host_fault_to_vm_fault(&fault))
+    }
+
+    /// Installs the environment provider owned by this VM.
+    pub fn install_environment_source<S>(&mut self, source: S)
+    where
+        S: EnvironmentSource + 'static,
+    {
+        self.environment = Some(Box::new(source));
+    }
+
+    /// Installs the environment provider owned by this VM.
+    pub fn install_environment<S>(&mut self, source: S)
+    where
+        S: EnvironmentSource + 'static,
+    {
+        self.install_environment_source(source);
+    }
+
+    /// Removes the environment provider owned by this VM.
+    pub fn revoke_environment(&mut self) {
+        self.environment = None;
+    }
+
+    /// Removes the environment provider owned by this VM.
+    pub fn revoke_environment_source(&mut self) {
+        self.revoke_environment();
+    }
+
+    /// Returns the environment provider owned by this VM for read-only access.
+    #[must_use]
+    pub fn environment_source(&self) -> Option<&dyn EnvironmentSource> {
+        self.environment.as_deref()
+    }
+
+    /// Returns the environment provider owned by this VM for read-only access.
+    #[must_use]
+    pub fn environment(&self) -> Option<&dyn EnvironmentSource> {
+        self.environment_source()
+    }
+
+    /// Whether this VM has an environment provider installed.
+    #[must_use]
+    pub fn has_environment_source(&self) -> bool {
+        self.environment.is_some()
+    }
+
+    /// Installs the filesystem provider owned by this VM.
+    pub fn install_filesystem_source<S>(&mut self, source: S)
+    where
+        S: FilesystemSource + 'static,
+    {
+        self.filesystem = Some(Box::new(source));
+    }
+
+    /// Alias for [`Self::install_filesystem_source`].
+    pub fn install_filesystem<S>(&mut self, source: S)
+    where
+        S: FilesystemSource + 'static,
+    {
+        self.install_filesystem_source(source);
+    }
+
+    /// Removes the filesystem provider owned by this VM.
+    pub fn revoke_filesystem(&mut self) {
+        self.filesystem = None;
+    }
+
+    /// Alias for [`Self::revoke_filesystem`].
+    pub fn revoke_filesystem_source(&mut self) {
+        self.revoke_filesystem();
+    }
+
+    /// Returns the filesystem provider owned by this VM for read-only access.
+    #[must_use]
+    pub fn filesystem_source(&self) -> Option<&dyn FilesystemSource> {
+        self.filesystem.as_deref()
+    }
+
+    /// Alias for [`Self::filesystem_source`].
+    #[must_use]
+    pub fn filesystem(&self) -> Option<&dyn FilesystemSource> {
+        self.filesystem_source()
+    }
+
+    /// Whether this VM has a filesystem provider installed.
+    #[must_use]
+    pub fn has_filesystem_source(&self) -> bool {
+        self.filesystem.is_some()
     }
 
     /// Gives the script ownership of a host value and returns its handle.

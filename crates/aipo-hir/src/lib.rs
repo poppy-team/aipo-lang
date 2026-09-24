@@ -47,6 +47,21 @@ mod tests {
     }
 
     #[test]
+    fn test_lower_qualified_import_preserves_path() {
+        let src = Source::new(SourceId::next(), "test.aipo", "import acme.http as h: name");
+        let (ast, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {:?}", diags);
+
+        let hir = lower(ast);
+        let HirItem::Import(import) = &hir.items[0] else {
+            panic!("expected import item");
+        };
+        assert_eq!(import.module_name, "acme.http");
+        assert_eq!(import.alias.as_deref(), Some("h"));
+        assert_eq!(import.names, vec!["name"]);
+    }
+
+    #[test]
     fn test_lower_pipeline() {
         let src = Source::new(
             SourceId::next(),

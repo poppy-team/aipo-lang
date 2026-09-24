@@ -103,7 +103,49 @@ impl Vm {
                 self.ip = closure.entry_ip;
             }
             Value::Native { name, arity, func } => {
+                if name.is_empty() || name.trim() != name {
+                    return Err(VmFault::TypeMismatch {
+                        expected: "non-empty canonical native name".to_string(),
+                        actual: if name.is_empty() {
+                            "<empty>".to_string()
+                        } else {
+                            name
+                        },
+                    }
+                    .into());
+                }
                 self.check_arity(arg_count, arity)?;
+                if let Some(entry) = self.host_natives.get(&name).copied() {
+                    if arity != entry.arity {
+                        return Err(VmFault::TypeMismatch {
+                            expected: format!("native value arity {}", entry.arity),
+                            actual: format!("native value arity {arity}"),
+                        }
+                        .into());
+                    }
+                    self.check_arity(arg_count, entry.arity)?;
+                    let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
+                    let original_stack = self.stack.clone();
+                    let result = if entry.is_async {
+                        self.spawn_host_task(entry.callback, args).map(Value::Task)
+                    } else {
+                        (entry.callback)(self, &args)
+                    };
+                    return match result {
+                        Ok(value) => {
+                            self.stack.truncate(callee_idx);
+                            if let Err(error) = self.push(value) {
+                                self.stack = original_stack;
+                                return Err(error.into());
+                            }
+                            Ok(())
+                        }
+                        Err(error) => {
+                            self.stack = original_stack;
+                            Err(error)
+                        }
+                    };
+                }
                 if matches!(
                     name.as_str(),
                     "task.spawn"

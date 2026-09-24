@@ -12,6 +12,10 @@
 //! - output is ESM with mandatory source maps;
 //! - the shim carries only unavoidable semantic deltas; divergence between the VM
 //!   and JS backends is a bug.
+//!
+//! The host-only `fs` capability surface is not implemented or advertised by this target. In
+//! particular, JavaScript/Web does not announce `filesystem.read` or `filesystem.roots` and has
+//! no fallback that pretends to provide them.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

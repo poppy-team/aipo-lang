@@ -78,6 +78,14 @@ pub enum DiagnosticCode {
     /// Parametric `Name[Args]` contract before parametric contracts exist.
     AIPO_SEM_PARAMETRIC_CONTRACT,
 
+    // --- Package (AIPO_PKG_*) ---
+    /// Package manifest, dependency graph, or capability resolution failed.
+    AIPO_PKG_RESOLUTION,
+    /// Package lockfile is missing, invalid, or does not match the resolved graph.
+    AIPO_PKG_LOCK_STALE,
+    /// Public package fetch failed or returned an invalid artifact.
+    AIPO_PKG_FETCH,
+
     // --- Runtime fault (AIPO_RT_*) ---
     /// Integer arithmetic exceeded range ±(2^53 - 1).
     AIPO_RT_OVERFLOW,
@@ -152,6 +160,9 @@ impl DiagnosticCode {
             Self::AIPO_SEM_FORGOTTEN_TASK => "AIPO_SEM_FORGOTTEN_TASK",
             Self::AIPO_SEM_NESTED_AWAIT_DO => "AIPO_SEM_NESTED_AWAIT_DO",
             Self::AIPO_SEM_PARAMETRIC_CONTRACT => "AIPO_SEM_PARAMETRIC_CONTRACT",
+            Self::AIPO_PKG_RESOLUTION => "AIPO_PKG_RESOLUTION",
+            Self::AIPO_PKG_LOCK_STALE => "AIPO_PKG_LOCK_STALE",
+            Self::AIPO_PKG_FETCH => "AIPO_PKG_FETCH",
             Self::AIPO_RT_OVERFLOW => "AIPO_RT_OVERFLOW",
             Self::AIPO_RT_NON_FINITE_FLOAT => "AIPO_RT_NON_FINITE_FLOAT",
             Self::AIPO_RT_DIV_ZERO => "AIPO_RT_DIV_ZERO",
@@ -205,6 +216,9 @@ impl DiagnosticCode {
             | Self::AIPO_SEM_FORGOTTEN_TASK
             | Self::AIPO_SEM_NESTED_AWAIT_DO
             | Self::AIPO_SEM_PARAMETRIC_CONTRACT
+            | Self::AIPO_PKG_RESOLUTION
+            | Self::AIPO_PKG_LOCK_STALE
+            | Self::AIPO_PKG_FETCH
             | Self::AIPO_RT_FAILURE_UNCAUGHT => Severity::Error,
 
             Self::AIPO_RT_OVERFLOW

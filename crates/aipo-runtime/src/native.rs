@@ -13,6 +13,10 @@ pub struct NativeFunctionMeta {
     pub module: Option<String>,
     /// Brief documentation of purpose.
     pub doc: String,
+    /// Capability paths required by the native function, for catalog consumers.
+    pub capabilities: Vec<String>,
+    /// Whether calling the native produces a `Task` instead of a value.
+    pub is_async: bool,
 }
 
 impl NativeFunctionMeta {
@@ -29,7 +33,30 @@ impl NativeFunctionMeta {
             arity,
             module: module.map(ToString::to_string),
             doc: doc.into(),
+            capabilities: Vec::new(),
+            is_async: false,
         }
+    }
+
+    /// Marks the native as asynchronous.
+    #[must_use]
+    pub fn with_async(mut self) -> Self {
+        self.is_async = true;
+        self
+    }
+
+    /// Adds the capability paths declared by this native function.
+    #[must_use]
+    pub fn with_capabilities<I, S>(mut self, capabilities: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.capabilities = capabilities
+            .into_iter()
+            .map(|capability| capability.as_ref().to_string())
+            .collect();
+        self
     }
 }
 

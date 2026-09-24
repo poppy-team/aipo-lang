@@ -9,3 +9,4 @@ Garante que a segurança não seja um pensamento tardio, estabelecendo controles
 ## Inventário
 - `threat-model.md`: Modelagem de ameaças (metodologia STRIDE).
 - `security-contract.md`: O contrato estrito de segurança de código e execução.
+- `github-package-fetch.md`: Política de rede, cache e integridade para fetch público de packages.

@@ -351,3 +351,301 @@ fn test_call_with_extra_arguments_faults_on_arity() {
         "extra arguments fault, got {outcome:?}"
     );
 }
+
+fn host_context_value(_vm: &mut Vm, _args: &[Value]) -> Result<Value, VmError> {
+    Ok(Value::Int(99))
+}
+
+fn host_context_reads_vm(vm: &mut Vm, args: &[Value]) -> Result<Value, VmError> {
+    if args.len() != 1 {
+        return Err(VmFault::TypeMismatch {
+            expected: "1 argument".to_string(),
+            actual: format!("{} arguments", args.len()),
+        }
+        .into());
+    }
+    Ok(vm.get_global("context").cloned().unwrap_or(Value::None))
+}
+
+fn unused_native(_args: &[Value]) -> Result<Value, VmFault> {
+    Err(VmFault::CorruptedBytecode {
+        offset: 0,
+        reason: "ordinary native unexpectedly ran".to_string(),
+    })
+}
+
+#[test]
+fn test_host_native_dispatches_with_vm_context() {
+    let mut vm = Vm::new();
+    vm.define_global(
+        "context",
+        Value::String(std::rc::Rc::new("per-vm".to_string())),
+    );
+    vm.define_global(
+        "read_context",
+        Value::Native {
+            name: "test.read_context".to_string(),
+            arity: 1,
+            func: unused_native,
+        },
+    );
+    vm.register_host_native("test.read_context", 1, host_context_reads_vm);
+
+    let module = make_test_module(
+        vec![
+            OpCode::GetGlobal as u8,
+            0,
+            0,
+            OpCode::Constant as u8,
+            0,
+            0,
+            OpCode::Call as u8,
+            1,
+            OpCode::Return as u8,
+        ],
+        vec![Constant::String("argument".to_string())],
+        vec!["read_context".to_string()],
+    );
+
+    let result = vm.run(&module).expect("host native should run");
+    assert_eq!(
+        result,
+        Value::String(std::rc::Rc::new("per-vm".to_string()))
+    );
+}
+
+#[test]
+fn test_ordinary_native_still_dispatches_without_a_host_callback() {
+    let mut vm = Vm::new();
+    vm.define_global(
+        "ordinary",
+        Value::Native {
+            name: "test.ordinary".to_string(),
+            arity: 1,
+            func: |args| {
+                let Some(&Value::Int(value)) = args.first() else {
+                    return Err(VmFault::TypeMismatch {
+                        expected: "Int".to_string(),
+                        actual: args.first().map_or("none", Value::type_name).to_string(),
+                    });
+                };
+                Ok(Value::Int(value + 1))
+            },
+        },
+    );
+
+    let module = make_test_module(
+        vec![
+            OpCode::GetGlobal as u8,
+            0,
+            0,
+            OpCode::Constant as u8,
+            0,
+            0,
+            OpCode::Call as u8,
+            1,
+            OpCode::Return as u8,
+        ],
+        vec![Constant::Int(41)],
+        vec!["ordinary".to_string()],
+    );
+
+    assert_eq!(
+        vm.run(&module).expect("ordinary native should run"),
+        Value::Int(42)
+    );
+}
+
+#[test]
+fn test_host_native_error_preserves_the_operand_stack() {
+    let mut vm = Vm::new();
+    let callee = Value::Native {
+        name: "test.host_error".to_string(),
+        arity: 1,
+        func: unused_native,
+    };
+    let argument = Value::Int(7);
+    vm.stack = vec![callee.clone(), argument.clone()];
+    vm.ip = 0;
+    vm.register_host_native("test.host_error", 1, |_vm, _args| {
+        Err(VmFault::DivisionByZero.into())
+    });
+
+    let module = make_test_module(vec![OpCode::Call as u8, 1], vec![], vec![]);
+    let error = vm.step(&module).expect_err("host native should fault");
+    assert_eq!(error.diagnostic_code(), DiagnosticCode::AIPO_RT_DIV_ZERO);
+    assert_eq!(vm.stack, vec![callee, argument]);
+}
+
+#[test]
+fn test_host_native_arity_mismatch_faults_without_calling_the_placeholder() {
+    let mut vm = Vm::new();
+    let callee = Value::Native {
+        name: "test.arity".to_string(),
+        arity: 2,
+        func: unused_native,
+    };
+    let first = Value::Int(1);
+    let second = Value::Int(2);
+    vm.stack = vec![callee.clone(), first.clone(), second.clone()];
+    vm.ip = 0;
+    vm.register_host_native("test.arity", 1, host_context_value);
+
+    let module = make_test_module(vec![OpCode::Call as u8, 2], vec![], vec![]);
+    let error = vm
+        .step(&module)
+        .expect_err("registered arity must be checked");
+    assert!(matches!(
+        error,
+        VmError::Fault(VmFault::TypeMismatch { .. })
+    ));
+    assert_eq!(vm.stack, vec![callee, first, second]);
+}
+
+fn host_async_value(vm: &mut Vm, _args: &[Value]) -> Result<Value, VmError> {
+    let count = match vm.get_global("host_count") {
+        Some(Value::Int(value)) => *value,
+        _ => 0,
+    };
+    vm.define_global("host_count", Value::Int(count + 1));
+    Ok(Value::Int(7))
+}
+
+fn host_async_fault(_vm: &mut Vm, _args: &[Value]) -> Result<Value, VmError> {
+    Err(VmFault::DivisionByZero.into())
+}
+
+fn async_native_module(await_result: bool) -> BytecodeModule {
+    let mut code = vec![
+        OpCode::GetGlobal as u8,
+        0,
+        0,
+        OpCode::Constant as u8,
+        0,
+        0,
+        OpCode::Call as u8,
+        1,
+    ];
+    if await_result {
+        code.push(OpCode::Await as u8);
+    }
+    code.push(OpCode::Return as u8);
+    make_test_module(
+        code,
+        vec![Constant::Int(1)],
+        vec!["async_native".to_string()],
+    )
+}
+
+fn define_async_native(vm: &mut Vm) {
+    vm.define_global(
+        "async_native",
+        Value::Native {
+            name: "test.async_native".to_string(),
+            arity: 1,
+            func: unused_native,
+        },
+    );
+    vm.register_host_async_native("test.async_native", 1, host_async_value);
+}
+
+#[test]
+fn test_async_host_native_returns_task_before_scheduler_runs_callback() {
+    let mut vm = Vm::new();
+    define_async_native(&mut vm);
+    let result = vm
+        .run(&async_native_module(false))
+        .expect("main task completes without driving forgotten task");
+    assert!(matches!(result, Value::Task(_)));
+    assert_eq!(vm.get_global("host_count"), None);
+}
+
+#[test]
+fn test_async_host_native_awaits_and_runs_on_scheduler() {
+    let mut vm = Vm::new();
+    define_async_native(&mut vm);
+    let result = vm
+        .run(&async_native_module(true))
+        .expect("host task resolves");
+    assert_eq!(result, Value::Int(7));
+    assert_eq!(vm.get_global("host_count"), Some(&Value::Int(1)));
+}
+
+#[test]
+fn test_async_host_native_error_keeps_runtime_fault() {
+    let mut vm = Vm::new();
+    vm.define_global(
+        "async_native",
+        Value::Native {
+            name: "test.async_native".to_string(),
+            arity: 1,
+            func: unused_native,
+        },
+    );
+    vm.register_host_async_native("test.async_native", 1, host_async_fault);
+    let error = vm
+        .run(&async_native_module(true))
+        .expect_err("host task error remains a fault");
+    assert_eq!(
+        error.diagnostic_code(),
+        DiagnosticCode::AIPO_RT_DIV_ZERO,
+        "{error:?}"
+    );
+}
+
+#[test]
+fn test_async_host_native_can_be_cancelled_before_driving() {
+    let mut vm = Vm::new();
+    let mut registry = aipo_runtime::NativeRegistry::new();
+    aipo_stdlib::register_stdlib(&mut vm, &mut registry);
+    define_async_native(&mut vm);
+    let code = vec![
+        OpCode::GetGlobal as u8,
+        0,
+        0,
+        OpCode::Constant as u8,
+        0,
+        0,
+        OpCode::Call as u8,
+        1,
+        OpCode::SetGlobal as u8,
+        0,
+        3,
+        OpCode::GetGlobal as u8,
+        0,
+        1,
+        OpCode::GetField as u8,
+        0,
+        2,
+        OpCode::GetGlobal as u8,
+        0,
+        3,
+        OpCode::Call as u8,
+        1,
+        OpCode::Pop as u8,
+        OpCode::GetGlobal as u8,
+        0,
+        3,
+        OpCode::Await as u8,
+        OpCode::Return as u8,
+    ];
+    let module = make_test_module(
+        code,
+        vec![Constant::Int(1)],
+        vec![
+            "async_native".to_string(),
+            "task".to_string(),
+            "cancel".to_string(),
+            "saved_task".to_string(),
+        ],
+    );
+    let error = vm
+        .run(&module)
+        .expect_err("cancelled host task faults when awaited");
+    assert_eq!(
+        error.diagnostic_code(),
+        DiagnosticCode::AIPO_RT_CANCELLED,
+        "{error:?}"
+    );
+    assert_eq!(vm.get_global("host_count"), None);
+}

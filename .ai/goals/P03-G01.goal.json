@@ -43,6 +43,7 @@
     "budget_profile": "medium",
     "max_delegation_depth": 1
   },
+  "dependencies": [],
   "evidence": [
     {
       "description": "cargo test --workspace --all-targets: 377 passed, 0 failed; cargo test -p aipo-host: 37 unit + 1 doctest passed; cargo test -p aipo-vm --test host_scope_escape: 9 passed; cargo test -p aipo-vm --test host_capability_and_handles: 5 passed",

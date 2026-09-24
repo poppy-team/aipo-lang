@@ -1,0 +1,141 @@
+{
+  "acceptance": [
+    "PackageSource supports a canonical GitHub source with repository slug, exact lowercase 40-hex commit revision and optional relative subpath; branches, tags, URLs, credentials and mutable revisions are rejected.",
+    "GitHub sources round-trip canonically through aipo.lock TOML/JSON, validate without absolute paths, and retain repository/revision/subpath provenance separately from the content digest.",
+    "The resolver can consume deterministic PackageInput values carrying GitHub sources and preserve source identity in graph diagnostics, duplicate detection and lock projection; local path resolution remains unchanged.",
+    "A narrow GitHubFetcher/remote-store seam plus an in-memory offline fixture allows tests and embedders to supply manifest/entry bytes without network access or credentials.",
+    "No CLI command performs network access, authentication, cache mutation or lifecycle execution; a later adapter must opt in explicitly and preserve the same source contract.",
+    "Tests cover canonical round-trip, invalid repository/revision/subpath, source provenance, digest behavior, offline fetched resolution and deterministic errors; repository gates remain green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-24T03:03:42.880989323Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "PackageSource supports a canonical GitHub source with repository slug, exact lowercase 40-hex commit revision and optional relative subpath; branches, tags, URLs, credentials and mutable revisions are rejected.",
+          "GitHub sources round-trip canonically through aipo.lock TOML/JSON, validate without absolute paths, and retain repository/revision/subpath provenance separately from the content digest.",
+          "The resolver can consume deterministic PackageInput values carrying GitHub sources and preserve source identity in graph diagnostics, duplicate detection and lock projection; local path resolution remains unchanged.",
+          "A narrow GitHubFetcher/remote-store seam plus an in-memory offline fixture allows tests and embedders to supply manifest/entry bytes without network access or credentials.",
+          "No CLI command performs network access, authentication, cache mutation or lifecycle execution; a later adapter must opt in explicitly and preserve the same source contract.",
+          "Tests cover canonical round-trip, invalid repository/revision/subpath, source provenance, digest behavior, offline fetched resolution and deterministic errors; repository gates remain green."
+        ],
+        "non_goals": [
+          "HTTP/GitHub API transport, authentication, rate limits and retries",
+          "Persistent remote cache, signatures, provenance attestations and registry publication",
+          "Remote dependency resolution through aipo.toml or automatic CLI downloads",
+          "GitHub URL generation or a platform-owned registry"
+        ]
+      },
+      "digest": "3e265db536614f1a6e8fdfeea7eff619bb34f7602a1c86112676b54c564512d2",
+      "goal_id": "P04-G04",
+      "id": "AMD-002",
+      "reason": "Lock the pinned GitHub source and offline seam",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "aipo-package tests passed 33 cases covering GitHub source validation, canonical TOML/JSON round-trip, stable provenance labels, digest separation, offline store fetch, missing/unsupported sources and graph resolution with GitHub-backed inputs.",
+      "kind": "test"
+    },
+    {
+      "description": "Local path resolution and existing package capability/lockfile tests remain green after the source union and resolver location changes.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets --all-features -- -D warnings, cargo test --workspace --all-targets, cargo doc --workspace --no-deps, node crates/aipo-js/runtime/selftest.mjs, prumo validate . and prumo doctor . all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/adp/ADP-007-package-identity-and-distribution.md records exact GitHub commit/subpath rules, the offline GitHubFetcher seam and the explicit deferral of HTTP/auth/cache/lifecycle work.",
+      "kind": "doc"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T03:03:24.7064666Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T03:03:29.869538019Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T03:03:29.880342367Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T03:03:42.880989323Z",
+      "event": "amended",
+      "reason": "Lock the pinned GitHub source and offline seam",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-24T03:03:42.901492766Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-24T03:10:51.68279669Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T03:10:51.69037819Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T03:10:51.699092897Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G04",
+  "lock": {
+    "digest": "3e265db536614f1a6e8fdfeea7eff619bb34f7602a1c86112676b54c564512d2",
+    "locked_at": "2026-09-24T03:03:42.880989323Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "HTTP/GitHub API transport, authentication, rate limits and retries",
+    "Persistent remote cache, signatures, provenance attestations and registry publication",
+    "Remote dependency resolution through aipo.toml or automatic CLI downloads",
+    "GitHub URL generation or a platform-owned registry"
+  ],
+  "objective": "Add a canonical GitHub package source with exact commit revision and subpath validation, preserve it in lockfiles/digests/provenance, and provide a deterministic offline fetcher seam without enabling network or credentials in the CLI.",
+  "phase": "P04",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Pinned GitHub source contract"
+}

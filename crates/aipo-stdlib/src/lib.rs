@@ -1,10 +1,10 @@
 //! Standard library for the Aipo programming language.
 //!
 //! Provides the canonical Prelude V1 and standard library modules (`math`, `string`, `io`,
-//! `task`, `time`), registering their native functions and module dictionaries into the Aipo VM
-//! and NativeRegistry.
+//! `task`, `time`, `env`, `fs`), registering their native functions and module dictionaries into
+//! the Aipo VM and NativeRegistry.
 //!
-//! Modules whose readings depend on the host (`time`) are capability-gated: the function exists
+//! Modules whose readings depend on the host (`time`, `env`, `fs`) are capability-gated: the function exists
 //! and faults with `AIPO_RT_CAPABILITY_DENIED` until the host installs the service, so a denied
 //! capability is never disguised as a missing or faked API.
 //!
@@ -20,6 +20,8 @@ pub mod collections;
 pub mod convert;
 pub mod duration;
 pub mod encoding;
+pub mod env;
+pub mod fs;
 pub mod io;
 pub mod json;
 pub mod log;
@@ -34,8 +36,11 @@ pub mod testing;
 pub mod time;
 pub mod url;
 
+use aipo_host::Capability;
 use aipo_runtime::{NativeFunctionMeta, NativeRegistry};
 use aipo_vm::{TypeTag, Value, Vm, VmFault};
+
+pub use fs::{MapFilesystemSource, fs_schema, install_filesystem_source};
 
 /// Registers the canonical Prelude V1 and all standard library modules into the VM and NativeRegistry.
 pub fn register_stdlib(vm: &mut Vm, registry: &mut NativeRegistry) {
@@ -45,6 +50,10 @@ pub fn register_stdlib(vm: &mut Vm, registry: &mut NativeRegistry) {
     register_io(registry);
     register_task(registry);
     register_time(registry);
+    env::register_natives(vm);
+    register_env(registry);
+    fs::register_natives(vm);
+    fs::register_metadata(registry);
     register_random(registry);
     register_json(registry);
     register_encoding(registry);
@@ -561,6 +570,8 @@ fn register_modules(vm: &mut Vm) {
     vm.define_global("io", io::create_module());
     vm.define_global("task", task::create_module());
     vm.define_global("time", time::create_module());
+    vm.define_global("env", env::create_module());
+    vm.define_global("fs", fs::create_module());
     vm.define_global("random", random::create_module());
     vm.define_global("json", json::create_module());
     vm.define_global("encoding", encoding::create_module());
@@ -1056,6 +1067,28 @@ fn register_time(registry: &mut NativeRegistry) {
         Some("time"),
         "Creates a Duration value with given seconds.",
     ));
+}
+
+/// Registers `env` module metadata.
+fn register_env(registry: &mut NativeRegistry) {
+    registry.register(
+        NativeFunctionMeta::new(
+            "get",
+            1,
+            Some("env"),
+            "Reads an environment value, or none when the name is absent.",
+        )
+        .with_capabilities([Capability::ENV_READ]),
+    );
+    registry.register(
+        NativeFunctionMeta::new(
+            "has",
+            1,
+            Some("env"),
+            "Checks whether an environment name is present.",
+        )
+        .with_capabilities([Capability::ENV_READ]),
+    );
 }
 
 /// Registers `url` module metadata.

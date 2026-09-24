@@ -30,7 +30,13 @@ invariants and runtime contracts) are both resolved, so every choice below has a
   (`Failed(reason)` on error). A module publishes nothing until it reaches `Initialized`
   (failed init publishes nothing).
 - **`NativeRegistry`** — catalog of native function metadata (name, arity, owning module,
-  documentation) used by tooling to describe the Prelude and built-in modules.
+  documentation, declared capabilities and asyncness) used by tooling to describe the Prelude and
+  built-in modules. It is not an authorization boundary; VM callbacks enforce the effective host
+  policy.
+- **`EnvironmentSource` / `FilesystemSource` / `HostContext`** — optional environment and
+  filesystem providers stored per VM. Each provider is installed explicitly and exposed through
+  read-only access; installation never grants a capability. No filesystem provider is
+  process-global, and the VM does not perform host filesystem I/O.
 - Diagnostics: `ModuleNotFound → AIPO_SEM_UNKNOWN_MODULE`,
   `CyclicDependency → AIPO_SEM_IMPORT_CYCLE`,
   `ExportNotFound → AIPO_SEM_EXPORT_UNKNOWN`.
@@ -184,6 +190,48 @@ it to `null` to deny.
 `Date`/`TimeOfDay`/`DateTime` are **not** part of this surface: their calendar, offset and IANA
 timezone contracts are a separate decision, and inventing a representation here would preempt it.
 
+## `env`
+
+Environment access is capability-aware and per-VM. `env` is always published as a module, but its
+callbacks run against the current VM's `HostContext` rather than a process-global service.
+
+| Signature | Behavior |
+|---|---|
+| `get(name)` | Returns the copied `String` value, or `none` when the name is absent. Requires `env.read` and an installed `EnvironmentSource`. |
+| `has(name)` | Returns `true` or `false` for a name. Requires `env.read` and an installed `EnvironmentSource`. |
+
+A missing name is data (`none`/`false`). A missing provider is not a value: the callback raises the
+same `AIPO_RT_CAPABILITY_DENIED` fault as a missing grant, after checking `env.read`. Installing a
+provider does not grant the capability, and the CLI does not install an environment provider or
+implicitly grant `env.read`. Tests and embedders can use `MapEnvironmentSource` with
+`env::install_environment_source`; separate VMs keep separate providers and grants.
+
+The `NativeFunctionMeta` entries for `env.get` and `env.has` declare `env.read` for tooling and
+manifest auditing, but `NativeRegistry` remains a catalog rather than a security gate.
+
+## `fs`
+
+Filesystem access is host-only, per-VM and async-first. This slice intentionally exposes no
+write, open, delete, raw-path or recursive-directory operation.
+
+| Signature | Behavior |
+|---|---|
+| `read_text(path)` | Returns `Task[String]` immediately. The provider read runs only when the scheduler drives the task and awaits it. Requires `filesystem.read`; `path` must be `String`. |
+| `roots()` | Returns the provider-owned roots as a sorted `List[String]`. Requires the separate `filesystem.roots` capability. |
+
+`MapFilesystemSource` is a deterministic provider for tests and embedders. It owns ordered roots
+and a path-to-content map, copies text across the boundary, rejects invalid roots, parent escapes
+and paths outside the configured roots, and never calls `std::fs`. The deterministic map has no
+symlinks; a real provider must reject symlink escape before reading. A missing file or provider
+read error is a recoverable `Failure`; a missing provider or capability is the stable
+`AIPO_RT_CAPABILITY_DENIED` fault. Installing a provider does not grant `filesystem.read` or
+`filesystem.roots`, and the CLI does not install either provider or grant either capability.
+
+The AHS exposed by `aipo_stdlib::fs::schema` declares the exact per-function capabilities and
+`read_text.is_async = true`. `NativeRegistry` remains catalog-only. The JavaScript/Web target does
+not advertise either filesystem capability and has no filesystem fallback; an embedder must
+provide a host implementation explicitly.
+
 ## `String` and Unicode normalization
 
 NFC is an **invariant** of every `String` value, not an operation performed at `==`. It is
@@ -210,10 +258,13 @@ Two distinct channels, never mixed:
 
 - **Recoverable `Failure`** (Model B) — domain problems a program can recover from with
   `or_else` / `attempt … failed … end`: invalid text in conversions, out-of-range `Byte`,
-  missing `format` key, negative `sqrt`, inverted `clamp` bounds.
+  missing `format` key, negative `sqrt`, inverted `clamp` bounds, and `fs.read_text` missing-file
+  or provider-read failures.
 - **Runtime fault (`VmFault`)** — programming or contract violations that are not
   recoverable: wrong operand category, wrong arity, empty `split`/`replace` separator,
-  non-`String` `join` element, numeric overflow past the `Int` range, non-finite `Float`.
+  non-`String` `join` element, numeric overflow past the `Int` range, non-finite `Float`,
+  invalid filesystem path/provider contracts, and missing host capabilities (including an absent
+  filesystem provider).
 
 No Rust panic escapes as an Aipo error; every native returns `Result`.
 
@@ -245,23 +296,25 @@ The subset keeps two written promises, and both are checked while the program ru
 
 ## Deferred surface
 
-Outside this slice (tracked in ADP-001/ADP-002 and the canon backlog): `format` positional
-placeholders and format specifiers (`{price:.2f}`), `Bytes` packing APIs (`read_i32`/`write_f32`/…,
-`String.encode`/`Bytes.decode`), `casefold`, `graphemes`, `words`, `lines`, explicit advanced
-Unicode normalization, `Set`, lazy `Sequence`, regex/json/fs/http and every capability-aware
-module. Wave 1 non-delivery that Wave 2 slice W2-1 has since closed (see
-`docs/evidence/P01-G01-js-parity-mvp-subset.md`): the `aipo-js` backend now ships
-the MVP subset with differential parity (CLI is `run`/`check`/`build`/`fmt`).
+Outside this slice (tracked in the canon backlog): `format` positional placeholders and format
+specifiers (`{price:.2f}`), `Bytes` packing APIs (`read_i32`/`write_i32`/…,
+`String.encode()`/`Bytes.decode()`), `casefold`, `graphemes`, `words`, `lines`, explicit advanced
+Unicode normalization, `Set`, lazy `Sequence`, regex/json/http and the remaining capability-aware
+modules. Wave 1 non-delivery that Wave 2 slice W2-1 has since closed (see
+`docs/evidence/P01-G01-js-parity-mvp-subset.md`): the `aipo-js` backend now ships the
+MVP subset with differential parity (CLI is `run`/`check`/`build`/`fmt`).
 Wave 3 has since closed `Set`, lazy `Sequence`, the `Bytes` packing APIs
-(`read_i32`/`write_f32`/…, `String.encode`/`Bytes.decode`), `Duration` and the whole async
+(`read_i32`/`write_i32`/…, `String.encode()`/`Bytes.decode()`), `Duration` and the whole async
 surface (`Task`/`Group` values, a cooperative scheduler, `async fn`/`await`/`await do` and the
 `task.*` combinators) — see `docs/evidence/P02-G01-wave3-types-and-values.md`.
 
 Wave 4 has since started the host ABI (`aipo-host`) and closed the `time` clock module on both
 backends (`time.now`/`time.monotonic` behind the `clock` capabilities, with a deterministic test
-profile) — see `docs/evidence/P03-G01-host-abi.md`.
+profile) — see `docs/evidence/P03-G01-host-abi.md`. This slice adds the VM host-task path and the
+restricted VM-only `fs` read/roots surface; filesystem writes, handles and JS/Web fallback remain
+out of scope.
 
-Still explicitly deferred: LSP and REPL, packages/registry, regex/json/fs/http, `Date`/
+Still explicitly deferred: LSP and REPL, packages/registry, regex/json/http, `Date`/
 `TimeOfDay`/`DateTime`, the ECS host (`aipo-poppy`) and hot reload. Type values for `List`/`Dict`/`Bytes` and a
 dedicated `Byte` runtime kind were listed here previously and are now delivered — see
 `docs/evidence/P00-G10-backend-completion.md`.

@@ -64,6 +64,13 @@
 | AIPO_SEM_NESTED_AWAIT_DO | error | `await do` nested inside another `await do` (Wave 3) |
 | AIPO_SEM_PARAMETRIC_CONTRACT | error | parametric `Name[Args]` contract written before parametric contracts exist (Wave 3) |
 
+### Package (AIPO_PKG_*)
+| Code | Severity | Trigger |
+|---|---|---|
+| AIPO_PKG_RESOLUTION | error | manifest, local or explicit remote dependency graph, or capability resolution failed |
+| AIPO_PKG_LOCK_STALE | error | lockfile required by audit is missing, or an existing lockfile is invalid or divergent from the resolved graph |
+| AIPO_PKG_FETCH | error | public GitHub fetch or cache failed, was redirected, exceeded policy limits, or returned an invalid artifact |
+
 ### Runtime fault (AIPO_RT_*)
 | Code | Severity | Trigger |
 |---|---|---|

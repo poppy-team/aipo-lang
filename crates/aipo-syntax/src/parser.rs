@@ -751,7 +751,11 @@ impl<'a> Parser<'a> {
 
     fn parse_import_decl(&mut self) -> Option<ImportDecl> {
         let start = self.advance().span; // 'import'
-        let module_name = self.parse_ident()?;
+        let mut module_name = vec![self.parse_ident()?];
+        while self.match_token(&TokenKind::Dot) {
+            module_name.push(self.parse_ident()?);
+        }
+
         let alias = if self.match_token(&TokenKind::As) {
             Some(self.parse_ident()?)
         } else {
@@ -772,7 +776,8 @@ impl<'a> Parser<'a> {
             .last()
             .map(|i| i.span)
             .or_else(|| alias.as_ref().map(|a| a.span))
-            .unwrap_or(module_name.span);
+            .or_else(|| module_name.last().map(|segment| segment.span))
+            .unwrap_or(start);
 
         Some(ImportDecl {
             module_name,

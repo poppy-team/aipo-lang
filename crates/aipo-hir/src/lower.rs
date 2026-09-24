@@ -192,7 +192,12 @@ impl LoweringContext {
 
     fn lower_import_decl(&mut self, i: ImportDecl) -> HirImportDecl {
         HirImportDecl {
-            module_name: i.module_name.name,
+            module_name: i
+                .module_name
+                .into_iter()
+                .map(|segment| segment.name)
+                .collect::<Vec<_>>()
+                .join("."),
             alias: i.alias.map(|a| a.name),
             names: i.names.into_iter().map(|n| n.name).collect(),
             span: i.span,

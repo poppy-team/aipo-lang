@@ -1,0 +1,115 @@
+{
+  "acceptance": [
+    "aipo.toml accepts pinned GitHub dependency sources with an exact SemVer version, repository slug, lowercase 40-hex commit and safe relative subpath; path dependencies remain compatible.",
+    "The package core resolves a root plus transitive pinned GitHub inputs through the GitHubFetcher seam, preserves source provenance and digests, validates coordinates, versions, capabilities, duplicates and cycles, and writes a complete deterministic lock projection.",
+    "The opt-in github-http fetch command recursively fetches every reachable GitHub source, uses the existing atomic digest-verified cache, and writes the root snapshot plus full graph lockfile without executing lifecycle code.",
+    "A remote artifact declaring a local path dependency fails closed; local path resolution remains available for local packages.",
+    "run, check, build, disasm, package lock and package audit never access the network or mutate the cache; only fetch-github enables the HTTP adapter.",
+    "Positive and negative tests cover manifest round-trip, source validation, offline recursive graph resolution, cache reuse, remote local-path rejection, CLI argument validation and existing local behavior; repository gates remain green."
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "aipo-package with all features passed 45 tests, including pinned GitHub manifest round-trip, source validation, recursive offline graph resolution, cache reuse, local-path rejection and graph lock projection.",
+      "kind": "test"
+    },
+    {
+      "description": "aipo-cli with github-http passed 16 package integration tests, including explicit fetch argument validation and denial of remote dependencies from local package lock without the explicit fetch operation.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo test --workspace --all-targets and cargo test --workspace --all-targets --all-features passed; the default build remains network-free and the opt-in build resolves the complete pinned graph.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check and cargo clippy --workspace --all-targets --all-features -- -D warnings passed after the final changes.",
+      "kind": "gate"
+    },
+    {
+      "description": "cargo doc --workspace --no-deps, cargo doc --workspace --no-deps --all-features, node crates/aipo-js/runtime/selftest.mjs, cargo deny check advisories bans licenses sources, cargo audit, prumo validate . and prumo doctor . all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "ADP-007, CLI reference, GitHub fetch security contract and diagnostics catalog document the manifest syntax, recursive explicit fetch, cache policy, 256-package bound, diagnostics and non-goals.",
+      "kind": "doc"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T04:34:29.214422379Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T04:35:29.400486715Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T04:35:29.41087921Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-24T04:35:29.423676609Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-24T04:43:22.196938372Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T04:43:22.207462282Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T04:43:22.222844698Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G06",
+  "lock": {
+    "digest": "4c003a57d0826d0e7a373a7f6d19e89763dcf85fe4a3b629be20d62f2fba4de4",
+    "locked_at": "2026-09-24T04:35:29.410863667Z",
+    "revision": 1
+  },
+  "non_goals": [
+    "Private repositories, tokens, OAuth, credentials or authenticated GitHub API requests",
+    "Automatic network access from run, check, build, disasm, package lock or package audit",
+    "Remote artifacts with local path dependencies or package-internal submodules",
+    "Registry publication, version solving, signatures, attestations and cache eviction"
+  ],
+  "objective": "Allow pinned GitHub dependencies in aipo.toml, resolve a complete public graph only through the opt-in fetch-github command, preserve cache and lock provenance, and keep normal package commands network-free",
+  "phase": "P04",
+  "revision": 1,
+  "state": "DONE",
+  "title": "Explicit remote dependency graph"
+}

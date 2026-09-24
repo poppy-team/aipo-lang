@@ -1,6 +1,44 @@
 {
   "acceptance": [
-    "Replace this placeholder with objective acceptance criteria."
+    "The aipo-js emitter produces an ESM bundle with a versioned runtime shim, embedded Core IR and a valid ECMA-426 source map.",
+    "The stable aipo build command reuses the frontend pipeline, emits nothing for check-time diagnostics and reports runtime faults through Node with the same observable codes and exit behavior as the VM.",
+    "The frozen Wave 1 corpus programs 01-20 has exact VM, JavaScript and committed stdout parity, including the documented module cases.",
+    "The evidence record publishes the implementation decisions, gate results and known limitations without changing canonical language semantics.",
+    "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace, cargo doc --workspace --no-deps, prumo validate and prumo doctor are green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-23T23:18:29.563974773Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "The aipo-js emitter produces an ESM bundle with a versioned runtime shim, embedded Core IR and a valid ECMA-426 source map.",
+          "The stable aipo build command reuses the frontend pipeline, emits nothing for check-time diagnostics and reports runtime faults through Node with the same observable codes and exit behavior as the VM.",
+          "The frozen Wave 1 corpus programs 01-20 has exact VM, JavaScript and committed stdout parity, including the documented module cases.",
+          "The evidence record publishes the implementation decisions, gate results and known limitations without changing canonical language semantics.",
+          "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace, cargo doc --workspace --no-deps, prumo validate and prumo doctor are green."
+        ],
+        "evidence": [
+          {
+            "description": "cargo test -p aipo-js --test differential: 2 passed, covering 20/20 programs with VM == JS == committed stdout; cargo test -p aipo-cli --test js_build: 3 passed, covering bundle snapshots, 19/19 diagnostics and module cases.",
+            "kind": "test"
+          },
+          {
+            "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace (152 passed), cargo doc --workspace --no-deps, prumo validate . and prumo doctor . all green; see docs/evidence/P01-G01-js-parity-mvp-subset.md.",
+            "kind": "gate"
+          },
+          {
+            "description": "docs/evidence/P01-G01-js-parity-mvp-subset.md, docs/waves/wave-2-js-parity.md, docs/reference/cli.md, docs/crates/crate-contracts.md, docs/PRUMO.md, CHANGELOG.md and PROJECT_STATE.md record the delivered backend and its limitations.",
+            "kind": "doc"
+          }
+        ]
+      },
+      "digest": "3d341c1e8751bdf12daaa25b6b7db08d3e0e0123d5f1a7938c02d2688d4d553b",
+      "goal_id": "P01-G01",
+      "id": "AMD-002",
+      "reason": "Record the completed JS parity acceptance criteria and evidence for review closure",
+      "revision": 2
+    }
   ],
   "constraints": [],
   "context": {
@@ -8,7 +46,20 @@
     "max_delegation_depth": 1
   },
   "dependencies": [],
-  "evidence": [],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-js --test differential: 2 passed, covering 20/20 programs with VM == JS == committed stdout; cargo test -p aipo-cli --test js_build: 3 passed, covering bundle snapshots, 19/19 diagnostics and module cases.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace (152 passed), cargo doc --workspace --no-deps, prumo validate . and prumo doctor . all green; see docs/evidence/P01-G01-js-parity-mvp-subset.md.",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/evidence/P01-G01-js-parity-mvp-subset.md, docs/waves/wave-2-js-parity.md, docs/reference/cli.md, docs/crates/crate-contracts.md, docs/PRUMO.md, CHANGELOG.md and PROJECT_STATE.md record the delivered backend and its limitations.",
+      "kind": "doc"
+    }
+  ],
   "gates": {
     "build": "required",
     "documentation_impact": "required",
@@ -56,18 +107,32 @@
       "from": "VERIFYING",
       "reason": "",
       "to": "REVIEWING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-23T23:18:29.563974773Z",
+      "event": "amended",
+      "reason": "Record the completed JS parity acceptance criteria and evidence for review closure",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-23T23:18:43.125931486Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
     }
   ],
   "id": "P01-G01",
   "lock": {
-    "digest": "5e6ab32db3fd25df45bb84f8d07ce7571325aa34e5ac3a2106735b458fe30d1b",
-    "locked_at": "2026-09-19T21:22:06.371861846Z",
-    "revision": 1
+    "digest": "3d341c1e8751bdf12daaa25b6b7db08d3e0e0123d5f1a7938c02d2688d4d553b",
+    "locked_at": "2026-09-23T23:18:29.563974773Z",
+    "revision": 2
   },
   "non_goals": [],
   "objective": "Ship aipo-js emitter (ESM + versioned shim + ECMA-426 source maps) and aipo build with a VM-vs-JS differential suite green over conformance programs 01-20; diagnostics and modules fail at build time with the same codes; no language surface change",
   "phase": "P01",
-  "revision": 1,
-  "state": "REVIEWING",
+  "revision": 2,
+  "state": "DONE",
   "title": "JS parity for the full MVP subset"
 }

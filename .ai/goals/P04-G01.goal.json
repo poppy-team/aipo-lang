@@ -1,0 +1,181 @@
+{
+  "acceptance": [
+    "A package coordinate has a validated canonical namespace.package form, exactly two segments, and is preserved through manifest, lockfile, AST/HIR, linker, diagnostics and source mapping.",
+    "The parser accepts import acme.http and an optional local alias while builtin modules remain unqualified; package provenance is never flattened to an ambiguous identifier.",
+    "aipo.toml parses and validates package identity, version, entry, dependencies, targets and declared capabilities with stable diagnostics.",
+    "aipo.lock is canonical and deterministic: it records exact versions, sources, local content digests and dependency edges without timestamps or machine-specific absolute paths.",
+    "The first resolver supports local path dependencies, rejects missing dependencies, cycles and incompatible constraints deterministically, performs no network access and runs no install lifecycle scripts.",
+    "run, check, build and source disassembly use the same resolved package result and never silently rewrite a stale lockfile.",
+    "Positive and negative fixtures cover import provenance, manifest/lock round-trips, deterministic ordering, missing/cyclic dependencies, capability declarations and lock/source mismatch.",
+    "The new architecture and CLI contract are documented, no arbitrary install scripts are introduced, and the full workspace fmt, clippy, test and doc gates remain green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-24T00:35:46.212506096Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "A package coordinate has a validated canonical namespace.package form, exactly two segments, and is preserved through manifest, lockfile, AST/HIR, linker, diagnostics and source mapping.",
+          "The parser accepts import acme.http and an optional local alias while builtin modules remain unqualified; package provenance is never flattened to an ambiguous identifier.",
+          "aipo.toml parses and validates package identity, version, entry, dependencies, targets and declared capabilities with stable diagnostics.",
+          "aipo.lock is canonical and deterministic: it records exact versions, sources, local content digests and dependency edges without timestamps or machine-specific absolute paths.",
+          "The first resolver supports local path dependencies, rejects missing dependencies, cycles and incompatible constraints deterministically, performs no network access and runs no install lifecycle scripts.",
+          "run, check, build and source disassembly use the same resolved package result and never silently rewrite a stale lockfile.",
+          "Positive and negative fixtures cover import provenance, manifest/lock round-trips, deterministic ordering, missing/cyclic dependencies, capability declarations and lock/source mismatch.",
+          "The new architecture and CLI contract are documented, no arbitrary install scripts are introduced, and the full workspace fmt, clippy, test and doc gates remain green."
+        ],
+        "non_goals": [
+          "Remote GitHub downloads, registry transport, artifact signing and a hosted package platform",
+          "Package-internal submodules beyond one entry module",
+          "Capability-aware filesystem, environment, network, process or crypto services",
+          "Hot reload and package publication workflows"
+        ]
+      },
+      "digest": "9d3e7cdda8e35325f5a3ee046108058e79929499b81ffa16a041adae036b6166",
+      "goal_id": "P04-G01",
+      "id": "AMD-002",
+      "reason": "Lock the first package-foundation slice and its executable acceptance criteria",
+      "revision": 2
+    },
+    {
+      "approved_at": "2026-09-24T01:59:03.571735055Z",
+      "approved_by": "human",
+      "changes": {
+        "evidence": [
+          {
+            "description": "cargo test -p aipo-package: 28 passed; cargo test -p aipo-cli: 67 passed, including local package resolution, qualified imports, lock/audit, stale-lock and legacy fallback fixtures.",
+            "kind": "test"
+          },
+          {
+            "description": "cargo test --workspace --all-targets: all workspace targets passed; parser, HIR, package, CLI, VM, JS differential and generated suites remain green.",
+            "kind": "test"
+          },
+          {
+            "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo doc --workspace --no-deps, node runtime selftest, prumo validate . and prumo doctor . all passed.",
+            "kind": "gate"
+          },
+          {
+            "description": "docs/adp/ADP-007-package-identity-and-distribution.md, docs/reference/cli.md and docs/diagnostics/catalog.md record the coordinate/import decision, local package commands and stable AIPO_PKG_* diagnostics.",
+            "kind": "doc"
+          }
+        ]
+      },
+      "digest": "9d3e7cdda8e35325f5a3ee046108058e79929499b81ffa16a041adae036b6166",
+      "goal_id": "P04-G01",
+      "id": "AMD-003",
+      "reason": "Record the completed local package foundation and certification evidence",
+      "revision": 3
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "cargo test -p aipo-package: 28 passed; cargo test -p aipo-cli: 67 passed, including local package resolution, qualified imports, lock/audit, stale-lock and legacy fallback fixtures.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo test --workspace --all-targets: all workspace targets passed; parser, HIR, package, CLI, VM, JS differential and generated suites remain green.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets -- -D warnings, cargo doc --workspace --no-deps, node runtime selftest, prumo validate . and prumo doctor . all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/adp/ADP-007-package-identity-and-distribution.md, docs/reference/cli.md and docs/diagnostics/catalog.md record the coordinate/import decision, local package commands and stable AIPO_PKG_* diagnostics.",
+      "kind": "doc"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T00:35:17.545703712Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T00:35:46.185310448Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T00:35:46.204938782Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T00:35:46.212506096Z",
+      "event": "amended",
+      "reason": "Lock the first package-foundation slice and its executable acceptance criteria",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-24T00:36:04.797743826Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T01:59:03.571735055Z",
+      "event": "amended",
+      "reason": "Record the completed local package foundation and certification evidence",
+      "revision": 3
+    },
+    {
+      "at": "2026-09-24T01:59:29.935241691Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T01:59:29.941936231Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T01:59:29.948682005Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G01",
+  "lock": {
+    "digest": "9d3e7cdda8e35325f5a3ee046108058e79929499b81ffa16a041adae036b6166",
+    "locked_at": "2026-09-24T01:59:03.571735055Z",
+    "revision": 3
+  },
+  "non_goals": [
+    "Remote GitHub downloads, registry transport, artifact signing and a hosted package platform",
+    "Package-internal submodules beyond one entry module",
+    "Capability-aware filesystem, environment, network, process or crypto services",
+    "Hot reload and package publication workflows"
+  ],
+  "objective": "Implement the Aipo-owned package protocol foundation: qualified namespace.package identities, aipo.toml/aipo.lock, deterministic local path resolution, and integration with the compiler pipeline without network or install scripts.",
+  "phase": "P04",
+  "revision": 3,
+  "state": "DONE",
+  "title": "Package identity, manifest and local resolver"
+}

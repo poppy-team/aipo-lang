@@ -17,6 +17,7 @@ members = [
     "crates/aipo-cli",
     "crates/aipo-js",
     "crates/aipo-host",
+    "crates/aipo-package",
     "crates/aipo-poppy",
     "crates/aipo-testkit",
     "crates/aipo-bench",
@@ -48,6 +49,8 @@ style = { level = "deny", priority = -1 }
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
+toml = "0.8"
 unicode-segmentation = "1.12"
 unicode-normalization = "0.1"
 regex = "1.11"

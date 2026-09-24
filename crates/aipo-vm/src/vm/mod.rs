@@ -21,6 +21,35 @@ mod task;
 /// Receiver-first native method implementation.
 pub type MethodNative = fn(&Value, &[Value]) -> Result<Value, VmFault>;
 
+/// Native callback that receives the VM context and the call arguments.
+pub type HostNativeCallback = fn(&mut Vm, &[Value]) -> Result<Value, VmError>;
+
+/// A typed host-native registration entry.
+#[derive(Clone, Copy)]
+pub struct HostNative {
+    /// Expected number of call arguments.
+    pub arity: usize,
+    /// Callback executed by the VM.
+    pub callback: HostNativeCallback,
+    /// Whether the callback runs in a hosted task.
+    pub is_async: bool,
+}
+
+/// Descriptive alias for [`HostNative`].
+pub type HostNativeEntry = HostNative;
+
+impl HostNative {
+    /// Creates a typed host-native entry.
+    #[must_use]
+    pub const fn new(arity: usize, callback: HostNativeCallback, is_async: bool) -> Self {
+        Self {
+            arity,
+            callback,
+            is_async,
+        }
+    }
+}
+
 /// Methods that structurally mutate their receiver, so the VM can enforce the
 /// canonical `MutationDuringIteration` fault.
 const MUTATING_METHODS: [&str; 6] = [
@@ -82,6 +111,8 @@ pub struct Vm {
     pub upvalue_frames: Vec<UpvalueFrame>,
     /// Receiver-first native methods registered by the standard library.
     pub method_natives: HashMap<(String, String), (usize, MethodNative)>,
+    /// Native callbacks that receive the current VM context.
+    host_natives: HashMap<String, HostNative>,
     /// User methods registered per struct type: (type, method) -> (entry ip, total arity,
     /// is async).
     pub struct_methods: HashMap<(String, String), (usize, usize, bool)>,
@@ -108,6 +139,8 @@ pub struct Vm {
     /// Task currently loaded on the machine (`None` while the never-suspended
     /// main script runs on the bare machine).
     current: Option<TaskId>,
+    /// Host callback and arguments for the currently loaded hosted task.
+    host_task: Option<task::HostTask>,
     /// Next fresh task, join, and group identifiers.
     next_task: TaskId,
     next_join: task::JoinId,
@@ -148,6 +181,7 @@ impl Vm {
             mutation_journal: Vec::new(),
             upvalue_frames: Vec::new(),
             method_natives: HashMap::new(),
+            host_natives: HashMap::new(),
             struct_methods: HashMap::new(),
             active_iterations: Vec::new(),
             halted_with: None,
@@ -158,6 +192,7 @@ impl Vm {
             joins: HashMap::new(),
             groups: HashMap::new(),
             current: None,
+            host_task: None,
             next_task: task::MAIN_TASK + 1,
             next_join: 1,
             next_group: 1,
@@ -218,6 +253,65 @@ impl Vm {
     ) {
         self.method_natives
             .insert((type_name.to_string(), method.to_string()), (arity, func));
+    }
+
+    /// Registers a synchronous native callback that receives the current VM context.
+    pub fn register_host_native(
+        &mut self,
+        name: impl Into<String>,
+        arity: usize,
+        callback: HostNativeCallback,
+    ) {
+        self.register_host_entry(name, HostNative::new(arity, callback, false));
+    }
+
+    /// Registers an asynchronous native callback that receives the current VM context.
+    ///
+    /// Calling the native returns a task immediately. The callback runs only when the scheduler
+    /// loads that task.
+    pub fn register_host_async_native(
+        &mut self,
+        name: impl Into<String>,
+        arity: usize,
+        callback: HostNativeCallback,
+    ) {
+        self.register_host_entry(name, HostNative::new(arity, callback, true));
+    }
+
+    /// Registers a complete typed host-native entry.
+    pub fn register_host_entry(&mut self, name: impl Into<String>, entry: HostNative) {
+        let name = name.into();
+        if name.is_empty() || name.trim() != name {
+            return;
+        }
+        self.host_natives.insert(name, entry);
+    }
+
+    /// Returns a registered host-native entry.
+    #[must_use]
+    pub fn host_native(&self, name: &str) -> Option<HostNative> {
+        self.host_natives.get(name).copied()
+    }
+
+    /// Creates a task that runs a host callback when scheduled.
+    ///
+    /// This is the explicit counterpart to [`Self::register_host_async_native`] and is useful to
+    /// host adapters that need to create a hosted task without exposing a bytecode callable.
+    pub fn spawn_host_task(
+        &mut self,
+        callback: HostNativeCallback,
+        args: Vec<Value>,
+    ) -> Result<TaskId, VmError> {
+        self.spawn_host_task_state(callback, args)
+    }
+
+    /// Creates a task value around a host callback.
+    pub fn create_host_task(
+        &mut self,
+        callback: HostNativeCallback,
+        args: Vec<Value>,
+    ) -> Result<Value, VmError> {
+        self.spawn_host_task(callback, args).map(Value::Task)
     }
 
     /// Registers a user-defined method of a struct type.
@@ -320,6 +414,7 @@ impl Vm {
         self.joins.clear();
         self.groups.clear();
         self.current = Some(task::MAIN_TASK);
+        self.host_task = None;
         self.next_task = task::MAIN_TASK + 1;
         self.next_join = 1;
         self.next_group = 1;

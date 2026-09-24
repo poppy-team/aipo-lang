@@ -1,0 +1,147 @@
+{
+  "acceptance": [
+    "The VM has a host-task execution path for capability-aware native functions declared async; calling one returns a Task and the actual host operation runs only when the scheduler drives that task, preserving await and cancellation semantics.",
+    "The stdlib exposes fs.read_text(path) as async Task[String] and fs.roots() as List[String]; read_text requires filesystem.read and roots requires filesystem.roots, with no implicit grant from provider installation or CLI startup.",
+    "A per-VM FilesystemSource owns the host filesystem policy and root set; a deterministic map provider supports tests/embedders, values are copied at the boundary, and no process-global filesystem service is introduced.",
+    "A missing file is a recoverable Failure from the provider, while missing provider or capability is the stable AIPO_RT_CAPABILITY_DENIED fault; invalid path/provider contract errors are typed and never panic.",
+    "Native metadata and AHS/tooling data expose asyncness and the exact capability for each fs operation; NativeRegistry remains a catalog, not an authorization boundary.",
+    "Tests cover async call/await, roots, missing file Failure, denied read/roots, provider isolation, root policy, cancellation/forgotten-task behavior where applicable, and capability declarations.",
+    "The slice documents async-first filesystem semantics, target limitations and resource/path policy; no write, symlink escape, network, process, crypto or unbounded read surface is added, and repository gates remain green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-24T02:29:26.171208569Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "The VM has a host-task execution path for capability-aware native functions declared async; calling one returns a Task and the actual host operation runs only when the scheduler drives that task, preserving await and cancellation semantics.",
+          "The stdlib exposes fs.read_text(path) as async Task[String] and fs.roots() as List[String]; read_text requires filesystem.read and roots requires filesystem.roots, with no implicit grant from provider installation or CLI startup.",
+          "A per-VM FilesystemSource owns the host filesystem policy and root set; a deterministic map provider supports tests/embedders, values are copied at the boundary, and no process-global filesystem service is introduced.",
+          "A missing file is a recoverable Failure from the provider, while missing provider or capability is the stable AIPO_RT_CAPABILITY_DENIED fault; invalid path/provider contract errors are typed and never panic.",
+          "Native metadata and AHS/tooling data expose asyncness and the exact capability for each fs operation; NativeRegistry remains a catalog, not an authorization boundary.",
+          "Tests cover async call/await, roots, missing file Failure, denied read/roots, provider isolation, root policy, cancellation/forgotten-task behavior where applicable, and capability declarations.",
+          "The slice documents async-first filesystem semantics, target limitations and resource/path policy; no write, symlink escape, network, process, crypto or unbounded read surface is added, and repository gates remain green."
+        ],
+        "non_goals": [
+          "fs.write_text, recursive directory operations and opaque open handles",
+          "Implicit CLI filesystem grants or a general host configuration file",
+          "JavaScript/Web filesystem implementation or fake parity for unsupported targets",
+          "GitHub/registry transport and package publication"
+        ]
+      },
+      "digest": "293c27f94c463f912d6e055b1f01d3723b1767d37bb15fdac170bb6abb0a77eb",
+      "goal_id": "P04-G03",
+      "id": "AMD-002",
+      "reason": "Lock the async filesystem capability slice",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "aipo-vm async host-task tests passed for immediate Task creation, scheduler-driven execution, await, cancellation and runtime-fault propagation; ordinary host natives remain covered.",
+      "kind": "test"
+    },
+    {
+      "description": "aipo-stdlib filesystem tests passed for async read/await, roots, missing-file Failure, provider errors, capability/provider denial, root policy, isolation, NFC copying, AHS and NativeRegistry metadata.",
+      "kind": "test"
+    },
+    {
+      "description": "aipo-cli package integration passed 14 tests, including default CLI denial for both env and fs capability surfaces and capability preservation in aipo.lock.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets --all-features -- -D warnings, cargo test --workspace --all-targets, cargo doc --workspace --no-deps, node crates/aipo-js/runtime/selftest.mjs, prumo validate . and prumo doctor . all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/stdlib/mvp-subset.md, docs/canon/Aipo — Stdlib V1 Canônica..., docs/canon/Aipo — Standard Library Architecture..., docs/adp/ADP-007-package-identity-and-distribution.md and crates/aipo-js/src/lib.rs record async-first fs semantics, per-VM providers, target limitations and next GitHub slice.",
+      "kind": "doc"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T02:29:10.071527027Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T02:29:13.337274837Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T02:29:13.345950383Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T02:29:26.171208569Z",
+      "event": "amended",
+      "reason": "Lock the async filesystem capability slice",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-24T02:29:26.177454547Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "at": "2026-09-24T03:02:35.328043982Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T03:02:35.339199643Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T03:02:35.347059596Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G03",
+  "lock": {
+    "digest": "293c27f94c463f912d6e055b1f01d3723b1767d37bb15fdac170bb6abb0a77eb",
+    "locked_at": "2026-09-24T02:29:26.171208569Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "fs.write_text, recursive directory operations and opaque open handles",
+    "Implicit CLI filesystem grants or a general host configuration file",
+    "JavaScript/Web filesystem implementation or fake parity for unsupported targets",
+    "GitHub/registry transport and package publication"
+  ],
+  "objective": "Add an async-first, per-VM filesystem capability slice with fs.read_text and fs.roots, deterministic host providers, separate filesystem.read/filesystem.roots grants, explicit Failure versus capability faults, and target/tooling metadata.",
+  "phase": "P04",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Async filesystem read and roots"
+}

@@ -51,6 +51,31 @@
       "id": "AMD-004",
       "reason": "Attach P00-G16 hand-off evidence: corpus audit, gauntlet 100%, non-delivery list",
       "revision": 4
+    },
+    {
+      "approved_at": "2026-09-23T23:17:25.924622186Z",
+      "approved_by": "human",
+      "changes": {
+        "evidence": [
+          {
+            "description": "cargo test --workspace: 146 passed, 0 failed; conformance 13/13, formatter 11/11, fuzz_smoke 3/3. New certification: programs/19_local_functions and 20_module_scope. See docs/evidence/P00-G16-wave-1-exit-review.md",
+            "kind": "test"
+          },
+          {
+            "description": "cargo fmt --all -- --check (exit 0), cargo clippy --workspace --all-targets -- -D warnings (zero warnings), cargo test --workspace (146 passed) and cargo doc --workspace --no-deps clean; prumo validate/doctor green; gauntlet 100%",
+            "kind": "gate"
+          },
+          {
+            "description": "docs/evidence/P00-G16-wave-1-exit-review.md publishes certified baseline, non-delivery list (Bytes packing, aipo-js, Set/Sequence, LSP/REPL) and next slice; docs/conformance/README.md scores, docs/stdlib/mvp-subset.md deferred, docs/PRUMO.md, CHANGELOG.md, PROJECT_STATE.md updated",
+            "kind": "doc"
+          }
+        ]
+      },
+      "digest": "de73155dfed5656601bd9b2ccc1275d77c93ebe9c6e9dfad93ff00e292180601",
+      "goal_id": "P00-G16",
+      "id": "AMD-005",
+      "reason": "Attach the completed Wave 1 audit evidence and close the review",
+      "revision": 5
     }
   ],
   "constraints": [],
@@ -59,7 +84,20 @@
     "max_delegation_depth": 1
   },
   "dependencies": [],
-  "evidence": [],
+  "evidence": [
+    {
+      "description": "cargo test --workspace: 146 passed, 0 failed; conformance 13/13, formatter 11/11, fuzz_smoke 3/3. New certification: programs/19_local_functions and 20_module_scope. See docs/evidence/P00-G16-wave-1-exit-review.md",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check (exit 0), cargo clippy --workspace --all-targets -- -D warnings (zero warnings), cargo test --workspace (146 passed) and cargo doc --workspace --no-deps clean; prumo validate/doctor green; gauntlet 100%",
+      "kind": "gate"
+    },
+    {
+      "description": "docs/evidence/P00-G16-wave-1-exit-review.md publishes certified baseline, non-delivery list (Bytes packing, aipo-js, Set/Sequence, LSP/REPL) and next slice; docs/conformance/README.md scores, docs/stdlib/mvp-subset.md deferred, docs/PRUMO.md, CHANGELOG.md, PROJECT_STATE.md updated",
+      "kind": "doc"
+    }
+  ],
   "gates": {
     "build": "required",
     "documentation_impact": "required",
@@ -128,13 +166,27 @@
       "event": "amended",
       "reason": "Attach P00-G16 hand-off evidence: corpus audit, gauntlet 100%, non-delivery list",
       "revision": 4
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-23T23:17:25.924622186Z",
+      "event": "amended",
+      "reason": "Attach the completed Wave 1 audit evidence and close the review",
+      "revision": 5
+    },
+    {
+      "at": "2026-09-23T23:18:05.262861718Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
     }
   ],
   "id": "P00-G16",
   "lock": {
     "digest": "de73155dfed5656601bd9b2ccc1275d77c93ebe9c6e9dfad93ff00e292180601",
-    "locked_at": "2026-09-19T21:05:15.15528757Z",
-    "revision": 4
+    "locked_at": "2026-09-23T23:17:25.924622186Z",
+    "revision": 5
   },
   "non_goals": [
     "Implementing Bytes packing APIs, the aipo-js backend, Set, Sequence, LSP or REPL",
@@ -144,7 +196,7 @@
   ],
   "objective": "Audit the Wave 1 exit criteria in docs/waves/wave-1-mvp.md against the executable corpus now that both ADPs are resolved: score the five gauntlet gates with reproducible commands, record what the MVP genuinely does not deliver (Bytes packing APIs, the aipo-js backend, Set/Sequence, LSP/REPL) as explicit non-delivery instead of an open gap, and publish the hand-off so a new slice can start from a certified baseline.",
   "phase": "P00",
-  "revision": 4,
-  "state": "REVIEWING",
+  "revision": 5,
+  "state": "DONE",
   "title": "Wave 1 exit review: audit the certified MVP subset against the exit criteria and hand it over with a gauntlet score"
 }

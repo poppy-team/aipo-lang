@@ -166,8 +166,8 @@ pub struct SatisfyDecl {
 /// `import module [as alias] [: names]`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImportDecl {
-    /// Module name or path.
-    pub module_name: Ident,
+    /// Module name or path segments.
+    pub module_name: Vec<Ident>,
     /// Optional alias.
     pub alias: Option<Ident>,
     /// Specific imported names.
