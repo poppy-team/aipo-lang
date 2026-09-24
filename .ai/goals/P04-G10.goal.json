@@ -1,0 +1,147 @@
+{
+  "acceptance": [
+    "The cache verification report exposes verified GitHub source identities, and pruning computes deterministic candidates by comparing those entries with the remote sources in an explicit lockfile.",
+    "aipo package cache prune \u003ccache-dir\u003e --lock \u003clockfile\u003e is a dry-run by default, lists candidates and never mutates the cache; --apply is required for deletion.",
+    "Pruning refuses to delete when cache verification finds any invalid entry, rejects symlink/non-directory targets, and never removes entries referenced by the supplied lockfile.",
+    "The operation performs no network access, authentication, registry access or lockfile mutation and leaves unrelated cache entries untouched.",
+    "Positive and negative tests cover dry-run, apply, retained entries, corrupt caches, symlink targets, missing locks and CLI argument validation; documentation and full repository gates remain green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-24T19:47:59.234069392Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "The cache verification report exposes verified GitHub source identities, and pruning computes deterministic candidates by comparing those entries with the remote sources in an explicit lockfile.",
+          "aipo package cache prune \u003ccache-dir\u003e --lock \u003clockfile\u003e is a dry-run by default, lists candidates and never mutates the cache; --apply is required for deletion.",
+          "Pruning refuses to delete when cache verification finds any invalid entry, rejects symlink/non-directory targets, and never removes entries referenced by the supplied lockfile.",
+          "The operation performs no network access, authentication, registry access or lockfile mutation and leaves unrelated cache entries untouched.",
+          "Positive and negative tests cover dry-run, apply, retained entries, corrupt caches, symlink targets, missing locks and CLI argument validation; documentation and full repository gates remain green."
+        ],
+        "non_goals": [
+          "Automatic or time-based eviction without an explicit lockfile and apply mode",
+          "Deleting corrupt/unknown entries, repairing cache data or changing lockfiles",
+          "Network access, private repositories, authentication, registry publication or semver solving",
+          "Vendor directories, signatures, attestations, submodules and lifecycle execution"
+        ]
+      },
+      "digest": "b0265df2defceb126c9e26655e645a9b045c8318681f1a46383711f1c022f141",
+      "goal_id": "P04-G10",
+      "id": "AMD-002",
+      "reason": "Lock the verified-only cache pruning scope before implementation",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "aipo-package default tests passed 49 cases and all-features tests passed 52 cases, including verified source reporting, unexpected-layout rejection, safe verified removal and existing cache graph behavior.",
+      "kind": "test"
+    },
+    {
+      "description": "aipo-cli package integration tests passed 29 cases by default and 30 with github-http, covering prune dry-run/apply, referenced-entry retention, missing locks, corrupt-cache fail-closed behavior and existing package commands.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo test --workspace --all-targets and cargo test --workspace --all-targets --all-features passed on the final rerun; the default build remains free of ureq and no live GitHub test was used.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets --all-features -- -D warnings, cargo doc default/all-features, node selftest, cargo deny, cargo audit, prumo validate and prumo doctor all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "CLI reference, ADP-007, GitHub fetch security documentation, CHANGELOG and PROJECT_STATE now define lockfile-driven pruning, dry-run/apply semantics and verified-only deletion.",
+      "kind": "doc"
+    },
+    {
+      "description": "prumo tool scan-secrets crates, docs and .ai reported no secrets; git diff --check passed.",
+      "kind": "gate"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T19:46:49.599844231Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T19:46:49.647992688Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T19:46:49.717008172Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-24T19:46:50.053178017Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T19:47:59.234069392Z",
+      "event": "amended",
+      "reason": "Lock the verified-only cache pruning scope before implementation",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-24T20:00:37.101738801Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T20:01:48.133431514Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T20:01:48.151790016Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G10",
+  "lock": {
+    "digest": "b0265df2defceb126c9e26655e645a9b045c8318681f1a46383711f1c022f141",
+    "locked_at": "2026-09-24T19:47:59.234069392Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "Automatic or time-based eviction without an explicit lockfile and apply mode",
+    "Deleting corrupt/unknown entries, repairing cache data or changing lockfiles",
+    "Network access, private repositories, authentication, registry publication or semver solving",
+    "Vendor directories, signatures, attestations, submodules and lifecycle execution"
+  ],
+  "objective": "Add an explicit lockfile-driven cache pruning policy with dry-run by default, verified-only deletion, and an explicit apply mode",
+  "phase": "P04",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Explicit cache pruning"
+}

@@ -7,9 +7,10 @@
 //! aipo build <path> [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
 //! aipo disasm <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
 //! aipo fmt <paths...> [--check]
-//! aipo package lock <package-dir> [--fetch-github --cache <dir>]
+//! aipo package lock <package-dir> [--fetch-github --cache <dir>] [--github-token-env <name>]
 //! aipo package audit <package-dir>
 //! aipo package cache verify <cache-dir>
+//! aipo package cache prune <cache-dir> --lock <lockfile> [--apply]
 //! aipo --version
 //! aipo --help
 //! ```
@@ -32,18 +33,19 @@
 use aipo_diagnostics::{Diagnostic, DiagnosticCode, DiagnosticEmitter, MessageFormat, Severity};
 use aipo_package::{
     CacheOnlyGitHubFetcher, CachedGraphError, GitHubCache, LOCK_FILE_NAME, LocalPackageResolver,
-    Lockfile, MANIFEST_FILE_NAME, Manifest, PackagePathMap, ResolveError, ResolvedLocalPackages,
-    ResolvedPackageGraph, resolve_mixed_package_graph,
+    Lockfile, MANIFEST_FILE_NAME, Manifest, PackagePathMap, PackageSource, ResolveError,
+    ResolvedLocalPackages, ResolvedPackageGraph, resolve_mixed_package_graph,
 };
 #[cfg(feature = "github-http")]
 use aipo_package::{
-    CachedGitHubFetcher, GitHubFetchError, GitHubGraphError, GitHubHttpFetcher, PackageSource,
+    CachedGitHubFetcher, GitHubFetchError, GitHubGraphError, GitHubHttpFetcher, GitHubToken,
     resolve_github_package_graph,
 };
 use aipo_runtime::NativeRegistry;
 use aipo_sema::PreludeSurface;
 use aipo_source::{Source, SourceId, SourceMap};
 use aipo_vm::{Vm, VmError};
+use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
@@ -77,9 +79,10 @@ USAGE:
     aipo build <path> [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo disasm <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo fmt <paths...> [--check]
-    aipo package lock <package-dir> [--fetch-github --cache <dir>]
+    aipo package lock <package-dir> [--fetch-github --cache <dir>] [--github-token-env <name>]
     aipo package audit <package-dir>
     aipo package cache verify <cache-dir>
+    aipo package cache prune <cache-dir> --lock <lockfile> [--apply]
     aipo --version
     aipo --help
 
@@ -98,7 +101,7 @@ EXIT CODES:
 ";
 
 #[cfg(feature = "github-http")]
-const GITHUB_HTTP_USAGE: &str = "\n    aipo package fetch-github <owner/repository> <40-hex-commit> [subpath] --cache <dir> --out <dir>\n";
+const GITHUB_HTTP_USAGE: &str = "\n    aipo package fetch-github <owner/repository> <40-hex-commit> [subpath] --cache <dir> --out <dir> [--github-token-env <name>]\n";
 
 /// Runs the CLI for an argument vector that excludes the program name.
 pub fn run(args: &[String]) -> ExitCode {
@@ -191,15 +194,22 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             package_dir,
             fetch_github,
             cache_dir,
+            github_token_env,
         } => package_command(
             operation,
             &package_dir,
             fetch_github,
             cache_dir.as_deref(),
+            github_token_env.as_deref(),
             out,
             err,
         ),
         Command::PackageCacheVerify { cache_dir } => package_cache_verify(&cache_dir, out, err),
+        Command::PackageCachePrune {
+            cache_dir,
+            lock_path,
+            apply,
+        } => package_cache_prune(&cache_dir, &lock_path, apply, out, err),
         #[cfg(feature = "github-http")]
         Command::PackageFetchGitHub {
             repository,
@@ -207,12 +217,16 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             subpath,
             cache_dir,
             out_dir,
+            github_token_env,
         } => package_fetch_github(
-            &repository,
-            &revision,
-            &subpath,
-            &cache_dir,
-            &out_dir,
+            GitHubFetchOptions {
+                repository: &repository,
+                revision: &revision,
+                subpath: &subpath,
+                cache_dir: &cache_dir,
+                out_dir: &out_dir,
+                github_token_env: github_token_env.as_deref(),
+            },
             out,
             err,
         ),
@@ -254,9 +268,15 @@ enum Command {
         package_dir: PathBuf,
         fetch_github: bool,
         cache_dir: Option<PathBuf>,
+        github_token_env: Option<String>,
     },
     PackageCacheVerify {
         cache_dir: PathBuf,
+    },
+    PackageCachePrune {
+        cache_dir: PathBuf,
+        lock_path: PathBuf,
+        apply: bool,
     },
     #[cfg(feature = "github-http")]
     PackageFetchGitHub {
@@ -265,6 +285,7 @@ enum Command {
         subpath: String,
         cache_dir: PathBuf,
         out_dir: PathBuf,
+        github_token_env: Option<String>,
     },
 }
 
@@ -434,7 +455,11 @@ impl Command {
             }
             "package" => {
                 if args.get(1).is_some_and(|operation| operation == "cache") {
-                    return parse_cache_verify(&args[1..]);
+                    return match args.get(2).map(String::as_str) {
+                        Some("verify") => parse_cache_verify(&args[1..]),
+                        Some("prune") => parse_cache_prune(&args[1..]),
+                        _ => Err("'package cache' requires 'verify' or 'prune'".to_string()),
+                    };
                 }
                 #[cfg(feature = "github-http")]
                 if args
@@ -462,6 +487,7 @@ impl Command {
                 }
                 let mut fetch_github = false;
                 let mut cache_dir = None;
+                let mut github_token_env = None;
                 let mut index = 3;
                 while index < args.len() {
                     match args[index].as_str() {
@@ -500,6 +526,35 @@ impl Command {
                             }
                             cache_dir = Some(PathBuf::from(value));
                         }
+                        "--github-token-env" => {
+                            index += 1;
+                            let value = args.get(index).ok_or_else(|| {
+                                "'--github-token-env' requires a variable name".to_string()
+                            })?;
+                            if !is_valid_github_token_env_name(value) {
+                                return Err("'--github-token-env' requires a valid variable name"
+                                    .to_string());
+                            }
+                            if github_token_env.is_some() {
+                                return Err(
+                                    "'--github-token-env' was provided more than once".to_string()
+                                );
+                            }
+                            github_token_env = Some(value.clone());
+                        }
+                        value if value.starts_with("--github-token-env=") => {
+                            let value = value.trim_start_matches("--github-token-env=");
+                            if !is_valid_github_token_env_name(value) {
+                                return Err("'--github-token-env' requires a valid variable name"
+                                    .to_string());
+                            }
+                            if github_token_env.is_some() {
+                                return Err(
+                                    "'--github-token-env' was provided more than once".to_string()
+                                );
+                            }
+                            github_token_env = Some(value.to_string());
+                        }
                         value if value.starts_with('-') => {
                             return Err(format!("unrecognized package flag '{value}'"));
                         }
@@ -512,11 +567,15 @@ impl Command {
                         "'--fetch-github' and '--cache' must be provided together".to_string()
                     );
                 }
+                if github_token_env.is_some() && !fetch_github {
+                    return Err("'--github-token-env' requires '--fetch-github'".to_string());
+                }
                 Ok(Self::Package {
                     operation,
                     package_dir: PathBuf::from(&args[2]),
                     fetch_github,
                     cache_dir,
+                    github_token_env,
                 })
             }
             "fmt" => {
@@ -556,6 +615,64 @@ fn parse_cache_verify(args: &[String]) -> Result<Command, String> {
     })
 }
 
+fn parse_cache_prune(args: &[String]) -> Result<Command, String> {
+    if args.len() < 4 || args[0] != "cache" || args[1] != "prune" {
+        return Err(
+            "'package cache prune' requires <cache-dir> --lock <lockfile> [--apply]".to_string(),
+        );
+    }
+    if args[2].is_empty() || args[2].starts_with('-') {
+        return Err("'package cache prune' requires a non-empty cache directory".to_string());
+    }
+    let mut lock_path = None;
+    let mut apply = false;
+    let mut index = 3;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--lock" => {
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| "'--lock' requires a lockfile".to_string())?;
+                if value.is_empty() || value.starts_with('-') {
+                    return Err("'--lock' requires a lockfile path".to_string());
+                }
+                if lock_path.is_some() {
+                    return Err("'--lock' was provided more than once".to_string());
+                }
+                lock_path = Some(PathBuf::from(value));
+            }
+            value if value.starts_with("--lock=") => {
+                let value = value.trim_start_matches("--lock=");
+                if value.is_empty() {
+                    return Err("'--lock' requires a lockfile path".to_string());
+                }
+                if lock_path.is_some() {
+                    return Err("'--lock' was provided more than once".to_string());
+                }
+                lock_path = Some(PathBuf::from(value));
+            }
+            "--apply" => {
+                if apply {
+                    return Err("'--apply' was provided more than once".to_string());
+                }
+                apply = true;
+            }
+            value if value.starts_with('-') => {
+                return Err(format!("unrecognized cache prune flag '{value}'"));
+            }
+            value => return Err(format!("unexpected cache prune argument '{value}'")),
+        }
+        index += 1;
+    }
+    let lock_path = lock_path.ok_or_else(|| "'--lock' is required".to_string())?;
+    Ok(Command::PackageCachePrune {
+        cache_dir: PathBuf::from(&args[2]),
+        lock_path,
+        apply,
+    })
+}
+
 #[cfg(feature = "github-http")]
 fn parse_fetch_github(args: &[String]) -> Result<Command, String> {
     if args.len() < 5 {
@@ -579,6 +696,7 @@ fn parse_fetch_github(args: &[String]) -> Result<Command, String> {
     }
     let mut cache_dir = None;
     let mut out_dir = None;
+    let mut github_token_env = None;
     while index < args.len() {
         match args[index].as_str() {
             "--cache" => {
@@ -601,6 +719,29 @@ fn parse_fetch_github(args: &[String]) -> Result<Command, String> {
                 }
                 out_dir = Some(PathBuf::from(value));
             }
+            "--github-token-env" => {
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| "'--github-token-env' requires a variable name".to_string())?;
+                if !is_valid_github_token_env_name(value) {
+                    return Err("'--github-token-env' requires a valid variable name".to_string());
+                }
+                if github_token_env.is_some() {
+                    return Err("'--github-token-env' was provided more than once".to_string());
+                }
+                github_token_env = Some(value.clone());
+            }
+            value if value.starts_with("--github-token-env=") => {
+                let value = value.trim_start_matches("--github-token-env=");
+                if !is_valid_github_token_env_name(value) {
+                    return Err("'--github-token-env' requires a valid variable name".to_string());
+                }
+                if github_token_env.is_some() {
+                    return Err("'--github-token-env' was provided more than once".to_string());
+                }
+                github_token_env = Some(value.to_string());
+            }
             value if value.starts_with('-') => {
                 return Err(format!("unrecognized fetch-github flag '{value}'"));
             }
@@ -614,7 +755,15 @@ fn parse_fetch_github(args: &[String]) -> Result<Command, String> {
         subpath,
         cache_dir: cache_dir.ok_or_else(|| "'--cache' is required".to_string())?,
         out_dir: out_dir.ok_or_else(|| "'--out' is required".to_string())?,
+        github_token_env,
     })
+}
+
+fn is_valid_github_token_env_name(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_')
 }
 
 fn parse_format(value: &str) -> Result<MessageFormat, String> {
@@ -741,6 +890,7 @@ fn package_command(
     package_dir: &Path,
     fetch_github: bool,
     cache_dir: Option<&Path>,
+    github_token_env: Option<&str>,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
@@ -753,7 +903,7 @@ fn package_command(
                 Ok(path) => path,
                 Err(error) => return report_cli_error(error, MessageFormat::Human, out, err),
             };
-            return package_lock_with_github(package_dir, cache_dir, out, err);
+            return package_lock_with_github(package_dir, cache_dir, github_token_env, out, err);
         }
         #[cfg(not(feature = "github-http"))]
         {
@@ -767,7 +917,7 @@ fn package_command(
     }
 
     #[cfg(not(feature = "github-http"))]
-    let _ = cache_dir;
+    let _ = (cache_dir, github_token_env);
 
     let resolved = match resolve_local_package(package_dir, package_dir) {
         Ok(resolved) => resolved,
@@ -816,6 +966,148 @@ fn package_command(
     }
 }
 
+fn package_cache_prune(
+    cache_dir: &Path,
+    lock_path: &Path,
+    apply: bool,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let lock_bytes = match std::fs::read(lock_path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return report_cli_error(
+                CliError::diagnostic(
+                    DiagnosticCode::AIPO_PKG_LOCK_STALE,
+                    format!(
+                        "lockfile '{}' is required for cache pruning",
+                        lock_path.display()
+                    ),
+                ),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+        Err(error) => {
+            return report_cli_error(
+                CliError::Usage(format!("{}: {error}", lock_path.display())),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    let lockfile = match Lockfile::from_bytes(&lock_bytes) {
+        Ok(lockfile) => lockfile,
+        Err(error) => {
+            return report_cli_error(
+                CliError::diagnostic(
+                    DiagnosticCode::AIPO_PKG_LOCK_STALE,
+                    format!("lockfile '{}' is invalid: {error}", lock_path.display()),
+                ),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    let referenced = lockfile
+        .packages
+        .iter()
+        .filter_map(|package| package.source.github_source())
+        .map(|source| source.label())
+        .collect::<BTreeSet<_>>();
+    let cache = GitHubCache::new(cache_dir);
+    let verification = match cache.verify() {
+        Ok(verification) => verification,
+        Err(error) => {
+            return report_cli_error(
+                CliError::diagnostic(DiagnosticCode::AIPO_PKG_FETCH, error.to_string()),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    if !verification.errors.is_empty() {
+        let source = Source::new(SourceId::next(), "<package-cache>", "");
+        let diagnostics = verification
+            .errors
+            .iter()
+            .map(|error| Diagnostic::error(DiagnosticCode::AIPO_PKG_FETCH, error.to_string()))
+            .collect::<Vec<_>>();
+        emit_diagnostics(MessageFormat::Human, &source, &diagnostics, out, err);
+        return EXIT_LANGUAGE_FAILURE;
+    }
+    let candidates = verification
+        .sources
+        .into_iter()
+        .filter(|source| !referenced.contains(&source.label()))
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        let _ = writeln!(out, "cache prune: 0 candidates");
+        return EXIT_SUCCESS;
+    }
+    let mut removed = 0usize;
+    for source in &candidates {
+        if !apply {
+            let _ = writeln!(out, "would remove {}", source.label());
+            continue;
+        }
+        let package_source = PackageSource::GitHub {
+            repository: source.repository.clone(),
+            revision: source.revision.clone(),
+            subpath: source.subpath.clone(),
+        };
+        match cache.remove_verified(&package_source) {
+            Ok(true) => removed += 1,
+            Ok(false) => {}
+            Err(error) => {
+                return report_cli_error(
+                    CliError::diagnostic(DiagnosticCode::AIPO_PKG_FETCH, error.to_string()),
+                    MessageFormat::Human,
+                    out,
+                    err,
+                );
+            }
+        }
+    }
+    if apply {
+        let _ = writeln!(out, "cache prune: removed {removed} candidates");
+    } else {
+        let _ = writeln!(
+            out,
+            "cache prune: {} candidates (dry-run)",
+            candidates.len()
+        );
+    }
+    EXIT_SUCCESS
+}
+
+#[cfg(feature = "github-http")]
+fn github_token_from_env(name: Option<&str>) -> Result<Option<GitHubToken>, CliError> {
+    let Some(name) = name else {
+        return Ok(None);
+    };
+    let value = std::env::var(name).map_err(|error| match error {
+        std::env::VarError::NotPresent => CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_FETCH,
+            format!("GitHub token environment variable '{name}' is not set"),
+        ),
+        std::env::VarError::NotUnicode(_) => CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_FETCH,
+            format!("GitHub token environment variable '{name}' is not valid Unicode"),
+        ),
+    })?;
+    GitHubToken::new(&value).map(Some).map_err(|error| {
+        CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_FETCH,
+            format!("GitHub token from environment variable '{name}' is invalid: {error}"),
+        )
+    })
+}
+
 fn package_cache_verify(cache_dir: &Path, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let cache = GitHubCache::new(cache_dir);
     let verification = match cache.verify() {
@@ -847,6 +1139,7 @@ fn package_cache_verify(cache_dir: &Path, out: &mut dyn Write, err: &mut dyn Wri
 fn package_lock_with_github(
     package_dir: &Path,
     cache_dir: &Path,
+    github_token_env: Option<&str>,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
@@ -877,7 +1170,14 @@ fn package_lock_with_github(
         }
     };
     let cache = GitHubCache::new(cache_dir);
-    let transport = GitHubHttpFetcher::new();
+    let token = match github_token_from_env(github_token_env) {
+        Ok(token) => token,
+        Err(error) => return report_cli_error(error, MessageFormat::Human, out, err),
+    };
+    let transport = match token {
+        Some(token) => GitHubHttpFetcher::with_token(token),
+        None => GitHubHttpFetcher::new(),
+    };
     let fetcher = CachedGitHubFetcher::new(&cache, transport);
     let resolved = match resolve_mixed_package_graph(
         root_input,
@@ -951,15 +1251,29 @@ fn package_lock_with_github(
 }
 
 #[cfg(feature = "github-http")]
+struct GitHubFetchOptions<'a> {
+    repository: &'a str,
+    revision: &'a str,
+    subpath: &'a str,
+    cache_dir: &'a Path,
+    out_dir: &'a Path,
+    github_token_env: Option<&'a str>,
+}
+
+#[cfg(feature = "github-http")]
 fn package_fetch_github(
-    repository: &str,
-    revision: &str,
-    subpath: &str,
-    cache_dir: &Path,
-    out_dir: &Path,
+    options: GitHubFetchOptions<'_>,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
+    let GitHubFetchOptions {
+        repository,
+        revision,
+        subpath,
+        cache_dir,
+        out_dir,
+        github_token_env,
+    } = options;
     let source = match PackageSource::github_at(repository, revision, subpath) {
         Ok(source) => source,
         Err(error) => {
@@ -972,7 +1286,14 @@ fn package_fetch_github(
         }
     };
     let cache = GitHubCache::new(cache_dir);
-    let transport = GitHubHttpFetcher::new();
+    let token = match github_token_from_env(github_token_env) {
+        Ok(token) => token,
+        Err(error) => return report_cli_error(error, MessageFormat::Human, out, err),
+    };
+    let transport = match token {
+        Some(token) => GitHubHttpFetcher::with_token(token),
+        None => GitHubHttpFetcher::new(),
+    };
     let fetcher = CachedGitHubFetcher::new(&cache, transport);
     let resolved = match resolve_github_package_graph(source.clone(), &fetcher) {
         Ok(resolved) => resolved,

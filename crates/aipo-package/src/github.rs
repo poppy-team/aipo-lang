@@ -61,7 +61,7 @@ pub enum GitHubFetchError {
     Transport {
         /// Source label.
         source: String,
-        /// Transport detail without credentials or response bodies.
+        /// Sanitized transport detail without response bodies.
         detail: String,
     },
     /// GitHub returned an unexpected HTTP status.

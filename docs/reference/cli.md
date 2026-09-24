@@ -15,9 +15,10 @@ The stable command surface comprises (`run`/`check`/`fmt` stable since Wave 1,
 - `aipo build <file.aipo> [--out <dir>] [--package-cache <dir>]`: Emits a JavaScript bundle (`app.js` + `aipo-runtime.js` + `app.js.map`, ESM with ECMA-426 source maps) to `<dir>` (`<parent>/dist` by default). Fails with the same diagnostic codes as `check` and emits no files on failure; runtime faults surface when `node` runs the bundle, with the same codes as `run`.
 - `aipo disasm <file.aipo|file.aibc> [--package-cache <dir>]`: Disassembles a source or bytecode file, printing a human-readable listing. Source files (`.aipo`) include line/column annotations; bytecode files (`.aibc`) show raw instruction offsets.
 - `aipo fmt [files...]`: Formats source files idempotently according to canonical indentation rules.
-- `aipo package lock <package-dir> [--fetch-github --cache <dir>]`: Resolves a local package graph and writes `aipo.lock` in the package root. The explicit fetch form also resolves pinned GitHub dependencies and may access the network.
+- `aipo package lock <package-dir> [--fetch-github --cache <dir>] [--github-token-env <name>]`: Resolves a local package graph and writes `aipo.lock` in the package root. The explicit fetch form also resolves pinned GitHub dependencies and may access the network. Authentication is opt-in through an environment-variable name.
 - `aipo package audit <package-dir>`: Resolves a local package graph and verifies the existing `aipo.lock` without rewriting it.
 - `aipo package cache verify <cache-dir>`: Audits every existing GitHub cache entry without network access or filesystem mutation.
+- `aipo package cache prune <cache-dir> --lock <lockfile> [--apply]`: Removes only verified cache entries not referenced by the explicit lockfile; dry-run is the default.
 
 ## Local package entries
 
@@ -39,10 +40,11 @@ network-free. Enable it explicitly when fetching a public package or locking a m
 ```bash
 cargo run -p aipo-cli --features github-http -- \\
   package fetch-github owner/repository 0123456789abcdef0123456789abcdef01234567 \\
-  [subpath] --cache <cache-dir> --out <output-dir>
+  [subpath] --cache <cache-dir> --out <output-dir> [--github-token-env <name>]
 
 cargo run -p aipo-cli --features github-http -- \\
-  package lock ./my-package --fetch-github --cache <cache-dir>
+  package lock ./my-package --fetch-github --cache <cache-dir> \\
+  [--github-token-env <name>]
 ```
 
 The command accepts only a public repository slug, an exact lowercase 40-hex commit, and a safe
@@ -54,12 +56,16 @@ SemVer version:
 "acme.http" = { version = "1.0.0", type = "github", repository = "acme/packages", revision = "0123456789abcdef0123456789abcdef01234567", subpath = "." }
 ```
 
-The command sends public GET requests without `Authorization` or other credentials, rejects
-redirects, applies a timeout and a 4 MiB response limit, and uses the explicit cache root. It
-recursively fetches pinned GitHub dependencies, validates coordinates, versions, capabilities and
-cycles, enforces a 256-package graph bound, and writes a complete graph lockfile in the output
-snapshot. Each artifact is cached and digest-verified independently. The output directory must be
-empty. A remote artifact cannot declare a local `path` dependency in this slice.
+By default, the command sends public GET requests without `Authorization` or other credentials.
+With `--github-token-env <name>`, the named environment variable supplies a validated bearer
+credential. The variable value is never accepted as a CLI value, persisted, logged or included in
+diagnostics. Missing, empty or control-character-bearing values fail before the request. Requests
+always use HTTPS, reject redirects, apply a timeout and a 4 MiB response limit, and use the explicit
+cache root. The command recursively fetches pinned GitHub dependencies, validates coordinates,
+versions, capabilities and cycles, enforces a 256-package graph bound, and writes a complete graph
+lockfile in the output snapshot. Each artifact is cached and digest-verified independently. The
+output directory must be empty. A remote artifact cannot declare a local `path` dependency in this
+slice.
 
 For a mixed local root, `package lock --fetch-github` leaves local path inputs in the project and
 fetches only its pinned GitHub edges into the same explicit cache. This is the only lock form that
@@ -97,6 +103,21 @@ It continues after independent entry failures and reports each failure as `AIPO_
 A missing or empty cache is a successful zero-entry report. Verification never creates, repairs,
 deletes, prunes or fetches cache data and is available in the default network-free build.
 
+## Cache pruning and retention
+
+Pruning is lockfile-driven and deliberately conservative:
+
+```bash
+aipo package cache prune .aipo-cache --lock aipo.lock
+aipo package cache prune .aipo-cache --lock aipo.lock --apply
+```
+
+The first form is a dry-run and lists verified entries not referenced by the lockfile. `--apply`
+is required for deletion. If verification finds any invalid entry, pruning fails closed and deletes
+nothing; corrupt or unknown entries are never removed automatically. Sources referenced by the
+lockfile are always retained, and the lockfile itself is never changed. Pruning performs no network
+access, authentication or registry lookup.
+
 
 
 ```text
@@ -105,9 +126,10 @@ aipo check <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
 aipo build <path> [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
 aipo disasm <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
 aipo fmt <paths...> [--check]
-aipo package lock <package-dir> [--fetch-github --cache <dir>]
+aipo package lock <package-dir> [--fetch-github --cache <dir>] [--github-token-env <name>]
 aipo package audit <package-dir>
 aipo package cache verify <cache-dir>
+aipo package cache prune <cache-dir> --lock <lockfile> [--apply]
 aipo --version
 aipo --help
 ```
@@ -173,8 +195,10 @@ aipo package audit .
 Lock a local root with pinned GitHub dependencies, then consume it offline:
 ```bash
 cargo run -p aipo-cli --features github-http -- \\
-  package lock . --fetch-github --cache .aipo-cache
+  package lock . --fetch-github --cache .aipo-cache \\
+  --github-token-env AIPO_GITHUB_TOKEN
 aipo check src/main.aipo --package-cache .aipo-cache
 aipo package cache verify .aipo-cache
+aipo package cache prune .aipo-cache --lock aipo.lock
 ```
 

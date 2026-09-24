@@ -39,7 +39,7 @@ mod http {
         pub timeout: Duration,
         /// Maximum bytes accepted for one response.
         pub max_response_bytes: u64,
-        /// User-Agent sent without credentials.
+        /// User-Agent sent with every request.
         pub user_agent: String,
     }
 
@@ -52,6 +52,84 @@ mod http {
             }
         }
     }
+
+    /// Opaque GitHub credential supplied by the host.
+    #[derive(Clone, PartialEq, Eq)]
+    pub struct GitHubToken(String);
+
+    impl GitHubToken {
+        /// Creates a token without exposing its value through formatting or diagnostics.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`GitHubTokenError`] for empty, oversized or control-character-bearing values.
+        pub fn new(value: impl Into<String>) -> Result<Self, GitHubTokenError> {
+            let value = value.into();
+            if value.is_empty() {
+                return Err(GitHubTokenError::Empty);
+            }
+            if value.len() > MAX_GITHUB_TOKEN_BYTES {
+                return Err(GitHubTokenError::TooLong {
+                    limit: MAX_GITHUB_TOKEN_BYTES,
+                });
+            }
+            if value
+                .chars()
+                .any(|character| character.is_control() || character.is_whitespace())
+            {
+                return Err(GitHubTokenError::InvalidCharacter);
+            }
+            Ok(Self(value))
+        }
+
+        pub(super) fn value(&self) -> &str {
+            &self.0
+        }
+    }
+
+    impl std::fmt::Debug for GitHubToken {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter
+                .debug_tuple("GitHubToken")
+                .field(&"[REDACTED]")
+                .finish()
+        }
+    }
+
+    /// Validation failure for an environment-backed GitHub credential.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum GitHubTokenError {
+        /// The credential was empty.
+        Empty,
+        /// The credential exceeded the bounded transport size.
+        TooLong {
+            /// Maximum accepted credential size.
+            limit: usize,
+        },
+        /// The credential contained whitespace or control characters.
+        InvalidCharacter,
+    }
+
+    impl std::fmt::Display for GitHubTokenError {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Empty => write!(formatter, "GitHub token is empty"),
+                Self::TooLong { limit } => {
+                    write!(formatter, "GitHub token exceeds {limit} bytes")
+                }
+                Self::InvalidCharacter => {
+                    write!(
+                        formatter,
+                        "GitHub token contains whitespace or control characters"
+                    )
+                }
+            }
+        }
+    }
+
+    impl std::error::Error for GitHubTokenError {}
+
+    pub(super) const MAX_GITHUB_TOKEN_BYTES: usize = 4096;
 
     /// A bounded response returned by an HTTP transport.
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,16 +184,23 @@ mod http {
         ) -> Result<GitHubHttpResponse, GitHubHttpTransportError>;
     }
 
-    /// Rustls-backed ureq transport with redirects disabled and no credentials.
+    /// Rustls-backed ureq transport with redirects disabled and an optional bearer credential.
     #[derive(Debug, Clone)]
     pub struct UreqGitHubTransport {
         agent: ureq::Agent,
+        token: Option<GitHubToken>,
     }
 
     impl UreqGitHubTransport {
         /// Builds a transport from the public policy configuration.
         #[must_use]
         pub fn new(config: &GitHubHttpConfig) -> Self {
+            Self::with_token(config, None)
+        }
+
+        /// Builds a transport with an optional host-supplied credential.
+        #[must_use]
+        pub fn with_token(config: &GitHubHttpConfig, token: Option<GitHubToken>) -> Self {
             let config = ureq::Agent::config_builder()
                 .timeout_global(Some(config.timeout))
                 .https_only(true)
@@ -128,6 +213,7 @@ mod http {
                 .build();
             Self {
                 agent: config.into(),
+                token,
             }
         }
     }
@@ -138,12 +224,19 @@ mod http {
             url: &str,
             max_bytes: u64,
         ) -> Result<GitHubHttpResponse, GitHubHttpTransportError> {
-            let mut response = self
+            if !is_allowed_github_url(url) {
+                return Err(GitHubHttpTransportError::Request(
+                    "GitHub URL host is not allowed".to_string(),
+                ));
+            }
+            let mut request = self
                 .agent
                 .get(url)
-                .header("Accept", "application/octet-stream")
-                .call()
-                .map_err(map_ureq_error)?;
+                .header("Accept", "application/octet-stream");
+            if let Some(authorization) = bearer_authorization(self.token.as_ref()) {
+                request = request.header("Authorization", &authorization);
+            }
+            let mut response = request.call().map_err(map_ureq_error)?;
             if let Some(length) = response
                 .headers()
                 .get("content-length")
@@ -172,6 +265,15 @@ mod http {
                 body,
             })
         }
+    }
+
+    pub(super) fn is_allowed_github_url(url: &str) -> bool {
+        url.strip_prefix("https://raw.githubusercontent.com/")
+            .is_some_and(|path| !path.is_empty() && !path.contains('?'))
+    }
+
+    pub(super) fn bearer_authorization(token: Option<&GitHubToken>) -> Option<String> {
+        token.map(|token| format!("Bearer {}", token.value()))
     }
 
     fn map_ureq_error(error: ureq::Error) -> GitHubHttpTransportError {
@@ -203,6 +305,21 @@ mod http {
         pub fn with_config(config: &GitHubHttpConfig) -> Self {
             Self {
                 transport: UreqGitHubTransport::new(config),
+                max_response_bytes: config.max_response_bytes,
+            }
+        }
+
+        /// Builds the default transport with a host-supplied credential.
+        #[must_use]
+        pub fn with_token(token: GitHubToken) -> Self {
+            Self::with_config_and_token(&GitHubHttpConfig::default(), token)
+        }
+
+        /// Builds a transport with explicit limits and a host-supplied credential.
+        #[must_use]
+        pub fn with_config_and_token(config: &GitHubHttpConfig, token: GitHubToken) -> Self {
+            Self {
+                transport: UreqGitHubTransport::with_token(config, Some(token)),
                 max_response_bytes: config.max_response_bytes,
             }
         }
@@ -393,7 +510,7 @@ mod http {
 #[cfg(feature = "http")]
 pub use http::{
     GitHubHttpConfig, GitHubHttpFetcher, GitHubHttpResponse, GitHubHttpTransport,
-    GitHubHttpTransportError, UreqGitHubTransport,
+    GitHubHttpTransportError, GitHubToken, GitHubTokenError, UreqGitHubTransport,
 };
 
 /// Error produced by the local GitHub artifact cache.
@@ -472,6 +589,8 @@ pub struct GitHubCache {
 pub struct CacheVerification {
     /// Number of cache namespace entries inspected.
     pub entries: usize,
+    /// Verified GitHub sources in deterministic namespace order.
+    pub sources: Vec<GitHubSource>,
     /// Independent entry errors found during verification.
     pub errors: Vec<GitHubCacheError>,
 }
@@ -513,6 +632,7 @@ impl GitHubCache {
         let Some(namespace) = self.existing_namespace()? else {
             return Ok(CacheVerification {
                 entries: 0,
+                sources: Vec::new(),
                 errors: Vec::new(),
             });
         };
@@ -529,6 +649,7 @@ impl GitHubCache {
         }
         names.sort();
         let entry_count = names.len();
+        let mut sources = Vec::new();
         let mut errors = Vec::new();
         for name in names {
             let entry_dir = namespace.join(&name);
@@ -601,10 +722,13 @@ impl GitHubCache {
             }
             if let Err(error) = self.load_entry_at(&source, &entry_dir) {
                 errors.push(error);
+            } else {
+                sources.push(source);
             }
         }
         Ok(CacheVerification {
             entries: entry_count,
+            sources,
             errors,
         })
     }
@@ -675,6 +799,7 @@ impl GitHubCache {
             }
         }
         let source_label = github.label();
+        validate_entry_layout(entry_dir, &source_label)?;
         let metadata_bytes = read_bounded(
             &entry_dir.join("metadata.json"),
             self.max_file_bytes,
@@ -723,6 +848,60 @@ impl GitHubCache {
             GitHubArtifact::new(manifest_bytes, entry_bytes),
             entry_path,
         )))
+    }
+
+    /// Removes one cache entry only after revalidating its complete contents.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GitHubCacheError`] for invalid sources, unsafe roots, corrupt entries or I/O
+    /// failures. A missing entry returns `Ok(false)`.
+    pub fn remove_verified(&self, source: &PackageSource) -> Result<bool, GitHubCacheError> {
+        let github = source
+            .github_source()
+            .ok_or_else(|| GitHubCacheError::UnsupportedSource {
+                source: source.location(),
+            })?;
+        source
+            .validate()
+            .map_err(|error| GitHubCacheError::Corrupt {
+                source: github.label(),
+                detail: error.to_string(),
+            })?;
+        let Some(namespace) = self.existing_namespace()? else {
+            return Ok(false);
+        };
+        let entry_dir = namespace.join(cache_key(&github));
+        match fs::symlink_metadata(&entry_dir) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(GitHubCacheError::InvalidRoot {
+                    path: entry_dir.display().to_string(),
+                    detail: format!("symbolic links are not allowed for {}", github.label()),
+                });
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(GitHubCacheError::InvalidRoot {
+                    path: entry_dir.display().to_string(),
+                    detail: "cache entry is not a directory".to_string(),
+                });
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => {
+                return Err(GitHubCacheError::Io {
+                    path: entry_dir.display().to_string(),
+                    detail: error.to_string(),
+                });
+            }
+        }
+        if self.load_entry_at(&github, &entry_dir)?.is_none() {
+            return Ok(false);
+        }
+        fs::remove_dir_all(&entry_dir).map_err(|error| GitHubCacheError::Io {
+            path: entry_dir.display().to_string(),
+            detail: error.to_string(),
+        })?;
+        Ok(true)
     }
 
     /// Atomically stores and verifies an artifact.
@@ -1347,6 +1526,33 @@ fn write_new_file(
     Ok(())
 }
 
+fn validate_entry_layout(entry_dir: &Path, source_label: &str) -> Result<(), GitHubCacheError> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(entry_dir).map_err(|error| GitHubCacheError::Io {
+        path: entry_dir.display().to_string(),
+        detail: error.to_string(),
+    })? {
+        let entry = entry.map_err(|error| GitHubCacheError::Io {
+            path: entry_dir.display().to_string(),
+            detail: error.to_string(),
+        })?;
+        names.push(entry.file_name().to_string_lossy().into_owned());
+    }
+    names.sort();
+    let expected = vec![
+        "entry.bin".to_string(),
+        "manifest.toml".to_string(),
+        "metadata.json".to_string(),
+    ];
+    if names != expected {
+        return Err(GitHubCacheError::Corrupt {
+            source: source_label.to_string(),
+            detail: "cache entry contains unexpected files".to_string(),
+        });
+    }
+    Ok(())
+}
+
 fn read_bounded(
     path: &Path,
     max_bytes: u64,
@@ -1455,6 +1661,36 @@ mod tests {
 
     fn entry() -> Vec<u8> {
         b"export answer\nfn answer()\nreturn 42\nend\n".to_vec()
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn github_token_is_validated_and_redacted() {
+        let token = GitHubToken::new("github-token-value").expect("token");
+        let debug = format!("{token:?}");
+        assert!(debug.contains("REDACTED"));
+        assert!(!debug.contains("github-token-value"));
+        assert!(matches!(GitHubToken::new(""), Err(GitHubTokenError::Empty)));
+        assert!(matches!(
+            GitHubToken::new("token\nvalue"),
+            Err(GitHubTokenError::InvalidCharacter)
+        ));
+        assert!(matches!(
+            GitHubToken::new("x".repeat(http::MAX_GITHUB_TOKEN_BYTES + 1)),
+            Err(GitHubTokenError::TooLong { .. })
+        ));
+        let authorization = http::bearer_authorization(Some(&token)).expect("authorization");
+        assert!(authorization.starts_with("Bearer "));
+        assert!(!http::bearer_authorization(None).is_some());
+        assert!(http::is_allowed_github_url(
+            "https://raw.githubusercontent.com/acme/packages/main/aipo.toml"
+        ));
+        assert!(!http::is_allowed_github_url(
+            "https://example.com/aipo.toml"
+        ));
+        assert!(!http::is_allowed_github_url(
+            "https://raw.githubusercontent.com.evil.test/aipo.toml"
+        ));
     }
 
     #[cfg(feature = "http")]
@@ -1674,6 +1910,7 @@ mod tests {
             .expect("store");
         let verification = cache.verify().expect("valid cache verifies");
         assert_eq!(verification.entries, 1);
+        assert_eq!(verification.sources.len(), 1);
         assert!(verification.errors.is_empty());
 
         let entry_path = root
@@ -1687,6 +1924,33 @@ mod tests {
             verification.errors.as_slice(),
             [GitHubCacheError::Corrupt { .. }]
         ));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_remove_verified_deletes_only_a_valid_entry() {
+        let source = PackageSource::github_at(
+            "acme/packages",
+            "0123456789abcdef0123456789abcdef01234567",
+            ".",
+        )
+        .expect("source");
+        let root = std::env::temp_dir().join(format!(
+            "aipo-cache-remove-verified-{}-{}",
+            std::process::id(),
+            NEXT_CACHE_TEMP.fetch_add(1, Ordering::Relaxed)
+        ));
+        let cache = GitHubCache::new(&root);
+        cache
+            .store(&source, GitHubArtifact::new(manifest(), entry()))
+            .expect("store");
+        assert!(cache.remove_verified(&source).expect("remove succeeds"));
+        assert!(!cache.load(&source).expect("load after remove").is_some());
+        assert!(
+            !cache
+                .remove_verified(&source)
+                .expect("missing remove is clean")
+        );
         let _ = fs::remove_dir_all(root);
     }
 

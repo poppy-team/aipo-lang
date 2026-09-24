@@ -73,6 +73,98 @@ fn mixed_lock_fetch_requires_the_http_feature() {
 
 #[cfg(feature = "github-http")]
 #[test]
+fn github_token_flag_rejects_invalid_environment_names() {
+    for flag in ["--github-token-env", "--github-token-env=bad-name"] {
+        let mut arguments = vec![
+            "package".to_string(),
+            "lock".to_string(),
+            ".".to_string(),
+            "--fetch-github".to_string(),
+            "--cache".to_string(),
+            ".cache".to_string(),
+            flag.to_string(),
+        ];
+        if flag == "--github-token-env" {
+            arguments.push("bad-name".to_string());
+        }
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(aipo_cli::run_with(&arguments, &mut stdout, &mut stderr), 2);
+        assert!(String::from_utf8_lossy(&stderr).contains("valid variable name"));
+    }
+}
+
+#[cfg(feature = "github-http")]
+#[test]
+fn github_token_env_is_explicit_for_direct_fetches() {
+    let name = format!(
+        "AIPO_CLI_TEST_MISSING_GITHUB_TOKEN_{}_{}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    );
+    assert!(std::env::var_os(&name).is_none());
+    let arguments = vec![
+        "package".to_string(),
+        "fetch-github".to_string(),
+        "acme/packages".to_string(),
+        "0123456789abcdef0123456789abcdef01234567".to_string(),
+        "--cache".to_string(),
+        ".cache".to_string(),
+        "--out".to_string(),
+        ".out".to_string(),
+        "--github-token-env".to_string(),
+        name.clone(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+    assert_eq!(code, EXIT_LANGUAGE_FAILURE);
+    let stderr = String::from_utf8_lossy(&stderr);
+    assert!(stderr.contains("AIPO_PKG_FETCH"));
+    assert!(stderr.contains(&name));
+    assert!(stderr.contains("is not set"));
+}
+
+#[cfg(feature = "github-http")]
+#[test]
+fn github_token_env_is_explicit_for_mixed_locks() {
+    let tree = TempTree::new("missing-token");
+    let package = tree.path().join("app");
+    write_package(
+        &package,
+        "acme.app",
+        &[],
+        "src/main.aipo",
+        "export value\nfn value()\nreturn 1\nend\n",
+    );
+    let name = format!(
+        "AIPO_CLI_TEST_MISSING_GITHUB_TOKEN_{}_{}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    );
+    assert!(std::env::var_os(&name).is_none());
+    let arguments = vec![
+        "package".to_string(),
+        "lock".to_string(),
+        package.to_string_lossy().into_owned(),
+        "--fetch-github".to_string(),
+        "--cache".to_string(),
+        tree.path().join("cache").to_string_lossy().into_owned(),
+        "--github-token-env".to_string(),
+        name.clone(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+    assert_eq!(code, EXIT_LANGUAGE_FAILURE);
+    let stderr = String::from_utf8_lossy(&stderr);
+    assert!(stderr.contains("AIPO_PKG_FETCH"));
+    assert!(stderr.contains(&name));
+    assert!(stderr.contains("is not set"));
+}
+
+#[cfg(feature = "github-http")]
+#[test]
 fn fetch_github_requires_explicit_cache_and_output_directories() {
     let arguments = vec![
         "package".to_string(),
@@ -270,6 +362,91 @@ fn package_cache_flag_requires_a_value() {
     let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
     assert_eq!(code, 2);
     assert!(String::from_utf8_lossy(&stderr).contains("--package-cache requires"));
+}
+
+#[test]
+fn cache_prune_dry_run_and_apply_only_remove_unreferenced_entries() {
+    let tree = TempTree::new("cache-prune");
+    let (entry, cache) = write_cached_remote_snapshot(&tree);
+    let lock_path = entry
+        .parent()
+        .expect("entry parent")
+        .parent()
+        .expect("package root")
+        .join("aipo.lock");
+    let candidate_source = PackageSource::github_at(
+        "acme/other",
+        "0123456789abcdef0123456789abcdef01234567",
+        "packages/other",
+    )
+    .expect("candidate source");
+    GitHubCache::new(&cache)
+        .store(
+            &candidate_source,
+            GitHubArtifact::new(
+                b"[package]\nname = \"acme.other\"\nversion = \"1.0.0\"\nentry = \"src/main.aipo\"\n",
+                b"export answer\nfn answer()\nreturn 7\nend\n",
+            ),
+        )
+        .expect("candidate stores");
+    assert_eq!(cache_entry_count(&cache), 2);
+
+    let (code, stdout, stderr) = run_cache_prune(&cache, &lock_path, false);
+    assert_eq!(code, EXIT_SUCCESS, "{stderr}");
+    assert!(stdout.contains(&candidate_source.github_source().expect("source").label()));
+    assert!(stdout.contains("dry-run"));
+    assert_eq!(cache_entry_count(&cache), 2);
+
+    let (code, stdout, stderr) = run_cache_prune(&cache, &lock_path, true);
+    assert_eq!(code, EXIT_SUCCESS, "{stderr}");
+    assert!(stdout.contains("removed 1 candidates"));
+    assert_eq!(cache_entry_count(&cache), 1);
+}
+
+#[test]
+fn cache_prune_refuses_corrupt_entries_without_deleting() {
+    let tree = TempTree::new("cache-prune-corrupt");
+    let (entry, cache) = write_cached_remote_snapshot(&tree);
+    let lock_path = entry
+        .parent()
+        .expect("entry parent")
+        .parent()
+        .expect("package root")
+        .join("aipo.lock");
+    let candidate_source = PackageSource::github_at(
+        "acme/other",
+        "0123456789abcdef0123456789abcdef01234567",
+        "packages/other",
+    )
+    .expect("candidate source");
+    let cache_handle = GitHubCache::new(&cache);
+    cache_handle
+        .store(
+            &candidate_source,
+            GitHubArtifact::new(
+                b"[package]\nname = \"acme.other\"\nversion = \"1.0.0\"\nentry = \"src/main.aipo\"\n",
+                b"export answer\nfn answer()\nreturn 7\nend\n",
+            ),
+        )
+        .expect("candidate stores");
+    let candidate_dir = cache_entry_dir_for_source(&cache, &candidate_source);
+    std::fs::write(candidate_dir.join("entry.bin"), b"corrupt").expect("corrupt entry writes");
+
+    let (code, _stdout, stderr) = run_cache_prune(&cache, &lock_path, true);
+    assert_eq!(code, EXIT_LANGUAGE_FAILURE);
+    assert!(stderr.contains("AIPO_PKG_FETCH"), "{stderr}");
+    assert_eq!(cache_entry_count(&cache), 2);
+}
+
+#[test]
+fn cache_prune_requires_an_existing_lockfile() {
+    let tree = TempTree::new("cache-prune-missing-lock");
+    let (_entry, cache) = write_cached_remote_snapshot(&tree);
+    let missing_lock = tree.path().join("missing.lock");
+    let (code, _stdout, stderr) = run_cache_prune(&cache, &missing_lock, true);
+    assert_eq!(code, EXIT_LANGUAGE_FAILURE);
+    assert!(stderr.contains("AIPO_PKG_LOCK_STALE"), "{stderr}");
+    assert_eq!(cache_entry_count(&cache), 1);
 }
 
 #[test]
@@ -786,6 +963,28 @@ fn run_cache_verify(cache_dir: &Path) -> (u8, String, String) {
     )
 }
 
+fn run_cache_prune(cache_dir: &Path, lock_path: &Path, apply: bool) -> (u8, String, String) {
+    let mut arguments = vec![
+        "package".to_string(),
+        "cache".to_string(),
+        "prune".to_string(),
+        cache_dir.to_string_lossy().into_owned(),
+        "--lock".to_string(),
+        lock_path.to_string_lossy().into_owned(),
+    ];
+    if apply {
+        arguments.push("--apply".to_string());
+    }
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+    (
+        code,
+        String::from_utf8_lossy(&stdout).into_owned(),
+        String::from_utf8_lossy(&stderr).into_owned(),
+    )
+}
+
 fn cache_entry_dir(cache_dir: &Path) -> PathBuf {
     std::fs::read_dir(cache_dir.join("github-v1"))
         .expect("cache namespace reads")
@@ -793,6 +992,24 @@ fn cache_entry_dir(cache_dir: &Path) -> PathBuf {
         .expect("cache entry exists")
         .expect("cache entry reads")
         .path()
+}
+
+fn cache_entry_count(cache_dir: &Path) -> usize {
+    std::fs::read_dir(cache_dir.join("github-v1"))
+        .expect("cache namespace reads")
+        .count()
+}
+
+fn cache_entry_dir_for_source(cache_dir: &Path, source: &PackageSource) -> PathBuf {
+    let label = source.github_source().expect("GitHub source").label();
+    std::fs::read_dir(cache_dir.join("github-v1"))
+        .expect("cache namespace reads")
+        .map(|entry| entry.expect("cache entry reads").path())
+        .find(|path| {
+            std::fs::read_to_string(path.join("metadata.json"))
+                .is_ok_and(|metadata| metadata.contains(&label))
+        })
+        .expect("cache entry for source")
 }
 
 fn write_cached_remote_snapshot(tree: &TempTree) -> (PathBuf, PathBuf) {

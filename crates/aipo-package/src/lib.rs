@@ -4,8 +4,8 @@
 //! manifest and lockfile models, SHA-256 content digests, local path discovery, pinned
 //! GitHub source resolution, and the dependency graph used by later compiler and CLI
 //! integration. The default feature set performs no network access and exposes the verified local
-//! cache API plus read-only cache verification. The optional `http` feature adds an explicit public
-//! GitHub fetcher; package scripts are never executed.
+//! cache API, read-only cache verification and verified-only pruning. The optional `http` feature
+//! adds an explicit public GitHub fetcher; package scripts are never executed.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -38,7 +38,7 @@ pub use github_http::{
 #[cfg(feature = "http")]
 pub use github_http::{
     GitHubHttpConfig, GitHubHttpFetcher, GitHubHttpResponse, GitHubHttpTransport,
-    GitHubHttpTransportError, UreqGitHubTransport,
+    GitHubHttpTransportError, GitHubToken, GitHubTokenError, UreqGitHubTransport,
 };
 pub use lock::{
     GitHubSource, Lock, LockPackage, LockSource, LockedPackage, Lockfile, PackageSource,

@@ -30,7 +30,7 @@
 | `byteorder` 1.5.0 | bytecode encode/decode (`aipo-bytecode`) | yes — `unsafe` slice casts in cited paths | Pinned 1.5.0; `cargo audit` green; used only for explicit-endian u16/i16 operands | P01-G02 maintainer inventory, `cargo audit` 0 findings |
 | `itoa` 1.0.18 | transitive via `serde_json` | yes — `unsafe` digit-table writes | Same justification as `serde_json` | P01-G02 maintainer inventory, `cargo audit` 0 findings |
 | `zmij` 1.0.23 | transitive JSON machinery | yes — confined `unsafe` blocks | `cargo audit` green | P01-G02 maintainer inventory, `cargo audit` 0 findings |
-| `ureq` 3.4.2 + Rustls stack | opt-in public GitHub package fetch (`aipo-package/http`, `aipo-cli/github-http`) | yes — transitive `ring`/Rustls primitives; `ureq` itself forbids unsafe | Explicitly feature-gated, pinned, HTTPS-only, no credentials, bounded responses and redirects disabled; each source in an explicit recursive graph is cached/output locally and digest-verified | P04-G05/P04-G06, explicit user approval for public read-only adapter |
+| `ureq` 3.4.2 + Rustls stack | opt-in GitHub package fetch (`aipo-package/http`, `aipo-cli/github-http`) | yes — transitive `ring`/Rustls primitives; `ureq` itself forbids unsafe | Explicitly feature-gated, pinned, HTTPS-only, public by default, optional environment-backed bearer auth, bounded responses and redirects disabled; each source in an explicit recursive graph is cached/output locally and digest-verified | P04-G05/P04-G06/P04-G11, explicit user approval for opt-in GitHub fetch/auth adapter |
 
 Verified unsafe-free (explicit `#![deny/forbid(unsafe_code)]` upstream): `unicode-segmentation`
 1.13.3, `tinyvec` 1.13.3, `serde_derive`, `quote`.

@@ -6,6 +6,14 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 ## [Não lançado]
 
 ### Adicionado
+- **CLI — Autenticação GitHub opt-in (P04-G11)**:
+  - `aipo package fetch-github` e `aipo package lock --fetch-github` aceitam `--github-token-env <name>`; o valor do token vem exclusivamente da variável de ambiente nomeada.
+  - Credenciais bearer são validadas, redacted em `Debug` e nunca são aceitas diretamente como argumentos, persistidas, logadas ou incluídas em diagnostics; sem a flag, o comportamento público sem `Authorization` permanece o padrão.
+  - Tokens ausentes, vazios ou com whitespace/caracteres de controle falham com `AIPO_PKG_FETCH` antes de qualquer request; redirects continuam bloqueados.
+- **CLI — Prune explícito do cache (P04-G10)**:
+  - `aipo package cache prune <dir> --lock <lockfile>` é dry-run por padrão e lista somente entradas verificadas não referenciadas pelo lockfile.
+  - `--apply` é obrigatório para remover; qualquer entrada inválida bloqueia toda a operação, sources referenciadas são preservadas e o lockfile nunca é alterado.
+  - A política não usa rede, autenticação ou registry e não remove entradas corruptas/desconhecidas.
 - **CLI — Verificação read-only do cache (P04-G09)**:
   - `aipo package cache verify <dir>` audita todas as entradas GitHub existentes, validando symlinks, arquivos regulares, metadata, source/key, manifest e digests SHA-256.
   - Entradas corruptas são reportadas como `AIPO_PKG_FETCH`; cache ausente ou vazio retorna sucesso com zero entradas.

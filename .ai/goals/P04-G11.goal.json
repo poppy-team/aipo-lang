@@ -1,0 +1,147 @@
+{
+  "acceptance": [
+    "GitHub authentication is opt-in through an explicit environment-variable name on fetch/lock commands; token values are never accepted as CLI arguments, persisted, logged or included in diagnostics.",
+    "The HTTP transport sends a validated bearer credential only when configured, keeps redirects disabled and preserves the public-only default when no token is supplied.",
+    "Missing, empty or control-character-bearing environment credentials fail with stable package diagnostics before any request is made.",
+    "Both package fetch-github and mixed-root package lock support the same authentication flag, while the default network-free build and cache verification/pruning remain unauthenticated.",
+    "Tests cover token redaction/validation, CLI flag parsing, missing environment credentials and fake-transport request behavior; documentation and full repository gates remain green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-24T20:02:48.552736394Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "GitHub authentication is opt-in through an explicit environment-variable name on fetch/lock commands; token values are never accepted as CLI arguments, persisted, logged or included in diagnostics.",
+          "The HTTP transport sends a validated bearer credential only when configured, keeps redirects disabled and preserves the public-only default when no token is supplied.",
+          "Missing, empty or control-character-bearing environment credentials fail with stable package diagnostics before any request is made.",
+          "Both package fetch-github and mixed-root package lock support the same authentication flag, while the default network-free build and cache verification/pruning remain unauthenticated.",
+          "Tests cover token redaction/validation, CLI flag parsing, missing environment credentials and fake-transport request behavior; documentation and full repository gates remain green."
+        ],
+        "non_goals": [
+          "OAuth flows, token acquisition, credential storage, keychains or automatic credential discovery",
+          "Sending credentials to non-GitHub hosts, following redirects with credentials or logging request headers",
+          "Registry authentication, publication, semver solving, vendor trees, submodules or lifecycle execution",
+          "Changing the public-only default or existing cache/lockfile formats"
+        ]
+      },
+      "digest": "aeec6be2cd9233b892bbf3260394f389cbe0d25058b4641fc0b95607b1a83c33",
+      "goal_id": "P04-G11",
+      "id": "AMD-002",
+      "reason": "Lock the opt-in GitHub authentication boundary before implementation",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "aipo-package default tests passed 49 cases and all-features tests passed 53 cases, including token validation/redaction, bearer construction, fixed-host enforcement and existing cache behavior.",
+      "kind": "test"
+    },
+    {
+      "description": "aipo-cli package integration tests passed 29 cases by default and 33 with github-http, covering invalid environment names, missing credentials before requests and both direct fetch and mixed-lock flag paths.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo test --workspace --all-targets and cargo test --workspace --all-targets --all-features passed on the final runs; no live GitHub request was used.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, default/all-features clippy with -D warnings, default/all-features cargo doc, node selftest, cargo deny, cargo audit, prumo validate and prumo doctor all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "CLI reference, ADP-007, GitHub fetch security documentation, security contract, CHANGELOG and PROJECT_STATE now document opt-in environment-backed authentication and its boundaries.",
+      "kind": "doc"
+    },
+    {
+      "description": "prumo tool scan-secrets crates docs and .ai reported no secrets; git diff --check passed.",
+      "kind": "gate"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T20:02:31.793007924Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T20:02:31.811275365Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T20:02:31.821306881Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-24T20:02:31.833865536Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T20:02:48.552736394Z",
+      "event": "amended",
+      "reason": "Lock the opt-in GitHub authentication boundary before implementation",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-24T20:23:22.172633509Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T20:23:22.182415045Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T20:23:22.188599216Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G11",
+  "lock": {
+    "digest": "aeec6be2cd9233b892bbf3260394f389cbe0d25058b4641fc0b95607b1a83c33",
+    "locked_at": "2026-09-24T20:02:48.552736394Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "OAuth flows, token acquisition, credential storage, keychains or automatic credential discovery",
+    "Sending credentials to non-GitHub hosts, following redirects with credentials or logging request headers",
+    "Registry authentication, publication, semver solving, vendor trees, submodules or lifecycle execution",
+    "Changing the public-only default or existing cache/lockfile formats"
+  ],
+  "objective": "Add explicit environment-backed GitHub authentication for public package fetch and mixed-root locking without persisting or logging credentials",
+  "phase": "P04",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Opt-in GitHub authentication"
+}
