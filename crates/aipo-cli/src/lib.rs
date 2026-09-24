@@ -2,13 +2,14 @@
 //! `docs/reference/cli.md`:
 //!
 //! ```text
-//! aipo run <path> [--message-format=<human|jsonl>]
-//! aipo check <path> [--message-format=<human|jsonl>]
-//! aipo build <path> [--out <dir>] [--message-format=<human|jsonl>]
-//! aipo disasm <path> [--message-format=<human|jsonl>]
+//! aipo run <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+//! aipo check <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+//! aipo build <path> [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
+//! aipo disasm <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
 //! aipo fmt <paths...> [--check]
-//! aipo package lock <package-dir>
+//! aipo package lock <package-dir> [--fetch-github --cache <dir>]
 //! aipo package audit <package-dir>
+//! aipo package cache verify <cache-dir>
 //! aipo --version
 //! aipo --help
 //! ```
@@ -29,14 +30,15 @@
 #![warn(missing_docs)]
 
 use aipo_diagnostics::{Diagnostic, DiagnosticCode, DiagnosticEmitter, MessageFormat, Severity};
+use aipo_package::{
+    CacheOnlyGitHubFetcher, CachedGraphError, GitHubCache, LOCK_FILE_NAME, LocalPackageResolver,
+    Lockfile, MANIFEST_FILE_NAME, Manifest, PackagePathMap, ResolveError, ResolvedLocalPackages,
+    ResolvedPackageGraph, resolve_mixed_package_graph,
+};
 #[cfg(feature = "github-http")]
 use aipo_package::{
-    CachedGitHubFetcher, GitHubCache, GitHubFetchError, GitHubGraphError, GitHubHttpFetcher,
-    PackageSource, resolve_github_package_graph,
-};
-use aipo_package::{
-    LOCK_FILE_NAME, LocalPackageResolver, Lockfile, MANIFEST_FILE_NAME, PackagePathMap,
-    ResolveError, ResolvedLocalPackages, ResolvedPackageGraph,
+    CachedGitHubFetcher, GitHubFetchError, GitHubGraphError, GitHubHttpFetcher, PackageSource,
+    resolve_github_package_graph,
 };
 use aipo_runtime::NativeRegistry;
 use aipo_sema::PreludeSurface;
@@ -70,13 +72,14 @@ pub const USAGE: &str = "\
 aipo — Aipo language toolchain
 
 USAGE:
-    aipo run <path> [--message-format=<human|jsonl>]
-    aipo check <path> [--message-format=<human|jsonl>]
-    aipo build <path> [--out <dir>] [--message-format=<human|jsonl>]
-    aipo disasm <path> [--message-format=<human|jsonl>]
+    aipo run <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+    aipo check <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+    aipo build <path> [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
+    aipo disasm <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo fmt <paths...> [--check]
-    aipo package lock <package-dir>
+    aipo package lock <package-dir> [--fetch-github --cache <dir>]
     aipo package audit <package-dir>
+    aipo package cache verify <cache-dir>
     aipo --version
     aipo --help
 
@@ -86,7 +89,7 @@ COMMANDS:
     build    Emit a JavaScript bundle (app.js + aipo-runtime.js + app.js.map)
     disasm   Disassemble a source file (.aipo) or bytecode file (.aibc)
     fmt      Format source files in place; --check reports drift without writing
-    package  Create or audit a local package lockfile
+    package  Create or audit a local package lockfile, or verify the package cache
 
 EXIT CODES:
     0  success
@@ -140,19 +143,63 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             let _ = writeln!(out, "aipo {}", env!("CARGO_PKG_VERSION"));
             EXIT_SUCCESS
         }
-        Command::Run { path, format } => execute(&path, format, out, err, Action::Run),
-        Command::Check { path, format } => execute(&path, format, out, err, Action::Check),
+        Command::Run {
+            path,
+            format,
+            package_cache,
+        } => execute(
+            &path,
+            format,
+            package_cache.as_deref(),
+            out,
+            err,
+            Action::Run,
+        ),
+        Command::Check {
+            path,
+            format,
+            package_cache,
+        } => execute(
+            &path,
+            format,
+            package_cache.as_deref(),
+            out,
+            err,
+            Action::Check,
+        ),
         Command::Build {
             path,
             out_dir,
             format,
-        } => build_bundle(&path, out_dir.as_deref(), format, out, err),
-        Command::Disasm { path, format } => disassemble_command(&path, format, out, err),
+            package_cache,
+        } => build_bundle(
+            &path,
+            out_dir.as_deref(),
+            format,
+            package_cache.as_deref(),
+            out,
+            err,
+        ),
+        Command::Disasm {
+            path,
+            format,
+            package_cache,
+        } => disassemble_command(&path, format, package_cache.as_deref(), out, err),
         Command::Fmt { paths, check } => format_files(&paths, check, out, err),
         Command::Package {
             operation,
             package_dir,
-        } => package_command(operation, &package_dir, out, err),
+            fetch_github,
+            cache_dir,
+        } => package_command(
+            operation,
+            &package_dir,
+            fetch_github,
+            cache_dir.as_deref(),
+            out,
+            err,
+        ),
+        Command::PackageCacheVerify { cache_dir } => package_cache_verify(&cache_dir, out, err),
         #[cfg(feature = "github-http")]
         Command::PackageFetchGitHub {
             repository,
@@ -180,19 +227,23 @@ enum Command {
     Run {
         path: PathBuf,
         format: MessageFormat,
+        package_cache: Option<PathBuf>,
     },
     Check {
         path: PathBuf,
         format: MessageFormat,
+        package_cache: Option<PathBuf>,
     },
     Build {
         path: PathBuf,
         out_dir: Option<PathBuf>,
         format: MessageFormat,
+        package_cache: Option<PathBuf>,
     },
     Disasm {
         path: PathBuf,
         format: MessageFormat,
+        package_cache: Option<PathBuf>,
     },
     Fmt {
         paths: Vec<PathBuf>,
@@ -201,6 +252,11 @@ enum Command {
     Package {
         operation: PackageOperation,
         package_dir: PathBuf,
+        fetch_github: bool,
+        cache_dir: Option<PathBuf>,
+    },
+    PackageCacheVerify {
+        cache_dir: PathBuf,
     },
     #[cfg(feature = "github-http")]
     PackageFetchGitHub {
@@ -241,6 +297,7 @@ impl Command {
             "run" | "check" | "disasm" => {
                 let mut path = None;
                 let mut format = MessageFormat::Human;
+                let mut package_cache = None;
                 let rest = &args[1..];
                 let mut index = 0;
                 while index < rest.len() {
@@ -253,6 +310,30 @@ impl Command {
                             .get(index)
                             .ok_or_else(|| "--message-format requires a value".to_string())?;
                         format = parse_format(value)?;
+                    } else if let Some(value) = arg.strip_prefix("--package-cache=") {
+                        if value.is_empty() {
+                            return Err(
+                                "--package-cache requires a non-empty directory".to_string()
+                            );
+                        }
+                        if package_cache.is_some() {
+                            return Err("'--package-cache' was provided more than once".to_string());
+                        }
+                        package_cache = Some(PathBuf::from(value));
+                    } else if arg == "--package-cache" {
+                        index += 1;
+                        let value = rest
+                            .get(index)
+                            .ok_or_else(|| "--package-cache requires a directory".to_string())?;
+                        if value.is_empty() || value.starts_with('-') {
+                            return Err(
+                                "--package-cache requires a non-empty directory".to_string()
+                            );
+                        }
+                        if package_cache.is_some() {
+                            return Err("'--package-cache' was provided more than once".to_string());
+                        }
+                        package_cache = Some(PathBuf::from(value));
                     } else if arg.starts_with('-') {
                         return Err(format!("unrecognized flag '{arg}'"));
                     } else if path.is_some() {
@@ -265,17 +346,30 @@ impl Command {
 
                 let path = path.ok_or_else(|| format!("'{first}' requires a path argument"))?;
                 if first == "run" {
-                    Ok(Self::Run { path, format })
+                    Ok(Self::Run {
+                        path,
+                        format,
+                        package_cache,
+                    })
                 } else if first == "check" {
-                    Ok(Self::Check { path, format })
+                    Ok(Self::Check {
+                        path,
+                        format,
+                        package_cache,
+                    })
                 } else {
-                    Ok(Self::Disasm { path, format })
+                    Ok(Self::Disasm {
+                        path,
+                        format,
+                        package_cache,
+                    })
                 }
             }
             "build" => {
                 let mut path = None;
                 let mut out_dir = None;
                 let mut format = MessageFormat::Human;
+                let mut package_cache = None;
                 let rest = &args[1..];
                 let mut index = 0;
                 while index < rest.len() {
@@ -296,6 +390,30 @@ impl Command {
                         out_dir = Some(PathBuf::from(value));
                     } else if let Some(value) = arg.strip_prefix("--out=") {
                         out_dir = Some(PathBuf::from(value));
+                    } else if let Some(value) = arg.strip_prefix("--package-cache=") {
+                        if value.is_empty() {
+                            return Err(
+                                "--package-cache requires a non-empty directory".to_string()
+                            );
+                        }
+                        if package_cache.is_some() {
+                            return Err("'--package-cache' was provided more than once".to_string());
+                        }
+                        package_cache = Some(PathBuf::from(value));
+                    } else if arg == "--package-cache" {
+                        index += 1;
+                        let value = rest
+                            .get(index)
+                            .ok_or_else(|| "--package-cache requires a directory".to_string())?;
+                        if value.is_empty() || value.starts_with('-') {
+                            return Err(
+                                "--package-cache requires a non-empty directory".to_string()
+                            );
+                        }
+                        if package_cache.is_some() {
+                            return Err("'--package-cache' was provided more than once".to_string());
+                        }
+                        package_cache = Some(PathBuf::from(value));
                     } else if arg.starts_with('-') {
                         return Err(format!("unrecognized flag '{arg}'"));
                     } else if path.is_some() {
@@ -311,9 +429,13 @@ impl Command {
                     path,
                     out_dir,
                     format,
+                    package_cache,
                 })
             }
             "package" => {
+                if args.get(1).is_some_and(|operation| operation == "cache") {
+                    return parse_cache_verify(&args[1..]);
+                }
                 #[cfg(feature = "github-http")]
                 if args
                     .get(1)
@@ -325,9 +447,6 @@ impl Command {
                     return Err(
                         "'package' requires 'lock' or 'audit' and a package directory".to_string(),
                     );
-                }
-                if args.len() > 3 {
-                    return Err(format!("unexpected argument '{}'", args[3]));
                 }
                 let operation = match args[1].as_str() {
                     "lock" => PackageOperation::Lock,
@@ -341,9 +460,63 @@ impl Command {
                 if args[2].starts_with('-') {
                     return Err(format!("unrecognized flag '{}'", args[2]));
                 }
+                let mut fetch_github = false;
+                let mut cache_dir = None;
+                let mut index = 3;
+                while index < args.len() {
+                    match args[index].as_str() {
+                        "--fetch-github" => {
+                            if operation != PackageOperation::Lock {
+                                return Err("'--fetch-github' is only valid with 'package lock'"
+                                    .to_string());
+                            }
+                            if fetch_github {
+                                return Err(
+                                    "'--fetch-github' was provided more than once".to_string()
+                                );
+                            }
+                            fetch_github = true;
+                        }
+                        "--cache" => {
+                            index += 1;
+                            let value = args
+                                .get(index)
+                                .ok_or_else(|| "'--cache' requires a directory".to_string())?;
+                            if value.is_empty() || value.starts_with('-') {
+                                return Err("'--cache' requires a non-empty directory".to_string());
+                            }
+                            if cache_dir.is_some() {
+                                return Err("'--cache' was provided more than once".to_string());
+                            }
+                            cache_dir = Some(PathBuf::from(value));
+                        }
+                        value if value.starts_with("--cache=") => {
+                            let value = value.trim_start_matches("--cache=");
+                            if value.is_empty() {
+                                return Err("'--cache' requires a non-empty directory".to_string());
+                            }
+                            if cache_dir.is_some() {
+                                return Err("'--cache' was provided more than once".to_string());
+                            }
+                            cache_dir = Some(PathBuf::from(value));
+                        }
+                        value if value.starts_with('-') => {
+                            return Err(format!("unrecognized package flag '{value}'"));
+                        }
+                        value => return Err(format!("unexpected package argument '{value}'")),
+                    }
+                    index += 1;
+                }
+                if fetch_github != cache_dir.is_some() {
+                    return Err(
+                        "'--fetch-github' and '--cache' must be provided together".to_string()
+                    );
+                }
                 Ok(Self::Package {
                     operation,
                     package_dir: PathBuf::from(&args[2]),
+                    fetch_github,
+                    cache_dir,
                 })
             }
             "fmt" => {
@@ -366,6 +539,21 @@ impl Command {
             other => Err(format!("unrecognized command '{other}'")),
         }
     }
+}
+
+fn parse_cache_verify(args: &[String]) -> Result<Command, String> {
+    if args.len() != 3 {
+        return Err("'package cache verify' requires exactly one cache directory".to_string());
+    }
+    if args[0] != "cache" || args[1] != "verify" {
+        return Err("expected 'package cache verify'".to_string());
+    }
+    if args[2].is_empty() || args[2].starts_with('-') {
+        return Err("'package cache verify' requires a non-empty directory".to_string());
+    }
+    Ok(Command::PackageCacheVerify {
+        cache_dir: PathBuf::from(&args[2]),
+    })
 }
 
 #[cfg(feature = "github-http")]
@@ -551,9 +739,36 @@ fn report_cli_error(
 fn package_command(
     operation: PackageOperation,
     package_dir: &Path,
+    fetch_github: bool,
+    cache_dir: Option<&Path>,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
+    if fetch_github {
+        #[cfg(feature = "github-http")]
+        {
+            let cache_dir = cache_dir
+                .ok_or_else(|| CliError::Usage("'--fetch-github' requires '--cache'".to_string()));
+            let cache_dir = match cache_dir {
+                Ok(path) => path,
+                Err(error) => return report_cli_error(error, MessageFormat::Human, out, err),
+            };
+            return package_lock_with_github(package_dir, cache_dir, out, err);
+        }
+        #[cfg(not(feature = "github-http"))]
+        {
+            return report_cli_error(
+                CliError::Usage("'--fetch-github' requires the 'github-http' feature".to_string()),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    }
+
+    #[cfg(not(feature = "github-http"))]
+    let _ = cache_dir;
+
     let resolved = match resolve_local_package(package_dir, package_dir) {
         Ok(resolved) => resolved,
         Err(error) => return report_cli_error(error, MessageFormat::Human, out, err),
@@ -599,6 +814,140 @@ fn package_command(
             EXIT_SUCCESS
         }
     }
+}
+
+fn package_cache_verify(cache_dir: &Path, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let cache = GitHubCache::new(cache_dir);
+    let verification = match cache.verify() {
+        Ok(verification) => verification,
+        Err(error) => {
+            return report_cli_error(
+                CliError::diagnostic(DiagnosticCode::AIPO_PKG_FETCH, error.to_string()),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    if verification.errors.is_empty() {
+        let _ = writeln!(out, "cache verified: {} entries", verification.entries);
+        return EXIT_SUCCESS;
+    }
+    let source = Source::new(SourceId::next(), "<package-cache>", "");
+    let diagnostics = verification
+        .errors
+        .iter()
+        .map(|error| Diagnostic::error(DiagnosticCode::AIPO_PKG_FETCH, error.to_string()))
+        .collect::<Vec<_>>();
+    emit_diagnostics(MessageFormat::Human, &source, &diagnostics, out, err);
+    EXIT_LANGUAGE_FAILURE
+}
+
+#[cfg(feature = "github-http")]
+fn package_lock_with_github(
+    package_dir: &Path,
+    cache_dir: &Path,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let discovered = match LocalPackageResolver::new(package_dir).discover_local() {
+        Ok(discovered) => discovered,
+        Err(error) => {
+            return report_cli_error(
+                classify_package_error(error, package_dir),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    let root_coordinate = discovered.root.clone();
+    let root_input = match discovered.inputs.get(&root_coordinate) {
+        Some(input) => input.clone(),
+        None => {
+            return report_cli_error(
+                CliError::diagnostic(
+                    DiagnosticCode::AIPO_PKG_RESOLUTION,
+                    "local package discovery did not produce a root package".to_string(),
+                ),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    let cache = GitHubCache::new(cache_dir);
+    let transport = GitHubHttpFetcher::new();
+    let fetcher = CachedGitHubFetcher::new(&cache, transport);
+    let resolved = match resolve_mixed_package_graph(
+        root_input,
+        discovered.inputs.clone(),
+        discovered.paths,
+        &cache,
+        &fetcher,
+    ) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            return report_cli_error(
+                classify_cached_graph_error(error),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    if resolved.graph.root != root_coordinate {
+        return report_cli_error(
+            CliError::diagnostic(
+                DiagnosticCode::AIPO_PKG_RESOLUTION,
+                format!(
+                    "resolved root '{}' does not match local root '{}'",
+                    resolved.graph.root, root_coordinate
+                ),
+            ),
+            MessageFormat::Human,
+            out,
+            err,
+        );
+    }
+    let lockfile = match resolved.graph.to_lockfile() {
+        Ok(lockfile) => lockfile,
+        Err(error) => {
+            return report_cli_error(
+                CliError::diagnostic(
+                    DiagnosticCode::AIPO_PKG_LOCK_STALE,
+                    format!("mixed package graph could not be locked: {error}"),
+                ),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    let contents = match lockfile.to_toml() {
+        Ok(contents) => contents,
+        Err(error) => {
+            return report_cli_error(
+                CliError::diagnostic(
+                    DiagnosticCode::AIPO_PKG_LOCK_STALE,
+                    format!("package lockfile could not be serialized: {error}"),
+                ),
+                MessageFormat::Human,
+                out,
+                err,
+            );
+        }
+    };
+    if let Err(error) = write_lockfile(package_dir, &contents) {
+        return report_cli_error(error, MessageFormat::Human, out, err);
+    }
+    let _ = writeln!(
+        out,
+        "locked {} at {}",
+        resolved.graph.root,
+        package_dir.join(LOCK_FILE_NAME).display()
+    );
+    EXIT_SUCCESS
 }
 
 #[cfg(feature = "github-http")]
@@ -854,12 +1203,20 @@ fn write_lockfile(package_root: &Path, contents: &str) -> Result<(), CliError> {
 fn execute(
     path: &Path,
     format: MessageFormat,
+    package_cache: Option<&Path>,
     out: &mut dyn Write,
     err: &mut dyn Write,
     action: Action,
 ) -> u8 {
     // Pre-compiled `.aibc` files skip the frontend pipeline entirely.
     if path.extension().and_then(|ext| ext.to_str()) == Some("aibc") {
+        if package_cache.is_some() {
+            let _ = writeln!(
+                err,
+                "error: --package-cache is not supported for .aibc files"
+            );
+            return EXIT_USAGE;
+        }
         if action == Action::Check {
             let _ = writeln!(err, "error: `check` is not supported for .aibc files");
             return EXIT_USAGE;
@@ -870,7 +1227,7 @@ fn execute(
     let LoadedSource {
         source,
         package_paths,
-    } = match load_source_entry(path) {
+    } = match load_source_entry(path, package_cache) {
         Ok(loaded) => loaded,
         Err(error) => return report_cli_error(error, format, out, err),
     };
@@ -948,10 +1305,18 @@ fn execute_bytecode(
 fn disassemble_command(
     path: &Path,
     format: MessageFormat,
+    package_cache: Option<&Path>,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
     if path.extension().and_then(|ext| ext.to_str()) == Some("aibc") {
+        if package_cache.is_some() {
+            let _ = writeln!(
+                err,
+                "error: --package-cache is not supported for .aibc files"
+            );
+            return EXIT_USAGE;
+        }
         // For .aibc files: read bytes, deserialize, disassemble without source.
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
@@ -979,7 +1344,7 @@ fn disassemble_command(
         let LoadedSource {
             source,
             package_paths,
-        } = match load_source_entry(path) {
+        } = match load_source_entry(path, package_cache) {
             Ok(loaded) => loaded,
             Err(error) => return report_cli_error(error, format, out, err),
         };
@@ -1010,13 +1375,14 @@ fn build_bundle(
     path: &Path,
     out_dir: Option<&Path>,
     format: MessageFormat,
+    package_cache: Option<&Path>,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
     let LoadedSource {
         source,
         package_paths,
-    } = match load_source_entry(path) {
+    } = match load_source_entry(path, package_cache) {
         Ok(loaded) => loaded,
         Err(error) => return report_cli_error(error, format, out, err),
     };
@@ -1217,9 +1583,9 @@ fn format_files(paths: &[PathBuf], check: bool, out: &mut dyn Write, err: &mut d
     exit
 }
 
-fn load_source_entry(path: &Path) -> Result<LoadedSource, CliError> {
+fn load_source_entry(path: &Path, package_cache: Option<&Path>) -> Result<LoadedSource, CliError> {
     let text = read_source(path).map_err(CliError::Usage)?;
-    let package_paths = resolve_local_package_paths(path)?;
+    let package_paths = resolve_local_package_paths(path, package_cache, Some(text.as_bytes()))?;
     let source = Source::new(SourceId::next(), path.display().to_string(), &text);
     Ok(LoadedSource {
         source,
@@ -1227,15 +1593,160 @@ fn load_source_entry(path: &Path) -> Result<LoadedSource, CliError> {
     })
 }
 
-fn resolve_local_package_paths(entry: &Path) -> Result<Option<PackagePathMap>, CliError> {
+fn resolve_local_package_paths(
+    entry: &Path,
+    package_cache: Option<&Path>,
+    entry_bytes: Option<&[u8]>,
+) -> Result<Option<PackagePathMap>, CliError> {
     let Some(manifest_path) = find_ancestor_manifest(entry) else {
+        if package_cache.is_some() {
+            return Err(CliError::Usage(
+                "--package-cache requires a nearby aipo.toml".to_string(),
+            ));
+        }
         return Ok(None);
     };
     let package_root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    if let Some(cache_dir) = package_cache {
+        return resolve_cached_package_paths(
+            entry,
+            &manifest_path,
+            package_root,
+            cache_dir,
+            entry_bytes,
+        )
+        .map(Some);
+    }
     let resolved = resolve_local_package(package_root, &manifest_path)?;
     let lock_path = package_root.join(LOCK_FILE_NAME);
     validate_existing_lock(&lock_path, &resolved.graph, false)?;
     Ok(Some(resolved.paths))
+}
+
+fn resolve_cached_package_paths(
+    entry: &Path,
+    manifest_path: &Path,
+    package_root: &Path,
+    cache_dir: &Path,
+    entry_bytes: Option<&[u8]>,
+) -> Result<PackagePathMap, CliError> {
+    let lock_path = package_root.join(LOCK_FILE_NAME);
+    let lock_bytes = match std::fs::read(&lock_path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(CliError::diagnostic(
+                DiagnosticCode::AIPO_PKG_LOCK_STALE,
+                format!(
+                    "lockfile '{}' is required with --package-cache",
+                    lock_path.display()
+                ),
+            ));
+        }
+        Err(error) => return Err(CliError::Usage(format!("{}: {error}", lock_path.display()))),
+    };
+    let lockfile = Lockfile::from_bytes(&lock_bytes).map_err(|error| {
+        CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_LOCK_STALE,
+            format!("lockfile '{}' is invalid: {error}", lock_path.display()),
+        )
+    })?;
+    let manifest_bytes = std::fs::read(manifest_path)
+        .map_err(|error| CliError::Usage(format!("{}: {error}", manifest_path.display())))?;
+    let manifest = Manifest::from_bytes(&manifest_bytes).map_err(|error| {
+        CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_RESOLUTION,
+            format!("{}: {error}", manifest_path.display()),
+        )
+    })?;
+    let locked_root = lockfile.package(manifest.coordinate()).ok_or_else(|| {
+        CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_LOCK_STALE,
+            format!(
+                "lockfile '{}' does not contain root package '{}'",
+                lock_path.display(),
+                manifest.name
+            ),
+        )
+    })?;
+    if matches!(
+        &locked_root.source,
+        aipo_package::PackageSource::GitHub { .. }
+    ) && manifest
+        .dependencies
+        .iter()
+        .any(|dependency| matches!(&dependency.source, aipo_package::PackageSource::Path { .. }))
+    {
+        return Err(CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_RESOLUTION,
+            "a remote package root cannot declare local path dependencies",
+        ));
+    }
+    let discovered = LocalPackageResolver::new(package_root)
+        .discover_local()
+        .map_err(|error| classify_package_error(error, manifest_path))?;
+    let entry_bytes = entry_bytes.ok_or_else(|| {
+        CliError::Usage("cached package resolution requires entry bytes".to_string())
+    })?;
+    let root_coordinate = manifest.name.clone();
+    let root_input = discovered
+        .inputs
+        .get(&root_coordinate)
+        .cloned()
+        .ok_or_else(|| {
+            CliError::diagnostic(
+                DiagnosticCode::AIPO_PKG_RESOLUTION,
+                format!("root package '{}' was not discovered", root_coordinate),
+            )
+        })?;
+    let expected_entry = discovered
+        .paths
+        .get(&root_coordinate)
+        .cloned()
+        .ok_or_else(|| {
+            CliError::diagnostic(
+                DiagnosticCode::AIPO_PKG_RESOLUTION,
+                format!("root package '{}' has no entry path", root_coordinate),
+            )
+        })?;
+    let actual_entry = std::fs::canonicalize(entry)
+        .map_err(|error| CliError::Usage(format!("{}: {error}", entry.display())))?;
+    if std::fs::canonicalize(&expected_entry).ok().as_ref() != Some(&actual_entry)
+        || root_input.entry_bytes != entry_bytes
+    {
+        return Err(CliError::diagnostic(
+            DiagnosticCode::AIPO_PKG_LOCK_STALE,
+            format!(
+                "entry '{}' does not match the verified package manifest and entry",
+                entry.display()
+            ),
+        ));
+    }
+    let root_input = root_input.with_source(locked_root.source.clone());
+    let mut local_inputs = discovered.inputs;
+    local_inputs.insert(root_coordinate.clone(), root_input.clone());
+    let cache = GitHubCache::new(cache_dir);
+    let cache_only = CacheOnlyGitHubFetcher::new(&cache);
+    let resolved = resolve_mixed_package_graph(
+        root_input,
+        local_inputs,
+        discovered.paths,
+        &cache,
+        &cache_only,
+    )
+    .map_err(classify_cached_graph_error)?;
+    validate_existing_lock(&lock_path, &resolved.graph, true)?;
+    Ok(resolved.paths)
+}
+
+fn classify_cached_graph_error(error: CachedGraphError) -> CliError {
+    match error {
+        CachedGraphError::Cache(_) | CachedGraphError::Fetch(_) => {
+            CliError::diagnostic(DiagnosticCode::AIPO_PKG_FETCH, error.to_string())
+        }
+        CachedGraphError::Resolve(_) => {
+            CliError::diagnostic(DiagnosticCode::AIPO_PKG_RESOLUTION, error.to_string())
+        }
+    }
 }
 
 fn find_ancestor_manifest(entry: &Path) -> Option<PathBuf> {

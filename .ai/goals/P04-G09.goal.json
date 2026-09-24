@@ -1,0 +1,147 @@
+{
+  "acceptance": [
+    "GitHubCache exposes a read-only verification report that scans every existing cache entry deterministically, validates namespace and entry safety, metadata source identity, manifest and entry digests, and never creates, repairs, deletes or fetches anything.",
+    "aipo package cache verify \u003cdir\u003e reports a stable package diagnostic for an unsafe root or corrupt entry, succeeds with a zero-entry report for a missing or empty cache, and leaves the filesystem unchanged.",
+    "Verification rejects symlinks, non-regular files, malformed metadata, source/key mismatches, malformed manifests and digest mismatches while continuing to inspect independent entries.",
+    "The operation is available in the default network-free build, performs no authentication or registry access, and source commands plus fetch/lock operations retain their existing cache policies.",
+    "Positive and negative tests cover valid, missing, empty, corrupt, symlinked and unexpected cache contents, CLI argument validation and read-only behavior; documentation and full repository gates remain green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-24T19:02:52.907652429Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "GitHubCache exposes a read-only verification report that scans every existing cache entry deterministically, validates namespace and entry safety, metadata source identity, manifest and entry digests, and never creates, repairs, deletes or fetches anything.",
+          "aipo package cache verify \u003cdir\u003e reports a stable package diagnostic for an unsafe root or corrupt entry, succeeds with a zero-entry report for a missing or empty cache, and leaves the filesystem unchanged.",
+          "Verification rejects symlinks, non-regular files, malformed metadata, source/key mismatches, malformed manifests and digest mismatches while continuing to inspect independent entries.",
+          "The operation is available in the default network-free build, performs no authentication or registry access, and source commands plus fetch/lock operations retain their existing cache policies.",
+          "Positive and negative tests cover valid, missing, empty, corrupt, symlinked and unexpected cache contents, CLI argument validation and read-only behavior; documentation and full repository gates remain green."
+        ],
+        "non_goals": [
+          "Cache deletion, pruning, eviction, garbage collection or automatic repair",
+          "Network access, private repositories, authentication, registry publication or semver solving",
+          "Changing the existing lockfile, source-command or fetch semantics",
+          "Vendor directories, signatures, attestations and live GitHub integration tests"
+        ]
+      },
+      "digest": "16765645e664eb745c36e5258c4b2dcef6074079a20432b0ee22f91825ddbdd2",
+      "goal_id": "P04-G09",
+      "id": "AMD-002",
+      "reason": "Lock the read-only cache verification scope before implementation",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "aipo-package default tests passed 48 cases and all-features tests passed 51 cases, including valid/missing/corrupt/unexpected cache verification, regular-file and symlink safety, source/key checks and digest verification.",
+      "kind": "test"
+    },
+    {
+      "description": "aipo-cli package integration tests passed 26 cases by default and 27 with github-http, covering read-only cache verification, missing-root no-create behavior, corruption diagnostics, argument validation and existing package behavior.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo test --workspace --all-targets and cargo test --workspace --all-targets --all-features passed; the default build remains free of ureq and no live GitHub test was used.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets --all-features -- -D warnings, cargo doc default/all-features, node selftest, cargo deny, cargo audit, prumo validate and prumo doctor all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "CLI reference, ADP-007, GitHub fetch security documentation, CHANGELOG and PROJECT_STATE now define the read-only cache verification policy and its no-network/no-mutation boundary.",
+      "kind": "doc"
+    },
+    {
+      "description": "prumo tool scan-secrets crates, docs and .ai reported no secrets; git diff --check passed.",
+      "kind": "gate"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T19:01:47.341425571Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T19:02:01.314336647Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T19:02:01.331471161Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-24T19:02:01.345058641Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T19:02:52.907652429Z",
+      "event": "amended",
+      "reason": "Lock the read-only cache verification scope before implementation",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-24T19:19:03.080201313Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T19:21:18.320309556Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T19:21:18.356378373Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G09",
+  "lock": {
+    "digest": "16765645e664eb745c36e5258c4b2dcef6074079a20432b0ee22f91825ddbdd2",
+    "locked_at": "2026-09-24T19:02:52.907652429Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "Cache deletion, pruning, eviction, garbage collection or automatic repair",
+    "Network access, private repositories, authentication, registry publication or semver solving",
+    "Changing the existing lockfile, source-command or fetch semantics",
+    "Vendor directories, signatures, attestations and live GitHub integration tests"
+  ],
+  "objective": "Add an explicit read-only cache verification operation that audits every existing GitHub cache entry without network access, mutation, authentication or registry integration",
+  "phase": "P04",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Cache verification policy"
+}

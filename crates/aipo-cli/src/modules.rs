@@ -340,7 +340,7 @@ fn import_module_path(
             .cloned()
             .ok_or_else(|| {
                 format!(
-                    "cannot load module '{module}': package is not present in the resolved local graph"
+                    "cannot load module '{module}': package is not present in the resolved package graph"
                 )
             });
     }

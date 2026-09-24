@@ -6,6 +6,14 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 ## [Não lançado]
 
 ### Adicionado
+- **CLI — Verificação read-only do cache (P04-G09)**:
+  - `aipo package cache verify <dir>` audita todas as entradas GitHub existentes, validando symlinks, arquivos regulares, metadata, source/key, manifest e digests SHA-256.
+  - Entradas corruptas são reportadas como `AIPO_PKG_FETCH`; cache ausente ou vazio retorna sucesso com zero entradas.
+  - A operação está disponível no build padrão, não acessa a rede e nunca cria, repara, remove ou faz prune no cache.
+- **CLI — Raízes locais com dependências GitHub pinadas (P04-G08)**:
+  - `aipo package lock <dir> --fetch-github --cache <dir>` resolve branches `path` locais e edges GitHub pinadas em um lockfile determinístico único, usando o cache explícito e a feature opt-in `github-http`.
+  - `run`, `check`, `build` e `disasm` consomem o grafo misto com `--package-cache`, sem rede ou escrita no cache; provenance `path`/`github` e paths físicos das entries são preservados.
+  - A descoberta local não carrega edges GitHub; conflitos, ciclos, capability widening, locks ausentes/stale e artifacts ausentes/corrompidos continuam fail-closed.
 - **CLI — Execução Direta de Bytecode `.aibc` e Subcomando `disasm`**:
   - `aipo run file.aibc`: execução direta de módulos bytecode pré-compilados, com detecção automática pela extensão `.aibc`, desserialização via `BytecodeModule::from_bytes`, verificação estrutural pelo `BytecodeVerifier`, e execução na VM sem passar pelo pipeline frontend (lexer→parser→HIR→sema→IR→emitter). Erros de desserialização e verificação reportam falha de linguagem (exit 1); arquivos inexistentes reportam erro de uso (exit 2).
   - `aipo disasm <file.aipo|file.aibc>`: novo subcomando de desassembly, exibindo listagem legível de constantes, nomes, funções e instruções. Para arquivos `.aipo`, compila e usa `disassemble_with_source` com anotações `[line:col]`; para arquivos `.aibc`, usa `disassemble` sem anotações de código-fonte. Erros de compilação/desserialização são reportados normalmente.

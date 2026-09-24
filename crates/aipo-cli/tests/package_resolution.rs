@@ -2,13 +2,74 @@
 
 #![forbid(unsafe_code)]
 
-use aipo_package::{Lockfile, PackageId};
+use aipo_package::{
+    GitHubArtifact, GitHubCache, Lockfile, PackageId, PackageInput, PackageSource,
+    resolve_cached_github_graph,
+};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const EXIT_SUCCESS: u8 = 0;
 const EXIT_LANGUAGE_FAILURE: u8 = 1;
 static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
+
+#[test]
+fn mixed_lock_flags_are_validated_at_the_cli_boundary() {
+    let base = vec!["package".to_string(), "lock".to_string(), ".".to_string()];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut missing_cache = base.clone();
+    missing_cache.push("--fetch-github".to_string());
+    stdout.clear();
+    stderr.clear();
+    assert_eq!(
+        aipo_cli::run_with(&missing_cache, &mut stdout, &mut stderr),
+        2
+    );
+    assert!(String::from_utf8_lossy(&stderr).contains("must be provided together"));
+
+    let mut unexpected_flag = base.clone();
+    unexpected_flag.push("--cache".to_string());
+    unexpected_flag.push(".cache".to_string());
+    stdout.clear();
+    stderr.clear();
+    assert_eq!(
+        aipo_cli::run_with(&unexpected_flag, &mut stdout, &mut stderr),
+        2
+    );
+    assert!(String::from_utf8_lossy(&stderr).contains("must be provided together"));
+
+    let audit_flag = vec![
+        "package".to_string(),
+        "audit".to_string(),
+        ".".to_string(),
+        "--fetch-github".to_string(),
+        "--cache".to_string(),
+        ".cache".to_string(),
+    ];
+    stdout.clear();
+    stderr.clear();
+    assert_eq!(aipo_cli::run_with(&audit_flag, &mut stdout, &mut stderr), 2);
+    assert!(String::from_utf8_lossy(&stderr).contains("only valid"));
+}
+
+#[cfg(not(feature = "github-http"))]
+#[test]
+fn mixed_lock_fetch_requires_the_http_feature() {
+    let arguments = vec![
+        "package".to_string(),
+        "lock".to_string(),
+        ".".to_string(),
+        "--fetch-github".to_string(),
+        "--cache".to_string(),
+        ".cache".to_string(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+    assert_eq!(code, 2);
+    assert!(String::from_utf8_lossy(&stderr).contains("github-http"));
+}
 
 #[cfg(feature = "github-http")]
 #[test]
@@ -24,6 +85,290 @@ fn fetch_github_requires_explicit_cache_and_output_directories() {
     let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
     assert_eq!(code, 2);
     assert!(String::from_utf8_lossy(&stderr).contains("--cache"));
+}
+
+#[cfg(feature = "github-http")]
+#[test]
+fn mixed_local_root_lock_and_offline_source_commands_work() {
+    let tree = TempTree::new("mixed-local-remote");
+    let app = tree.path().join("app");
+    let local = tree.path().join("local");
+    let entry = app.join("src/main.aipo");
+    write_package(
+        &local,
+        "acme.local",
+        &[],
+        "src/main.aipo",
+        "export local_answer\nfn local_answer()\nreturn 1\nend\n",
+    );
+    let revision = "0123456789abcdef0123456789abcdef01234567";
+    let remote_source = PackageSource::github_at("acme/packages", revision, "packages/remote")
+        .expect("remote source");
+    write_file(
+        &app.join("aipo.toml"),
+        &format!(
+            "[package]\nname = \"acme.app\"\nversion = \"1.0.0\"\nentry = \"src/main.aipo\"\n[dependencies]\n\"acme.local\" = {{ path = \"../local\" }}\n\"acme.remote\" = {{ version = \"1.0.0\", type = \"github\", repository = \"acme/packages\", revision = \"{revision}\", subpath = \"packages/remote\" }}\n"
+        ),
+    );
+    write_file(
+        &entry,
+        "import acme.local\nimport acme.remote\nlet result = local.local_answer() + remote.remote_answer()\n",
+    );
+    let cache_path = tree.path().join("cache");
+    let cache = GitHubCache::new(&cache_path);
+    cache
+        .store(
+            &remote_source,
+            GitHubArtifact::new(
+                b"[package]\nname = \"acme.remote\"\nversion = \"1.0.0\"\nentry = \"src/main.aipo\"\n",
+                b"export remote_answer\nfn remote_answer()\nreturn 42\nend\n",
+            ),
+        )
+        .expect("remote dependency stores in cache");
+
+    let lock_arguments = vec![
+        "package".to_string(),
+        "lock".to_string(),
+        app.to_string_lossy().into_owned(),
+        "--fetch-github".to_string(),
+        "--cache".to_string(),
+        cache_path.to_string_lossy().into_owned(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&lock_arguments, &mut stdout, &mut stderr);
+    assert_eq!(code, EXIT_SUCCESS, "mixed lock failed: {stderr:?}");
+    let lock = std::fs::read_to_string(app.join("aipo.lock")).expect("mixed lock reads");
+    assert!(lock.contains("acme.remote"));
+    assert!(lock.contains("type = \"github\""));
+
+    for command in ["check", "run", "disasm"] {
+        let arguments = vec![
+            command.to_string(),
+            entry.to_string_lossy().into_owned(),
+            "--package-cache".to_string(),
+            cache_path.to_string_lossy().into_owned(),
+        ];
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+        assert_eq!(code, EXIT_SUCCESS, "mixed {command} failed: {stderr:?}");
+    }
+
+    let output = tree.path().join("dist");
+    let build_arguments = vec![
+        "build".to_string(),
+        entry.to_string_lossy().into_owned(),
+        "--out".to_string(),
+        output.to_string_lossy().into_owned(),
+        "--package-cache".to_string(),
+        cache_path.to_string_lossy().into_owned(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&build_arguments, &mut stdout, &mut stderr);
+    assert_eq!(code, EXIT_SUCCESS, "mixed build failed: {stderr:?}");
+    assert!(output.join("app.js").is_file());
+}
+
+#[test]
+fn source_commands_consume_cached_remote_snapshot_without_http_feature() {
+    let tree = TempTree::new("cached-remote-commands");
+    let (entry, cache) = write_cached_remote_snapshot(&tree);
+
+    for command in ["check", "run", "disasm"] {
+        let arguments = vec![
+            command.to_string(),
+            entry.to_string_lossy().into_owned(),
+            "--package-cache".to_string(),
+            cache.to_string_lossy().into_owned(),
+        ];
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+        assert_eq!(code, EXIT_SUCCESS, "{command} failed: {stderr:?}");
+    }
+
+    let output = tree.path().join("dist");
+    let arguments = vec![
+        "build".to_string(),
+        entry.to_string_lossy().into_owned(),
+        "--out".to_string(),
+        output.to_string_lossy().into_owned(),
+        "--package-cache".to_string(),
+        cache.to_string_lossy().into_owned(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+    assert_eq!(code, EXIT_SUCCESS, "build failed: {stderr:?}");
+    assert!(output.join("app.js").is_file());
+}
+
+#[test]
+fn cached_remote_commands_fail_without_fetching_when_cache_entry_is_missing() {
+    let tree = TempTree::new("cached-remote-missing");
+    let (entry, cache) = write_cached_remote_snapshot(&tree);
+    std::fs::remove_dir_all(&cache).expect("cache removal");
+
+    let arguments = vec![
+        "check".to_string(),
+        entry.to_string_lossy().into_owned(),
+        "--package-cache".to_string(),
+        cache.to_string_lossy().into_owned(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+    assert_eq!(code, EXIT_LANGUAGE_FAILURE);
+    assert!(String::from_utf8_lossy(&stderr).contains("AIPO_PKG_FETCH"));
+    assert!(
+        !cache.exists(),
+        "cache reads must not recreate a missing root"
+    );
+}
+
+#[test]
+fn cached_remote_commands_reject_a_stale_lock_without_network() {
+    let tree = TempTree::new("cached-remote-stale-lock");
+    let (entry, cache) = write_cached_remote_snapshot(&tree);
+    let lock_path = entry
+        .parent()
+        .expect("entry parent")
+        .parent()
+        .expect("package root")
+        .join("aipo.lock");
+    let lock = std::fs::read_to_string(&lock_path).expect("lockfile reads");
+    let stale_lock = lock.replacen("digest = \"", "digest = \"0", 1);
+    std::fs::write(&lock_path, stale_lock).expect("stale lock writes");
+
+    let arguments = vec![
+        "check".to_string(),
+        entry.to_string_lossy().into_owned(),
+        "--package-cache".to_string(),
+        cache.to_string_lossy().into_owned(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+    assert_eq!(code, EXIT_LANGUAGE_FAILURE);
+    assert!(String::from_utf8_lossy(&stderr).contains("AIPO_PKG_LOCK_STALE"));
+}
+
+#[test]
+fn package_cache_flag_requires_a_value() {
+    let tree = TempTree::new("cache-flag-usage");
+    let entry = tree.path().join("main.aipo");
+    write_file(&entry, "let answer = 1\n");
+    let arguments = vec![
+        "check".to_string(),
+        entry.to_string_lossy().into_owned(),
+        "--package-cache".to_string(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+    assert_eq!(code, 2);
+    assert!(String::from_utf8_lossy(&stderr).contains("--package-cache requires"));
+}
+
+#[test]
+fn cache_verify_is_read_only_and_reports_entries() {
+    let tree = TempTree::new("cache-verify-valid");
+    let (_entry, cache) = write_cached_remote_snapshot(&tree);
+    let metadata_path = cache_entry_dir(&cache).join("metadata.json");
+    let before = std::fs::read(&metadata_path).expect("metadata reads");
+
+    let (code, stdout, stderr) = run_cache_verify(&cache);
+    assert_eq!(code, EXIT_SUCCESS, "{stderr}");
+    assert!(stdout.contains("cache verified: 1 entries"));
+    assert!(stderr.is_empty());
+    assert_eq!(
+        std::fs::read(&metadata_path).expect("metadata reads after verify"),
+        before
+    );
+}
+
+#[test]
+fn cache_verify_missing_root_succeeds_without_creation() {
+    let tree = TempTree::new("cache-verify-missing");
+    let cache = tree.path().join("missing-cache");
+    let (code, stdout, stderr) = run_cache_verify(&cache);
+    assert_eq!(code, EXIT_SUCCESS, "{stderr}");
+    assert!(stdout.contains("cache verified: 0 entries"));
+    assert!(stderr.is_empty());
+    assert!(!cache.exists());
+}
+
+#[test]
+fn cache_verify_reports_corruption_without_repairing() {
+    let tree = TempTree::new("cache-verify-corrupt");
+    let (_entry, cache) = write_cached_remote_snapshot(&tree);
+    let entry_path = cache_entry_dir(&cache).join("entry.bin");
+    std::fs::write(&entry_path, b"corrupt").expect("corrupt entry writes");
+
+    let (code, _stdout, stderr) = run_cache_verify(&cache);
+    assert_eq!(code, EXIT_LANGUAGE_FAILURE);
+    assert!(stderr.contains("AIPO_PKG_FETCH"), "{stderr}");
+    assert_eq!(
+        std::fs::read(&entry_path).expect("corrupt entry remains"),
+        b"corrupt"
+    );
+}
+
+#[test]
+fn cache_verify_cli_arguments_are_strict() {
+    let tree = TempTree::new("cache-verify-arguments");
+    let cache = tree.path().join("cache");
+    for arguments in [
+        vec!["package".to_string(), "cache".to_string()],
+        vec![
+            "package".to_string(),
+            "cache".to_string(),
+            "clean".to_string(),
+            cache.to_string_lossy().into_owned(),
+        ],
+        vec![
+            "package".to_string(),
+            "cache".to_string(),
+            "verify".to_string(),
+        ],
+    ] {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(aipo_cli::run_with(&arguments, &mut stdout, &mut stderr), 2);
+        assert!(!stderr.is_empty());
+    }
+}
+
+#[test]
+fn package_cache_flag_accepts_equals_form_and_rejects_duplicates() {
+    let tree = TempTree::new("cache-flag-forms");
+    let (entry, cache) = write_cached_remote_snapshot(&tree);
+    let valid = vec![
+        "check".to_string(),
+        entry.to_string_lossy().into_owned(),
+        format!("--package-cache={}", cache.display()),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        aipo_cli::run_with(&valid, &mut stdout, &mut stderr),
+        EXIT_SUCCESS
+    );
+
+    let duplicate = vec![
+        "check".to_string(),
+        entry.to_string_lossy().into_owned(),
+        "--package-cache".to_string(),
+        cache.to_string_lossy().into_owned(),
+        "--package-cache".to_string(),
+        cache.to_string_lossy().into_owned(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(aipo_cli::run_with(&duplicate, &mut stdout, &mut stderr), 2);
+    assert!(String::from_utf8_lossy(&stderr).contains("provided more than once"));
 }
 
 #[test]
@@ -422,6 +767,74 @@ fn run_package_command(operation: &str, package_dir: &Path) -> (u8, String, Stri
         String::from_utf8_lossy(&stdout).into_owned(),
         String::from_utf8_lossy(&stderr).into_owned(),
     )
+}
+
+fn run_cache_verify(cache_dir: &Path) -> (u8, String, String) {
+    let arguments = vec![
+        "package".to_string(),
+        "cache".to_string(),
+        "verify".to_string(),
+        cache_dir.to_string_lossy().into_owned(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = aipo_cli::run_with(&arguments, &mut stdout, &mut stderr);
+    (
+        code,
+        String::from_utf8_lossy(&stdout).into_owned(),
+        String::from_utf8_lossy(&stderr).into_owned(),
+    )
+}
+
+fn cache_entry_dir(cache_dir: &Path) -> PathBuf {
+    std::fs::read_dir(cache_dir.join("github-v1"))
+        .expect("cache namespace reads")
+        .next()
+        .expect("cache entry exists")
+        .expect("cache entry reads")
+        .path()
+}
+
+fn write_cached_remote_snapshot(tree: &TempTree) -> (PathBuf, PathBuf) {
+    let revision = "0123456789abcdef0123456789abcdef01234567";
+    let root_source = PackageSource::github_at("acme/root", revision, ".").expect("root source");
+    let dependency_source = PackageSource::github_at("acme/packages", revision, "packages/http")
+        .expect("dependency source");
+    let root = tree.path().join("fetched");
+    let entry_path = root.join("src/main.aipo");
+    let manifest = format!(
+        "[package]\nname = \"acme.app\"\nversion = \"1.0.0\"\nentry = \"src/main.aipo\"\n[dependencies]\n\"acme.http\" = {{ version = \"1.0.0\", type = \"github\", repository = \"acme/packages\", revision = \"{revision}\", subpath = \"packages/http\" }}\n"
+    );
+    write_file(&root.join("aipo.toml"), &manifest);
+    write_file(
+        &entry_path,
+        "import acme.http\nlet result = http.answer()\n",
+    );
+    let entry_bytes = std::fs::read(&entry_path).expect("root entry reads");
+    let cache_path = tree.path().join("cache");
+    let cache = GitHubCache::new(&cache_path);
+    cache
+        .store(
+            &dependency_source,
+            GitHubArtifact::new(
+                b"[package]\nname = \"acme.http\"\nversion = \"1.0.0\"\nentry = \"src/main.aipo\"\n",
+                b"export answer\nfn answer()\nreturn 42\nend\n",
+            ),
+        )
+        .expect("dependency cache stores");
+    let root_input =
+        PackageInput::from_manifest_bytes(manifest.as_bytes(), entry_bytes, root_source)
+            .expect("root input parses");
+    let resolved = resolve_cached_github_graph(root_input, &entry_path, &cache)
+        .expect("cached graph resolves");
+    let lock = resolved
+        .graph
+        .to_lockfile()
+        .expect("graph lock builds")
+        .to_toml()
+        .expect("graph lock serializes");
+    write_file(&root.join("aipo.lock"), &lock);
+    (entry_path, cache_path)
 }
 
 fn write_package(

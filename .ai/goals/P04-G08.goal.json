@@ -1,0 +1,147 @@
+{
+  "acceptance": [
+    "A local package root can declare both local path and pinned GitHub dependencies; local discovery follows all path branches and records remote edges without fetching.",
+    "aipo package lock \u003cdir\u003e --fetch-github --cache \u003cdir\u003e is the only network-triggering lock operation, resolves the mixed graph, and writes a complete deterministic lockfile.",
+    "The same mixed graph can be consumed by check, run, build and disasm through --package-cache with no network fallback, preserving local and GitHub provenance and physical entry paths.",
+    "Missing/corrupt cache entries, missing locks, stale locks, coordinate/version conflicts, cycles and capability widening fail closed with stable package diagnostics.",
+    "Existing local-only package behavior remains unchanged when the explicit flags are absent; tests cover mixed graph success, offline replay, failure paths and CLI argument validation; full repository gates remain green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-24T14:25:47.869185174Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "A local package root can declare both local path and pinned GitHub dependencies; local discovery follows all path branches and records remote edges without fetching.",
+          "aipo package lock \u003cdir\u003e --fetch-github --cache \u003cdir\u003e is the only network-triggering lock operation, resolves the mixed graph, and writes a complete deterministic lockfile.",
+          "The same mixed graph can be consumed by check, run, build and disasm through --package-cache with no network fallback, preserving local and GitHub provenance and physical entry paths.",
+          "Missing/corrupt cache entries, missing locks, stale locks, coordinate/version conflicts, cycles and capability widening fail closed with stable package diagnostics.",
+          "Existing local-only package behavior remains unchanged when the explicit flags are absent; tests cover mixed graph success, offline replay, failure paths and CLI argument validation; full repository gates remain green."
+        ],
+        "non_goals": [
+          "Automatic network access or cache writes from source commands",
+          "Private repositories, authentication, registry publication or semver solving",
+          "Remote artifacts with local path dependencies or package submodules",
+          "Vendor directories, cache eviction, signatures, attestations and live GitHub integration tests"
+        ]
+      },
+      "digest": "16b2d0fc04bce23a8af5f524e588b2036c503b360b6eb152d032fc6e4d69d86f",
+      "goal_id": "P04-G08",
+      "id": "AMD-002",
+      "reason": "Register the approved mixed local and remote root scope before certification",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "aipo-package default tests passed 46 cases and all-features tests passed 49 cases, including local-only remote-edge discovery, mixed graph resolution, cache-only loading, cache safety and digest verification.",
+      "kind": "test"
+    },
+    {
+      "description": "aipo-cli package integration tests passed 22 cases by default and 23 with github-http, covering mixed lock creation, local and remote offline replay through check/run/build/disasm, missing cache, stale locks and CLI flag validation.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo test --workspace --all-targets and cargo test --workspace --all-targets --all-features passed; the default dependency tree remains free of ureq and no live GitHub test was used.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets --all-features -- -D warnings, cargo doc default/all-features, node selftest, cargo deny, cargo audit, prumo validate and prumo doctor all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "CLI reference, ADP-007, GitHub fetch security documentation and CHANGELOG now document mixed roots, explicit network/cache boundaries, provenance and offline replay.",
+      "kind": "doc"
+    },
+    {
+      "description": "prumo tool scan-secrets crates, docs and .ai reported no secrets; git diff --check passed.",
+      "kind": "gate"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T13:58:08.321614779Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T13:58:08.329400079Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T13:58:08.338395783Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-24T13:58:08.344882079Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T14:25:47.869185174Z",
+      "event": "amended",
+      "reason": "Register the approved mixed local and remote root scope before certification",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-24T14:26:13.871027097Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T14:26:53.745980517Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T14:34:30.518209289Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G08",
+  "lock": {
+    "digest": "16b2d0fc04bce23a8af5f524e588b2036c503b360b6eb152d032fc6e4d69d86f",
+    "locked_at": "2026-09-24T14:25:47.869185174Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "Automatic network access or cache writes from source commands",
+    "Private repositories, authentication, registry publication or semver solving",
+    "Remote artifacts with local path dependencies or package submodules",
+    "Vendor directories, cache eviction, signatures, attestations and live GitHub integration tests"
+  ],
+  "objective": "Allow a local package root to declare pinned GitHub dependencies, resolve local and remote inputs into one deterministic lockfile through an explicit fetch operation, and consume that mixed graph offline through the existing package cache",
+  "phase": "P04",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Mixed local and remote package roots"
+}

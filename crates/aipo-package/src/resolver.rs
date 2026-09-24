@@ -279,6 +279,17 @@ impl ResolvedLocalPackages {
     }
 }
 
+/// Local package inputs and entry paths discovered before remote edges are loaded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveredLocalPackages {
+    /// Coordinate of the package rooted at the configured filesystem root.
+    pub root: PackageId,
+    /// Inputs for every reachable local package.
+    pub inputs: BTreeMap<PackageId, PackageInput>,
+    /// Absolute entry paths for the discovered local packages.
+    pub paths: PackagePathMap,
+}
+
 /// Resolves an in-memory package store supplied by a CLI or another adapter.
 ///
 /// # Errors
@@ -375,6 +386,31 @@ impl LocalPackageResolver {
         })
     }
 
+    /// Discovers local path branches while leaving pinned remote edges unresolved.
+    ///
+    /// This phase performs filesystem reads only. It does not reject a GitHub dependency and
+    /// never invokes a remote loader.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed [`ResolveError`] for local I/O, manifest, coordinate, or cycle failures.
+    pub fn discover_local(&self) -> Result<DiscoveredLocalPackages, ResolveError> {
+        let (root, loaded) = self.discover_with_root_mode(true)?;
+        let inputs = loaded
+            .iter()
+            .map(|(coordinate, package)| (coordinate.clone(), package.input.clone()))
+            .collect();
+        let paths = loaded
+            .into_iter()
+            .map(|(coordinate, package)| (coordinate, package.directory.join(package.input.entry)))
+            .collect();
+        Ok(DiscoveredLocalPackages {
+            root,
+            inputs,
+            paths,
+        })
+    }
+
     /// Discovers and resolves the complete local graph.
     ///
     /// # Errors
@@ -416,6 +452,13 @@ impl LocalPackageResolver {
     fn discover_with_root(
         &self,
     ) -> Result<(PackageId, BTreeMap<PackageId, LoadedPackage>), ResolveError> {
+        self.discover_with_root_mode(false)
+    }
+
+    fn discover_with_root_mode(
+        &self,
+        allow_remote: bool,
+    ) -> Result<(PackageId, BTreeMap<PackageId, LoadedPackage>), ResolveError> {
         let root_directory = fs::canonicalize(&self.root).map_err(|error| ResolveError::Io {
             path: self.root.display().to_string(),
             detail: error.to_string(),
@@ -426,6 +469,7 @@ impl LocalPackageResolver {
             &root_directory,
             ".".to_string(),
             None,
+            allow_remote,
             &mut active,
             &mut discovered,
         )?;
@@ -438,6 +482,7 @@ impl LocalPackageResolver {
         package_directory: &Path,
         source_path: String,
         expected: Option<&PackageId>,
+        allow_remote: bool,
         active: &mut Vec<ActivePackage>,
         discovered: &mut BTreeMap<PackageId, LoadedPackage>,
     ) -> Result<PackageInput, ResolveError> {
@@ -496,6 +541,9 @@ impl LocalPackageResolver {
         });
         for dependency in &manifest.dependencies {
             let PackageSource::Path { path } = &dependency.source else {
+                if allow_remote {
+                    continue;
+                }
                 return Err(ResolveError::RemoteDependencyUnsupported {
                     dependent: coordinate.clone(),
                     dependency: dependency.name.clone(),
@@ -522,6 +570,7 @@ impl LocalPackageResolver {
                 &dependency_directory,
                 path.clone(),
                 Some(&dependency.name),
+                allow_remote,
                 active,
                 discovered,
             )?;
@@ -939,6 +988,29 @@ mod tests {
             error,
             ResolveError::RemoteDependencyUnsupported { .. }
         ));
+    }
+
+    #[test]
+    fn local_discovery_records_remote_edges_without_loading_them() {
+        let tree = TempTree::new("mixed-local-discovery");
+        let root = tree.path().join("root");
+        let local = tree.path().join("local");
+        write_package(&local, "acme.local", None, "let local = 1");
+        fs::create_dir_all(root.join("src")).expect("root directory creates");
+        fs::write(
+            root.join("aipo.toml"),
+            "[package]\nname = \"acme.root\"\nversion = \"1.0.0\"\nentry = \"main\"\n[dependencies]\n\"acme.local\" = { path = \"../local\" }\n\"acme.remote\" = { version = \"1.0.0\", type = \"github\", repository = \"acme/packages\", revision = \"0123456789abcdef0123456789abcdef01234567\" }\n",
+        )
+        .expect("manifest writes");
+        fs::write(root.join("src/main.aipo"), "let root = 1\n").expect("entry writes");
+
+        let discovered = LocalPackageResolver::new(&root)
+            .discover_local()
+            .expect("local discovery succeeds");
+        assert!(discovered.inputs.contains_key(&coordinate("acme.root")));
+        assert!(discovered.inputs.contains_key(&coordinate("acme.local")));
+        assert!(!discovered.inputs.contains_key(&coordinate("acme.remote")));
+        assert!(discovered.paths.contains_key(&coordinate("acme.local")));
     }
 
     #[test]

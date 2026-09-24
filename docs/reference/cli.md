@@ -9,14 +9,15 @@
 The stable command surface comprises (`run`/`check`/`fmt` stable since Wave 1,
 `build` stable since Wave 2, `disasm` stable since Wave 4):
 
-- `aipo run <file.aipo>`: Compiles and executes an Aipo source file.
+- `aipo run <file.aipo> [--package-cache <dir>]`: Compiles and executes an Aipo source file. The optional cache flag consumes a previously locked mixed local/GitHub graph without network access.
 - `aipo run <file.aibc>`: Loads, verifies and executes a pre-compiled bytecode file.
-- `aipo check <file.aipo>`: Runs the frontend and semantic analysis without bytecode execution, emitting diagnostics.
-- `aipo build <file.aipo> [--out <dir>]`: Emits a JavaScript bundle (`app.js` + `aipo-runtime.js` + `app.js.map`, ESM with ECMA-426 source maps) to `<dir>` (`<parent>/dist` by default). Fails with the same diagnostic codes as `check` and emits no files on failure; runtime faults surface when `node` runs the bundle, with the same codes as `run`.
-- `aipo disasm <file.aipo|file.aibc>`: Disassembles a source or bytecode file, printing a human-readable listing. Source files (`.aipo`) include line/column annotations; bytecode files (`.aibc`) show raw instruction offsets.
+- `aipo check <file.aipo> [--package-cache <dir>]`: Runs the frontend and semantic analysis without bytecode execution, emitting diagnostics. The optional cache flag consumes a previously locked mixed local/GitHub graph without network access.
+- `aipo build <file.aipo> [--out <dir>] [--package-cache <dir>]`: Emits a JavaScript bundle (`app.js` + `aipo-runtime.js` + `app.js.map`, ESM with ECMA-426 source maps) to `<dir>` (`<parent>/dist` by default). Fails with the same diagnostic codes as `check` and emits no files on failure; runtime faults surface when `node` runs the bundle, with the same codes as `run`.
+- `aipo disasm <file.aipo|file.aibc> [--package-cache <dir>]`: Disassembles a source or bytecode file, printing a human-readable listing. Source files (`.aipo`) include line/column annotations; bytecode files (`.aibc`) show raw instruction offsets.
 - `aipo fmt [files...]`: Formats source files idempotently according to canonical indentation rules.
-- `aipo package lock <package-dir>`: Resolves a local package graph and writes `aipo.lock` in the package root.
+- `aipo package lock <package-dir> [--fetch-github --cache <dir>]`: Resolves a local package graph and writes `aipo.lock` in the package root. The explicit fetch form also resolves pinned GitHub dependencies and may access the network.
 - `aipo package audit <package-dir>`: Resolves a local package graph and verifies the existing `aipo.lock` without rewriting it.
+- `aipo package cache verify <cache-dir>`: Audits every existing GitHub cache entry without network access or filesystem mutation.
 
 ## Local package entries
 
@@ -25,21 +26,23 @@ entry file's ancestor directories. When present, local `path` dependencies are r
 module linking. A qualified import such as `import acme.http` binds the local namespace `http`;
 `import acme.http as h` binds `h`. The full coordinate remains the module identity.
 
-Resolution for these source commands is local-only and executes no lifecycle scripts. A manifest
-may also declare pinned GitHub dependencies, but `run`, `check`, `build` and `disasm` do not fetch
-or consume them implicitly. A missing lockfile is allowed for these source commands. `aipo package
-lock` and `aipo package audit` remain local package operations in this slice. Without an
+Resolution for these source commands is local-only unless `--package-cache <dir>` is explicitly
+provided. The flag consumes a previously locked mixed local/GitHub graph and its verified cache
+entries without network access. A missing lockfile is allowed only without the flag. Without an
 `aipo.toml`, source files keep the legacy sibling-module lookup.
 
 ## Opt-in public GitHub fetch
 
 The HTTP adapter is compiled only with the `github-http` feature. The default `aipo` binary remains
-network-free. Enable it explicitly when fetching a public package:
+network-free. Enable it explicitly when fetching a public package or locking a mixed root:
 
 ```bash
 cargo run -p aipo-cli --features github-http -- \\
   package fetch-github owner/repository 0123456789abcdef0123456789abcdef01234567 \\
   [subpath] --cache <cache-dir> --out <output-dir>
+
+cargo run -p aipo-cli --features github-http -- \\
+  package lock ./my-package --fetch-github --cache <cache-dir>
 ```
 
 The command accepts only a public repository slug, an exact lowercase 40-hex commit, and a safe
@@ -55,24 +58,56 @@ The command sends public GET requests without `Authorization` or other credentia
 redirects, applies a timeout and a 4 MiB response limit, and uses the explicit cache root. It
 recursively fetches pinned GitHub dependencies, validates coordinates, versions, capabilities and
 cycles, enforces a 256-package graph bound, and writes a complete graph lockfile in the output
-snapshot. Each artifact is cached and
-digest-verified independently. The output directory must be empty. A remote artifact cannot
-declare a local `path` dependency in this slice.
+snapshot. Each artifact is cached and digest-verified independently. The output directory must be
+empty. A remote artifact cannot declare a local `path` dependency in this slice.
+
+For a mixed local root, `package lock --fetch-github` leaves local path inputs in the project and
+fetches only its pinned GitHub edges into the same explicit cache. This is the only lock form that
+can access the network; plain `package lock` and `package audit` remain local-only.
+
+## Offline cache consumption
+
+A locked mixed local/GitHub graph can be compiled without the HTTP feature or network access:
+
+```bash
+aipo check my-package/src/main.aipo --package-cache .aipo-cache
+aipo run my-package/src/main.aipo --package-cache=.aipo-cache
+```
+
+The command requires `aipo.lock`, verifies every cached GitHub manifest and entry against the lock
+projection, follows all local path branches, and never creates a missing cache root. A missing
+artifact, corrupt cache, or stale lock fails closed. The cache is read-only for these commands; only
+`fetch-github` and `package lock --fetch-github` write it.
 
 Failures use `AIPO_PKG_FETCH` for transport/cache/artifact failures and `AIPO_PKG_RESOLUTION` for
-graph failures. No cache or network action is attempted by `run`, `check`, `build`, `disasm`,
-`package lock` or `package audit`; only the explicit `fetch-github` command enables the adapter.
+graph failures. Without `--package-cache`, source commands never touch the cache or network.
+Plain `package lock` and `package audit` remain local-only; only the explicit mixed-lock form can fetch.
+
+## Cache verification
+
+Cache verification is an explicit, read-only maintenance operation:
+
+```bash
+aipo package cache verify .aipo-cache
+```
+
+The verifier scans namespace entries in deterministic order and checks directory/file safety,
+metadata source identity, cache-key consistency, manifest parsing and SHA-256 content digests.
+It continues after independent entry failures and reports each failure as `AIPO_PKG_FETCH`.
+A missing or empty cache is a successful zero-entry report. Verification never creates, repairs,
+deletes, prunes or fetches cache data and is available in the default network-free build.
 
 
 
 ```text
-aipo run <path> [--message-format=<human|jsonl>]
-aipo check <path> [--message-format=<human|jsonl>]
-aipo build <path> [--out <dir>] [--message-format=<human|jsonl>]
-aipo disasm <path> [--message-format=<human|jsonl>]
+aipo run <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+aipo check <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+aipo build <path> [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
+aipo disasm <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
 aipo fmt <paths...> [--check]
-aipo package lock <package-dir>
+aipo package lock <package-dir> [--fetch-github --cache <dir>]
 aipo package audit <package-dir>
+aipo package cache verify <cache-dir>
 aipo --version
 aipo --help
 ```
@@ -133,5 +168,13 @@ Create and audit a local package lockfile:
 ```bash
 aipo package lock .
 aipo package audit .
+```
+
+Lock a local root with pinned GitHub dependencies, then consume it offline:
+```bash
+cargo run -p aipo-cli --features github-http -- \\
+  package lock . --fetch-github --cache .aipo-cache
+aipo check src/main.aipo --package-cache .aipo-cache
+aipo package cache verify .aipo-cache
 ```
 

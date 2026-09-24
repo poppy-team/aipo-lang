@@ -1,0 +1,143 @@
+{
+  "acceptance": [
+    "The GitHub cache is available without the HTTP feature, never creates directories during reads, verifies regular non-symlink files, and returns a safe absolute entry path for offline module loading.",
+    "A previously fetched GitHub root snapshot can resolve its complete pinned graph from an explicit cache without network access; remote sources remain PackageSource::GitHub while physical paths stay in the path map.",
+    "check, run, build, and disasm accept --package-cache \u003cdir\u003e, require aipo.lock, reject missing/corrupt cache entries without fetching, and use the verified graph for module loading.",
+    "Digest, source, version, dependency-edge, capability and target mismatches fail closed as package diagnostics; no network or global cache is introduced.",
+    "Positive and negative tests cover cache path safety, offline graph loading, stale locks, missing artifacts, CLI flag parsing and existing local-only behavior; full repository gates remain green."
+  ],
+  "amendments": [
+    {
+      "approved_at": "2026-09-24T13:54:21.108846142Z",
+      "approved_by": "human",
+      "changes": {
+        "acceptance": [
+          "The GitHub cache is available without the HTTP feature, never creates directories during reads, verifies regular non-symlink files, and returns a safe absolute entry path for offline module loading.",
+          "A previously fetched GitHub root snapshot can resolve its complete pinned graph from an explicit cache without network access; remote sources remain PackageSource::GitHub while physical paths stay in the path map.",
+          "check, run, build, and disasm accept --package-cache \u003cdir\u003e, require aipo.lock, reject missing/corrupt cache entries without fetching, and use the verified graph for module loading.",
+          "Digest, source, version, dependency-edge, capability and target mismatches fail closed as package diagnostics; no network or global cache is introduced.",
+          "Positive and negative tests cover cache path safety, offline graph loading, stale locks, missing artifacts, CLI flag parsing and existing local-only behavior; full repository gates remain green."
+        ],
+        "non_goals": [
+          "Automatic network access or fallback fetches when a cache entry is missing",
+          "Mixed local-root manifests with remote dependencies in this first offline slice",
+          "Private repositories, authentication, registry publication or package submodules",
+          "Persistent cache eviction, signatures, attestations and live GitHub integration tests"
+        ]
+      },
+      "digest": "9f97934c42e5598ade9ee1de6dca221c2e1cd45d9eeb5b8906c55657c0f7fe51",
+      "goal_id": "P04-G07",
+      "id": "AMD-002",
+      "reason": "Register the approved cache-aware offline consumption scope before certification",
+      "revision": 2
+    }
+  ],
+  "constraints": [],
+  "context": {
+    "budget_profile": "medium",
+    "max_delegation_depth": 1
+  },
+  "dependencies": [],
+  "evidence": [
+    {
+      "description": "aipo-package default tests passed 45 cases and all-features tests passed 48 cases, including non-creating cache reads, regular-file/symlink rejection, safe entry paths, recursive offline graph resolution and cache reuse.",
+      "kind": "test"
+    },
+    {
+      "description": "aipo-cli package integration tests passed 19 cases by default and 20 with github-http, covering check/run/build/disasm cache consumption, missing cache failure, stale locks, flag forms and duplicate rejection.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo test --workspace --all-targets and cargo test --workspace --all-targets --all-features passed; the default dependency tree contains no ureq.",
+      "kind": "test"
+    },
+    {
+      "description": "cargo fmt --all -- --check, cargo clippy --workspace --all-targets --all-features -- -D warnings, cargo doc default/all-features, node selftest, cargo deny, cargo audit, prumo validate and prumo doctor all passed.",
+      "kind": "gate"
+    },
+    {
+      "description": "CLI reference, ADP-007 and GitHub fetch security documentation now define --package-cache, read-only cache behavior, lock requirements, diagnostics and the no-network boundary.",
+      "kind": "doc"
+    }
+  ],
+  "gates": {
+    "build": "required",
+    "documentation_impact": "required",
+    "project_intelligence": "required",
+    "review": "required",
+    "tests": "required"
+  },
+  "history": [
+    {
+      "at": "2026-09-24T13:22:46.83729239Z",
+      "event": "created",
+      "state": "DRAFT"
+    },
+    {
+      "at": "2026-09-24T13:22:46.874950139Z",
+      "event": "state-transition",
+      "from": "DRAFT",
+      "reason": "",
+      "to": "PLANNED"
+    },
+    {
+      "at": "2026-09-24T13:22:46.909136992Z",
+      "event": "state-transition",
+      "from": "PLANNED",
+      "reason": "",
+      "to": "LOCKED"
+    },
+    {
+      "at": "2026-09-24T13:22:46.927945558Z",
+      "event": "state-transition",
+      "from": "LOCKED",
+      "reason": "",
+      "to": "EXECUTING"
+    },
+    {
+      "approved_by": "human",
+      "at": "2026-09-24T13:54:21.108846142Z",
+      "event": "amended",
+      "reason": "Register the approved cache-aware offline consumption scope before certification",
+      "revision": 2
+    },
+    {
+      "at": "2026-09-24T13:55:12.763369852Z",
+      "event": "state-transition",
+      "from": "EXECUTING",
+      "reason": "",
+      "to": "VERIFYING"
+    },
+    {
+      "at": "2026-09-24T13:55:12.776700587Z",
+      "event": "state-transition",
+      "from": "VERIFYING",
+      "reason": "",
+      "to": "REVIEWING"
+    },
+    {
+      "at": "2026-09-24T13:55:12.784955943Z",
+      "event": "state-transition",
+      "from": "REVIEWING",
+      "reason": "",
+      "to": "DONE"
+    }
+  ],
+  "id": "P04-G07",
+  "lock": {
+    "digest": "9f97934c42e5598ade9ee1de6dca221c2e1cd45d9eeb5b8906c55657c0f7fe51",
+    "locked_at": "2026-09-24T13:54:21.108846142Z",
+    "revision": 2
+  },
+  "non_goals": [
+    "Automatic network access or fallback fetches when a cache entry is missing",
+    "Mixed local-root manifests with remote dependencies in this first offline slice",
+    "Private repositories, authentication, registry publication or package submodules",
+    "Persistent cache eviction, signatures, attestations and live GitHub integration tests"
+  ],
+  "objective": "Allow check, run, build, and disasm to consume a previously fetched pinned GitHub graph from an explicit local cache without network access, verifying the lockfile and preserving source provenance",
+  "phase": "P04",
+  "revision": 2,
+  "state": "DONE",
+  "title": "Cache-aware offline package consumption"
+}
