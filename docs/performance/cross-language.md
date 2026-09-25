@@ -57,6 +57,21 @@ PATH="$Wren_BIN_DIR:$LUAU_BIN_DIR:$PATH" \
 
 Quando `--aipo-bin` ou `AIPO_BIN` é usado, o runner registra o hash e o profile inferido do caminho; um binário customizado permanece sob responsabilidade de quem o selecionou.
 
+### Runner pareado dedicado
+
+Para medições locais de A/B, use dois binários release já construídos e o runner `scripts/perf/paired.sh`. Ele fixa a CPU, alterna a ordem baseline/candidate e não altera o estado do Git:
+
+```bash
+scripts/perf/paired.sh \
+  --baseline target/release/aipo-bench-before \
+  --candidate target/release/aipo-bench-after \
+  --workloads arithmetic,collections,fields,recursion \
+  --rounds 15 --pairs 3 --cpu 0 \
+  --output-dir target/paired
+```
+
+O script exige `taskset` por padrão; `--allow-unpinned` só deve ser usado em machines sem suporte a taskset. Os relatórios e um `manifest.txt` com hashes, workloads, rounds e CPU ficam em `target/paired`.
+
 O runner detecta `lua`, `luajit`, `wren_cli`/`wren`, `luau`, `python3`, `pypy3`/`pypy`, `ruby` e `node`. Runtimes externos ausentes são marcados como skipped. Aipo CLI/VM, Aipo→JavaScript/Node e Rust nativo são required; sem o binário Aipo ou sem Node, a falha aparece no relatório e o comando retorna erro.
 
 ## Workloads
