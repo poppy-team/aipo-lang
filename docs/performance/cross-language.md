@@ -243,6 +243,11 @@ Métricas internas e checksums permaneceram bit a bit idênticos. Relatórios: `
 
 O valor de entrada de uma atribuição só é necessário para o journal quando o tipo é guarded. O caminho agora verifica `type_is_guarded` antes de clonar o valor anterior; structs sem `invariant()` mantêm a mesma mutação, sem a cópia de entrada. No fixture `fields`, isso elimina 600.000 clones de `Value` (seis escritas × 100.000 iterações) de forma determinística. Um A/B posterior com 31 samples não mostrou ganho consistente de wall-clock (`fields`: 608,31ms no baseline contra 612,08ms com a mudança; `collections`: 184,11ms contra 178,36ms). Portanto, a alteração é mantida como redução determinística de trabalho, não como claim de velocidade. Os testes de rollback de structs guarded e a suíte differential continuam verdes.
 
+## Experimento rejeitado: cache de tipos guarded
+
+Um `HashSet<String>` foi criado para substituir as duas buscas em `type_is_guarded`. O runner pareado (3 pares, 15 samples por execução) mostrou o candidato mais lento no median dos três pares: `arithmetic` +6,58%, `fields` +1,63% e `recursion` +3,36%. Checksums e métricas permaneceram idênticos, mas não houve benefício; o cache foi revertido. Relatórios: `target/guarded-cache-paired/`.
+
+
 ## Resultado A/B isolado do cache de constantes do shim
 
 Em uma execução sequencial de três amostras apenas para `Aipo→JavaScript/Node`, o cache preguiçoso de constantes por instrução reduziu o median em aproximadamente `26%` (`arithmetic`), `11%` (`collections`) e `17%` (`recursion`). Os relatórios estão em `target/js-constant-cache-base.json` e `target/js-constant-cache-after.json`; o resultado é direcional porque o runner é compartilhado.
