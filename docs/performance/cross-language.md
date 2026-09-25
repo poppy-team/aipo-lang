@@ -225,6 +225,10 @@ Uma rodada sequencial menor também ficou pior (1.141,64ms sem cache contra 1.59
 
 Um protótipo trocou o nome de `BoundMethodData` para `Rc<str>` e manteve nomes qualificados em slots por site. A intenção era eliminar `format!` e cópias de nomes, mas o A/B não mostrou ganho reproduzível: em uma rodada adjacenta de 31 samples, `fields` ficou em 602,49ms contra 605,07ms do baseline, enquanto `collections` piorou de 178,82ms para 192,71ms. Uma segunda variante com `Owned`/`Shared` também não resolveu: `fields` 635,72ms contra 630,59ms e `collections` 190,71ms contra 179,45ms. A carga do runner variou entre execuções, então esses números são apenas uma rejeição exploratória, não uma regressão universal. O pool e a mudança de layout de `BoundMethodData` foram revertidos; a próxima tentativa deve evitar API-breaking sem um A/B em runner dedicado. Relatórios: `target/qualified-name-candidate-31.json`, `target/qualified-name-baseline-31b.json` e `target/bound-name-enum-candidate-31.json`.
 
+## Experimento rejeitado: cache de flags `fixed` por slot
+
+O `SetField` registrado passou a carregar um `Vec<bool>` de flags `fixed` por tipo e usar um setter com a flag já resolvida, evitando `HashSet<String>::contains` por escrita. O A/B pareado (3 pares, 15 samples) piorou o median dos três pares: `arithmetic` +5,34%, `fields` +11,32% e `recursion` +144,36%. Checksums e métricas continuaram idênticos, mas o custo do lookup adicional superou a economia; a alteração foi revertida. Relatórios: `target/fixed-field-paired/`.
+
 ## A/B do cache do frame base
 
 A VM mantém em `Vm::frame_base` o `stack_base` do frame ativo para que `GetLocal`, `SetLocal` e `JumpIfSetLocal` não consultem `frames.last()` a cada acesso. O valor é atualizado em `run`, push/pop de frames, handlers de falha, `invoke` e troca de tasks. Um teste de regressão cobre retorno de chamada aninhada e restauração do frame externo.
