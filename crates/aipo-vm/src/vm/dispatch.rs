@@ -1,7 +1,7 @@
 //! Instruction dispatch for the Aipo stack machine: the `step` loop,
 //! operand readers, and every opcode arm. Pure helpers live in `helpers`.
-use super::Vm;
 use super::helpers::{collection_identity, length_of, normalize_range, value_diagnostic_name};
+use super::{FieldLookup, Vm};
 use crate::fault::{VmError, VmFault};
 use crate::frame::HandlerFrame;
 use crate::value::{
@@ -21,6 +21,9 @@ impl Vm {
     /// # Errors
     /// Returns `VmError` on runtime fault or invalid instruction.
     pub fn step(&mut self, module: &BytecodeModule) -> Result<bool, VmError> {
+        if self.metrics_enabled {
+            self.metrics.instructions = self.metrics.instructions.saturating_add(1);
+        }
         if self.host_task.is_some() {
             return self.drive_host_task();
         }
@@ -39,21 +42,27 @@ impl Vm {
         match opcode {
             OpCode::Constant => {
                 let idx = self.read_u16(module)? as usize;
-                let c = module
-                    .constants
-                    .get(idx)
-                    .ok_or_else(|| VmFault::CorruptedBytecode {
-                        offset: self.ip - 2,
-                        reason: format!("constant index {idx} out of bounds"),
-                    })?;
-
-                let val = match c {
-                    Constant::Nil => Value::None,
-                    Constant::Bool(b) => Value::Bool(*b),
-                    Constant::Int(n) => Value::Int(check_safe_int(*n)?),
-                    Constant::Float(f) => Value::Float(check_finite_float(*f)?),
-                    Constant::String(s) => Value::String(Rc::new(s.clone())),
-                };
+                let val =
+                    if let Some(value) = self.constant_values.get(idx) {
+                        value.clone()
+                    } else {
+                        let constant = module.constants.get(idx).ok_or_else(|| {
+                            VmFault::CorruptedBytecode {
+                                offset: self.ip - 2,
+                                reason: format!("constant index {idx} out of bounds"),
+                            }
+                        })?;
+                        match constant {
+                            Constant::Nil => Value::None,
+                            Constant::Bool(value) => Value::Bool(*value),
+                            Constant::Int(value) => Value::Int(check_safe_int(*value)?),
+                            Constant::Float(value) => Value::Float(check_finite_float(*value)?),
+                            Constant::String(value) => Value::String(Rc::new(value.clone())),
+                        }
+                    };
+                if self.metrics_enabled {
+                    self.metrics.constant_loads = self.metrics.constant_loads.saturating_add(1);
+                }
                 self.push(val)?;
             }
             OpCode::Nil => self.push(Value::None)?,
@@ -63,7 +72,7 @@ impl Vm {
             OpCode::JumpIfSetLocal => {
                 let slot = self.read_u16(module)? as usize;
                 let rel = self.read_i16(module)? as isize;
-                let base = self.frames.last().map_or(0, |f| f.stack_base);
+                let base = self.frame_base;
                 // A slot holding anything other than the sentinel was supplied by the caller,
                 // so its default must not be evaluated; `none` counts as supplied.
                 let is_set = !matches!(self.stack.get(base + slot), Some(Value::Unset));
@@ -88,17 +97,20 @@ impl Vm {
             }
             OpCode::GetLocal => {
                 let slot = self.read_u16(module)? as usize;
-                let base = self.frames.last().map_or(0, |f| f.stack_base);
+                let base = self.frame_base;
                 let val = self
                     .stack
                     .get(base + slot)
                     .cloned()
                     .ok_or(VmFault::StackUnderflow)?;
+                if self.metrics_enabled {
+                    self.metrics.local_clones = self.metrics.local_clones.saturating_add(1);
+                }
                 self.push(val)?;
             }
             OpCode::SetLocal => {
                 let slot = self.read_u16(module)? as usize;
-                let base = self.frames.last().map_or(0, |f| f.stack_base);
+                let base = self.frame_base;
                 let val = self.pop()?;
                 if base + slot >= self.stack.len() {
                     return Err(VmFault::StackUnderflow.into());
@@ -106,19 +118,28 @@ impl Vm {
                 self.stack[base + slot] = val;
             }
             OpCode::GetGlobal => {
+                if self.metrics_enabled {
+                    self.metrics.global_lookups = self.metrics.global_lookups.saturating_add(1);
+                }
                 let idx = self.read_u16(module)? as usize;
-                let name = module
-                    .names
-                    .get(idx)
-                    .ok_or_else(|| VmFault::CorruptedBytecode {
-                        offset: self.ip - 2,
-                        reason: format!("name index {idx} out of bounds"),
-                    })?;
-                let val = self
-                    .globals
-                    .get(name)
-                    .cloned()
-                    .ok_or_else(|| VmFault::UndefinedGlobal { name: name.clone() })?;
+                let val = if let Some(value) = self.global_slots.get(idx).and_then(Clone::clone) {
+                    value
+                } else {
+                    let name = module
+                        .names
+                        .get(idx)
+                        .ok_or_else(|| VmFault::CorruptedBytecode {
+                            offset: self.ip - 2,
+                            reason: format!("name index {idx} out of bounds"),
+                        })?;
+                    self.globals
+                        .get(name)
+                        .cloned()
+                        .ok_or_else(|| VmFault::UndefinedGlobal { name: name.clone() })?
+                };
+                if self.metrics_enabled {
+                    self.metrics.global_hits = self.metrics.global_hits.saturating_add(1);
+                }
                 self.push(val)?;
             }
             OpCode::SetGlobal => {
@@ -133,7 +154,19 @@ impl Vm {
                 let val = self.pop()?;
                 // Publication point: a global outlives the scope that minted any handle in it.
                 self.publish_check(&val, || format!("global '{name}'"))?;
-                self.globals.insert(name.clone(), val);
+                let slot =
+                    self.global_slots
+                        .get_mut(idx)
+                        .ok_or_else(|| VmFault::CorruptedBytecode {
+                            offset: self.ip - 2,
+                            reason: format!("global slot {idx} out of bounds"),
+                        })?;
+                *slot = Some(val.clone());
+                if let Some(global) = self.globals.get_mut(name) {
+                    *global = val;
+                } else {
+                    self.globals.insert(name.clone(), val);
+                }
             }
             OpCode::Add => {
                 let b = self.pop()?;
@@ -265,6 +298,7 @@ impl Vm {
                 // which is outside the scope a host callback ran in.
                 self.publish_check(&ret_val, || "a return value".to_string())?;
                 if let Some(frame) = self.frames.pop() {
+                    self.refresh_frame_base();
                     self.upvalue_frames.pop();
                     self.mutation_journal.truncate(frame.journal_start);
                     if self.frames.is_empty()
@@ -286,6 +320,9 @@ impl Vm {
                 }
             }
             OpCode::GetField => {
+                if self.metrics_enabled {
+                    self.metrics.field_lookups = self.metrics.field_lookups.saturating_add(1);
+                }
                 let name_idx = self.read_u16(module)? as usize;
                 let field_name =
                     module
@@ -308,11 +345,29 @@ impl Vm {
 
                 match &target {
                     Value::Struct(inst) => {
-                        let field = inst.borrow().get_field(field_name).cloned();
+                        let field = {
+                            let instance = inst.borrow();
+                            match self.lookup_struct_field(
+                                name_idx,
+                                &instance.type_name,
+                                field_name,
+                            ) {
+                                FieldLookup::Field(index) => {
+                                    instance.fields.get(index).map(|(_, value)| value.clone())
+                                }
+                                FieldLookup::Missing => instance.get_field(field_name).cloned(),
+                            }
+                        };
                         if let Some(val) = field {
+                            if self.metrics_enabled {
+                                self.metrics.field_hits = self.metrics.field_hits.saturating_add(1);
+                            }
                             self.push(val)?;
                         } else {
                             let type_name = inst.borrow().type_name.clone();
+                            if self.metrics_enabled {
+                                self.metrics.field_hits = self.metrics.field_hits.saturating_add(1);
+                            }
                             if let Some((entry_ip, total_arity, is_async)) = self
                                 .struct_methods
                                 .get(&(type_name.clone(), field_name.clone()))
@@ -353,8 +408,14 @@ impl Vm {
                         let key = Value::String(Rc::new(field_name.clone()));
                         let found = d.borrow().get(&key).cloned();
                         if let Some(v) = found {
+                            if self.metrics_enabled {
+                                self.metrics.field_hits = self.metrics.field_hits.saturating_add(1);
+                            }
                             self.push(v)?;
                         } else if let Some(method) = self.bind_method(&target, field_name) {
+                            if self.metrics_enabled {
+                                self.metrics.field_hits = self.metrics.field_hits.saturating_add(1);
+                            }
                             self.push(method)?;
                         } else {
                             return Err(VmFault::KeyNotFound {
@@ -365,6 +426,9 @@ impl Vm {
                     }
                     other => {
                         if let Some(method) = self.bind_method(other, field_name) {
+                            if self.metrics_enabled {
+                                self.metrics.field_hits = self.metrics.field_hits.saturating_add(1);
+                            }
                             self.push(method)?;
                         } else {
                             return Err(VmFault::TypeMismatch {
@@ -409,15 +473,44 @@ impl Vm {
                 self.publish_check(&new_val, || format!("field '{field_name}'"))?;
 
                 if let Value::Struct(inst) = &target {
-                    let type_name = inst.borrow().type_name.clone();
                     // Canon applies a guarded update provisionally and verifies it at the end
                     // of the enclosing mutable operation, so the frame-entry value is kept for
                     // a possible rollback instead of validating the assignment right here.
-                    let entry_value = inst.borrow().get_field(field_name).cloned();
-                    let published = !inst.borrow().under_construction;
-                    inst.borrow_mut().set_field(field_name, new_val)?;
+                    let (entry_value, published, guarded, field_slot) = {
+                        let instance = inst.borrow();
+                        let field_slot =
+                            self.lookup_struct_field(name_idx, &instance.type_name, field_name);
+                        let guarded = self.type_is_guarded(&instance.type_name);
+                        let entry_value = if guarded {
+                            match field_slot {
+                                FieldLookup::Field(index) => {
+                                    instance.fields.get(index).map(|(_, value)| value.clone())
+                                }
+                                FieldLookup::Missing => instance.get_field(field_name).cloned(),
+                            }
+                        } else {
+                            None
+                        };
+                        (
+                            entry_value,
+                            !instance.under_construction,
+                            guarded,
+                            field_slot,
+                        )
+                    };
+                    let mut instance = inst.borrow_mut();
+                    if let FieldLookup::Field(index) = field_slot {
+                        if instance.fields.get(index).is_some() {
+                            instance.set_field_at(index, field_name, new_val)?;
+                        } else {
+                            instance.set_field(field_name, new_val)?;
+                        }
+                    } else {
+                        instance.set_field(field_name, new_val)?;
+                    }
+                    drop(instance);
 
-                    if published && self.type_is_guarded(&type_name) {
+                    if published && guarded {
                         if let Some(previous) = entry_value {
                             self.journal_mutation(Rc::clone(inst), field_name.clone(), previous);
                         }
@@ -1206,6 +1299,22 @@ impl Vm {
                 Ok(list.borrow()[position].clone())
             }
             Value::String(text) => {
+                if text.is_ascii() {
+                    let len = text.len();
+                    #[allow(clippy::cast_possible_wrap)]
+                    let actual = if index < 0 {
+                        (len as i64) + index
+                    } else {
+                        index
+                    };
+                    let position = usize::try_from(actual)
+                        .ok()
+                        .filter(|position| *position < len)
+                        .ok_or(VmFault::IndexOutOfRange { index, len })?;
+                    return Ok(Value::String(Rc::new(
+                        (text.as_bytes()[position] as char).to_string(),
+                    )));
+                }
                 let chars: Vec<char> = text.chars().collect();
                 let len = chars.len();
                 #[allow(clippy::cast_possible_wrap)]

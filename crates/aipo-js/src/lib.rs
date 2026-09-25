@@ -27,7 +27,7 @@ use serde_json::{Value as Json, json};
 ///
 /// Bumped whenever `runtime/aipo-runtime.js` semantics change; the emitted
 /// `app.js` records it so a stale shim is detectable.
-pub const RUNTIME_VERSION: &str = "1.2.0";
+pub const RUNTIME_VERSION: &str = "1.2.1";
 
 /// The versioned runtime shim source, embedded at compile time.
 pub const RUNTIME_JS: &str = include_str!("../runtime/aipo-runtime.js");

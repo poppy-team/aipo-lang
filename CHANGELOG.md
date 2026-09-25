@@ -5,7 +5,27 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [Não lançado]
 
+### Produto
+
+- **Recorte da `aipo v0.1.0` (ADP-008)**: a primeira release é da linguagem, com async, CLI mínima, test runner, C ABI síncrona e thin proofs de interoperabilidade Rust/C/JS; engines, editors, registry e web profile completo ficam pós-v1.
+
 ### Adicionado
+- **Performance — Cross-language benchmark suite**:
+  - `aipo-bench --compare` compara workloads determinísticos com Aipo CLI/VM, Aipo VM in-process, Aipo→JavaScript/Node, Lua, LuaJIT, Wren, Luau, CPython, PyPy, Ruby, JavaScript/Node e Rust nativo.
+  - O runner exige checksums iguais, executa as mesmas operações lógicas no Rust nativo, mede warmup separadamente e grava samples brutos, median/MAD, p95, versões, profile e estado do Git em JSON.
+  - `--compare-workloads` seleciona workloads individualmente para A/B isolado, sem misturar o custo de outras operações.
+  - Rust nativo é controle de lower bound; startup, compilação e steady-state são reportados separadamente, com limites explícitos de entrada e rondas.
+  - A primeira onda adiciona Wren 0.4.0, Luau 0.739 e PyPy 8.0.0 como referências opcionais, com fixtures portáveis, candidatos de executável, argumentos específicos do Luau e fontes pinadas em `aipo-reference-runtime/SOURCES.json`.
+  - O workload `fields` mede seis campos, mutação e dispatch de método; a primeira evidência directional mostrou Aipo VM em 1.430,92ms contra 120,35ms do Wren e 63,15ms do Luau, motivando uma otimização de lookup de fields como próximo experimento.
+  - **Performance — Cache monomórfico de field slot**: `aipo-vm` memoriza o slot por site e tipo, acelerando `GetField`/`SetField` sem alterar o layout público de `StructInstance`; A/B de 15 samples reduziu o median de 1.001,77ms para 718,20ms (-28,31%) no workload `fields`, com 2.399.992 hits e 8 misses.
+  - **Performance — Cache do frame base**: `aipo-vm` mantém o `stack_base` do frame ativo para evitar `frames.last()` em cada acesso a local; A/B pareado de 31 samples reduziu `arithmetic` de 276,23ms para 265,98ms (-3,71%), `fields` de 736,02ms para 687,05ms (-6,65%) e `recursion` de 97,72ms para 93,65ms (-4,17%), com checksums e métricas idênticos. A validade da restauração após retorno aninhado e troca de tasks tem teste de regressão dedicado.
+  - **Performance — `SetField` sem cópia de entrada para structs unguarded**: a cópia do valor anterior agora ocorre somente quando o tipo é guarded e precisa entrar no journal; o fixture `fields` elimina 600.000 clones de `Value` de forma determinística. O A/B de 31 samples não mostrou ganho consistente de wall-clock, portanto não há claim de velocidade.
+  - O relatório agora usa schema 5, expõe `field_cache_hits`/`field_cache_misses` e pode registrar `peak_rss_bytes` por amostragem Linux com `--compare-resources`, em uma execução separada; contadores de alocação permanecem nulos até adapters runtime-specific existirem.
+- **Performance — Otimizações do caminho quente da VM e do shim JS**:
+  - `aipo-vm` passou a usar cache de constantes, slots de globals e índices de campos/métodos, com fallback para structs nativas não registradas; natives e conversões também recebem argumentos por slice emprestado, removendo `Vec` por chamada.
+  - `aipo-bytecode` deduplica constantes e remove propagações de falha redundantes após constantes e functions; strings ASCII têm fast path para concatenação e indexação.
+  - `aipo-js` prepara locals/upvalues por slot no carregamento do módulo, usa cache preguiçoso de constantes por instrução e mantém o contrato de paridade; métricas da VM são coletadas fora do tempo de execução no relatório cross-language.
+  - A rodada local final registrou 45 resultados, 0 skipped e 0 failures; o relatório completo permanece em `target/cross-language-final.json`, e a medição pós-mudança sob carga elevada está em `target/cross-language-final-current.json`.
 - **CLI — Autenticação GitHub opt-in (P04-G11)**:
   - `aipo package fetch-github` e `aipo package lock --fetch-github` aceitam `--github-token-env <name>`; o valor do token vem exclusivamente da variável de ambiente nomeada.
   - Credenciais bearer são validadas, redacted em `Debug` e nunca são aceitas diretamente como argumentos, persistidas, logadas ou incluídas em diagnostics; sem a flag, o comportamento público sem `Authorization` permanece o padrão.
@@ -161,6 +181,8 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 ### Refatorado
 - **`aipo-vm/src/vm.rs` fatiado em `src/vm/`** (`mod`, `dispatch`, `call`, `journal`, `contract`, `method`, `failure`, `helpers`) sem mudança semântica — suíte completa verde antes e depois.
 - **Contrato `aipo-vm`**: threading single-thread documentado como decisão (`Rc<RefCell>` ⇒ `!Send`), menções obsoletas a `gc-arena` removidas.
+- **Performance — decisão sobre cache de metadata de métodos**: o protótipo de cache por site/tipo foi medido no workload `fields`, registrou 199.998 hits e 2 misses, mas não trouxe ganho reproduzível sob o runner compartilhado; foi revertido, mantendo os caches de fields e frame base. Evidências em `docs/performance/cross-language.md`.
+- **Performance — pool de nomes de métodos**: as variantes experimentais com `Rc<str>` e `Owned`/`Shared` não mostraram ganho reproduzível e foram revertidas; a API pública de `BoundMethodData` permanece com `String`. Evidências em `docs/performance/cross-language.md`.
 
 ### Corrigido
 - **Escopo de módulo (P00-G16)**: bindings `let`/`var` de topo de módulo agora são visíveis dentro de funções, métodos e `impl` — o padrão canônico `var counter` + `fn bump()` compila e executa. Causa: o `aipo-sema` analisava corpos de itens antes de declarar os bindings de topo.

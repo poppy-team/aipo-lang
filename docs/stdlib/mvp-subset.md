@@ -308,13 +308,14 @@ Wave 3 has since closed `Set`, lazy `Sequence`, the `Bytes` packing APIs
 surface (`Task`/`Group` values, a cooperative scheduler, `async fn`/`await`/`await do` and the
 `task.*` combinators) — see `docs/evidence/P02-G01-wave3-types-and-values.md`.
 
-Wave 4 has since started the host ABI (`aipo-host`) and closed the `time` clock module on both
-backends (`time.now`/`time.monotonic` behind the `clock` capabilities, with a deterministic test
-profile) — see `docs/evidence/P03-G01-host-abi.md`. This slice adds the VM host-task path and the
-restricted VM-only `fs` read/roots surface; filesystem writes, handles and JS/Web fallback remain
-out of scope.
+Wave 4 has since delivered the host ABI (`aipo-host`), the VM host-task path, the restricted
+VM-only `fs` read/roots surface, the `time` clock module and the Poppy ECS host. Filesystem writes,
+arbitrary handles and JS/Web fallback remain outside this stdlib slice.
 
-Still explicitly deferred: LSP and REPL, packages/registry, regex/json/http, `Date`/
-`TimeOfDay`/`DateTime`, the ECS host (`aipo-poppy`) and hot reload. Type values for `List`/`Dict`/`Bytes` and a
-dedicated `Byte` runtime kind were listed here previously and are now delivered — see
+Still explicitly deferred for the language release: LSP and REPL, registry/publication, a DOM/storage
+web profile, general network modules, a visual editor, full hot reload and the future Aipo/Petunia3D
+engine. `regex`, `json`, `Date`/`TimeOfDay`/`DateTime`, `aipo-poppy` and the local/GitHub package
+path are already delivered. The C ABI, JS interoperability boundary and minimal `aipo test` runner
+are the next `aipo v0.1.0` targets. Type values for `List`/`Dict`/`Bytes` and a dedicated `Byte`
+runtime kind were listed here previously and are now delivered — see
 `docs/evidence/P00-G10-backend-completion.md`.

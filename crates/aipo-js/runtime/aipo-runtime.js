@@ -2,7 +2,7 @@
 // ESM. Mirrors the Rust VM value model and Core IR interpreter semantics:
 // divergence between VM and JS backends is a bug.
 // RUNTIME_VERSION must match aipo-js RUNTIME_VERSION in src/lib.rs.
-export const RUNTIME_VERSION = '1.2.0';
+export const RUNTIME_VERSION = '1.2.1';
 
 const MAX_SAFE_INT = 9007199254740991;
 const MIN_SAFE_INT = -9007199254740991;
@@ -1459,8 +1459,44 @@ function constToValue(c) {
   fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: bad constant');
 }
 
+function prepareFunction(fn) {
+  fn.params = fn.params || [];
+  fn.locals = fn.locals || [];
+  fn.upvalues = fn.upvalues || [];
+  fn.localNames = [...fn.params, ...fn.locals];
+  fn.localSet = new Set(fn.localNames);
+  fn.localIndex = new Map(fn.localNames.map((name, index) => [name, index]));
+  fn.upvalueIndex = new Map(fn.upvalues.map((name, index) => [name, index]));
+  for (const inst of fn.code) {
+    if (inst.op === 'Constant') {
+      inst.const = undefined;
+    }
+    if (inst.op === 'Load' || inst.op === 'Store') {
+      const localSlot = fn.localIndex.get(inst.name);
+      if (localSlot !== undefined) {
+        inst.local = true;
+        inst.slot = localSlot;
+      } else {
+        const upvalueSlot = fn.upvalueIndex.get(inst.name);
+        if (upvalueSlot !== undefined) {
+          inst.upvalue = true;
+          inst.slot = upvalueSlot;
+        }
+      }
+    } else if (inst.op === 'GetUpvalue' || inst.op === 'SetUpvalue') {
+      const slot = fn.upvalueIndex.get(inst.name);
+      if (slot !== undefined) {
+        inst.upvalue = true;
+        inst.slot = slot;
+      }
+    }
+  }
+}
+
 function makeMachine(module) {
   const funcIndex = new Map();
+  for (const fn of module.functions) prepareFunction(fn);
+  prepareFunction(module.top);
   module.functions.forEach((f, i) => funcIndex.set(f.name, i));
   const invEntries = new Map();
   module.functions.forEach((f, i) => {
@@ -3236,8 +3272,8 @@ function beginCall(m, argc) {
   const callFn = (idx, vars, cells) => {
     const fn = m.module.functions[idx];
     checkArity(argc, fn.params.length);
-    const v = {};
-    fn.params.forEach((p, i) => { v[p] = args[i]; });
+    const v = new Array(fn.localNames.length);
+    fn.params.forEach((_, i) => { v[i] = args[i]; });
     m.frames.push({ fn, ip: 0, vars: v, cells, base: calleeIdx, journalStart: m.journal.length });
   };
   const isAsyncCallee = (idx) => {
@@ -3287,9 +3323,9 @@ function beginCall(m, argc) {
       }
       m.stack[calleeIdx] = callee.recv;
       const fn = m.module.functions[callee.idx];
-      const v = {};
-      v[fn.params[0]] = callee.recv;
-      args.forEach((a, i) => { v[fn.params[i + 1]] = a; });
+      const v = new Array(fn.localNames.length);
+      v[0] = callee.recv;
+      args.forEach((a, i) => { v[i + 1] = a; });
       m.frames.push({ fn, ip: 0, vars: v, cells: null, base: calleeIdx, journalStart: m.journal.length });
       m.stack.length = calleeIdx + 1 + argc;
     } else if (callee.kind === 'higher') {
@@ -4000,8 +4036,8 @@ function spawnTask(m, callee, args, group) {
   const fn = m.module.functions[callee.idx];
   checkArity(args.length, fn.params.length);
   const id = m.nextTask++;
-  const v = {};
-  fn.params.forEach((p, i) => { v[p] = args[i]; });
+  const v = new Array(fn.localNames.length);
+  fn.params.forEach((_, i) => { v[i] = args[i]; });
   const frame = { fn, ip: 0, vars: v, cells: callee.cells || null, base: 0, journalStart: 0 };
   const state = {
     status: { t: 'pending' },
@@ -4391,34 +4427,44 @@ function stepFn(m) {
   }
   const inst = fn.code[fr.ip++];
   const op = inst.op;
-  const localNames = [...fn.params, ...fn.locals];
   switch (op) {
-    case 'Constant': mPush(m, constToValue(inst.value)); break;
+    case 'Constant': {
+      if (inst.const === undefined) inst.const = constToValue(inst.value);
+      mPush(m, inst.const);
+      break;
+    }
     case 'Load': {
-      const n = inst.name;
-      if (fn.params.includes(n) || fn.locals.includes(n)) {
-        mPush(m, Object.hasOwn(fr.vars, n) ? fr.vars[n] : vUnset());
-      } else if (fr.cells && Object.hasOwn(fr.cells, n)) mPush(m, fr.cells[n].v);
-      else if (m.globals.has(n)) mPush(m, m.globals.get(n));
-      else fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: undefined global '${n}'`);
+      if (inst.local) {
+        const value = fr.vars[inst.slot];
+        mPush(m, value === undefined ? vUnset() : value);
+      } else {
+        const n = inst.name;
+        if (inst.upvalue) {
+          if (fr.cells && Object.hasOwn(fr.cells, n)) mPush(m, fr.cells[n].v);
+          else fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: stack underflow');
+        } else if (m.globals.has(n)) mPush(m, m.globals.get(n));
+        else fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: undefined global '${n}'`);
+      }
       break;
     }
     case 'Store': {
       const n = inst.name;
       const v = mPop(m);
-      if (fn.params.includes(n) || fn.locals.includes(n)) fr.vars[n] = v;
-      else if (fr.cells && Object.hasOwn(fr.cells, n)) fr.cells[n].v = v;
-      else m.globals.set(n, v);
+      if (inst.local) fr.vars[inst.slot] = v;
+      else if (inst.upvalue) {
+        if (!fr.cells || !Object.hasOwn(fr.cells, n)) fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: stack underflow');
+        fr.cells[n].v = v;
+      } else m.globals.set(n, v);
       break;
     }
     case 'GetUpvalue': {
-      const n = inst.name;
+      const n = fn.upvalues[inst.slot];
       if (!fr.cells || !Object.hasOwn(fr.cells, n)) fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: stack underflow');
       mPush(m, fr.cells[n].v);
       break;
     }
     case 'SetUpvalue': {
-      const n = inst.name;
+      const n = fn.upvalues[inst.slot];
       if (!fr.cells || !Object.hasOwn(fr.cells, n)) fault('AIPO_RT_TYPE_MISMATCH', 'type mismatch: stack underflow');
       fr.cells[n].v = mPop(m);
       break;
@@ -4485,8 +4531,7 @@ function stepFn(m) {
       break;
     }
     case 'JumpIfSetLocal': {
-      const nm = localNames[inst.slot];
-      const v = nm !== undefined && Object.hasOwn(fr.vars, nm) ? fr.vars[nm] : vUnset();
+      const v = fr.vars[inst.slot] === undefined ? vUnset() : fr.vars[inst.slot];
       if (v.t !== 'unset') fr.ip = inst.t;
       break;
     }
@@ -4616,8 +4661,9 @@ function stepFn(m) {
       for (const cap of inst.ups || []) {
         if (inst.self !== undefined && inst.self !== null && cap === inst.self) {
           cells[cap] = { v: vUnset() };
-        } else if (Object.hasOwn(fr.vars, cap)) {
-          cells[cap] = { v: fr.vars[cap] };
+        } else if (fn.localIndex.has(cap)) {
+          const value = fr.vars[fn.localIndex.get(cap)];
+          cells[cap] = { v: value === undefined ? vUnset() : value };
         } else if (fr.cells && Object.hasOwn(fr.cells, cap)) {
           cells[cap] = fr.cells[cap];
         } else if (m.globals.has(cap)) {
@@ -4734,7 +4780,7 @@ export function runModule(module) {
     }
   }
   const top = module.top;
-  m.frames.push({ fn: top, ip: 0, vars: {}, cells: null, base: 0, journalStart: 0 });
+  m.frames.push({ fn: top, ip: 0, vars: new Array(top.localNames.length), cells: null, base: 0, journalStart: 0 });
   try {
     while (m.mainOutcome === null) {
       if (m.current === null && m.frames.length === 0) {

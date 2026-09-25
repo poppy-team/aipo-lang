@@ -1,20 +1,31 @@
 //! Method binding, mutation-during-iteration guards, and the higher-order
 //! collection methods that call back into Aipo code.
 use super::helpers::{collection_identity, compare_keys, iterable_items};
-use super::{MUTATING_METHODS, Vm};
+use super::{MUTATING_METHODS, MethodNative, Vm};
 use crate::fault::{VmError, VmFault};
 use crate::value::{MethodKind, Value};
 use aipo_bytecode::BytecodeModule;
 use std::cell::RefCell;
 use std::rc::Rc;
 impl Vm {
+    pub(super) fn lookup_method_native(
+        &self,
+        type_name: &str,
+        method: &str,
+    ) -> Option<(usize, MethodNative)> {
+        self.method_natives_by_type
+            .get(type_name)
+            .and_then(|methods| methods.get(method))
+            .copied()
+    }
+
     /// Binds a method of `receiver` by name, if one exists.
     ///
     /// The bound value carries the *plain* method name: the mutation guard and the
     /// higher-order dispatch both key off canonical method names (`add`, `filter`, …),
     /// independent of the receiver type.
     pub(super) fn bind_method(&self, receiver: &Value, method: &str) -> Option<Value> {
-        let type_name = receiver.type_name().to_string();
+        let type_name = receiver.type_name();
         // Sequence methods dispatch through the scheduler-aware path in
         // `begin_call` (pure stages append, driving stages evaluate).
         if matches!(receiver, Value::Sequence(_)) {
@@ -45,12 +56,12 @@ impl Vm {
                 MethodKind::HigherOrder,
             ));
         }
-        if let Some((arity, func)) = self.method_natives.get(&(type_name, method.to_string())) {
+        if let Some((arity, func)) = self.lookup_method_native(type_name, method) {
             return Some(Value::bound_method(
                 method,
-                *arity,
+                arity,
                 receiver.clone(),
-                MethodKind::Native(*func),
+                MethodKind::Native(func),
             ));
         }
         if matches!(

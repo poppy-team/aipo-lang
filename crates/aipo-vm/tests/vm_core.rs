@@ -304,6 +304,73 @@ fn test_function_call_and_return() {
 }
 
 #[test]
+fn test_nested_calls_restore_the_outer_frame_base() {
+    let mut vm = Vm::new();
+    vm.define_global(
+        "inner",
+        Value::Function {
+            entry_ip: 20,
+            arity: 1,
+            is_async: false,
+        },
+    );
+    vm.define_global(
+        "outer",
+        Value::Function {
+            entry_ip: 3,
+            arity: 1,
+            is_async: false,
+        },
+    );
+
+    let mut code = Vec::new();
+    // Main @ 28: call outer(10), then return its result.
+    code.push(OpCode::Jump as u8);
+    code.extend_from_slice(&25i16.to_be_bytes());
+
+    // outer @ 3: inner(local 0), discard its result, then add 10 to local 0.
+    code.push(OpCode::GetGlobal as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+    code.push(OpCode::GetLocal as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+    code.push(OpCode::Call as u8);
+    code.push(1u8);
+    code.push(OpCode::Pop as u8);
+    code.push(OpCode::GetLocal as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&1u16.to_be_bytes());
+    code.push(OpCode::Add as u8);
+    code.push(OpCode::Return as u8);
+
+    // inner @ 20: local 0 * 2.
+    code.push(OpCode::GetLocal as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+    code.push(OpCode::Mul as u8);
+    code.push(OpCode::Return as u8);
+
+    // Main @ 28: outer(10).
+    code.push(OpCode::GetGlobal as u8);
+    code.extend_from_slice(&1u16.to_be_bytes());
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&1u16.to_be_bytes());
+    code.push(OpCode::Call as u8);
+    code.push(1u8);
+    code.push(OpCode::Return as u8);
+
+    let module = make_test_module(
+        code,
+        vec![Constant::Int(2), Constant::Int(10)],
+        vec!["inner".to_string(), "outer".to_string()],
+    );
+
+    let result = vm.run(&module).expect("nested calls should succeed");
+    assert_eq!(result, Value::Int(20));
+}
+
+#[test]
 fn test_call_with_extra_arguments_faults_on_arity() {
     // Regression guard for the runtime arity check: a callee declared with one
     // parameter must reject two arguments even when every value is well-typed.
@@ -648,4 +715,19 @@ fn test_async_host_native_can_be_cancelled_before_driving() {
         "{error:?}"
     );
     assert_eq!(vm.get_global("host_count"), None);
+}
+
+#[test]
+fn test_metrics_count_executed_instructions_and_constants() {
+    let mut vm = Vm::new();
+    vm.enable_metrics();
+    let module = make_test_module(
+        vec![OpCode::Constant as u8, 0, 0],
+        vec![Constant::Int(7)],
+        vec![],
+    );
+    vm.run(&module).expect("metric workload runs");
+    let metrics = vm.metrics();
+    assert_eq!(metrics.instructions, 2);
+    assert_eq!(metrics.constant_loads, 1);
 }

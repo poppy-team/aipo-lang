@@ -27,3 +27,6 @@ aipo-bytecode = { path = "../aipo-bytecode" }
 aipo-formatter = { path = "../aipo-formatter" }
 aipo-js = { path = "../aipo-js" }
 aipo-testkit = { path = "../aipo-testkit" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

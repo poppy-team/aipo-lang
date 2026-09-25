@@ -33,6 +33,9 @@ dependencies = [
  "aipo-source",
  "aipo-syntax",
  "aipo-testkit",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

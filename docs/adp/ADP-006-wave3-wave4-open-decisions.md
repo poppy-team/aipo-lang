@@ -37,10 +37,11 @@ the block silently.
 ## D. `Duration` and deferred clock types
 
 Canon requires `Duration` plus `Date`/`TimeOfDay`/`DateTime` with ISO parsing,
-but IANA DB belongs to a package (Wave 6). Decision: `Duration(seconds:
+but the IANA timezone database belongs to a later package. Decision: `Duration(seconds:
 Int|Float)` conversion in Wave 3 with `+`, `-`, comparison and
-`total_seconds()`; `Date`/`TimeOfDay`/`DateTime` deferred to Wave 6
-`timezone` package (recorded, not hidden). `task.sleep(seconds)` accepts
+`total_seconds()`; the pure calendar types `Date`, `TimeOfDay` and `DateTime` are
+implemented without timezone identity. The IANA-backed `timezone` provider remains
+deferred. `task.sleep(seconds)` accepts
 Int/Float seconds directly; negative sleep is a recoverable Failure.
 
 ## E. Task combinators

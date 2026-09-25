@@ -10,8 +10,12 @@ use aipo_ir::CoreModule;
 use aipo_sema::PreludeSurface;
 use aipo_source::{Source, SourceId};
 use aipo_vm::{Vm, VmError};
+
+pub use aipo_vm::VmMetrics;
+
 use std::io::Write;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// `true` when no diagnostic has error severity.
 #[must_use]
@@ -79,15 +83,24 @@ pub enum PipelineFailure {
     Bytecode(Vec<String>),
 }
 
+const MAX_CAPTURE_BYTES: usize = 1024 * 1024;
+
 /// Writer adapter capturing stdlib output into shared bytes.
-struct CaptureWriter(Arc<Mutex<Vec<u8>>>);
+struct CaptureWriter {
+    buffer: Arc<Mutex<Vec<u8>>>,
+    limit: usize,
+}
 
 impl Write for CaptureWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0
+        let mut output = self
+            .buffer
             .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .extend_from_slice(buf);
+            .unwrap_or_else(|poison| poison.into_inner());
+        if output.len().saturating_add(buf.len()) > self.limit {
+            return Err(std::io::Error::other("captured output exceeded the limit"));
+        }
+        output.extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -96,21 +109,68 @@ impl Write for CaptureWriter {
     }
 }
 
+#[allow(missing_docs)]
+pub struct RunCaptureReport {
+    pub value: aipo_vm::Value,
+    pub stdout: String,
+    pub setup: Duration,
+    pub execution: Duration,
+    pub metrics: VmMetrics,
+}
+
 /// Executes verified bytecode with output captured, returning `(result, stdout)`.
 pub fn run_capture(module: &BytecodeModule) -> Result<(aipo_vm::Value, String), VmError> {
+    let report = run_capture_internal(module, false)?;
+    Ok((report.value, report.stdout))
+}
+
+#[allow(missing_docs)]
+pub fn run_capture_split(module: &BytecodeModule) -> Result<RunCaptureReport, VmError> {
+    run_capture_internal(module, false)
+}
+
+#[allow(missing_docs)]
+pub fn run_capture_split_with_metrics(
+    module: &BytecodeModule,
+) -> Result<RunCaptureReport, VmError> {
+    run_capture_internal(module, true)
+}
+
+fn run_capture_internal(
+    module: &BytecodeModule,
+    collect_metrics: bool,
+) -> Result<RunCaptureReport, VmError> {
+    let setup_start = Instant::now();
     let buffer = Arc::new(Mutex::new(Vec::<u8>::new()));
-    aipo_stdlib::io::set_output_sink(Some(Box::new(CaptureWriter(buffer.clone()))));
-    let outcome = run_module(module);
+    aipo_stdlib::io::set_output_sink(Some(Box::new(CaptureWriter {
+        buffer: buffer.clone(),
+        limit: MAX_CAPTURE_BYTES,
+    })));
+    let mut vm = build_vm(module);
+    if collect_metrics {
+        vm.enable_metrics();
+    }
+    let setup = setup_start.elapsed();
+    let execution_start = Instant::now();
+    let outcome = vm.run(module);
+    let execution = execution_start.elapsed();
     aipo_stdlib::io::set_output_sink(None);
     let bytes = buffer
         .lock()
         .unwrap_or_else(|poison| poison.into_inner())
         .clone();
     let stdout = String::from_utf8(bytes).unwrap_or_default();
-    outcome.map(|value| (value, stdout))
+    let value = outcome?;
+    Ok(RunCaptureReport {
+        value,
+        stdout,
+        setup,
+        execution,
+        metrics: vm.metrics(),
+    })
 }
 
-fn run_module(module: &BytecodeModule) -> Result<aipo_vm::Value, VmError> {
+fn build_vm(module: &BytecodeModule) -> Vm {
     let mut vm = Vm::new();
     let mut registry = aipo_runtime::NativeRegistry::new();
     aipo_stdlib::register_stdlib(&mut vm, &mut registry);
@@ -133,7 +193,7 @@ fn run_module(module: &BytecodeModule) -> Result<aipo_vm::Value, VmError> {
             );
         }
     }
-    vm.run(module).map(|_| aipo_vm::Value::None)
+    vm
 }
 
 /// Compiles and runs `text`, returning the captured stdout.
@@ -150,4 +210,16 @@ pub fn run_text(name: &str, text: &str) -> Result<String, PipelineFailure> {
                 error.to_string(),
             )])
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_writer_rejects_oversized_output() {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let mut writer = CaptureWriter { buffer, limit: 4 };
+        assert!(writer.write(b"12345").is_err());
+    }
 }

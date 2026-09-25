@@ -94,6 +94,33 @@ impl StructInstance {
         }
     }
 
+    /// Updates a field already resolved to its layout slot.
+    ///
+    /// # Errors
+    /// Returns the same fixed-field and missing-field faults as [`Self::set_field`] when the
+    /// cached slot is not valid for this instance.
+    pub fn set_field_at(
+        &mut self,
+        index: usize,
+        field_name: &str,
+        new_value: Value,
+    ) -> Result<(), VmFault> {
+        if !self.under_construction && self.fixed_fields.contains(field_name) {
+            return Err(VmFault::FixedFieldMutation {
+                type_name: self.type_name.clone(),
+                field: field_name.to_string(),
+            });
+        }
+        let Some((_, value)) = self.fields.get_mut(index) else {
+            return Err(VmFault::NoSuchField {
+                type_name: self.type_name.clone(),
+                field: field_name.to_string(),
+            });
+        };
+        *value = new_value;
+        Ok(())
+    }
+
     /// Restores a field to a journaled value during an invariant rollback.
     ///
     /// Canon returns the direct protected fields of the participating instances to their
@@ -674,10 +701,14 @@ impl Value {
                 Ok(Self::Float(res))
             }
             (Self::String(a), Self::String(b)) => {
-                // Canon makes NFC an invariant of `String`, and concatenation is the operation
-                // that can join a base character with a combining mark (interpolation lowers to
-                // `+`), so the result is re-normalized before the program can observe it.
-                let combined: String = a.chars().chain(b.chars()).nfc().collect();
+                let combined = if a.is_ascii() && b.is_ascii() {
+                    let mut combined = String::with_capacity(a.len() + b.len());
+                    combined.push_str(a);
+                    combined.push_str(b);
+                    combined
+                } else {
+                    a.chars().chain(b.chars()).nfc().collect()
+                };
                 Ok(Self::String(Rc::new(combined)))
             }
             (Self::List(a), Self::List(b)) => {

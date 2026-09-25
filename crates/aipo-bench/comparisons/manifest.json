@@ -1,0 +1,138 @@
+{
+  "schema_version": 2,
+  "description": "Portable cross-language workloads. Each program must print exactly checksum:<value>.",
+  "workloads": [
+    {
+      "id": "arithmetic",
+      "description": "Function-call arithmetic loop",
+      "n": 200000,
+      "checksum": "59999500000"
+    },
+    {
+      "id": "collections",
+      "description": "Build and iterate an integer list",
+      "n": 100000,
+      "checksum": "4999950000"
+    },
+    {
+      "id": "fields",
+      "description": "Struct field reads/writes and method dispatch",
+      "n": 100000,
+      "checksum": "1048699733"
+    },
+    {
+      "id": "strings",
+      "description": "Append a short ASCII string repeatedly",
+      "n": 5000,
+      "checksum": "10000"
+    },
+    {
+      "id": "recursion",
+      "description": "Recursive Fibonacci(24)",
+      "n": 0,
+      "checksum": "46368"
+    },
+    {
+      "id": "startup",
+      "description": "Process startup and runtime initialization",
+      "n": 0,
+      "checksum": "ready"
+    }
+  ],
+  "languages": [
+    {
+      "id": "aipo",
+      "label": "Aipo CLI/VM",
+      "kind": "aipo",
+      "script": "aipo/{workload}.aipo",
+      "required": true
+    },
+    {
+      "id": "aipo-vm",
+      "label": "Aipo VM in-process",
+      "kind": "aipo-vm",
+      "script": "aipo/{workload}.aipo",
+      "required": true
+    },
+    {
+      "id": "aipo-js",
+      "label": "Aipo → JavaScript/Node",
+      "kind": "aipo-js",
+      "script": "aipo/{workload}.aipo",
+      "required": true
+    },
+    {
+      "id": "lua",
+      "label": "Lua",
+      "kind": "script",
+      "command": "lua",
+      "script": "lua/{workload}.lua",
+      "required": false
+    },
+    {
+      "id": "luajit",
+      "label": "LuaJIT",
+      "kind": "script",
+      "command": "luajit",
+      "script": "lua/{workload}.lua",
+      "required": false
+    },
+    {
+      "id": "wren",
+      "label": "Wren",
+      "kind": "script",
+      "command": "wren_cli",
+      "command_candidates": ["wren"],
+      "script": "wren/{workload}.wren",
+      "required": false
+    },
+    {
+      "id": "luau",
+      "label": "Luau",
+      "kind": "script",
+      "command": "luau",
+      "program_args": true,
+      "script": "luau/{workload}.luau",
+      "required": false
+    },
+    {
+      "id": "pypy",
+      "label": "PyPy",
+      "kind": "script",
+      "command": "pypy3",
+      "command_candidates": ["pypy"],
+      "script": "python/{workload}.py",
+      "required": false
+    },
+    {
+      "id": "python",
+      "label": "Python",
+      "kind": "script",
+      "command": "python3",
+      "script": "python/{workload}.py",
+      "required": false
+    },
+    {
+      "id": "ruby",
+      "label": "Ruby",
+      "kind": "script",
+      "command": "ruby",
+      "script": "ruby/{workload}.rb",
+      "required": false
+    },
+    {
+      "id": "javascript",
+      "label": "JavaScript/Node",
+      "kind": "script",
+      "command": "node",
+      "script": "javascript/{workload}.mjs",
+      "required": false
+    },
+    {
+      "id": "rust",
+      "label": "Rust native",
+      "kind": "self",
+      "required": true
+    }
+  ]
+}

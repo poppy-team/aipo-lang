@@ -131,8 +131,10 @@ fn vm_case(rounds: usize, name: &str, source: &str) -> Sample {
     let (_, bytecode) = aipo_testkit::pipeline::compile_text("bench.aipo", source)
         .expect("bench workload compiles");
     let input = format!("{} B", source.len());
-    timez::measure(name, &input, None, rounds, || {
-        let _ = aipo_testkit::pipeline::run_capture(&bytecode);
+    timez::measure_split(name, &input, None, rounds, || {
+        let report = aipo_testkit::pipeline::run_capture_split(&bytecode)
+            .expect("bench VM workload executes");
+        (report.setup, report.execution)
     })
 }
 

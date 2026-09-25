@@ -4,32 +4,35 @@
 **Scope:** in-scope capabilities, non-goals, compatibility constraints
 **Blocking question:** What is explicitly out of scope?
 
-## In-scope capabilities (Wave 1 MVP + Wave 2 slice W2-1)
+## `aipo v0.1.0` language release
 
-- Fundamentals: Literals (`none`, `true`/`false`, Int, Float, Byte, String), bindings (`let`/`var`).
-- Control flow: `if`/`elif`/`else`/`end`, `loop`, `while`, `repeat`, `each` in collections, `break`, `continue`.
-- Functions and closures: first-class functions, default parameters, named arguments, lexical closures.
-- Data structures: `struct` with defaults and `fixed` fields, `impl` blocks, `List` and `Dict` collections.
-- Error handling: recoverable `fail` / `or_else` / `attempt ... failed ... end` (Model B) and runtime faults.
-- Contracts: optional signature contracts on parameters and returns checked at boundaries.
-- Tooling: `aipo run`, `aipo check`, `aipo fmt`, `aipo build` and structured JSONL diagnostics.
-- JavaScript backend (Wave 2, slice W2-1 delivered): Core IR → ESM bundle
-  (`app.js` + versioned runtime shim + source map) with VM↔JS differential
-  parity over the conformance corpus (see `docs/evidence/P01-G01-js-parity-mvp-subset.md`).
-- Wave 3 delivered: `Set`, lazy `Sequence`, `Bytes` packing APIs, `Duration` and the async
-  surface — `Task`/`Group` values, a deterministic cooperative scheduler with virtual time,
-  `task.spawn`/`sleep`/`all`/`race`/`timeout`/`cancel`/`group`, `async fn`, `await`, `await do`
-  and the static async diagnostics (see `docs/evidence/P02-G02-wave3-stdlib-async.md` and
-  `docs/evidence/P02-G03-wave3-async-syntax-and-diagnostics.md`).
+The first product boundary is a usable language release, not a complete platform. It must deliver:
 
-## Non-goals and what is explicitly out of scope
+- V1 language surface: syntax, modules, contracts, `Failure`/fault separation and the essential standard library.
+- Async language surface: `async fn`, `await`, `task.*` and deterministic cooperative scheduling.
+- Minimal CLI: `aipo run`, `aipo check`, `aipo build`, `aipo fmt` and `aipo test`.
+- Rust embedding and a versioned, synchronous C ABI with opaque handles and explicit capabilities.
+- Explicit, bounded JavaScript interoperability; no implicit Node or browser globals.
+- One small real interoperability proof for each boundary: Rust, C and JavaScript.
+- Local and pinned-GitHub packages, lockfile, cache and opt-in authentication already delivered by P04.
+- Executable examples, documentation, migration notes and all repository quality gates.
 
-What remains out of scope after Wave 3:
-- Host embedding ABI, Poppy game engine adapter, and sandboxing (deferred to Wave 4).
-- Language Server Protocol (LSP) and REPL (deferred to Wave 5).
-- Package manager, registry, and hot reload (deferred to Wave 6).
-- regex/json/fs/http modules.
-- Experimental optimizations: JIT, Cranelift, NaN-boxing, custom allocators.
+The release does not promise a complete port of any external library. It proves that the boundary is safe, explicit and usable. The C ABI boundary is specified in `docs/adp/ADP-009-synchronous-c-abi.md`; the interoperability proof criteria are in `docs/adp/ADP-010-interoperability-thin-proofs.md`.
+
+## Post-v1 product boundaries
+
+The following remain product work after the language release:
+
+- Godot and other engine adapters.
+- The future Aipo/Petunia3D engine; its core design is intentionally deferred.
+- `aipo new`, `aipo watch`, LSP, REPL, debugger and profiler.
+- DOM/storage web profile, `fetch`, workers and WebAssembly.
+- Registry, publication, SemVer solving, vendor trees and hot reload.
+- Visual editors, lifecycle scripts and complete third-party framework ports.
+
+## Current implementation status
+
+The language, VM, JavaScript backend, async surface, host contracts, local/GitHub package path and cache verification are implemented. The C ABI, minimal test runner and the three interoperability proofs are the next implementation targets for `v0.1.0`.
 
 ## Compatibility constraints
 

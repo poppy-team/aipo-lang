@@ -1,11 +1,11 @@
 # Aipo Performance Baseline
 
 **Status:** record (generated artifact, not a gate)
-**Scope:** wall-clock baselines for frontend stages, commands, VM workloads and the JS backend
+**Scope:** wall-clock baselines for frontend stages, commands, VM workloads, the JS backend and the separate cross-language suite
 **Environment:** Linux x86_64 (4 CPU, 5 GiB RAM), rustc 1.98.1, Node v24.18.0, `--release`, shared runner (noisy — see MAD column)
 **Recorded:** 2026-09-20, `cargo run --release -p aipo-bench` (7 samples, median/MAD), git a8709881
 
-These numbers are baselines for future comparison on a dedicated runner, **not** pass/fail thresholds.
+These numbers are baselines for future comparison on a dedicated runner, **not** pass/fail thresholds. For the multi-runtime protocol, raw samples, checksums and fairness rules, see `docs/performance/cross-language.md`.
 
 ## Frontend stages (median)
 
@@ -56,7 +56,7 @@ These numbers are baselines for future comparison on a dedicated runner, **not**
 | js/hello | 17 B | 57.64ms | 5.16ms |
 | js/integrated | 858 B | 72.06ms | 6.68ms |
 
-Node process spawn dominates small workloads (~50–70 ms total). VM-vs-JS steady-state comparison needs spawn-excluded measurement on a dedicated runner.
+Node process spawn dominates small workloads (~50–70 ms total). A medição cross-language separa Aipo VM in-process, Aipo CLI/VM e Aipo→JavaScript; comparações de steady-state ainda exigem runner dedicado.
 
 ## Scaling (list build/iterate, dict insert, N=200..1600)
 

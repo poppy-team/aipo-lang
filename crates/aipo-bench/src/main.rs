@@ -4,12 +4,14 @@
 //! passes/fails: it prints median/MAD samples plus scaling ratios, and writes
 //! a JSON baseline for later comparison on a dedicated runner. CI compiles
 //! this crate; temporal regression gates stay manual until a stable
-//! environment exists (see `docs/performance/tiers.md`).
+//! environment exists (see `docs/testing/ci-tiers.md`).
 //!
 //! Usage: `cargo run --release -p aipo-bench [--quick] [--json <path>]`.
+//! Cross-language comparison: `cargo run --release -p aipo-bench -- --compare`.
 
 use aipo_testkit::timez::{self, Sample};
 
+mod compare;
 mod workloads;
 
 fn samples(quick: bool) -> usize {
@@ -21,19 +23,31 @@ fn print_sample(sample: &Sample) {
         .bytes_per_sec
         .map(|bytes| format!(" | {:>10.0} B/s", bytes))
         .unwrap_or_default();
+    let execution = sample.execution_median.unwrap_or(sample.median);
+    let setup = sample
+        .setup_median
+        .map(|duration| format!(" setup={duration:?}"))
+        .unwrap_or_default();
     println!(
-        "  {:<46} {:>12} input={:<10} mad={:?} n={}{}",
+        "  {:<46} {:>12} input={:<10} mad={:?} n={}{}{}",
         sample.name,
-        format!("{:?}", sample.median),
+        format!("{:?}", execution),
         sample.input,
         sample.mad,
         sample.samples,
+        setup,
         throughput
     );
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if compare::is_worker_request(&args) {
+        std::process::exit(compare::run_rust_worker(&args));
+    }
+    if compare::is_requested(&args) {
+        std::process::exit(compare::run(&args[1..]));
+    }
     let quick = args.iter().any(|arg| arg == "--quick");
     let json_path = args
         .iter()
@@ -85,6 +99,18 @@ fn main() {
                 mad_ns: sample.mad.as_nanos(),
                 samples: sample.samples,
                 bytes_per_sec: sample.bytes_per_sec,
+                raw_samples_ns: sample
+                    .raw_samples
+                    .iter()
+                    .map(|value| value.as_nanos())
+                    .collect(),
+                setup_median_ns: sample.setup_median.map(|value| value.as_nanos()),
+                execution_median_ns: sample.execution_median.map(|value| value.as_nanos()),
+                raw_setup_samples_ns: sample
+                    .raw_setup_samples
+                    .iter()
+                    .map(|value| value.as_nanos())
+                    .collect(),
             })
             .collect();
         std::fs::write(&path, serde_json_like::render(&payload)).expect("baseline is writable");
@@ -101,7 +127,7 @@ fn rustc_version_string() -> String {
         .unwrap_or_else(|_| "unknown".to_string())
 }
 
-/// Minimal JSON rendering without a serialization dependency.
+/// Minimal stable JSON rendering for baseline samples.
 mod serde_json_like {
     pub(crate) struct Entry {
         pub name: String,
@@ -110,17 +136,34 @@ mod serde_json_like {
         pub mad_ns: u128,
         pub samples: usize,
         pub bytes_per_sec: Option<f64>,
+        pub raw_samples_ns: Vec<u128>,
+        pub setup_median_ns: Option<u128>,
+        pub execution_median_ns: Option<u128>,
+        pub raw_setup_samples_ns: Vec<u128>,
     }
 
     fn escape(text: &str) -> String {
         text.replace('\\', "\\\\").replace('"', "\\\"")
     }
 
+    fn render_optional_ns(value: Option<u128>) -> String {
+        value.map_or_else(|| "null".to_string(), |value| value.to_string())
+    }
+
+    fn render_ns_array(values: &[u128]) -> String {
+        let values = values
+            .iter()
+            .map(u128::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("[{values}]")
+    }
+
     pub(crate) fn render(entries: &[Entry]) -> String {
         let mut out = String::from("[\n");
         for (index, entry) in entries.iter().enumerate() {
             out.push_str(&format!(
-                "  {{\"name\": \"{}\", \"input\": \"{}\", \"median_ns\": {}, \"mad_ns\": {}, \"samples\": {}, \"bytes_per_sec\": {}}}",
+                "  {{\"name\": \"{}\", \"input\": \"{}\", \"median_ns\": {}, \"mad_ns\": {}, \"samples\": {}, \"bytes_per_sec\": {}, \"raw_samples_ns\": {}, \"setup_median_ns\": {}, \"execution_median_ns\": {}, \"raw_setup_samples_ns\": {}}}",
                 escape(&entry.name),
                 escape(&entry.input),
                 entry.median_ns,
@@ -129,6 +172,10 @@ mod serde_json_like {
                 entry
                     .bytes_per_sec
                     .map_or("null".to_string(), |v| format!("{v:.1}")),
+                render_ns_array(&entry.raw_samples_ns),
+                render_optional_ns(entry.setup_median_ns),
+                render_optional_ns(entry.execution_median_ns),
+                render_ns_array(&entry.raw_setup_samples_ns),
             ));
             if index + 1 < entries.len() {
                 out.push(',');

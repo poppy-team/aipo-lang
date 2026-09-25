@@ -55,6 +55,7 @@ Add further architecture, ADR/RFC and specifications as the project grows.
 - [Concurrency audit](testing/concurrency-audit.md) — global test state discipline
 - [Diagnostic accessibility rubric](testing/diagnostic-accessibility-rubric.md) — text-interface requirements
 - [Performance baseline](performance/baseline.md) — wall-clock medians per workload
+- [Cross-language benchmarks](performance/cross-language.md) — checksums, raw samples and runtime comparison protocol
 
 ## Evidence
 

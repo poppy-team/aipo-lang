@@ -1,0 +1,5 @@
+var value = ""
+repeat __N__
+    value = value + "ab"
+end
+io.println(f"checksum:{len(value)}")

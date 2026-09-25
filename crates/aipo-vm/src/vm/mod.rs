@@ -3,8 +3,9 @@
 use crate::fault::{VmError, VmFault};
 use crate::frame::{CallFrame, HandlerFrame};
 use crate::host::HostContext;
-use crate::value::{GroupId, StructInstance, TaskId, Value};
+use crate::value::{GroupId, StructInstance, TaskId, Value, check_finite_float, check_safe_int};
 use aipo_bytecode::BytecodeModule;
+use aipo_bytecode::opcode::Constant;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
@@ -84,20 +85,51 @@ struct MutationEntry {
 /// reference so that writes through an upvalue are visible to every holder.
 pub type UpvalueFrame = Option<Rc<Vec<Rc<RefCell<Value>>>>>;
 
+#[allow(missing_docs)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VmMetrics {
+    pub instructions: u64,
+    pub calls: u64,
+    pub function_calls: u64,
+    pub native_calls: u64,
+    pub bound_method_calls: u64,
+    pub field_lookups: u64,
+    pub field_hits: u64,
+    pub field_cache_hits: u64,
+    pub field_cache_misses: u64,
+    pub global_lookups: u64,
+    pub global_hits: u64,
+    pub constant_loads: u64,
+    pub local_clones: u64,
+    pub call_argument_copies: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FieldLookup {
+    Missing,
+    Field(usize),
+}
+
 /// Virtual Machine executing Aipo bytecode.
 pub struct Vm {
     /// Operand stack.
     pub stack: Vec<Value>,
     /// Call frames stack.
     pub frames: Vec<CallFrame>,
+    /// Cached stack base of the current call frame; zero when no frame is active.
+    frame_base: usize,
     /// Active recovery handler frames stack.
     pub handlers: Vec<HandlerFrame>,
     /// Global variable environment.
     pub globals: HashMap<String, Value>,
+    global_slots: Vec<Option<Value>>,
+    global_name_slots: HashMap<String, usize>,
     /// Instruction pointer within current code buffer.
     pub ip: usize,
     /// Registered struct definitions: type name -> [(field_name, is_fixed)].
     pub struct_defs: HashMap<String, Vec<(String, bool)>>,
+    struct_field_indices: HashMap<String, HashMap<String, usize>>,
+    field_cache: Vec<Option<(String, FieldLookup)>>,
     /// Registered struct invariant validators: type name -> validator.
     pub struct_invariants: HashMap<String, InvariantValidator>,
     /// Compiled `<Type>.invariant` predicate entry points, resolved from the running module.
@@ -111,6 +143,7 @@ pub struct Vm {
     pub upvalue_frames: Vec<UpvalueFrame>,
     /// Receiver-first native methods registered by the standard library.
     pub method_natives: HashMap<(String, String), (usize, MethodNative)>,
+    method_natives_by_type: HashMap<String, HashMap<String, (usize, MethodNative)>>,
     /// Native callbacks that receive the current VM context.
     host_natives: HashMap<String, HostNative>,
     /// User methods registered per struct type: (type, method) -> (entry ip, total arity,
@@ -126,6 +159,9 @@ pub struct Vm {
     halted_with: Option<Value>,
     /// Maximum allowed operand stack depth.
     pub max_stack_depth: usize,
+    constant_values: Vec<Value>,
+    metrics_enabled: bool,
+    metrics: VmMetrics,
     /// Scheduler-managed task states, including the suspended main task under id 0.
     tasks: HashMap<TaskId, task::TaskState>,
     /// Runnable tasks in FIFO order; sleepers stay queued until their deadline passes.
@@ -172,20 +208,29 @@ impl Vm {
         Self {
             stack: Vec::with_capacity(128),
             frames: Vec::with_capacity(16),
+            frame_base: 0,
             handlers: Vec::new(),
             globals: HashMap::new(),
+            global_slots: Vec::new(),
+            global_name_slots: HashMap::new(),
             ip: 0,
             struct_defs: HashMap::new(),
+            struct_field_indices: HashMap::new(),
+            field_cache: Vec::new(),
             struct_invariants: HashMap::new(),
             struct_invariant_entries: HashMap::new(),
             mutation_journal: Vec::new(),
             upvalue_frames: Vec::new(),
             method_natives: HashMap::new(),
+            method_natives_by_type: HashMap::new(),
             host_natives: HashMap::new(),
             struct_methods: HashMap::new(),
             active_iterations: Vec::new(),
             halted_with: None,
             max_stack_depth: 1024,
+            constant_values: Vec::new(),
+            metrics_enabled: false,
+            metrics: VmMetrics::default(),
             tasks: HashMap::new(),
             run_queue: VecDeque::new(),
             waiters: HashMap::new(),
@@ -216,6 +261,52 @@ impl Vm {
     #[must_use]
     pub fn host(&self) -> &HostContext {
         &self.host
+    }
+
+    #[allow(missing_docs)]
+    pub fn enable_metrics(&mut self) {
+        self.metrics_enabled = true;
+        self.metrics = VmMetrics::default();
+    }
+
+    #[allow(missing_docs)]
+    #[must_use]
+    pub fn metrics(&self) -> VmMetrics {
+        self.metrics
+    }
+
+    #[inline]
+    pub(super) fn refresh_frame_base(&mut self) {
+        self.frame_base = self.frames.last().map_or(0, |frame| frame.stack_base);
+    }
+
+    fn lookup_struct_field(
+        &mut self,
+        name_idx: usize,
+        type_name: &str,
+        field_name: &str,
+    ) -> FieldLookup {
+        if let Some(Some((cached_type, result))) = self.field_cache.get(name_idx) {
+            if cached_type == type_name {
+                if self.metrics_enabled {
+                    self.metrics.field_cache_hits = self.metrics.field_cache_hits.saturating_add(1);
+                }
+                return *result;
+            }
+        }
+        if self.metrics_enabled {
+            self.metrics.field_cache_misses = self.metrics.field_cache_misses.saturating_add(1);
+        }
+        let result = self
+            .struct_field_indices
+            .get(type_name)
+            .and_then(|fields| fields.get(field_name))
+            .copied()
+            .map_or(FieldLookup::Missing, FieldLookup::Field);
+        if let Some(slot) = self.field_cache.get_mut(name_idx) {
+            *slot = Some((type_name.to_string(), result));
+        }
+        result
     }
 
     /// Enforces the scoped-escape rule at one heap-publication point.
@@ -253,6 +344,10 @@ impl Vm {
     ) {
         self.method_natives
             .insert((type_name.to_string(), method.to_string()), (arity, func));
+        self.method_natives_by_type
+            .entry(type_name.to_string())
+            .or_default()
+            .insert(method.to_string(), (arity, func));
     }
 
     /// Registers a synchronous native callback that receives the current VM context.
@@ -334,11 +429,21 @@ impl Vm {
 
     /// Registers a struct type with its field names and `fixed` flags.
     pub fn register_struct(&mut self, type_name: impl Into<String>, fields: Vec<(&str, bool)>) {
+        let type_name = type_name.into();
         let field_defs = fields
             .into_iter()
             .map(|(name, fixed)| (name.to_string(), fixed))
-            .collect();
-        self.struct_defs.insert(type_name.into(), field_defs);
+            .collect::<Vec<_>>();
+        self.struct_field_indices.insert(
+            type_name.clone(),
+            field_defs
+                .iter()
+                .enumerate()
+                .map(|(index, field)| (field.0.clone(), index))
+                .collect(),
+        );
+        self.field_cache.clear();
+        self.struct_defs.insert(type_name, field_defs);
     }
 
     /// Registers an invariant validator for a struct type.
@@ -352,7 +457,11 @@ impl Vm {
 
     /// Defines or updates a global variable.
     pub fn define_global(&mut self, name: impl Into<String>, value: Value) {
-        self.globals.insert(name.into(), value);
+        let name = name.into();
+        if let Some(slot) = self.global_name_slots.get(&name).copied() {
+            self.global_slots[slot] = Some(value.clone());
+        }
+        self.globals.insert(name, value);
     }
 
     /// Retrieves a global variable's value.
@@ -403,6 +512,7 @@ impl Vm {
         self.ip = 0;
         self.stack.clear();
         self.frames.clear();
+        self.frame_base = 0;
         self.handlers.clear();
         self.upvalue_frames.clear();
         self.active_iterations.clear();
@@ -421,6 +531,31 @@ impl Vm {
         self.tick = 0;
         self.main_outcome = None;
         self.invoke_depth = 0;
+        self.metrics = VmMetrics::default();
+        self.field_cache.clear();
+        self.field_cache.resize(module.names.len(), None);
+
+        self.global_slots = vec![None; module.names.len()];
+        self.global_name_slots = module
+            .names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| (name.clone(), index))
+            .collect();
+        for (index, name) in module.names.iter().enumerate() {
+            self.global_slots[index] = self.globals.get(name).cloned();
+        }
+        self.constant_values = module
+            .constants
+            .iter()
+            .map(|constant| match constant {
+                Constant::Nil => Ok(Value::None),
+                Constant::Bool(value) => Ok(Value::Bool(*value)),
+                Constant::Int(value) => check_safe_int(*value).map(Value::Int),
+                Constant::Float(value) => check_finite_float(*value).map(Value::Float),
+                Constant::String(value) => Ok(Value::String(Rc::new(value.clone()))),
+            })
+            .collect::<Result<Vec<_>, VmFault>>()?;
 
         // Struct invariants are compiled as `Type.invariant` predicates, so the module itself
         // records how to reach each type's check: the runtime resolves the entry points once

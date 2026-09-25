@@ -1,0 +1,12 @@
+var values = []
+var i = 0
+repeat __N__
+    values.add(i)
+    i = i + 1
+end
+
+var total = 0
+each value in values
+    total = total + value
+end
+io.println(f"checksum:{total}")

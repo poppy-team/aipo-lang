@@ -1,0 +1,20 @@
+{
+  "created_paths": [
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/guards/tool-policy.json",
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/plugins/prumo.ts",
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/agents/prumo.md",
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/agents/architect.md",
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/agents/executor.md",
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/agents/verifier.md",
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/skills/evidence-collection/SKILL.md",
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/skills/code-review/SKILL.md",
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/skills/goal-management/SKILL.md",
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/commands/prumo.json",
+    "/home/raillen/Documentos/Projetos/aipo-lang/.opencode/opencode.json"
+  ],
+  "generator": "opencode-compiler",
+  "managed": true,
+  "prumo_generated": true,
+  "prumo_version": "0.6.0",
+  "target": "opencode"
+}

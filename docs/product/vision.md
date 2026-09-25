@@ -23,6 +23,8 @@ Aipo solves the friction between dynamic ergonomics and strong structural correc
 An expressive, general-purpose language implemented in safe Rust that executes reliably across Linux, macOS, and Windows, featuring an end-to-end stack:
 `.aipo` source → lexer → parser → HIR → sema → Core IR → bytecode → VM → CLI.
 
+The first delivery boundary is the `aipo v0.1.0` language release defined in `docs/product/scope.md` and `docs/adp/ADP-008-v0.1.0-language-release.md`.
+
 ## Success boundaries
 
 - Small, predictable runtime without uncontrolled memory leaks or panics.

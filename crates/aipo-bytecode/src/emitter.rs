@@ -71,6 +71,10 @@ impl Layout {
 #[derive(Default)]
 pub struct BytecodeEmitter {
     constants: Vec<Constant>,
+    constant_ints: HashMap<i64, u16>,
+    constant_bools: HashMap<bool, u16>,
+    constant_strings: HashMap<String, u16>,
+    constant_floats: Vec<(f64, u16)>,
     names: Vec<String>,
     name_map: HashMap<String, u16>,
     code: Vec<u8>,
@@ -256,10 +260,23 @@ impl BytecodeEmitter {
     }
 
     fn emit_body(&mut self, function: &CoreFunction, layout: &Layout) {
+        let mut previous: Option<&CoreInst> = None;
         for inst in &function.instructions {
             let offset = self.code.len();
             self.inst_offsets.push(offset);
+            if let Some(previous_inst) = previous {
+                if matches!(inst, CoreInst::PropagateFailure(_))
+                    && matches!(
+                        previous_inst,
+                        CoreInst::Constant(_, _) | CoreInst::MakeFunction(_, _)
+                    )
+                {
+                    previous = Some(inst);
+                    continue;
+                }
+            }
             self.emit_inst(inst, layout);
+            previous = Some(inst);
         }
         self.inst_offsets.push(self.code.len());
     }
@@ -280,10 +297,37 @@ impl BytecodeEmitter {
         self.code.extend_from_slice(&buf);
     }
 
-    fn add_constant(&mut self, c: Constant) -> u16 {
-        let idx = self.fit_u16("constant", self.constants.len());
-        self.constants.push(c);
-        idx
+    fn add_constant(&mut self, constant: Constant) -> u16 {
+        let existing = match &constant {
+            Constant::Nil => None,
+            Constant::Bool(value) => self.constant_bools.get(value).copied(),
+            Constant::Int(value) => self.constant_ints.get(value).copied(),
+            Constant::Float(value) => self
+                .constant_floats
+                .iter()
+                .find(|(candidate, _)| candidate == value)
+                .map(|(_, index)| *index),
+            Constant::String(value) => self.constant_strings.get(value).copied(),
+        };
+        if let Some(index) = existing {
+            return index;
+        }
+        let index = self.fit_u16("constant", self.constants.len());
+        match &constant {
+            Constant::Bool(value) => {
+                self.constant_bools.insert(*value, index);
+            }
+            Constant::Int(value) => {
+                self.constant_ints.insert(*value, index);
+            }
+            Constant::Float(value) => self.constant_floats.push((*value, index)),
+            Constant::String(value) => {
+                self.constant_strings.insert(value.clone(), index);
+            }
+            Constant::Nil => {}
+        }
+        self.constants.push(constant);
+        index
     }
 
     fn emit_load(&mut self, name: &str, layout: &Layout) {

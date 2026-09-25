@@ -22,6 +22,13 @@ impl Vm {
         if self.stack.len() < arg_count + 1 {
             return Err(VmFault::StackUnderflow.into());
         }
+        if self.metrics_enabled {
+            self.metrics.calls = self.metrics.calls.saturating_add(1);
+            self.metrics.call_argument_copies = self
+                .metrics
+                .call_argument_copies
+                .saturating_add(arg_count as u64);
+        }
 
         let callee_idx = self.stack.len() - 1 - arg_count;
         let callee = self.stack[callee_idx].clone();
@@ -53,6 +60,9 @@ impl Vm {
                 arity,
                 is_async,
             } => {
+                if self.metrics_enabled {
+                    self.metrics.function_calls = self.metrics.function_calls.saturating_add(1);
+                }
                 self.check_arity(arg_count, arity)?;
                 if is_async {
                     // Calling an async function spawns it eagerly and yields
@@ -78,9 +88,13 @@ impl Vm {
                     arg_count,
                     None,
                 );
+                self.refresh_frame_base();
                 self.ip = entry_ip;
             }
             Value::Closure(closure) => {
+                if self.metrics_enabled {
+                    self.metrics.function_calls = self.metrics.function_calls.saturating_add(1);
+                }
                 self.check_arity(arg_count, closure.arity)?;
                 if closure.is_async {
                     let callee = Value::Closure(closure.clone());
@@ -100,9 +114,13 @@ impl Vm {
                     arg_count,
                     Some(Rc::new(closure.upvalues.clone())),
                 );
+                self.refresh_frame_base();
                 self.ip = closure.entry_ip;
             }
             Value::Native { name, arity, func } => {
+                if self.metrics_enabled {
+                    self.metrics.native_calls = self.metrics.native_calls.saturating_add(1);
+                }
                 if name.is_empty() || name.trim() != name {
                     return Err(VmFault::TypeMismatch {
                         expected: "non-empty canonical native name".to_string(),
@@ -159,18 +177,21 @@ impl Vm {
                     let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
                     return self.task_call(&name, callee_idx, &args);
                 }
-                let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
-                let result = func(&args)?;
+                let result = func(&self.stack[callee_idx + 1..callee_idx + 1 + arg_count])?;
                 self.stack.truncate(callee_idx);
                 self.push(result)?;
             }
             Value::Type(tag) => {
-                let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
-                let result = convert_via_type(tag, &args)?;
+                let result =
+                    convert_via_type(tag, &self.stack[callee_idx + 1..callee_idx + 1 + arg_count])?;
                 self.stack.truncate(callee_idx);
                 self.push(result)?;
             }
             Value::BoundMethod(bm) => {
+                if self.metrics_enabled {
+                    self.metrics.bound_method_calls =
+                        self.metrics.bound_method_calls.saturating_add(1);
+                }
                 self.check_arity(arg_count, bm.arity)?;
                 self.ensure_mutation_allowed(&bm.receiver, &bm.name)?;
                 // `Sequence` and `Group` methods need the scheduler or the
@@ -185,8 +206,10 @@ impl Vm {
                 }
                 match bm.kind {
                     MethodKind::Native(func) => {
-                        let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
-                        let result = func(&bm.receiver, &args)?;
+                        let result = func(
+                            &bm.receiver,
+                            &self.stack[callee_idx + 1..callee_idx + 1 + arg_count],
+                        )?;
                         self.stack.truncate(callee_idx);
                         self.push(result)?;
                     }
@@ -232,6 +255,7 @@ impl Vm {
                             journal_start,
                         ));
                         self.upvalue_frames.push(None);
+                        self.refresh_frame_base();
                         self.ip = entry_ip;
                     }
                     MethodKind::HigherOrder => {
@@ -307,12 +331,14 @@ impl Vm {
                 Err(err) => {
                     self.stack.truncate(stack_base);
                     self.frames.truncate(frame_base);
+                    self.refresh_frame_base();
                     self.upvalue_frames.truncate(frame_base);
                     self.rollback_mutations(journal_base);
                     return Err(err);
                 }
             }
         }
+        self.refresh_frame_base();
         let result = self.pop()?;
         self.stack.truncate(stack_base);
         self.upvalue_frames.truncate(frame_base);

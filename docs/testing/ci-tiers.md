@@ -5,9 +5,7 @@
 **Related:** `docs/development/testing-strategy.md` (blocking gates),
 `docs/testing/tooling-decisions.md`
 
-> Note: this repository currently has no remote CI configuration; the tiers
-> below are the design to implement when CI lands. Names are
-> repository-appropriate: `fast`, `nightly`, `perf`.
+> Performance runs are intentionally manual and never block shared PR runners. The remote workflow runs the deterministic quality tiers; the `perf` tier requires a dedicated machine.
 
 ## Tier `fast` (every PR)
 
@@ -43,11 +41,13 @@ again (regression policy).
 ## Tier `perf` (dedicated runner only)
 
 ```bash
-cargo run --release -p aipo-bench -- --json baseline-candidate.json
-# compare against docs/performance/baseline.md; investigate >20% median
-# regressions on same hardware before merging perf-sensitive changes
+cargo build --release -p aipo-cli -p aipo-bench
+target/release/aipo-bench --json target/aipo-bench.json
+target/release/aipo-bench --compare --compare-json target/cross-language.json
 ```
 
-Wall-clock gates never block on shared runners (noise). Blocking performance
-gates additionally require: stable hardware, three historical baselines, and
-an explicit accepted threshold per workload.
+O relatório cross-language segue `docs/performance/cross-language.md`: inclui
+Aipo CLI/VM, Aipo VM in-process, Aipo→JavaScript/Node, Lua, LuaJIT, Python,
+Ruby, JavaScript/Node e Rust nativo, com checksums e samples brutos. Wall-clock
+gates nunca bloqueiam shared runners. Blocking performance gates exigem hardware
+estável, três baselines históricos e um threshold aceito por workload.

@@ -218,6 +218,7 @@ impl Vm {
             host_task: self.host_task.take(),
         };
         self.tasks.insert(id, state);
+        self.frame_base = 0;
         if matches!(status, TaskStatus::Sleeping { .. }) && !self.run_queue.contains(&id) {
             self.run_queue.push_back(id);
         }
@@ -244,6 +245,7 @@ impl Vm {
         std::mem::swap(&mut self.upvalue_frames, &mut state.upvalues);
         std::mem::swap(&mut self.mutation_journal, &mut state.journal);
         std::mem::swap(&mut self.active_iterations, &mut state.iterations);
+        self.refresh_frame_base();
         self.host_task = state.host_task.take();
         self.ip = state.ip;
         state.stack.clear();

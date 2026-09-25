@@ -21,8 +21,7 @@
    no-color discipline, cascade control (`crates/aipo-cli/tests/diagnostic_ui.rs`).
 8. **Resource/security** — hostile bytecode, resource exhaustion with termination
    contract, portable subprocess watchdog (no platform-only `timeout`).
-9. **Benchmarks** — `aipo-bench` baselines (median/MAD), scaling analysis;
-   compilation-gated in PRs, executed on a dedicated runner.
+9. **Benchmarks** — `aipo-bench` baselines (median/MAD), scaling analysis and cross-language samples/checksums; compilation-gated in PRs, executed on a dedicated runner.
 10. **Coverage-guided fuzz (nightly tier)** — `fuzz/` libFuzzer targets with
     committed seed corpora; see `docs/testing/ci-tiers.md`.
 

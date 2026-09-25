@@ -8,7 +8,7 @@ why, toolchain compatibility, how to run, CI tier and maintenance cost
 
 | Tool | Why | Run | CI tier | Maintenance |
 |---|---|---|---|---|
-| `aipo-bench` (in-house runner, zero deps) | Statistically honest baselines (median/MAD) with no MSRV or supply-chain cost | `cargo run --release -p aipo-bench [--quick] [--json out]` | PR compiles it; dedicated runner executes | Low: workloads file + committed `docs/performance/baseline.md` |
+| `aipo-bench` (in-house runner, no benchmark/statistics dependency) | Statistically honest baselines (median/MAD), raw samples, cross-language checksums and sampled peak RSS | `cargo run --release -p aipo-bench -- [--quick] [--json out]`; `--compare` for Aipo/Lua/LuaJIT/Wren/Luau/Python/PyPy/Ruby/Node/Rust | PR compiles it; dedicated runner executes | Low: workloads, comparison manifest and fixtures |
 | LLVM coverage via `llvm-tools` component + `docs/testing/coverage.sh` | Real line/region/function data with zero new dependencies | `bash docs/testing/coverage.sh [--report PATH]` | Scheduled (slow: full instrumented suite) | Low: script + component install |
 | `cargo-fuzz` 0.13.2 + libFuzzer targets (`fuzz/`) | Found a real P0 (IR builder panic) within ~2k executions | `cargo +nightly fuzz run <target> -- -max_total_time=N` (needs `~/.cargo/bin` first on PATH — see `fuzz/README.md`) | Nightly scheduled | Medium: targets, seeds, artifact triage |
 | `cargo-audit` 0.22.2 | Zero advisories over 31 deps, verified | `cargo audit` | Scheduled | Low |
@@ -36,6 +36,10 @@ why, toolchain compatibility, how to run, CI tier and maintenance cost
 
 ## Environment notes
 
+- Cross-language comparison discovers `lua`, `luajit`, `wren_cli`/`wren`, `luau`, `python3`, `pypy3`/`pypy`, `ruby` and `node`; missing optional runtimes are skipped, while a selected Aipo CLI/VM or Aipo→JavaScript path is a required failure when its binary/runtime is absent.
+- Rust native is a control path, not a like-for-like dynamic-language comparison; its startup includes the `aipo-bench` harness.
+- Reference source checkouts live outside the repository and are pinned in `/home/raillen/Documentos/Projetos/aipo-reference-runtime/SOURCES.json`; the benchmark still records the runtime resolved from `PATH`.
+- `peak_rss_bytes` is sampled from Linux `/proc` during a separate metrics pass when `--compare-resources` is enabled. Allocation counters stay `null` until a runtime-specific adapter can report comparable semantics.
 - MSRV 1.85 verified: `cargo check --workspace --all-targets` green on
   `1.85-x86_64-unknown-linux-gnu` (isolated target dir).
 - `cargo +nightly` must resolve through the rustup shim (`~/.cargo/bin` first

@@ -8,4 +8,7 @@ Evita o desperdício de engenharia garantindo que desenvolvedores e agentes comp
 
 ## Inventário
 - `vision.md`: Visão do produto, proposta de valor e personas.
-- `scope.md`: O que está dentro e fora do escopo da versão atual.
+- `scope.md`: Escopo da release `aipo v0.1.0` e limites pós-v1.
+- `../adp/ADP-008-v0.1.0-language-release.md`: Decisões e Definition of Done da release da linguagem.
+- `../adp/ADP-009-synchronous-c-abi.md`: Boundary de embedding C.
+- `../adp/ADP-010-interoperability-thin-proofs.md`: Critério dos proofs Rust/C/JS.
