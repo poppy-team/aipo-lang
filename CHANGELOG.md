@@ -25,6 +25,7 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
   - **Performance — entry de cache com guardedness**: o cache por site foi estendido para guardar `type_is_guarded`, mas o A/B pareado não mostrou ganho (+6,32% em `arithmetic`, +1,40% em `fields`, +2,13% em `recursion`) e a extensão foi revertida.
   - **Performance — cache de flags `fixed` por slot**: o `Vec<bool>` experimental foi mais lento no A/B pareado (+5,34% em `arithmetic`, +11,32% em `fields`, +144,36% em `recursion`) e foi revertido.
   - **Performance — cache de tipos guarded**: o `HashSet<String>` experimental foi mais lento no A/B pareado (+6,58% em `arithmetic`, +1,63% em `fields`, +3,36% em `recursion`) e foi revertido.
+  - **Performance — layout denso de `StructInstance`**: separar `field_names` de `fields` (em vez de `Vec<(String, Value)>`) piorou `fields` nos três pares do A/B pareado (+3,73%, +7,39% e +24,23%), em parte por trocar uma alocação por instância de struct por duas. Como o experimento também era API-breaking, foi revertido e a API pública permanece inalterada.
 - **Performance — Otimizações do caminho quente da VM e do shim JS**:
   - `aipo-vm` passou a usar cache de constantes, slots de globals e índices de campos/métodos, com fallback para structs nativas não registradas; natives e conversões também recebem argumentos por slice emprestado, removendo `Vec` por chamada.
   - `aipo-bytecode` deduplica constantes e remove propagações de falha redundantes após constantes e functions; strings ASCII têm fast path para concatenação e indexação.

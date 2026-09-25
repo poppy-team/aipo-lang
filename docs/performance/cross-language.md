@@ -114,7 +114,7 @@ A leitura serve para formar hipóteses. Nenhum código de referência deve ser c
 
 A contagem de alocações ficou explicitamente fora do primeiro resultado porque a Aipo ainda não possui um contrato único de allocator/GC contabilizável; `docs/adp/ADP-003-execution-budgets.md` permanece draft. O próximo spike deve definir escopo, unidade e custo antes de escolher `Rc`, arena ou tracing GC.
 
-Ordem recomendada para os próximos experimentos de fields: (1) cache monomórfico de slot por site, já mantido; (2) cache do frame base, já mantido; (3) cópia de entrada de `SetField` em structs unguarded, já mantida; (4) alocações de `BoundMethod` ainda pendentes, mas sem novo pool de nomes até haver runner dedicado; (5) layout denso de structs; (6) opcodes `Call0..Call4`/`GetLocal8`. Metadata de método cacheada e o pool de nomes foram testados e revertidos por ausência de ganho demonstrado. Cada etapa precisa de A/B próprio; não introduzir JIT, NaN-boxing ou GC custom antes de evidência.
+Ordem recomendada para os próximos experimentos de fields: (1) cache monomórfico de slot por site, já mantido; (2) cache do frame base, já mantido; (3) cópia de entrada de `SetField` em structs unguarded, já mantida; (4) alocações de `BoundMethod` ainda pendentes, mas sem novo pool de nomes até haver runner dedicado; (5) opcodes `Call0..Call4`/`GetLocal8`. Layout denso de structs, metadata de método cacheada e pool de nomes foram testados e revertidos por ausência de ganho demonstrado. Cada etapa precisa de A/B próprio; não introduzir JIT, NaN-boxing ou GC custom antes de evidência.
 
 ## O que o relatório contém
 
@@ -232,6 +232,16 @@ O `SetField` registrado passou a carregar um `Vec<bool>` de flags `fixed` por ti
 ## Experimento rejeitado: entry de cache com guardedness
 
 O cache por site foi estendido para guardar também `type_is_guarded`, eliminando as duas buscas de HashMap no `SetField`. O A/B pareado (3 pares, 15 samples) não mostrou ganho: `arithmetic` +6,32%, `fields` +1,40% e `recursion` +2,13% no median dos três pares. Checksums e métricas permaneceram idênticos, mas a extensão foi revertida. Relatórios: `target/field-entry-paired/`.
+
+## Experimento rejeitado: layout denso de `StructInstance`
+
+`StructInstance` deixou de guardar `Vec<(String, Value)>` e passou a guardar `field_names: Vec<String>` ao lado de `fields: Vec<Value>`, eliminando o tuple por slot. A intenção era tornar o acesso a campo um índice direto em `Vec<Value>` e reduzir o tamanho do valor armazenado.
+
+O A/B pareado (3 pares, 15 samples, CPU 0) mostrou o candidato mais lento em `fields` nos três pares: +3,73%, +7,39% e +24,23%. No median dos três pares, `arithmetic` ficou +33,87%, `fields` +22,66% e `recursion` -57,76%. A carga do runner foi elevada durante a medição (load average 2,50 a 3,80 em 4 cores, com o agente de código consumindo ~86% de CPU), o que explica a dispersão em `arithmetic` e `recursion`; ainda assim, a direção em `fields` foi consistente nos três pares e é a evidência relevante, já que essa é a workload que exercita o caminho alterado. Checksums permaneceram idênticos em todos os pares.
+
+A causa provável é estrutural: separar nomes e valores troca uma alocação por instância de struct por duas, e cada acesso a campo passa a tocar duas regiões de memória em vez de uma. Como o fixture `fields` constroi instâncias repetidamente, a alocação extra domina o ganho esperado do acesso indexado.
+
+O experimento também era API-breaking: `fields` é público e os oito arquivos consumidores (`value.rs`, `vm/dispatch.rs`, `host.rs` e cinco módulos da stdlib) tiveram de mudar. Como não houve ganho, o protótipo foi revertido e a API pública permanece com `Vec<(String, Value)>`. Relatórios: `target/dense-layout-paired/`.
 
 ## A/B do cache do frame base
 
