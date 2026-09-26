@@ -25,21 +25,21 @@ Por padrão, todas as funções, estruturas e variáveis declaradas em um arquiv
 # Arquivo: math_util.aipo
 
 # 1. Função privada de apoio interno
-fn validar_numero(n: Int) -> Bool
+fn validar_numero(n: Int) -> Bool {
     return n >= 0
-end
+}
 
 # 2. Funções públicas
-fn somar_positivo(a: Int, b: Int) -> Int
-    if not validar_numero(a) or not validar_numero(b)
+fn somar_positivo(a: Int, b: Int) -> Int {
+    if not validar_numero(a) or not validar_numero(b) {
         return fail("números devem ser positivos")
-    end
+    }
     return a + b
-end
+}
 
-fn duplicar(n: Int) -> Int
+fn duplicar(n: Int) -> Int {
     return n * 2
-end
+}
 
 # Exporta explicitamente apenas os símbolos que a API pública oferece:
 export somar_positivo, duplicar
@@ -261,15 +261,15 @@ meu_app/
 
 ### Conteúdo de `src/auth/user.aipo`
 ```aipo
-struct Usuario
+struct Usuario {
     id
     nome
-    ativo = true
-end
+    var ativo = true
+}
 
-fn criar_usuario(id: Int, nome: String) -> Usuario
-    return Usuario{id = id, nome = nome, ativo = true}
-end
+fn criar_usuario(id: Int, nome: String) -> Usuario {
+    return Usuario{ id: id, nome: nome, ativo: true }
+}
 
 export Usuario, criar_usuario
 ```

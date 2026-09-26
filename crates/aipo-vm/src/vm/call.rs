@@ -182,6 +182,9 @@ impl Vm {
                     let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
                     return self.task_call(name, callee_idx, &args);
                 }
+                if matches!(name, "test" | "testing.test") {
+                    return self.test_call(module, callee_idx, arg_count);
+                }
                 let result = func(&self.stack[callee_idx + 1..callee_idx + 1 + arg_count])?;
                 self.stack.truncate(callee_idx);
                 self.push(result)?;
@@ -347,7 +350,7 @@ impl Vm {
     /// closures can be applied while the outer computation is still in progress.
     /// Blocking inside the callback faults (`AIPO_RT_AWAIT_IN_CALLBACK`): the
     /// host Rust stack cannot suspend, so suspension signals propagate through.
-    pub(super) fn invoke(
+    pub fn invoke(
         &mut self,
         module: &BytecodeModule,
         callee: Value,
@@ -397,5 +400,77 @@ impl Vm {
         self.upvalue_frames.truncate(frame_base);
         self.mutation_journal.truncate(journal_base);
         Ok(result)
+    }
+
+    fn test_call(
+        &mut self,
+        module: &BytecodeModule,
+        callee_idx: usize,
+        arg_count: usize,
+    ) -> Result<(), VmError> {
+        self.check_arity(arg_count, 2)?;
+        let name_val = &self.stack[callee_idx + 1];
+        let test_name = match name_val {
+            Value::String(s) => s.to_string(),
+            other => {
+                return Err(VmFault::TypeMismatch {
+                    expected: "String test name".to_string(),
+                    actual: other.type_name().to_string(),
+                }
+                .into());
+            }
+        };
+
+        let callback = self.stack[callee_idx + 2].clone();
+        let arity = match &callback {
+            Value::Function { arity, .. } => *arity as usize,
+            Value::Closure(c) => c.arity,
+            Value::Native(n) => n.arity,
+            Value::StructMethod { total_arity, .. } => (*total_arity as usize).saturating_sub(1),
+            other => {
+                return Err(VmFault::TypeMismatch {
+                    expected: "callable test body".to_string(),
+                    actual: other.type_name().to_string(),
+                }
+                .into());
+            }
+        };
+
+        let mode = self.test_mode.clone();
+        match mode {
+            crate::vm::TestMode::Discover(list) => {
+                list.borrow_mut().push(test_name);
+                self.stack.truncate(callee_idx);
+                self.push(Value::None)?;
+                Ok(())
+            }
+            crate::vm::TestMode::Execute { target, ran } => {
+                if test_name == target {
+                    ran.set(true);
+                    self.stack.truncate(callee_idx);
+                    self.push(callback)?;
+                    if arity == 1 {
+                        self.push(Value::None)?;
+                        self.begin_call(module, 1)
+                    } else {
+                        self.begin_call(module, 0)
+                    }
+                } else {
+                    self.stack.truncate(callee_idx);
+                    self.push(Value::None)?;
+                    Ok(())
+                }
+            }
+            crate::vm::TestMode::Disabled => {
+                self.stack.truncate(callee_idx);
+                self.push(callback)?;
+                if arity == 1 {
+                    self.push(Value::None)?;
+                    self.begin_call(module, 1)
+                } else {
+                    self.begin_call(module, 0)
+                }
+            }
+        }
     }
 }

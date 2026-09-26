@@ -1,55 +1,55 @@
 # Um pipeline de dados completo: `struct` + `impl`, coleções com métodos,
-# pipeline `|>`, trailing block `do ... end` e recuperação de falhas.
-struct Order
-    fixed id
+# pipeline `|>`, trailing block `do { ... }` e recuperação de falhas.
+struct Order {
+    id
     customer
     total
-end
+}
 
-impl Order
-    fn summary(self) -> String
+impl Order {
+    fn summary(self) -> String {
         return f"#{self.id} {self.customer} {self.total}"
-    end
-end
+    }
+}
 
 var orders = []
-orders.add(Order{id = 1, customer = "ana", total = 120})
-orders.add(Order{id = 2, customer = "bruno", total = 80})
-orders.add(Order{id = 3, customer = "ana", total = 200})
+orders.add(Order{ id: 1, customer: "ana", total: 120 })
+orders.add(Order{ id: 2, customer: "bruno", total: 80 })
+orders.add(Order{ id: 3, customer: "ana", total: 200 })
 
 # `|>` é açúcar de chamada: insere o valor à esquerda como primeiro argumento.
-fn totals_for(list, who)
-    let mine = list.filter(fn (o) return o.customer == who end)
-    return mine.transform(fn (o) return o.total end)
-end
+fn totals_for(list, who) {
+    let mine = list.filter(fn (o) { return o.customer == who })
+    return mine.transform(fn (o) { return o.total })
+}
 
 var ana_total = 0
-each total in orders |> totals_for("ana")
+each total in orders |> totals_for("ana") {
     ana_total = ana_total + total
-end
+}
 io.println(f"ana total: {ana_total}")
 
-each order in orders
+each order in orders {
     io.println(order.summary())
-end
+}
 
 # Trailing block: a closure é passada como último argumento da chamada.
-fn with_prefix(prefix, block)
+fn with_prefix(prefix, block) {
     return block() + prefix
-end
-io.println(with_prefix("!") do
+}
+io.println(with_prefix("!") do {
     return "hello"
-end)
+})
 
 # Falhas são valores: `or_else` para fallback local, `attempt` para o bloco.
-fn parse_total(text)
+fn parse_total(text) {
     let value = Int(text) or_else fail(f"invalid total: {text}")
     return value
-end
+}
 
 io.println(parse_total("42"))
-attempt
+attempt {
     io.println(parse_total("oops"))
-failed err
+} failed err {
     io.println(f"rejected: {err.message}")
-end
+}

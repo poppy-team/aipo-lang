@@ -21,3 +21,4 @@ Every architectural question or design evolution is formally debated and recorde
 | **[ADP-009](/en/decisions/adp-009)** | Synchronous Versioned C ABI | Approved | Stable C binary interface with opaque types for embedding Aipo into C/C++/Zig. |
 | **[ADP-010](/en/decisions/adp-010)** | Thin Interoperability Proofs | Approved | Three automated thin proofs demonstrating seamless embedding in Rust, C, and JavaScript. |
 | **[ADP-011](/en/decisions/adp-011)** | Performance & Ergonomics Roadmap | Approved | `Value` compaction, `InvokeMethod` instruction fusion, hoisted loop dispatch, and pattern matching. |
+| **[ADP-012](/en/decisions/adp-012)** | Modern Syntax Ergonomics (Gleam/Swift Pivot) | Approved | Curly brace `{ ... }` blocks, immutability by default in structs, `var self`, symmetric `:`, and automatic structural interfaces. |

@@ -155,11 +155,19 @@ fn render(source: &Source, lines: &[Line<'_>]) -> String {
             first,
             TokenKind::When | TokenKind::Elif | TokenKind::Else | TokenKind::Failed
         );
-        let starts_with_close = matches!(classify(&first), Class::Close);
+        let leading_rbraces = line
+            .tokens
+            .iter()
+            .take_while(|t| matches!(t.kind, TokenKind::RBrace))
+            .count() as i64;
+        let starts_with_close = matches!(first, TokenKind::RParen | TokenKind::RBracket);
 
         let mut line_block = block_level;
         if starts_with_branch {
             line_block -= 1;
+        }
+        if leading_rbraces > 0 {
+            line_block -= leading_rbraces;
         }
         let mut line_group = group_depth;
         if starts_with_close {
@@ -185,11 +193,14 @@ fn render(source: &Source, lines: &[Line<'_>]) -> String {
 
         for (position, token) in line.tokens.iter().enumerate() {
             group_depth += i64::from(group_delta(&token.kind));
-            if opens_block_here(&token.kind, position, &line.tokens) {
+            if matches!(token.kind, TokenKind::LBrace) {
                 block_level += 1;
             }
-            if matches!(token.kind, TokenKind::End) {
+            if matches!(token.kind, TokenKind::RBrace | TokenKind::End) {
                 block_level -= 1;
+            }
+            if opens_block_here(&token.kind, position, &line.tokens) {
+                block_level += 1;
             }
         }
     }
@@ -206,6 +217,10 @@ fn render(source: &Source, lines: &[Line<'_>]) -> String {
 /// `fn` opens a block except in a type annotation, where it names a function type.
 fn opens_block_here(kind: &TokenKind, position: usize, tokens: &[&Token]) -> bool {
     if !opens_block(kind) {
+        return false;
+    }
+    // If the line contains an opening brace `{`, the brace already manages the block level.
+    if tokens.iter().any(|t| matches!(t.kind, TokenKind::LBrace)) {
         return false;
     }
     if matches!(kind, TokenKind::Fn) {
@@ -233,7 +248,7 @@ fn render_line(source: &Source, tokens: &[&Token]) -> String {
             classify(&token.kind)
         };
 
-        if needs_space(previous, previous_kind, class, &token.kind) {
+        if needs_space(previous, previous_kind, class, &token.kind, tokens) {
             out.push(' ');
         }
         out.push_str(&text_of(token, source));
@@ -250,6 +265,7 @@ fn needs_space(
     previous_kind: Option<&TokenKind>,
     next: Class,
     next_kind: &TokenKind,
+    tokens: &[&Token],
 ) -> bool {
     let Some(previous) = previous else {
         return false;
@@ -260,6 +276,21 @@ fn needs_space(
         return false;
     }
     if next == Class::Comment {
+        return true;
+    }
+
+    // Single-line non-empty braces `{ ... }` get inner spacing for visual clarity and accessibility,
+    // while empty `{}` stays tight and trailing `{` before a newline has no trailing whitespace.
+    if matches!(previous_kind, Some(TokenKind::LBrace)) {
+        if matches!(next_kind, TokenKind::RBrace | TokenKind::Newline) {
+            return false;
+        }
+        return true;
+    }
+    if matches!(next_kind, TokenKind::RBrace) {
+        if matches!(previous_kind, Some(TokenKind::LBrace)) {
+            return false;
+        }
         return true;
     }
 
@@ -280,23 +311,50 @@ fn needs_space(
     }
 
     if matches!(next, Class::Open) {
-        let binds_to_previous = matches!(
-            previous_kind,
-            Some(
-                TokenKind::Identifier(_)
-                    | TokenKind::IntLiteral(_)
-                    | TokenKind::FloatLiteral(_)
-                    | TokenKind::StringLiteral { .. }
-                    | TokenKind::None
-                    | TokenKind::True
-                    | TokenKind::False
-                    | TokenKind::SelfVal
-                    | TokenKind::SelfMut
-                    | TokenKind::Discard
-                    | TokenKind::RParen
-                    | TokenKind::RBracket
-            )
-        );
+        let binds_to_previous = match next_kind {
+            TokenKind::LParen => matches!(
+                previous_kind,
+                Some(
+                    TokenKind::Identifier(_)
+                        | TokenKind::SelfVal
+                        | TokenKind::SelfMut
+                        | TokenKind::RParen
+                        | TokenKind::RBracket
+                )
+            ),
+            TokenKind::LBracket => matches!(
+                previous_kind,
+                Some(
+                    TokenKind::Identifier(_)
+                        | TokenKind::StringLiteral { .. }
+                        | TokenKind::SelfVal
+                        | TokenKind::SelfMut
+                        | TokenKind::RParen
+                        | TokenKind::RBracket
+                )
+            ),
+            TokenKind::LBrace => {
+                let is_decl = tokens
+                    .first()
+                    .map(|t| {
+                        matches!(
+                            t.kind,
+                            TokenKind::Struct | TokenKind::Impl | TokenKind::Interface
+                        )
+                    })
+                    .unwrap_or(false);
+                if !is_decl {
+                    if let Some(TokenKind::Identifier(name)) = previous_kind {
+                        name.chars().next().is_some_and(|c| c.is_uppercase())
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
         // `f(x)`, `Type{...}` and `items[0]` are tight; `if (cond)` and `= (` are not.
         return !binds_to_previous;
     }
@@ -360,5 +418,38 @@ mod tests {
     fn test_reports_unterminated_string() {
         let err = format_text("test.aipo", "let x = \"unterminated").unwrap_err();
         assert!(!err.message.is_empty());
+    }
+
+    #[test]
+    fn test_modern_brace_blocks_and_functions() {
+        let out = format(
+            "fn calculate(a, b) {\nif a > b {\nreturn a // b\n} else {\nreturn b // a\n}\n}",
+        );
+        assert_eq!(
+            out,
+            "fn calculate(a, b) {\n    if a > b {\n        return a // b\n    } else {\n        return b // a\n    }\n}\n"
+        );
+    }
+
+    #[test]
+    fn test_modern_struct_and_construct() {
+        let out = format(
+            "struct User {\nid\nvar status\n}\n\nlet dev = User{ id: 42, status: \"active\" }",
+        );
+        assert_eq!(
+            out,
+            "struct User {\n    id\n    var status\n}\n\nlet dev = User{ id: 42, status: \"active\" }\n"
+        );
+    }
+
+    #[test]
+    fn test_modern_method_with_var_self() {
+        let out = format(
+            "impl User {\nfn update(var self, new_status) {\nself.status = new_status\n}\n}",
+        );
+        assert_eq!(
+            out,
+            "impl User {\n    fn update(var self, new_status) {\n        self.status = new_status\n    }\n}\n"
+        );
     }
 }

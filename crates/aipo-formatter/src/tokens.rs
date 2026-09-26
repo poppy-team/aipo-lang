@@ -57,12 +57,14 @@ pub fn classify(kind: &TokenKind) -> Class {
         | TokenKind::Star
         | TokenKind::Slash
         | TokenKind::Div
+        | TokenKind::SlashSlash
         | TokenKind::Percent
         | TokenKind::PlusEq
         | TokenKind::MinusEq
         | TokenKind::StarEq
         | TokenKind::SlashEq
         | TokenKind::DivEq
+        | TokenKind::SlashSlashEq
         | TokenKind::PercentEq
         | TokenKind::EqualEqual
         | TokenKind::BangEqual
@@ -256,12 +258,14 @@ pub fn keyword_text(kind: &TokenKind) -> &'static str {
         TokenKind::Star => "*",
         TokenKind::Slash => "/",
         TokenKind::Div => "div",
+        TokenKind::SlashSlash => "//",
         TokenKind::Percent => "%",
         TokenKind::PlusEq => "+=",
         TokenKind::MinusEq => "-=",
         TokenKind::StarEq => "*=",
         TokenKind::SlashEq => "/=",
         TokenKind::DivEq => "div=",
+        TokenKind::SlashSlashEq => "//=",
         TokenKind::PercentEq => "%=",
         TokenKind::EqualEqual => "==",
         TokenKind::BangEqual => "!=",
@@ -301,8 +305,8 @@ pub fn keyword_text(kind: &TokenKind) -> &'static str {
 #[must_use]
 pub fn group_delta(kind: &TokenKind) -> i32 {
     match kind {
-        TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => 1,
-        TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => -1,
+        TokenKind::LParen | TokenKind::LBracket => 1,
+        TokenKind::RParen | TokenKind::RBracket => -1,
         _ => 0,
     }
 }

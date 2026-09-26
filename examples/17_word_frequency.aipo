@@ -1,13 +1,13 @@
 # Word frequency with split, dict counting and ordered keys.
 let text = "ana bob ana cid bob ana"
 let counts = {}
-each word in text.split(" ")
-    if counts.has(word)
+each word in text.split(" ") {
+    if counts.has(word) {
         counts[word] = counts[word] + 1
-    else
+    } else {
         counts[word] = 1
-    end
-end
-each word in counts.keys()
+    }
+}
+each word in counts.keys() {
     io.println(f"{word}: {counts[word]}")
-end
+}

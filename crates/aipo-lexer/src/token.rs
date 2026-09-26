@@ -140,6 +140,8 @@ pub enum TokenKind {
     Slash,
     /// `div`
     Div,
+    /// `//`
+    SlashSlash,
     /// `%`
     Percent,
     /// `+=`
@@ -152,6 +154,8 @@ pub enum TokenKind {
     SlashEq,
     /// `div=`
     DivEq,
+    /// `//=`
+    SlashSlashEq,
     /// `%=`
     PercentEq,
     /// `==`

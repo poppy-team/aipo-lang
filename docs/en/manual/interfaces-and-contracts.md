@@ -1,57 +1,60 @@
 # Interfaces & Contracts
 
-Aipo bridges dynamic flexibility with **signature contracts**, **structural invariants**, and **formal interfaces**.
+Aipo bridges dynamic flexibility with **signature contracts**, **structural invariants**, and **automatic structural interface subtyping**.
 
 ---
 
 ## Structs (`struct`)
 
-Structures define aggregate types closed with `end` (no curly braces). By default, fields are mutable unless declared with `fixed`:
+Structures define aggregate types delimited by curly braces `{ ... }`.
+
+By safe and predictable design default, **all fields in a struct are immutable**. When a field must be mutable during the instance lifecycle, declare it explicitly with the `var` keyword:
 
 ```aipo
-struct Server
-    fixed id
-    fixed created_at
-    status = "offline"
-    cpu_load = 0.0
-end
+struct Server {
+    id
+    created_at
+    var status = "offline"
+    var cpu_load = 0.0
+}
 
+# Structural instantiation using symmetric key-value ':'
 let s = Server{
-    id = "srv-1",
-    created_at = 1600000000,
-    status = "online",
-    cpu_load = 0.42,
+    id: "srv-1",
+    created_at: 1600000000,
+    status: "online",
+    cpu_load: 0.42,
 }
 
 io.println(s.id)     # "srv-1"
 io.println(s.status) # "online"
 ```
 
-Reassigning a `fixed` field after construction generates the compile-time diagnostic `AIPO_SEM_FIXED_REASSIGN`.
+Reassigning an immutable field after construction triggers the static semantic diagnostic `AIPO_SEM_IMMUTABLE_FIELD_REASSIGN`.
 
 ---
 
 ## Construction Hook (`init`)
 
-The `init` hook is declared inside an `impl StructName` block to validate and normalize instance fields before publication:
+The `init` hook is declared inside an `impl StructName { ... }` block to validate, normalize, and initialize instance fields before publication:
 
 ```aipo
-struct User
+struct User {
     email
     name
-end
+}
 
-impl User
-    init(email, name)
-        if not email.contains("@")
+impl User {
+    init(email, name) {
+        if not email.contains("@") {
             return fail("Invalid email address format")
-        end
+        }
         self.email = email
         self.name = name
-    end
-end
+    }
+}
 
-let u = User{email = "user@example.com", name = "Dev"}
+let u = User{ email: "user@example.com", name: "Dev" }
 io.println(u.email) # "user@example.com"
 ```
 
@@ -62,61 +65,88 @@ io.println(u.email) # "user@example.com"
 Invariants declare logical predicates inside the `impl` block that **must remain true throughout the lifetime of the object**:
 
 ```aipo
-struct Interval
-    start = 0
-    end_val = 0
-end
+struct Interval {
+    var start = 0
+    var end_val = 0
+}
 
-impl Interval
-    init(start, end_val)
+impl Interval {
+    init(start, end_val) {
         self.start = start
         self.end_val = end_val
-    end
+    }
 
-    invariant()
+    invariant {
         self.start <= self.end_val
-    end
-end
+    }
+}
 
-let inter = Interval{start = 5, end_val = 10}
+let inter = Interval{ start: 5, end_val: 10 }
 io.println(inter.start)   # 5
 io.println(inter.end_val) # 10
 ```
 
-Whenever a field is mutated, the invariant is checked. Violations trigger automatic rollback of provisional mutations inside `attempt` blocks.
+Whenever a field is mutated, the invariant predicate is automatically re-evaluated. If it fails, the operation is rejected. Inside an `attempt { ... }` block, provisional mutations are automatically rolled back by the transaction journal.
 
 ---
 
-## Interfaces & Conformance (`interface` / `satisfy`)
+## Methods and Universal Mutability (`var self`)
 
-Interfaces define method contracts. Conformance in Aipo is structural and declared explicitly with `satisfy` (not inheritance):
+Methods associated with a type are defined inside `impl StructName { ... }` blocks.
+
+By default, the `self` receiver is **read-only**. When a method needs to mutate internal instance state, it explicitly declares `var self`, harmonizing method mutability with the universal variable rules of the language:
 
 ```aipo
-interface Drawable
-    fn draw(self) -> String
-end
+struct Counter {
+    var count = 0
+}
 
-struct Button
+impl Counter {
+    # Read-only method: self is immutable
+    fn current(self) -> Int {
+        return self.count
+    }
+
+    # Mutator method: var self explicitly signals state modification
+    fn increment(var self) {
+        self.count += 1
+    }
+}
+```
+
+---
+
+## Interfaces and Automatic Structural Subtyping (`interface`)
+
+Interfaces define method contracts. In Aipo, interface conformance requires no ceremony or orphan statements: **subtyping is structural and automatic** (inspired by modern languages like Go and Luau).
+
+If a struct implements all methods required by an `interface` with compatible signatures and contracts (including receiver mutability `var self` vs `self`), it **automatically satisfies the interface**:
+
+```aipo
+interface Drawable {
+    fn draw(self) -> String
+}
+
+struct Button {
     label
-end
+}
 
-impl Button
-    fn draw(self) -> String
+impl Button {
+    fn draw(self) -> String {
         return f"[Button: {self.label}]"
-    end
-end
+    }
+}
 
-# Canonical structural conformance declaration
-satisfy Button: Drawable
+# Button automatically satisfies Drawable!
+# No 'implements' keyword or orphan 'satisfy' statements required.
 
-# Function requiring any value satisfying Drawable contract
-fn render_element(item: Drawable) -> String
+# Function accepting any type that fulfills the Drawable contract
+fn render_element(item: Drawable) -> String {
     return item.draw()
-end
+}
 
-let btn = Button{label = "Submit"}
+let btn = Button{ label: "Submit" }
 io.println(render_element(btn)) # "[Button: Submit]"
 ```
 
-The semantic analyzer verifies arity, parameter names, receiver compatibility (`self` vs mutable `self!`), and async signatures before execution.
-
+Conformance is verified statically by the semantic analyzer (`aipo-sema`), checking method existence, parameter arity, parameter and return types, and receiver mutability compatibility (`self` vs `var self`).

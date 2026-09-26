@@ -28,6 +28,6 @@ The Aipo frontend ingests raw UTF-8 source text and produces a validated semanti
 
 ### 5. `aipo-sema`
 - Semantic validator enforcing strict structural typing and contract safety:
-  - Enforces `interface` contracts on `satisfy` blocks (validating required methods, parameter arities, `self` receiver, and type compatibility).
-  - Statically disallows reassigning `fixed` struct fields (`AIPO_SEM_FIXED_REASSIGN`).
+  - Enforces `interface` contracts via automatic structural subtyping (validating required methods, parameter arities, `self` vs `var self` receiver mutability, and type compatibility).
+  - Statically disallows reassigning immutable struct fields (`AIPO_SEM_IMMUTABLE_FIELD_REASSIGN`).
   - Emits concurrency diagnostics (`AIPO_SEM_AWAIT_IN_SUBEXPRESSION`, `AIPO_SEM_FORGOTTEN_TASK`, `AIPO_SEM_NESTED_AWAIT_DO`).

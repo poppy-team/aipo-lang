@@ -550,10 +550,18 @@ impl<'a> Parser<'a> {
         let name = self.parse_ident()?;
         self.skip_newlines();
 
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut fields = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
-            let is_fixed = self.match_token(&TokenKind::Fixed);
-            let _ = self.match_token(&TokenKind::Var);
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+            let is_var = self.match_token(&TokenKind::Var);
+            let is_legacy_fixed = self.match_token(&TokenKind::Fixed);
+            let is_fixed = if has_brace {
+                !is_var || is_legacy_fixed
+            } else {
+                is_legacy_fixed
+            };
             let field_name = self.parse_ident()?;
             let default = if self.match_token(&TokenKind::Equal) {
                 Some(self.parse_expr()?)
@@ -572,14 +580,23 @@ impl<'a> Parser<'a> {
                 span,
             });
             self.skip_newlines();
+            let _ = self.match_token(&TokenKind::Comma);
+            self.skip_newlines();
         }
 
-        let end_span = self
-            .expect(
+        let end_span = if has_brace {
+            self.expect(
+                &TokenKind::RBrace,
+                "expected '}' to close struct declaration",
+            )?
+            .span
+        } else {
+            self.expect(
                 &TokenKind::End,
                 "expected 'end' to close struct declaration",
             )?
-            .span;
+            .span
+        };
         Some(StructDecl {
             name,
             fields,
@@ -592,11 +609,14 @@ impl<'a> Parser<'a> {
         let target = self.parse_ident()?;
         self.skip_newlines();
 
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut init = None;
         let mut invariant = None;
         let mut methods = Vec::new();
 
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if self.check(&TokenKind::Init) {
                 init = self.parse_init_hook();
             } else if self.check(&TokenKind::Invariant) {
@@ -615,9 +635,13 @@ impl<'a> Parser<'a> {
             self.skip_newlines();
         }
 
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close impl block")?
-            .span;
+        let end_span = if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' to close impl block")?
+                .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close impl block")?
+                .span
+        };
         Some(ImplBlock {
             target,
             init,
@@ -654,16 +678,23 @@ impl<'a> Parser<'a> {
             );
         }
 
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut body = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(stmt) = self.parse_stmt() {
                 body.push(stmt);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close init hook")?
-            .span;
+        let end_span = if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' to close init hook")?
+                .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close init hook")?
+                .span
+        };
 
         Some(FunctionDecl {
             name: Ident::new("init".into(), start),
@@ -677,20 +708,28 @@ impl<'a> Parser<'a> {
 
     fn parse_invariant_hook(&mut self) -> Option<InvariantHook> {
         let start = self.advance().span; // 'invariant'
-        self.expect(&TokenKind::LParen, "expected '(' after invariant")?;
-        self.expect(&TokenKind::RParen, "expected ')' after invariant")?;
+        if self.match_token(&TokenKind::LParen) {
+            self.expect(&TokenKind::RParen, "expected ')' after invariant")?;
+        }
+        self.skip_newlines();
+
+        let has_brace = self.match_token(&TokenKind::LBrace);
         self.skip_newlines();
 
         let mut conditions = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(expr) = self.parse_expr() {
                 conditions.push(expr);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close invariant hook")?
-            .span;
+        let end_span = if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' to close invariant hook")?
+                .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close invariant hook")?
+                .span
+        };
 
         Some(InvariantHook {
             conditions,
@@ -703,8 +742,11 @@ impl<'a> Parser<'a> {
         let name = self.parse_ident()?;
         self.skip_newlines();
 
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut methods = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if self.check(&TokenKind::Fn) || self.check(&TokenKind::Async) {
                 if let Some(method) = self.parse_function_signature() {
                     methods.push(method);
@@ -715,12 +757,19 @@ impl<'a> Parser<'a> {
             self.skip_newlines();
         }
 
-        let end_span = self
-            .expect(
+        let end_span = if has_brace {
+            self.expect(
+                &TokenKind::RBrace,
+                "expected '}' to close interface declaration",
+            )?
+            .span
+        } else {
+            self.expect(
                 &TokenKind::End,
                 "expected 'end' to close interface declaration",
             )?
-            .span;
+            .span
+        };
         Some(InterfaceDecl {
             name,
             methods,
@@ -944,7 +993,8 @@ impl<'a> Parser<'a> {
             Some(BinaryOp::Mul)
         } else if self.match_token(&TokenKind::SlashEq) {
             Some(BinaryOp::Div)
-        } else if self.match_token(&TokenKind::DivEq) {
+        } else if self.match_token(&TokenKind::DivEq) || self.match_token(&TokenKind::SlashSlashEq)
+        {
             Some(BinaryOp::IntDiv)
         } else if self.match_token(&TokenKind::PercentEq) {
             Some(BinaryOp::Mod)
@@ -993,8 +1043,12 @@ impl<'a> Parser<'a> {
         }
 
         self.skip_newlines();
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut then_branch = Vec::new();
-        while !self.check(&TokenKind::Elif)
+        while !self.check(&TokenKind::RBrace)
+            && !self.check(&TokenKind::Elif)
             && !self.check(&TokenKind::Else)
             && !self.check(&TokenKind::End)
             && !self.is_at_end()
@@ -1004,14 +1058,21 @@ impl<'a> Parser<'a> {
             }
             self.skip_newlines();
         }
+        if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' after if body")?;
+            self.skip_newlines();
+        }
 
         let mut elif_branches = Vec::new();
         while self.match_token(&TokenKind::Elif) {
             let elif_cond = self.parse_expr()?;
             let _ = self.match_token(&TokenKind::Then);
             self.skip_newlines();
+            let elif_brace = self.match_token(&TokenKind::LBrace);
+            self.skip_newlines();
             let mut elif_body = Vec::new();
-            while !self.check(&TokenKind::Elif)
+            while !self.check(&TokenKind::RBrace)
+                && !self.check(&TokenKind::Elif)
                 && !self.check(&TokenKind::Else)
                 && !self.check(&TokenKind::End)
                 && !self.is_at_end()
@@ -1021,26 +1082,41 @@ impl<'a> Parser<'a> {
                 }
                 self.skip_newlines();
             }
+            if elif_brace {
+                self.expect(&TokenKind::RBrace, "expected '}' after elif body")?;
+                self.skip_newlines();
+            }
             elif_branches.push((elif_cond, elif_body));
         }
 
         let else_branch = if self.match_token(&TokenKind::Else) {
             self.skip_newlines();
+            let else_brace = self.match_token(&TokenKind::LBrace);
+            self.skip_newlines();
             let mut else_body = Vec::new();
-            while !self.check(&TokenKind::End) && !self.is_at_end() {
+            while !self.check(&TokenKind::RBrace)
+                && !self.check(&TokenKind::End)
+                && !self.is_at_end()
+            {
                 if let Some(s) = self.parse_stmt() {
                     else_body.push(s);
                 }
                 self.skip_newlines();
+            }
+            if else_brace {
+                self.expect(&TokenKind::RBrace, "expected '}' after else body")?;
             }
             Some(else_body)
         } else {
             None
         };
 
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close if statement")?
-            .span;
+        let end_span = if has_brace {
+            self.tokens[self.cursor.saturating_sub(1)].span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close if statement")?
+                .span
+        };
 
         Some(Stmt::If(IfStmt {
             condition,
@@ -1054,6 +1130,9 @@ impl<'a> Parser<'a> {
     fn parse_match_stmt(&mut self) -> Option<Stmt> {
         let start = self.advance().span; // 'match'
         let target = self.parse_expr()?;
+        self.skip_newlines();
+
+        let has_brace = self.match_token(&TokenKind::LBrace);
         self.skip_newlines();
 
         let mut when_arms = Vec::new();
@@ -1071,9 +1150,12 @@ impl<'a> Parser<'a> {
             }
             let _ = self.match_token(&TokenKind::Then);
             self.skip_newlines();
+            let arm_brace = self.match_token(&TokenKind::LBrace);
+            self.skip_newlines();
 
             let mut arm_body = Vec::new();
-            while !self.check(&TokenKind::When)
+            while !self.check(&TokenKind::RBrace)
+                && !self.check(&TokenKind::When)
                 && !self.check(&TokenKind::Else)
                 && !self.check(&TokenKind::End)
                 && !self.is_at_end()
@@ -1083,26 +1165,42 @@ impl<'a> Parser<'a> {
                 }
                 self.skip_newlines();
             }
+            if arm_brace {
+                self.expect(&TokenKind::RBrace, "expected '}' after when arm")?;
+                self.skip_newlines();
+            }
             when_arms.push((patterns, arm_body));
         }
 
         let else_arm = if self.match_token(&TokenKind::Else) {
             self.skip_newlines();
+            let else_brace = self.match_token(&TokenKind::LBrace);
+            self.skip_newlines();
             let mut else_body = Vec::new();
-            while !self.check(&TokenKind::End) && !self.is_at_end() {
+            while !self.check(&TokenKind::RBrace)
+                && !self.check(&TokenKind::End)
+                && !self.is_at_end()
+            {
                 if let Some(s) = self.parse_stmt() {
                     else_body.push(s);
                 }
                 self.skip_newlines();
+            }
+            if else_brace {
+                self.expect(&TokenKind::RBrace, "expected '}' after else arm")?;
             }
             Some(else_body)
         } else {
             None
         };
 
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close match statement")?
-            .span;
+        let end_span = if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' to close match statement")?
+                .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close match statement")?
+                .span
+        };
 
         Some(Stmt::Match(MatchStmt {
             target,
@@ -1115,16 +1213,24 @@ impl<'a> Parser<'a> {
     fn parse_loop_stmt(&mut self) -> Option<Stmt> {
         let start = self.advance().span; // 'loop'
         self.skip_newlines();
+
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut body = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close loop")?
-            .span;
+        let end_span = if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' to close loop")?
+                .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close loop")?
+                .span
+        };
         Some(Stmt::Loop(body, start.merge(end_span)))
     }
 
@@ -1132,16 +1238,24 @@ impl<'a> Parser<'a> {
         let start = self.advance().span; // 'while'
         let condition = self.parse_expr()?;
         self.skip_newlines();
+
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut body = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close while")?
-            .span;
+        let end_span = if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' to close while")?
+                .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close while")?
+                .span
+        };
         Some(Stmt::While(condition, body, start.merge(end_span)))
     }
 
@@ -1155,16 +1269,23 @@ impl<'a> Parser<'a> {
         };
         self.skip_newlines();
 
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut body = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close repeat")?
-            .span;
+        let end_span = if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' to close repeat")?
+                .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close repeat")?
+                .span
+        };
         Some(Stmt::Repeat(count, index_var, body, start.merge(end_span)))
     }
 
@@ -1181,16 +1302,23 @@ impl<'a> Parser<'a> {
         let iterable = self.parse_expr()?;
         self.skip_newlines();
 
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut body = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close each loop")?
-            .span;
+        let end_span = if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' to close each loop")?
+                .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close each loop")?
+                .span
+        };
         Some(Stmt::Each(bindings, iterable, body, start.merge(end_span)))
     }
 
@@ -1269,17 +1397,29 @@ impl<'a> Parser<'a> {
         let start = self.advance().span; // 'attempt'
         self.skip_newlines();
 
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut body = Vec::new();
-        while !self.check(&TokenKind::Failed) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace)
+            && !self.check(&TokenKind::Failed)
+            && !self.is_at_end()
+        {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
+        if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' after attempt body")?;
+            self.skip_newlines();
+        }
 
         self.expect(&TokenKind::Failed, "expected 'failed' in attempt statement")?;
-        let err_binding = if matches!(self.peek(), TokenKind::Newline | TokenKind::End)
-            || self.match_token(&TokenKind::Discard)
+        let err_binding = if matches!(
+            self.peek(),
+            TokenKind::Newline | TokenKind::End | TokenKind::LBrace
+        ) || self.match_token(&TokenKind::Discard)
         {
             None
         } else {
@@ -1287,16 +1427,26 @@ impl<'a> Parser<'a> {
         };
         self.skip_newlines();
 
+        let failed_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut failed_body = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 failed_body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close attempt statement")?
-            .span;
+        let end_span = if failed_brace {
+            self.expect(
+                &TokenKind::RBrace,
+                "expected '}' to close attempt statement",
+            )?
+            .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close attempt statement")?
+                .span
+        };
 
         Some(Stmt::Attempt(AttemptStmt {
             body,
@@ -1350,19 +1500,29 @@ impl<'a> Parser<'a> {
         let return_type = self.parse_optional_return_type();
         self.skip_newlines();
 
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut body = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(
+        let end_span = if has_brace {
+            self.expect(
+                &TokenKind::RBrace,
+                "expected '}' to close function declaration",
+            )?
+            .span
+        } else {
+            self.expect(
                 &TokenKind::End,
                 "expected 'end' to close function declaration",
             )?
-            .span;
+            .span
+        };
 
         Some(FunctionDecl {
             name,
@@ -1440,16 +1600,24 @@ impl<'a> Parser<'a> {
     fn parse_await_do_block(&mut self, start: SourceSpan) -> Option<Stmt> {
         self.advance(); // 'do'
         self.skip_newlines();
+
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut body = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(stmt) = self.parse_stmt() {
                 body.push(stmt);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close await do block")?
-            .span;
+        let end_span = if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' to close await do block")?
+                .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close await do block")?
+                .span
+        };
         Some(Stmt::AwaitDo(body, start.merge(end_span)))
     }
 
@@ -1521,8 +1689,17 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
         self.skip_newlines();
         while !self.check(&TokenKind::RParen) && !self.is_at_end() {
+            let is_var = self.match_token(&TokenKind::Var);
             let is_self_mut = self.match_token(&TokenKind::SelfMut);
-            let (param_name, is_mut) = if is_self_mut {
+            let (param_name, is_mut) = if is_var {
+                if self.match_token(&TokenKind::SelfVal) {
+                    let span = self.tokens[self.cursor - 1].span;
+                    (Ident::new("self".into(), span), true)
+                } else {
+                    let id = self.parse_ident()?;
+                    (id, true)
+                }
+            } else if is_self_mut {
                 let span = self.tokens[self.cursor - 1].span;
                 (Ident::new("self".into(), span), true)
             } else if self.match_token(&TokenKind::SelfVal) {
@@ -2026,7 +2203,7 @@ impl<'a> Parser<'a> {
             TokenKind::Minus => self.binary_expr(left, BinaryOp::Sub, Precedence::Sum, op_span),
             TokenKind::Star => self.binary_expr(left, BinaryOp::Mul, Precedence::Product, op_span),
             TokenKind::Slash => self.binary_expr(left, BinaryOp::Div, Precedence::Product, op_span),
-            TokenKind::Div => {
+            TokenKind::Div | TokenKind::SlashSlash => {
                 self.binary_expr(left, BinaryOp::IntDiv, Precedence::Product, op_span)
             }
             TokenKind::Percent => {
@@ -2313,9 +2490,11 @@ impl<'a> Parser<'a> {
             | TokenKind::QuestionDot
             | TokenKind::LBracket
             | TokenKind::Do => Precedence::Call,
-            TokenKind::Star | TokenKind::Slash | TokenKind::Div | TokenKind::Percent => {
-                Precedence::Product
-            }
+            TokenKind::Star
+            | TokenKind::Slash
+            | TokenKind::Div
+            | TokenKind::SlashSlash
+            | TokenKind::Percent => Precedence::Product,
             TokenKind::Plus | TokenKind::Minus => Precedence::Sum,
             TokenKind::DotDot => Precedence::Range,
             TokenKind::EqualEqual
@@ -2341,10 +2520,10 @@ impl<'a> Parser<'a> {
         let mut fields = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             let is_named = matches!(self.peek(), TokenKind::Identifier(_))
-                && self.peek_ahead(1) == &TokenKind::Equal;
+                && matches!(self.peek_ahead(1), TokenKind::Colon | TokenKind::Equal);
             let (name, value) = if is_named {
                 let id = self.parse_ident()?;
-                self.advance(); // consume '='
+                self.advance(); // consume ':' or '='
                 self.skip_newlines();
                 let old = self.allow_comma_is;
                 self.allow_comma_is = false;
@@ -2386,8 +2565,20 @@ impl<'a> Parser<'a> {
     fn parse_trailing_block(&mut self) -> Option<TrailingBlock> {
         let start = self.tokens[self.cursor - 1].span; // 'do'
         let mut params = Vec::new();
-        if !matches!(self.peek(), TokenKind::Newline) {
+        if self.match_token(&TokenKind::LParen) {
+            while !self.check(&TokenKind::RParen) && !self.is_at_end() {
+                params.push(self.parse_ident()?);
+                if !self.match_token(&TokenKind::Comma) {
+                    break;
+                }
+            }
+            self.expect(
+                &TokenKind::RParen,
+                "expected ')' after trailing block parameters",
+            )?;
+        } else if !matches!(self.peek(), TokenKind::Newline | TokenKind::LBrace) {
             while !self.check(&TokenKind::Newline)
+                && !self.check(&TokenKind::LBrace)
                 && !self.check(&TokenKind::End)
                 && !self.is_at_end()
             {
@@ -2399,16 +2590,23 @@ impl<'a> Parser<'a> {
         }
         self.skip_newlines();
 
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut body = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(&TokenKind::End, "expected 'end' to close trailing block")?
-            .span;
+        let end_span = if has_brace {
+            self.expect(&TokenKind::RBrace, "expected '}' to close trailing block")?
+                .span
+        } else {
+            self.expect(&TokenKind::End, "expected 'end' to close trailing block")?
+                .span
+        };
         Some(TrailingBlock {
             params,
             body,
@@ -2435,19 +2633,29 @@ impl<'a> Parser<'a> {
         let return_type = self.parse_optional_return_type();
         self.skip_newlines();
 
+        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.skip_newlines();
+
         let mut body = Vec::new();
-        while !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = self
-            .expect(
+        let end_span = if has_brace {
+            self.expect(
+                &TokenKind::RBrace,
+                "expected '}' to close anonymous function",
+            )?
+            .span
+        } else {
+            self.expect(
                 &TokenKind::End,
                 "expected 'end' to close anonymous function",
             )?
-            .span;
+            .span
+        };
         Some(Expr::Fn(FunctionExpr {
             is_async,
             params,

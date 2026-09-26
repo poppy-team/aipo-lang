@@ -11,10 +11,15 @@ To guarantee clean, high-performance, and accessible code (especially welcoming 
 | Canonical Practice (The Aipo Way) | Anti-Pattern to Avoid | Why this matters |
 | :--- | :--- | :--- |
 | `let name = "Dev"` (Immutable by default) | `var name = "Dev"` | Prevents accidental mutation and simplifies reasoning about program state. |
+| `struct Point { x, var y = 0 }` | Unmarked mutable fields or `fixed` | Consistent immutability across scopes; mutation requires explicit `var`. |
+| `User{ name: "Ana", age: 28 }` | `User{ name = "Ana" }` | Colon unifies key-value association across dictionaries and structs without motor confusion. |
+| `if condition { ... }` (Brace blocks) | `if condition ... end` | Parenthesis-free braces prevent "end-blindness" and enable native *rainbow brackets* and auto-folding. |
+| `fn deposit(var self, amount)` | `fn deposit(self!, amount)` | `var` is the universal keyword for mutability; eliminates cryptic isolated sigils. |
+| `a // b` and `a //= b` (Integer division) | `a div b` | Arithmetic operators maintain consistency and symbolic symmetry. |
 | `f"User {id}: {email}"` | `"User " + String(id) + ": " + email` | Direct interpolation eliminates visual clutter and intermediate heap allocations. |
 | `r"C:\data\report.csv"` | `"C:\\data\\report.csv"` | Raw strings eliminate backslash pollution in file paths and regex patterns. |
 | `let city = user?.profile?.city` | `if user != none and ...` | Safe navigation avoids redundant nested null-checking boilerplate. |
-| `let port = load_port() or_else 8080` | `attempt port = load_port() failed ...` | `or_else` provides immediate default values in single-line failure expressions. |
+| `let port = load_port() or_else 8080` | `attempt { port = load_port() } failed ...` | `or_else` provides immediate default values in single-line failure expressions. |
 | `data |> filter() |> calculate()` | `calculate(filter(data))` | The pipeline operator expresses data transformations in natural left-to-right order. |
 | `list.add(item)` | `list.push(item)` | `.add()` is the universal canonical insertion method for lists and sets. |
 | `data.lazy().filter(...).collect()` | `data.filter(...).map(...)` | `.lazy()` consumes constant memory without allocating temporary intermediate lists. |
@@ -126,7 +131,7 @@ io.println(original_text) # "Deterministic Aipo"
 
 ## 2. Variables and Immutability
 
-Aipo adopts the immutable-by-default principle:
+Aipo adopts the immutable-by-default principle consistently across all scopes:
 
 ```aipo
 # Immutable: compiler prevents subsequent reassignments
@@ -165,19 +170,19 @@ let pi = 3.14159
 let fractional = 0.005
 ```
 
-### Real Division vs Truncated Integer Division (`div`)
-In Aipo, the `/` operator always returns a `Float`. To perform truncated integer division, use the canonical `div` keyword:
+### Real Division (`/`) vs Truncated Integer Division (`//`)
+In Aipo, the `/` operator always returns a `Float`. To perform truncated integer division, use the symmetric `//` operator:
 
 ```aipo
 let a = 10
 let b = 3
 
-let real_div = a / b      # 3.3333333333333335 (Float)
-let integer_div = a div b # 3 (Int)
+let real_div = a / b     # 3.3333333333333335 (Float)
+let integer_div = a // b # 3 (Int)
 
-# Compound assignment is also supported
+# Symmetric compound assignment
 var value = 20
-value div= 3
+value //= 3
 io.println(value) # 6
 ```
 
@@ -220,10 +225,10 @@ let config = {
 }
 
 # Explicit presence verification with .has()
-if config.has("port")
+if config.has("port") {
     let port = config["port"]
     io.println(f"Configured port: {port}")
-end
+}
 ```
 
 ::: tip Why is there no `dict.get()` method?
@@ -266,16 +271,17 @@ io.println(tripled_evens) # [6, 12]
 Avoids nested null checks. If any link in the chain is `none`, the entire expression resolves to `none` without throwing a runtime error:
 
 ```aipo
-struct Address
+struct Address {
     city
-end
+}
 
-struct User
+struct User {
     address
-end
+}
 
-let u1 = User{ address = Address{ city = "Curitiba" } }
-let u2 = User{ address = none }
+# Symmetric instantiation using consistent colon (:) syntax:
+let u1 = User{ address: Address{ city: "Curitiba" } }
+let u2 = User{ address: none }
 
 io.println(u1?.address?.city) # "Curitiba"
 io.println(u2?.address?.city) # none
@@ -285,12 +291,12 @@ io.println(u2?.address?.city) # none
 Provides an immediate fallback value if an expression produces a `fail`, without needing an explicit `attempt` block:
 
 ```aipo
-fn load_port(env)
-    if env == "production"
+fn load_port(env) {
+    if env == "production" {
         return 443
-    end
+    }
     return fail("unknown environment")
-end
+}
 
 # If load_port() produces a fail, or_else evaluates the right-hand fallback:
 let port = load_port("test") or_else 8080
@@ -301,17 +307,17 @@ io.println(f"Active port: {port}") # 8080
 Allows data transformations to be organized in a natural left-to-right sequence:
 
 ```aipo
-fn clean(txt)
+fn clean(txt) {
     return txt.trim()
-end
+}
 
-fn highlight(txt, prefix)
+fn highlight(txt, prefix) {
     return prefix + txt
-end
+}
 
 # "  alert  " is passed as first argument to clean(), and result to highlight():
-let label = "  alert  " |> clean() |> highlight("[URGENT] ")
-io.println(label) # "[URGENT] alert"
+let label = "  alert  " |> clean() |> highlight("[URGENTE] ")
+io.println(label) # "[URGENTE] alert"
 ```
 
 ### Type Checking (`is`)
@@ -320,13 +326,13 @@ Checks whether a value matches a concrete language type:
 ```aipo
 let value = 42
 
-if value is Int
+if value is Int {
     io.println("It is a safe 64-bit integer")
-end
+}
 
 # To check for absence of value, check equality with none directly:
 let data = none
-if data == none
+if data == none {
     io.println("Value is null")
-end
+}
 ```

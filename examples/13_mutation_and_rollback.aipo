@@ -1,34 +1,34 @@
 # Mutating a published instance re-checks `invariant()` at the stable
 # boundary; on failure the entry values return and the operation yields a
 # recoverable `Failure` instead of publishing a forbidden state.
-struct Span
-    lo
-    hi
-end
+struct Span {
+    var lo
+    var hi
+}
 
-impl Span
-    init(self!, lo, hi)
+impl Span {
+    init(var self, lo, hi) {
         self.lo = lo
         self.hi = hi
-    end
+    }
 
-    invariant()
+    invariant() {
         self.lo < self.hi
-    end
+    }
 
-    fn widen(self!, amount)
+    fn widen(var self, amount) {
         self.lo = self.lo - amount
-    end
-end
+    }
+}
 
-let r = Span{lo = 2, hi = 8}
+let r = Span{ lo: 2, hi: 8 }
 r.widen(1)
 io.println(r.lo)
 
-attempt
+attempt {
     r.widen(-10)
-failed err
+} failed err {
     io.println(f"rolled back: {err.message}")
-end
+}
 io.println(r.lo)
 io.println(r.hi)

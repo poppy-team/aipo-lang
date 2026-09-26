@@ -22,7 +22,7 @@ pub use value::{
     SequencePipeline, SequenceSource, StructInstance, TaskId, Value, check_finite_float,
     check_safe_int,
 };
-pub use vm::{HostNative, HostNativeCallback, HostNativeEntry, Vm, VmMetrics};
+pub use vm::{HostNative, HostNativeCallback, HostNativeEntry, TestMode, Vm, VmMetrics};
 
 use aipo_bytecode::BytecodeModule;
 

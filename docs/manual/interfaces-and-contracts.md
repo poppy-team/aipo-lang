@@ -1,57 +1,60 @@
 # Interfaces & Contratos
 
-O sistema de tipos do Aipo une a ergonomia da tipagem dinâmica com a precisão dos **contratos de assinatura**, **invariantes de dados** e **interfaces estruturais**.
+O sistema de tipos do Aipo une a ergonomia da tipagem dinâmica com a precisão dos **contratos de assinatura**, **invariantes de dados** e **interfaces com subtipagem estrutural automática**.
 
 ---
 
 ## Estruturas (`struct`)
 
-Estruturas agregam campos nomeados e são fechadas com `end` (sem chaves). Por padrão, campos são mutáveis, a menos que prefixados com `fixed`:
+Estruturas agregam campos nomeados e são delimitadas por chaves `{ ... }`. 
+
+Por padrão de design seguro e previsível, **todos os campos de uma estrutura são imutáveis**. Quando for necessário permitir mutação de um campo durante o ciclo de vida da instância, declare-o explicitamente com a palavra-chave `var`:
 
 ```aipo
-struct Servidor
-    fixed id
-    fixed criado_em
-    status = "offline"
-    carga = 0.0
-end
+struct Servidor {
+    id
+    criado_em
+    var status = "offline"
+    var carga = 0.0
+}
 
+# Instanciação estrutural usando chave-valor simétrico com ':'
 let s = Servidor{
-    id = "srv-1",
-    criado_em = 1600000000,
-    status = "online",
-    carga = 0.42,
+    id: "srv-1",
+    criado_em: 1600000000,
+    status: "online",
+    carga: 0.42,
 }
 
 io.println(s.id)     # "srv-1"
 io.println(s.status) # "online"
 ```
 
-Tentar reatribuir um campo `fixed` após a construção da instância dispara o diagnóstico semântico estático `AIPO_SEM_FIXED_REASSIGN`.
+Tentar reatribuir um campo imutável após a construção da instância dispara o diagnóstico semântico estático `AIPO_SEM_IMMUTABLE_FIELD_REASSIGN`.
 
 ---
 
 ## Hook de Construção (`init`)
 
-O hook `init` é declarado dentro do bloco `impl StructName` e permite validar, transformar e inicializar os campos da instância antes de sua publicação:
+O hook `init` é declarado dentro do bloco `impl StructName { ... }` e permite validar, transformar e inicializar os campos da instância antes de sua publicação final:
 
 ```aipo
-struct Usuario
+struct Usuario {
     email
     nome
-end
+}
 
-impl Usuario
-    init(email, nome)
-        if not email.contains("@")
+impl Usuario {
+    init(email, nome) {
+        if not email.contains("@") {
             return fail("Formato de e-mail inválido")
-        end
+        }
         self.email = email
         self.nome = nome
-    end
-end
+    }
+}
 
-let u = Usuario{email = "user@example.com", nome = "Dev"}
+let u = Usuario{ email: "user@example.com", nome: "Dev" }
 io.println(u.email) # "user@example.com"
 ```
 
@@ -62,61 +65,88 @@ io.println(u.email) # "user@example.com"
 As invariantes declaram predicados lógicos dentro do bloco `impl` que **devem permanecer verdadeiros durante todo o ciclo de vida do objeto**:
 
 ```aipo
-struct Intervalo
-    inicio = 0
-    fim = 0
-end
+struct Intervalo {
+    var inicio = 0
+    var fim = 0
+}
 
-impl Intervalo
-    init(inicio, fim)
+impl Intervalo {
+    init(inicio, fim) {
         self.inicio = inicio
         self.fim = fim
-    end
+    }
 
-    invariant()
+    invariant {
         self.inicio <= self.fim
-    end
-end
+    }
+}
 
-let inter = Intervalo{inicio = 5, fim = 10}
+let inter = Intervalo{ inicio: 5, fim: 10 }
 io.println(inter.inicio) # 5
 io.println(inter.fim)    # 10
 ```
 
-Sempre que um campo de uma estrutura com `invariant()` for alterado, o motor de execução verifica automaticamente o predicado. Caso a verificação falhe, a operação é rejeitada. Se estiver dentro de um bloco `attempt`, as mutações anteriores sofrem rollback automático pelo journal transacional.
+Sempre que um campo de uma estrutura com bloco `invariant` for alterado, o motor de execução verifica automaticamente o predicado. Caso a verificação falhe, a operação é rejeitada. Se estiver dentro de um bloco `attempt { ... }`, as mutações anteriores sofrem rollback automático pelo journal transacional.
 
 ---
 
-## Interfaces e Conformidade (`interface` / `satisfy`)
+## Métodos e Mutabilidade Universal (`var self`)
 
-Interfaces declaram contratos estruturais de métodos. Em Aipo, conformidade não é herança rígida: é tipagem estrutural validada e declarada explicitamente com `satisfy`:
+Métodos associados a um tipo são definidos dentro de blocos `impl StructName { ... }`. 
+
+Por padrão de segurança, o receptor `self` é **somente leitura**. Quando um método precisa alterar o estado interno da instância, ele declara explicitamente `var self`, alinhando a mutabilidade de métodos à mesma regra universal de variáveis da linguagem:
 
 ```aipo
-interface Renderizavel
-    fn desenhar(self) -> String
-end
+struct Contador {
+    var valor = 0
+}
 
-struct Botao
+impl Contador {
+    # Método de leitura: self é imutável
+    fn atual(self) -> Int {
+        return self.valor
+    }
+
+    # Método mutador: var self declara explicitamente a intenção de modificar
+    fn incrementar(var self) {
+        self.valor += 1
+    }
+}
+```
+
+---
+
+## Interfaces e Subtipagem Estrutural Automática (`interface`)
+
+Interfaces declaram contratos estruturais de métodos. Em Aipo, conformidade não exige declarações burocráticas no topo do arquivo: **a subtipagem é estrutural e automática** (modelo inspirado em linguagens modernas de alta produtividade como Go e Luau).
+
+Se uma estrutura implementa todos os métodos exigidos por uma `interface` com assinaturas e contratos compatíveis (incluindo aridade e mutabilidade de `self`), ela **automaticamente satisfaz a interface**, sem necessidade de nenhum comando adicional:
+
+```aipo
+interface Renderizavel {
+    fn desenhar(self) -> String
+}
+
+struct Botao {
     texto
-end
+}
 
-impl Botao
-    fn desenhar(self) -> String
+impl Botao {
+    fn desenhar(self) -> String {
         return f"[Botão: {self.texto}]"
-    end
-end
+    }
+}
 
-# Declaração canônica de conformidade estrutural
-satisfy Botao: Renderizavel
+# Botao satisfaz Renderizavel AUTOMATICAMENTE!
+# Não há palavras-chave 'implements' nem comandos órfãos 'satisfy'.
 
-# Aceita qualquer valor que satisfaça o contrato de Renderizavel
-fn renderizar_elemento(item: Renderizavel) -> String
+# Aceita qualquer valor que satisfaça a interface Renderizavel
+fn renderizar_elemento(item: Renderizavel) -> String {
     return item.desenhar()
-end
+}
 
-let btn = Botao{texto = "Salvar"}
+let btn = Botao{ texto: "Salvar" }
 io.println(renderizar_elemento(btn)) # "[Botão: Salvar]"
 ```
 
-A cláusula `satisfy` é validada pelo analisador semântico (`aipo-sema`), verificando aridade de parâmetros, nome de métodos, compatibilidade do receptor `self` (ou `self!` para métodos mutadores) e assinaturas assíncronas antes da execução.
-
+A conformidade é verificada estaticamente pelo analisador semântico (`aipo-sema`), checando a existência dos métodos, número de argumentos, tipos de parâmetros e retornos, e a mutabilidade compatível do receptor (`self` vs `var self`).

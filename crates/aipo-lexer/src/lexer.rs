@@ -168,7 +168,15 @@ impl<'a> Lexer<'a> {
                 }
             }
             '/' => {
-                if self.peek() == Some('=') {
+                if self.peek() == Some('/') {
+                    self.advance();
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        TokenKind::SlashSlashEq
+                    } else {
+                        TokenKind::SlashSlash
+                    }
+                } else if self.peek() == Some('=') {
                     self.advance();
                     TokenKind::SlashEq
                 } else {

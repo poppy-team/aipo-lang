@@ -29,7 +29,7 @@ Runs the complete static analysis pipeline (Lexer, Parser, HIR, SEMA, and byteco
 aipo check src/main.aipo
 ```
 
-Accurately reports syntax errors, unsatisfied interface contracts, unbound variable references, and illegal mutations of `fixed` fields.
+Accurately reports syntax errors, incompatible interface contracts, unbound variable references, and illegal mutations of immutable fields.
 
 ### `aipo build`
 

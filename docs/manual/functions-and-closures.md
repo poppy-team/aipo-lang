@@ -6,12 +6,12 @@ As funções em Aipo são cidadãs de primeira classe (*first-class citizens*). 
 
 ## Declaração Básica de Funções
 
-As funções são introduzidas com a palavra-chave `fn` e fechadas com `end` (sem chaves):
+As funções são introduzidas com a palavra-chave `fn` e delimitadas por chaves `{ ... }`:
 
 ```aipo
-fn somar(a, b)
+fn somar(a, b) {
     return a + b
-end
+}
 
 let total = somar(10, 20)
 io.println(total) # 30
@@ -26,9 +26,9 @@ Se o `return` for omitido ou não especificar um valor, a função retorna `none
 O Aipo permite especificar valores padrão para parâmetros opcionais:
 
 ```aipo
-fn conectar(host, porta = 8080, timeout = 5000)
+fn conectar(host, porta = 8080, timeout = 5000) {
     io.println(f"Conectando a {host}:{porta} com timeout {timeout}ms")
-end
+}
 
 conectar("localhost")           # usa porta 8080 e timeout 5000
 conectar("db.interno", 5432)    # usa porta 5432 e timeout 5000
@@ -44,16 +44,16 @@ conectar("api.servico", timeout = 1000)
 
 ## Funções Anônimas & Closures
 
-Funções anônimas (`fn(params) ... end`) podem ser atribuídas a variáveis e preservam o escopo de variáveis capturadas do ambiente léxico externo:
+Funções anônimas (`fn(params) { ... }`) podem ser atribuídas a variáveis e preservam o escopo de variáveis capturadas do ambiente léxico externo:
 
 ```aipo
-fn criar_contador(inicial = 0)
+fn criar_contador(inicial = 0) {
     var count = inicial
-    return fn()
+    return fn() {
         count += 1
         return count
-    end
-end
+    }
+}
 
 let c = criar_contador(10)
 io.println(c()) # 11
@@ -89,17 +89,16 @@ Lambdas de múltiplos parâmetros utilizam parênteses: `(a, b) => a + b`.
 O Aipo suporta a declaração de funções locais dentro do corpo de outras funções ou métodos, com resolução completa de auto-recursão via `FillSelfCapture`:
 
 ```aipo
-fn fatorial(n)
-    fn loop_rec(atual, acumulador)
-        if atual <= 1
+fn fatorial(n) {
+    fn loop_rec(atual, acumulador) {
+        if atual <= 1 {
             return acumulador
-        end
+        }
         return loop_rec(atual - 1, acumulador * atual)
-    end
+    }
 
     return loop_rec(n, 1)
-end
+}
 
 io.println(fatorial(5)) # 120
 ```
-

@@ -1,0 +1,424 @@
+//! Comprehensive automated integration tests for Aipo C ABI (ADP-009, ADP-010).
+
+use aipo_c_abi::*;
+use std::ffi::{CStr, CString};
+
+#[test]
+fn test_version_query() {
+    let mut major = 0;
+    let mut minor = 0;
+    let mut patch = 0;
+    unsafe {
+        aipo_version(&mut major, &mut minor, &mut patch);
+    }
+    assert_eq!(major, 0);
+    assert_eq!(minor, 1);
+    assert_eq!(patch, 0);
+
+    // Null pointer resilience
+    unsafe {
+        aipo_version(
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+    }
+}
+
+#[test]
+fn test_runtime_lifecycle() {
+    let rt = aipo_runtime_create();
+    assert!(!rt.is_null());
+    unsafe {
+        aipo_runtime_destroy(rt);
+        // Double-destroy null resilience
+        aipo_runtime_destroy(std::ptr::null_mut());
+    }
+}
+
+#[test]
+fn test_module_load_and_call_primitive_types() {
+    let rt = aipo_runtime_create();
+    assert!(!rt.is_null());
+
+    let mod_name = CString::new("math_mod").unwrap();
+    let source = CString::new(
+        r#"
+fn add(a, b)
+    return a + b
+end
+
+fn concat(prefix, suffix)
+    return prefix + suffix
+end
+
+fn is_positive(n)
+    return n > 0
+end
+"#,
+    )
+    .unwrap();
+
+    let status = unsafe { aipo_runtime_load_module(rt, mod_name.as_ptr(), source.as_ptr()) };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+
+    // Call add(10, 25) -> 35
+    let fn_add = CString::new("add").unwrap();
+    let args = [aipo_value_t::int_val(10), aipo_value_t::int_val(25)];
+    let mut result = aipo_value_t::none();
+
+    let status = unsafe {
+        aipo_runtime_call(
+            rt,
+            mod_name.as_ptr(),
+            fn_add.as_ptr(),
+            args.as_ptr(),
+            args.len(),
+            &mut result,
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+    assert_eq!(result.tag, aipo_val_tag_t::AIPO_VAL_INT);
+    assert_eq!(result.int_val, 35);
+
+    // Call concat("hello, ", "world!")
+    let fn_concat = CString::new("concat").unwrap();
+    let str_a = CString::new("hello, ").unwrap();
+    let str_b = CString::new("world!").unwrap();
+    let mut val_a = aipo_value_t::none();
+    val_a.tag = aipo_val_tag_t::AIPO_VAL_STRING;
+    val_a.str_ptr = str_a.as_ptr();
+    val_a.str_len = 7;
+
+    let mut val_b = aipo_value_t::none();
+    val_b.tag = aipo_val_tag_t::AIPO_VAL_STRING;
+    val_b.str_ptr = str_b.as_ptr();
+    val_b.str_len = 6;
+
+    let args_str = [val_a, val_b];
+    let mut res_str = aipo_value_t::none();
+
+    let status = unsafe {
+        aipo_runtime_call(
+            rt,
+            mod_name.as_ptr(),
+            fn_concat.as_ptr(),
+            args_str.as_ptr(),
+            args_str.len(),
+            &mut res_str,
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+    assert_eq!(res_str.tag, aipo_val_tag_t::AIPO_VAL_STRING);
+    assert!(!res_str.str_ptr.is_null());
+    let res_text = unsafe { CStr::from_ptr(res_str.str_ptr) }.to_str().unwrap();
+    assert_eq!(res_text, "hello, world!");
+
+    // Call is_positive(-5) -> false
+    let fn_pos = CString::new("is_positive").unwrap();
+    let args_pos = [aipo_value_t::int_val(-5)];
+    let mut res_bool = aipo_value_t::none();
+
+    let status = unsafe {
+        aipo_runtime_call(
+            rt,
+            mod_name.as_ptr(),
+            fn_pos.as_ptr(),
+            args_pos.as_ptr(),
+            args_pos.len(),
+            &mut res_bool,
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+    assert_eq!(res_bool.tag, aipo_val_tag_t::AIPO_VAL_BOOL);
+    assert!(!res_bool.bool_val);
+
+    unsafe { aipo_runtime_destroy(rt) };
+}
+
+extern "C" fn host_multiply(
+    _rt: *mut aipo_runtime_t,
+    args: *const aipo_value_t,
+    argc: usize,
+    out_result: *mut aipo_value_t,
+) -> aipo_status_t {
+    if argc != 2 || args.is_null() || out_result.is_null() {
+        return aipo_status_t::AIPO_ERR_USAGE;
+    }
+    let slice = unsafe { std::slice::from_raw_parts(args, argc) };
+    let a = slice[0].int_val;
+    let b = slice[1].int_val;
+    unsafe {
+        *out_result = aipo_value_t::int_val(a * b);
+    }
+    aipo_status_t::AIPO_OK
+}
+
+#[test]
+fn test_host_function_registration_and_callback() {
+    let rt = aipo_runtime_create();
+    assert!(!rt.is_null());
+
+    let fn_name = CString::new("host_mul").unwrap();
+    let status = unsafe {
+        aipo_runtime_register_host_fn(rt, fn_name.as_ptr(), 2, std::ptr::null(), host_multiply)
+    };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+
+    let mod_name = CString::new("client_mod").unwrap();
+    let source = CString::new(
+        r#"
+fn compute_area(width, height)
+    return host_mul(width, height)
+end
+"#,
+    )
+    .unwrap();
+
+    let status = unsafe { aipo_runtime_load_module(rt, mod_name.as_ptr(), source.as_ptr()) };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+
+    let fn_compute = CString::new("compute_area").unwrap();
+    let args = [aipo_value_t::int_val(7), aipo_value_t::int_val(8)];
+    let mut result = aipo_value_t::none();
+
+    let status = unsafe {
+        aipo_runtime_call(
+            rt,
+            mod_name.as_ptr(),
+            fn_compute.as_ptr(),
+            args.as_ptr(),
+            args.len(),
+            &mut result,
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+    assert_eq!(result.tag, aipo_val_tag_t::AIPO_VAL_INT);
+    assert_eq!(result.int_val, 56);
+
+    unsafe { aipo_runtime_destroy(rt) };
+}
+
+#[test]
+fn test_generational_handle_lifecycle_and_stale_detection() {
+    let rt = aipo_runtime_create();
+    assert!(!rt.is_null());
+
+    // Mint handle for integer payload 42
+    let val = aipo_value_t::int_val(42);
+    let handle = unsafe { aipo_handle_create(rt, val) };
+    assert_ne!(handle.generation, 0);
+
+    // Resolve handle while live
+    let mut resolved = aipo_value_t::none();
+    let status = unsafe { aipo_handle_resolve(rt, handle, &mut resolved) };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+    assert_eq!(resolved.tag, aipo_val_tag_t::AIPO_VAL_INT);
+    assert_eq!(resolved.int_val, 42);
+
+    // Release handle
+    let status = unsafe { aipo_handle_release(rt, handle) };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+
+    // Attempting to resolve stale handle must fail with AIPO_ERR_STALE_HANDLE
+    let status = unsafe { aipo_handle_resolve(rt, handle, &mut resolved) };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_STALE_HANDLE);
+
+    // Attempting to release already released handle must fail with AIPO_ERR_STALE_HANDLE
+    let status = unsafe { aipo_handle_release(rt, handle) };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_STALE_HANDLE);
+
+    unsafe { aipo_runtime_destroy(rt) };
+}
+
+extern "C" fn secure_action(
+    _rt: *mut aipo_runtime_t,
+    _args: *const aipo_value_t,
+    _argc: usize,
+    out_result: *mut aipo_value_t,
+) -> aipo_status_t {
+    unsafe {
+        *out_result = aipo_value_t::int_val(100);
+    }
+    aipo_status_t::AIPO_OK
+}
+
+#[test]
+fn test_capability_guarding_and_denial() {
+    let rt = aipo_runtime_create();
+    assert!(!rt.is_null());
+
+    let fn_name = CString::new("secure_vault").unwrap();
+    let cap_name = CString::new("system.vault").unwrap();
+
+    let status = unsafe {
+        aipo_runtime_register_host_fn(rt, fn_name.as_ptr(), 0, cap_name.as_ptr(), secure_action)
+    };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+
+    let mod_name = CString::new("vault_test").unwrap();
+    let source = CString::new(
+        r#"
+fn access_vault()
+    return secure_vault()
+end
+"#,
+    )
+    .unwrap();
+
+    let status = unsafe { aipo_runtime_load_module(rt, mod_name.as_ptr(), source.as_ptr()) };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+
+    let fn_access = CString::new("access_vault").unwrap();
+    let mut result = aipo_value_t::none();
+
+    // 1. Without capability granted: must fault with CAPABILITY_DENIED
+    let status = unsafe {
+        aipo_runtime_call(
+            rt,
+            mod_name.as_ptr(),
+            fn_access.as_ptr(),
+            std::ptr::null(),
+            0,
+            &mut result,
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_FAULT);
+
+    // 2. Grant capability and retry: must succeed with AIPO_OK
+    let status = unsafe { aipo_runtime_grant_capability(rt, cap_name.as_ptr()) };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+
+    let status = unsafe {
+        aipo_runtime_call(
+            rt,
+            mod_name.as_ptr(),
+            fn_access.as_ptr(),
+            std::ptr::null(),
+            0,
+            &mut result,
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+    assert_eq!(result.tag, aipo_val_tag_t::AIPO_VAL_INT);
+    assert_eq!(result.int_val, 100);
+
+    // 3. Revoke capability and retry: must fault again
+    let status = unsafe { aipo_runtime_revoke_capability(rt, cap_name.as_ptr()) };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+
+    let status = unsafe {
+        aipo_runtime_call(
+            rt,
+            mod_name.as_ptr(),
+            fn_access.as_ptr(),
+            std::ptr::null(),
+            0,
+            &mut result,
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_FAULT);
+
+    unsafe { aipo_runtime_destroy(rt) };
+}
+
+#[test]
+fn test_error_and_diagnostic_reporting() {
+    let rt = aipo_runtime_create();
+    assert!(!rt.is_null());
+
+    // 1. Diagnostic syntax error in module source
+    let mod_name = CString::new("broken").unwrap();
+    let bad_source = CString::new("fn syntax_error(return 42").unwrap();
+    let status = unsafe { aipo_runtime_load_module(rt, mod_name.as_ptr(), bad_source.as_ptr()) };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_DIAGNOSTIC);
+
+    let mut err_buf = [0u8; 128];
+    let written = unsafe {
+        aipo_last_error(
+            rt,
+            err_buf.as_mut_ptr().cast::<std::ffi::c_char>(),
+            err_buf.len(),
+        )
+    };
+    assert!(written > 0);
+    let err_str = unsafe { CStr::from_ptr(err_buf.as_ptr().cast::<std::ffi::c_char>()) }
+        .to_str()
+        .unwrap();
+    assert!(err_str.contains("syntax error") || err_str.contains("parse error"));
+
+    // 2. Runtime fault: division by zero
+    let ok_mod = CString::new("calc").unwrap();
+    let ok_source = CString::new("fn div_zero() return 10 / 0 end").unwrap();
+    let status = unsafe { aipo_runtime_load_module(rt, ok_mod.as_ptr(), ok_source.as_ptr()) };
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+
+    let fn_div = CString::new("div_zero").unwrap();
+    let mut res = aipo_value_t::none();
+    let status = unsafe {
+        aipo_runtime_call(
+            rt,
+            ok_mod.as_ptr(),
+            fn_div.as_ptr(),
+            std::ptr::null(),
+            0,
+            &mut res,
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_FAULT);
+
+    unsafe { aipo_runtime_destroy(rt) };
+}
+
+#[test]
+fn test_null_pointer_safety() {
+    // Calling C ABI functions with null pointers must return AIPO_ERR_NULL_POINTER without panic
+    let status = unsafe { aipo_runtime_grant_capability(std::ptr::null_mut(), std::ptr::null()) };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_NULL_POINTER);
+
+    let status = unsafe { aipo_runtime_revoke_capability(std::ptr::null_mut(), std::ptr::null()) };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_NULL_POINTER);
+
+    let status = unsafe {
+        aipo_runtime_load_module(std::ptr::null_mut(), std::ptr::null(), std::ptr::null())
+    };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_NULL_POINTER);
+
+    let status = unsafe {
+        aipo_runtime_call(
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_NULL_POINTER);
+
+    let status = unsafe {
+        aipo_runtime_register_host_fn(
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+            host_multiply,
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_NULL_POINTER);
+
+    let status = unsafe {
+        aipo_handle_resolve(
+            std::ptr::null_mut(),
+            aipo_handle_t::default(),
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_NULL_POINTER);
+
+    let status = unsafe { aipo_handle_release(std::ptr::null_mut(), aipo_handle_t::default()) };
+    assert_eq!(status, aipo_status_t::AIPO_ERR_NULL_POINTER);
+
+    let written = unsafe { aipo_last_error(std::ptr::null(), std::ptr::null_mut(), 0) };
+    assert_eq!(written, 0);
+}

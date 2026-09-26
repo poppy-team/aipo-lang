@@ -32,48 +32,48 @@ Let's model a bank account with an invariant guaranteeing a non-negative balance
 
 ```aipo
 # account.aipo
-struct Account
+struct Account {
     holder
-    balance = 0.0
-    fixed account_number
-end
+    account_number
+    var balance = 0.0
+}
 
-impl Account
-    init(holder, balance = 0.0, account_number = 0)
+impl Account {
+    fn init(holder, account_number = 0, balance = 0.0) {
         self.holder = holder
-        self.balance = balance
         self.account_number = account_number
-    end
+        self.balance = balance
+    }
 
     # Invariant: executed upon construction and every field mutation
-    invariant()
+    invariant {
         self.balance >= 0.0
-    end
+    }
 
-    fn deposit(self!, amount: Float)
-        if amount <= 0.0
+    fn deposit(var self, amount: Float) {
+        if amount <= 0.0 {
             return fail("Deposit amount must be positive")
-        end
-        self.balance = self.balance + amount
-    end
+        }
+        self.balance += amount
+    }
 
-    fn withdraw(self!, amount: Float)
-        if amount <= 0.0
+    fn withdraw(var self, amount: Float) {
+        if amount <= 0.0 {
             return fail("Withdrawal amount must be positive")
-        end
+        }
         
         # Tries to execute the withdrawal. If self.balance >= 0.0 fails,
         # the attempt block rolls back the mutation automatically!
-        attempt
-            self.balance = self.balance - amount
-        failed err
+        attempt {
+            self.balance -= amount
+        } failed err {
             return fail("Withdrawal rejected: insufficient balance")
-        end
-    end
-end
+        }
+    }
+}
 
-# Instantiating the account
-let acc = Account{holder = "Alice Johnson", balance = 150.0, account_number = 1042}
+# Instantiating the account using consistent colon (:) syntax
+let acc = Account{ holder: "Alice Johnson", account_number: 1042, balance: 150.0 }
 
 io.println(f"Account created for: {acc.holder}")
 io.println(f"Initial balance: {acc.balance}")

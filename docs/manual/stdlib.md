@@ -52,22 +52,22 @@ O módulo `math` provê operações numéricas de ponto flutuante e inteiras sem
 ### Exemplo Prático: Física de Pêndulo Simples
 
 ```aipo
-struct Pendulo
+struct Pendulo {
     comprimento
     gravidade
     angulo
     velocidade_angular
-end
+}
 
-impl Pendulo
-    init(comprimento, gravidade, angulo, velocidade_angular)
+impl Pendulo {
+    init(comprimento, gravidade, angulo, velocidade_angular) {
         self.comprimento = comprimento
         self.gravidade = gravidade
         self.angulo = angulo
         self.velocidade_angular = velocidade_angular
-    end
+    }
 
-    fn atualizar(self, delta_tempo)
+    fn atualizar(self, delta_tempo) {
         # Aceleração angular: (-g / L) * sin(theta)
         let aceleracao = (-self.gravidade / self.comprimento) * math.sin(self.angulo)
         
@@ -78,19 +78,19 @@ impl Pendulo
         let angulo_normalizado = math.clamp(novo_angulo, -math.pi, math.pi)
         
         return Pendulo{
-            comprimento = self.comprimento,
-            gravidade = self.gravidade,
-            angulo = angulo_normalizado,
-            velocidade_angular = nova_vel,
+            comprimento: self.comprimento,
+            gravidade: self.gravidade,
+            angulo: angulo_normalizado,
+            velocidade_angular: nova_vel,
         }
-    end
-end
+    }
+}
 
 let p = Pendulo{
-    comprimento = 2.5,
-    gravidade = 9.81,
-    angulo = math.rad(45.0),
-    velocidade_angular = 0.0,
+    comprimento: 2.5,
+    gravidade: 9.81,
+    angulo: math.rad(45.0),
+    velocidade_angular: 0.0,
 }
 
 let p_proximo = p.atualizar(0.016)
@@ -137,27 +137,27 @@ let b = texto.trim().lower()
 ### Exemplo Prático: Limpeza e Sanitização de Dados
 
 ```aipo
-fn sanitizar_email(email_bruto)
+fn sanitizar_email(email_bruto) {
     let limpo = email_bruto.trim().lower()
     
-    if not limpo.contains("@")
+    if not limpo.contains("@") {
         return fail("email invalido: sem arroba")
-    end
+    }
     
     let partes = limpo.split("@")
-    if partes.len() != 2
+    if partes.len() != 2 {
         return fail("email invalido: formato incorreto")
-    end
+    }
     
     let usuario = partes[0]
     let dominio = partes[1]
     
-    if usuario.len() == 0 or not dominio.contains(".")
+    if usuario.len() == 0 or not dominio.contains(".") {
         return fail("email invalido: usuario ou dominio vazio")
-    end
+    }
     
     return usuario + "@" + dominio
-end
+}
 
 let entrada = "  Dev.Aipo@Poppy-Lang.ORG  "
 let email_final = sanitizar_email(entrada)
@@ -253,11 +253,11 @@ let carga_recebida = "{\"servico\": \"auth\", \"tentativas\": 3, \"ativo\": true
 
 # Parse seguro dentro de um bloco attempt
 var payload = {}
-attempt
+attempt {
     payload = json.parse(carga_recebida)
-failed err
+} failed err {
     payload = {"erro": "JSON malformado", "detalhe": err.message}
-end
+}
 
 let servico = payload["servico"]
 io.println(f"Servico solicitado: {servico}")
@@ -422,12 +422,12 @@ io.println(f"Search: {busca}")   # "?lang=pt&tema=dark"
 O Aipo vem acompanhado de um mecanismo nativo de asserções puras sem dependência de bibliotecas externas:
 
 ```aipo
-fn dividir(dividendo, divisor)
-    if divisor == 0
+fn dividir(dividendo, divisor) {
+    if divisor == 0 {
         return fail("divisao por zero")
-    end
+    }
     return dividendo / divisor
-end
+}
 
 # Asserções de sucesso
 expect.equal(dividir(10, 2), 5.0)
@@ -435,11 +435,11 @@ expect.true(dividir(10, 2) > 0.0)
 
 # Verificação de falha esperada usando attempt/failed
 var mensagem_erro = ""
-attempt
+attempt {
     dividir(10, 0)
-failed err
+} failed err {
     mensagem_erro = err.message
-end
+}
 
 expect.equal(mensagem_erro, "divisao por zero")
 
@@ -478,10 +478,10 @@ O módulo `task` orquestra a concorrência cooperativa da linguagem, operando so
 ### Exemplo Prático: Busca Paralela e Disputa
 
 ```aipo
-async fn buscar_dados(origem)
+async fn buscar_dados(origem) {
     task.sleep(1)
     return f"dados-de-{origem}"
-end
+}
 
 let t1 = buscar_dados("servidor-1")
 let t2 = buscar_dados("servidor-2")
@@ -507,11 +507,11 @@ Diferente de runtimes onde qualquer script importado tem permissão irrestrita p
 # Se o host não tiver concedido a capability "env.read":
 # A execução falha com: AIPO_RT_CAPABILITY_DENIED (capability: "env.read")
 var usuario = "convidado"
-attempt
+attempt {
     usuario = env.get("USER")
-failed err
+} failed err {
     usuario = "convidado" # Fallback seguro e transparente
-end
+}
 
 io.println(f"Executando como: {usuario}")
 ```

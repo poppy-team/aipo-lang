@@ -36,6 +36,12 @@ impl Handle {
     pub fn generation(self) -> u32 {
         self.generation
     }
+
+    /// Reconstructs a handle from its raw index and generation.
+    #[must_use]
+    pub const fn from_raw(index: usize, generation: u32) -> Self {
+        Self { index, generation }
+    }
 }
 
 impl std::fmt::Display for Handle {

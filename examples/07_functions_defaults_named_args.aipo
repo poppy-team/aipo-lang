@@ -1,7 +1,7 @@
 # Defaults are evaluated per call; named arguments may come in any order.
-fn greet(name, greeting = "hi")
+fn greet(name, greeting = "hi") {
     return greeting + " " + name
-end
+}
 
 io.println(greet("ana"))
 io.println(greet("bob", greeting = "hey"))

@@ -75,6 +75,7 @@ aipo — Aipo language toolchain
 
 USAGE:
     aipo run <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+    aipo test [path] [--filter <pattern>] [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo check <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo build <path> [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo disasm <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
@@ -88,6 +89,7 @@ USAGE:
 
 COMMANDS:
     run      Compile and execute an Aipo source file (.aipo) or bytecode file (.aibc)
+    test     Discover and run isolated unit tests
     check    Run the frontend, semantic analysis and bytecode verification
     build    Emit a JavaScript bundle (app.js + aipo-runtime.js + app.js.map)
     disasm   Disassemble a source file (.aipo) or bytecode file (.aibc)
@@ -157,6 +159,19 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             out,
             err,
             Action::Run,
+        ),
+        Command::Test {
+            path,
+            filter,
+            format,
+            package_cache,
+        } => test_command(
+            path.as_deref(),
+            filter.as_deref(),
+            format,
+            package_cache.as_deref(),
+            out,
+            err,
         ),
         Command::Check {
             path,
@@ -240,6 +255,12 @@ enum Command {
     Version,
     Run {
         path: PathBuf,
+        format: MessageFormat,
+        package_cache: Option<PathBuf>,
+    },
+    Test {
+        path: Option<PathBuf>,
+        filter: Option<String>,
         format: MessageFormat,
         package_cache: Option<PathBuf>,
     },
@@ -385,6 +406,77 @@ impl Command {
                         package_cache,
                     })
                 }
+            }
+            "test" => {
+                let mut path = None;
+                let mut filter = None;
+                let mut format = MessageFormat::Human;
+                let mut package_cache = None;
+                let rest = &args[1..];
+                let mut index = 0;
+                while index < rest.len() {
+                    let arg = &rest[index];
+                    if let Some(value) = arg.strip_prefix("--message-format=") {
+                        format = parse_format(value)?;
+                    } else if arg == "--message-format" {
+                        index += 1;
+                        let value = rest
+                            .get(index)
+                            .ok_or_else(|| "--message-format requires a value".to_string())?;
+                        format = parse_format(value)?;
+                    } else if let Some(value) = arg.strip_prefix("--filter=") {
+                        if filter.is_some() {
+                            return Err("'--filter' was provided more than once".to_string());
+                        }
+                        filter = Some(value.to_string());
+                    } else if arg == "--filter" {
+                        index += 1;
+                        let value = rest
+                            .get(index)
+                            .ok_or_else(|| "--filter requires a pattern".to_string())?;
+                        if filter.is_some() {
+                            return Err("'--filter' was provided more than once".to_string());
+                        }
+                        filter = Some(value.to_string());
+                    } else if let Some(value) = arg.strip_prefix("--package-cache=") {
+                        if value.is_empty() {
+                            return Err(
+                                "--package-cache requires a non-empty directory".to_string()
+                            );
+                        }
+                        if package_cache.is_some() {
+                            return Err("'--package-cache' was provided more than once".to_string());
+                        }
+                        package_cache = Some(PathBuf::from(value));
+                    } else if arg == "--package-cache" {
+                        index += 1;
+                        let value = rest
+                            .get(index)
+                            .ok_or_else(|| "--package-cache requires a directory".to_string())?;
+                        if value.is_empty() || value.starts_with('-') {
+                            return Err(
+                                "--package-cache requires a non-empty directory".to_string()
+                            );
+                        }
+                        if package_cache.is_some() {
+                            return Err("'--package-cache' was provided more than once".to_string());
+                        }
+                        package_cache = Some(PathBuf::from(value));
+                    } else if arg.starts_with('-') {
+                        return Err(format!("unrecognized flag '{arg}'"));
+                    } else if path.is_some() {
+                        return Err(format!("unexpected argument '{arg}'"));
+                    } else {
+                        path = Some(PathBuf::from(arg));
+                    }
+                    index += 1;
+                }
+                Ok(Self::Test {
+                    path,
+                    filter,
+                    format,
+                    package_cache,
+                })
             }
             "build" => {
                 let mut path = None;
@@ -1759,14 +1851,8 @@ fn build_bundle(
     EXIT_LANGUAGE_FAILURE
 }
 
-/// Registers the standard library and runs a verified module.}
-///
-/// # Errors
-/// Returns the runtime error raised by the program.
-fn execute_module(module: &aipo_bytecode::BytecodeModule) -> Result<(), VmError> {
-    let (mut vm, _) = standard_environment();
-    // Struct layouts travel with the module: without them the runtime cannot name the
-    // fields of a user-declared instance, and every `p.x` would fault.
+/// Registers the structs and struct methods declared in a compiled module onto the VM.
+fn register_module_symbols(vm: &mut Vm, module: &aipo_bytecode::BytecodeModule) {
     for decl in &module.structs {
         let fields: Vec<(&str, bool)> = decl
             .fields
@@ -1775,12 +1861,8 @@ fn execute_module(module: &aipo_bytecode::BytecodeModule) -> Result<(), VmError>
             .collect();
         vm.register_struct(decl.name.clone(), fields);
     }
-    // `impl Type` methods are compiled as `Type.method` functions; the runtime needs the
-    // entry points to answer `value.method(...)` with a bound method.
     for function in &module.functions {
         if let Some((type_name, method)) = function.name.split_once('.') {
-            // `self` is parameter 0 and arrives as the receiver, so the total arity the
-            // frame expects equals the declared parameter count.
             vm.register_struct_method(
                 type_name,
                 method,
@@ -1790,7 +1872,257 @@ fn execute_module(module: &aipo_bytecode::BytecodeModule) -> Result<(), VmError>
             );
         }
     }
+}
+
+/// Registers the standard library and runs a verified module.
+///
+/// # Errors
+/// Returns the runtime error raised by the program.
+fn execute_module(module: &aipo_bytecode::BytecodeModule) -> Result<(), VmError> {
+    let (mut vm, _) = standard_environment();
+    register_module_symbols(&mut vm, module);
     vm.run(module).map(|_| ())
+}
+
+fn collect_test_files(target: Option<&Path>) -> Result<Vec<PathBuf>, String> {
+    fn is_test_file(path: &Path) -> bool {
+        if path.extension().and_then(|ext| ext.to_str()) != Some("aipo") {
+            return false;
+        }
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        file_name.ends_with("_test.aipo") || file_name.starts_with("test_")
+    }
+
+    fn scan_dir(dir: &Path, files: &mut Vec<PathBuf>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    scan_dir(&path, files);
+                } else if is_test_file(&path) {
+                    files.push(path);
+                }
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    if let Some(path) = target {
+        if path.is_file() {
+            files.push(path.to_path_buf());
+        } else if path.is_dir() {
+            scan_dir(path, &mut files);
+        } else {
+            return Err(format!("'{}' does not exist", path.display()));
+        }
+    } else {
+        let tests_dir = Path::new("tests");
+        if tests_dir.is_dir() {
+            scan_dir(tests_dir, &mut files);
+        }
+        if let Ok(entries) = std::fs::read_dir(".") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && is_test_file(&path) {
+                    files.push(path);
+                }
+            }
+        }
+    }
+
+    files.sort();
+    files.dedup();
+
+    if files.is_empty() {
+        return Err("no test files found".to_string());
+    }
+    Ok(files)
+}
+
+fn test_command(
+    path: Option<&Path>,
+    filter: Option<&str>,
+    format: MessageFormat,
+    package_cache: Option<&Path>,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let test_files = match collect_test_files(path) {
+        Ok(files) => files,
+        Err(msg) => {
+            let _ = writeln!(err, "error: {msg}");
+            return EXIT_USAGE;
+        }
+    };
+
+    let suite_start = std::time::Instant::now();
+    let mut suite_total_passed = 0;
+    let mut suite_total_failed = 0;
+    let mut suite_total_skipped = 0;
+
+    for test_file in &test_files {
+        let LoadedSource {
+            source,
+            package_paths,
+        } = match load_source_entry(test_file, package_cache) {
+            Ok(loaded) => loaded,
+            Err(error) => return report_cli_error(error, format, out, err),
+        };
+
+        let compiled = analyze(&source, test_file, package_paths.as_ref());
+        let has_errors = compiled
+            .diagnostics
+            .iter()
+            .any(|diag| diag.severity == Severity::Error);
+
+        if has_errors {
+            emit_diagnostics(format, &source, &compiled.diagnostics, out, err);
+            return EXIT_LANGUAGE_FAILURE;
+        }
+
+        let (mut vm, _) = standard_environment();
+        register_module_symbols(&mut vm, &compiled.module);
+        let discovered = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        vm.set_test_mode(aipo_vm::TestMode::Discover(discovered.clone()));
+        let _ = vm.run(&compiled.module);
+        let all_tests = discovered.borrow().clone();
+
+        let mut tests_to_run = Vec::new();
+        for name in all_tests {
+            if let Some(f) = filter {
+                if !name.contains(f) {
+                    suite_total_skipped += 1;
+                    continue;
+                }
+            }
+            tests_to_run.push(name);
+        }
+
+        if format == MessageFormat::Human {
+            let _ = writeln!(
+                out,
+                "running {} test{} in {}",
+                tests_to_run.len(),
+                if tests_to_run.len() == 1 { "" } else { "s" },
+                test_file.display()
+            );
+        } else {
+            let _ = writeln!(
+                out,
+                r#"{{"type":"suite_start","file":"{}","total":{}}}"#,
+                test_file.display(),
+                tests_to_run.len()
+            );
+        }
+
+        for test_name in tests_to_run {
+            if format == MessageFormat::Jsonl {
+                let _ = writeln!(out, r#"{{"type":"test_start","name":"{}"}}"#, test_name);
+            }
+
+            let start = std::time::Instant::now();
+            aipo_stdlib::time::install_clock(Box::new(aipo_stdlib::time::DeterministicClock {
+                seconds: 0.0,
+            }));
+            aipo_stdlib::random::reset_default_seed(0x1234_5678);
+
+            let (mut vm, _) = standard_environment();
+            register_module_symbols(&mut vm, &compiled.module);
+            let ran = std::rc::Rc::new(std::cell::Cell::new(false));
+            vm.set_test_mode(aipo_vm::TestMode::Execute {
+                target: test_name.clone(),
+                ran: ran.clone(),
+            });
+
+            let run_result = vm.run(&compiled.module);
+            let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+            match run_result {
+                Ok(_) if ran.get() => {
+                    suite_total_passed += 1;
+                    if format == MessageFormat::Human {
+                        let _ = writeln!(out, "test {test_name} ... ok ({duration_ms:.2}ms)");
+                    } else {
+                        let _ = writeln!(
+                            out,
+                            r#"{{"type":"test_pass","name":"{}","duration_ms":{:.2}}}"#,
+                            test_name, duration_ms
+                        );
+                    }
+                }
+                Err(VmError::UncaughtFailure(msg)) => {
+                    suite_total_failed += 1;
+                    if format == MessageFormat::Human {
+                        let _ = writeln!(out, "test {test_name} ... FAILED ({duration_ms:.2}ms)");
+                        let _ = writeln!(out, "    {msg}");
+                    } else {
+                        let escaped = msg.replace('"', "\\\"").replace('\n', " ");
+                        let _ = writeln!(
+                            out,
+                            r#"{{"type":"test_fail","name":"{}","duration_ms":{:.2},"error":"{}"}}"#,
+                            test_name, duration_ms, escaped
+                        );
+                    }
+                }
+                Err(err) => {
+                    suite_total_failed += 1;
+                    let msg = err.to_string();
+                    if format == MessageFormat::Human {
+                        let _ = writeln!(out, "test {test_name} ... FAILED ({duration_ms:.2}ms)");
+                        let _ = writeln!(out, "    {msg}");
+                    } else {
+                        let escaped = msg.replace('"', "\\\"").replace('\n', " ");
+                        let _ = writeln!(
+                            out,
+                            r#"{{"type":"test_fail","name":"{}","duration_ms":{:.2},"error":"{}"}}"#,
+                            test_name, duration_ms, escaped
+                        );
+                    }
+                }
+                Ok(_) => {
+                    suite_total_failed += 1;
+                    if format == MessageFormat::Human {
+                        let _ = writeln!(out, "test {test_name} ... FAILED ({duration_ms:.2}ms)");
+                        let _ = writeln!(out, "    test was not executed");
+                    } else {
+                        let _ = writeln!(
+                            out,
+                            r#"{{"type":"test_fail","name":"{}","duration_ms":{:.2},"error":"test was not executed"}}"#,
+                            test_name, duration_ms
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    aipo_stdlib::time::install_clock(Box::new(aipo_stdlib::time::SystemClock));
+
+    let total_duration = suite_start.elapsed().as_secs_f64();
+    if format == MessageFormat::Human {
+        let status = if suite_total_failed == 0 {
+            "ok"
+        } else {
+            "FAILED"
+        };
+        let _ = writeln!(
+            out,
+            "\ntest result: {status}. {} passed; {} failed; {} skipped; finished in {:.2}s\n",
+            suite_total_passed, suite_total_failed, suite_total_skipped, total_duration
+        );
+    } else {
+        let _ = writeln!(
+            out,
+            r#"{{"type":"suite_finish","passed":{},"failed":{},"skipped":{},"duration_s":{:.2}}}"#,
+            suite_total_passed, suite_total_failed, suite_total_skipped, total_duration
+        );
+    }
+
+    if suite_total_failed > 0 {
+        EXIT_LANGUAGE_FAILURE
+    } else {
+        EXIT_SUCCESS
+    }
 }
 
 /// Builds a VM with the standard library registered, plus the registry of its metadata.

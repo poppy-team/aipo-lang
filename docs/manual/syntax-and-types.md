@@ -11,10 +11,15 @@ Para garantir código limpo, de alta performance e fácil de ler (especialmente 
 | Prática Canônica (O Jeito Aipo) | Anti-Padrão a Evitar | Por que isso importa? |
 | :--- | :--- | :--- |
 | `let nome = "Dev"` (Imutável por padrão) | `var nome = "Dev"` | Previne mutações acidentais e facilita o raciocínio sobre o estado do programa. |
+| `struct Ponto { x, var y = 0 }` | Campos mutáveis sem aviso ou `fixed` | Imutabilidade consistente em todos os escopos; mutabilidade exige `var` explícito. |
+| `Usuario{ nome: "Ana", idade: 28 }` | `Usuario{ nome = "Ana" }` | Dois-pontos unifica a sintaxe de associação em dicionários e structs sem conflito motor. |
+| `if condicao { ... }` (Blocos com chaves) | `if condicao ... end` | Chaves sem parênteses previnem a "cegueira de end", habilitam *rainbow brackets* e auto-folding. |
+| `fn depositar(var self, valor)` | `fn depositar(self!, valor)` | `var` é a palavra universal de mutabilidade; elimina caracteres crípticos soltos. |
+| `a // b` e `a //= b` (Divisão inteira) | `a div b` | Operadores aritméticos possuem consistência e simetria simbólica. |
 | `f"Usuário {id}: {email}"` | `"Usuário " + String(id) + ": " + email` | Interpolação direta elimina ruído visual e múltiplas alocações temporárias no heap. |
 | `r"C:\dados\relatorio.csv"` | `"C:\\dados\\relatorio.csv"` | Strings brutas eliminam o excesso de barras invertidas em caminhos e regex. |
 | `let cidade = usuario?.perfil?.cidade` | `if usuario != none and ...` | Navegação segura evita verificações aninhadas redundantes de nulidade. |
-| `let porta = ler_porta() or_else 8080` | `attempt porta = ler_porta() failed ...` | `or_else` fornece valores padrão imediatos em expressões de falha de linha única. |
+| `let porta = ler_porta() or_else 8080` | `attempt { porta = ler_porta() } failed ...` | `or_else` fornece valores padrão imediatos em expressões de falha de linha única. |
 | `dados |> filtrar() |> calcular()` | `calcular(filtrar(dados))` | O operador pipeline expressa transformações na ordem natural de execução. |
 | `lista.add(item)` | `lista.push(item)` | `.add()` é a operação canônica universal de inserção em listas e conjuntos. |
 | `dados.lazy().filter(...).collect()` | `dados.filter(...).map(...)` | `.lazy()` consome memória constante sem gerar listas temporárias intermediárias. |
@@ -126,7 +131,7 @@ io.println(texto_original) # "Aipo determinístico"
 
 ## 2. Variáveis e Imutabilidade
 
-O Aipo adota o princípio de imutabilidade padrão (*immutable-by-default*):
+O Aipo adota o princípio de imutabilidade padrão (*immutable-by-default*) de forma consistente em todos os escopos:
 
 ```aipo
 # Imutável: o compilador impede reatribuições posteriores
@@ -164,19 +169,19 @@ let pi = 3.14159
 let fracionario = 0.005
 ```
 
-### Divisão Precisa vs Divisão Inteira (`div`)
-No Aipo, o operador `/` sempre retorna um `Float`. Para realizar divisão inteira truncada, utilize a palavra-chave canônica `div`:
+### Divisão Precisa (`/`) vs Divisão Inteira (`//`)
+No Aipo, o operador `/` sempre retorna um `Float`. Para realizar divisão inteira truncada, utilize o operador simétrico `//`:
 
 ```aipo
 let a = 10
 let b = 3
 
 let divisao_real = a / b     # 3.3333333333333335 (Float)
-let divisao_inteira = a div b # 3 (Int)
+let divisao_inteira = a // b # 3 (Int)
 
-# Atribuição composta também é suportada
+# Atribuição composta simétrica
 var valor = 20
-valor div= 3
+valor //= 3
 io.println(valor) # 6
 ```
 
@@ -219,10 +224,10 @@ let configuracao = {
 }
 
 # Verificação explícita de presença com .has()
-if configuracao.has("porta")
+if configuracao.has("porta") {
     let porta = configuracao["porta"]
     io.println(f"Porta configurada: {porta}")
-end
+}
 ```
 
 ::: tip Por que não existe `dict.get()`?
@@ -265,16 +270,17 @@ io.println(pares_triplicados) # [6, 12]
 Evita checagens manuais de `none`. Se qualquer elo da cadeia for `none`, o resultado final é `none` sem disparar erro:
 
 ```aipo
-struct Endereco
+struct Endereco {
     cidade
-end
+}
 
-struct Usuario
+struct Usuario {
     endereco
-end
+}
 
-let u1 = Usuario{ endereco = Endereco{ cidade = "Curitiba" } }
-let u2 = Usuario{ endereco = none }
+# Instanciação simétrica usando dois-pontos (:) consistente:
+let u1 = Usuario{ endereco: Endereco{ cidade: "Curitiba" } }
+let u2 = Usuario{ endereco: none }
 
 io.println(u1?.endereco?.cidade) # "Curitiba"
 io.println(u2?.endereco?.cidade) # none
@@ -284,12 +290,12 @@ io.println(u2?.endereco?.cidade) # none
 Permite fornecer um valor de recuperação imediato se uma expressão disparar um `fail`, sem a necessidade de abrir um bloco `attempt`:
 
 ```aipo
-fn carregar_porta(ambiente)
-    if ambiente == "producao"
+fn carregar_porta(ambiente) {
+    if ambiente == "producao" {
         return 443
-    end
+    }
     return fail("ambiente desconhecido")
-end
+}
 
 # Se carregar_porta() disparar fail, o operador or_else assume o valor à direita:
 let porta = carregar_porta("teste") or_else 8080
@@ -300,13 +306,13 @@ io.println(f"Porta ativa: {porta}") # 8080
 Permite estruturar transformações de dados em uma sequência natural da esquerda para a direita:
 
 ```aipo
-fn limpar(txt)
+fn limpar(txt) {
     return txt.trim()
-end
+}
 
-fn destacar(txt, prefixo)
+fn destacar(txt, prefixo) {
     return prefixo + txt
-end
+}
 
 # "  alerta  " é passado como primeiro argumento para limpar(), e o resultado para destacar():
 let rotulo = "  alerta  " |> limpar() |> destacar("[URGENTE] ")
@@ -319,13 +325,13 @@ Verifica se um valor pertence a um tipo concreto da linguagem:
 ```aipo
 let valor = 42
 
-if valor is Int
+if valor is Int {
     io.println("É um inteiro seguro de 64 bits")
-end
+}
 
 # Para verificar ausência de valor, use igualdade direta com none:
 let dado = none
-if dado == none
+if dado == none {
     io.println("Valor nulo")
-end
+}
 ```

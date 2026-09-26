@@ -1,10 +1,10 @@
-# `|>` pipes a value into a call; a trailing `do … end` block passes a
+# `|>` pipes a value into a call; a trailing `do { … }` block passes a
 # closure as the final argument.
 let items = [3, 1, 2]
-let doubled = items.transform(fn (v) return v + 1 end)
+let doubled = items.transform(fn (v) { return v + 1 })
 io.println(doubled)
-io.println(items.transform do v
+io.println(items.transform do (v) {
     return v * 10
-end)
-io.println(items.filter(fn (v) return v > 2 end))
+})
+io.println(items.filter(fn (v) { return v > 2 }))
 io.println([1, 2, 3] |> len)

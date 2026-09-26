@@ -1,37 +1,37 @@
 # Control Flow & Failures
 
-Aipo offers clean, expressive control structures combined with a transactional failure model featuring automatic atomic rollback.
+Aipo offers clean, expressive control flow constructs inspired by the modern ergonomics of Gleam and Swift: blocks enclosed in curly braces `{ ... }` without redundant parentheses around conditions, combined with a transactional error handling model with automatic atomic rollback.
 
 ---
 
-## Conditionals
+## Conditional Structures
 
-### Block Form `if ... elif ... else ... end`
+### `if ... elif ... else` Blocks
 
-In standard block form, branches do not use braces. Intermediate branches use `elif`, and the block is closed with `end`:
+Conditions require no parentheses, and blocks open and close with braces `{ ... }`. This eliminates closing ambiguity ("end-blindness"), enables native *rainbow brackets*, and supports instant code folding in IDEs:
 
 ```aipo
 var score = 85
 var status = ""
 
-if score >= 90
+if score >= 90 {
     status = "Excellent"
-elif score >= 70
-    status = "Passed"
-else
-    status = "Needs Improvement"
-end
+} elif score >= 70 {
+    status = "Passing"
+} else {
+    status = "Remedial"
+}
 
-io.println(status) # "Passed"
+io.println(status) # "Passing"
 ```
 
 ### Inline Expression `if condition then a else b`
 
-Aipo also supports single-line value conditional expressions using `then`:
+Aipo also supports single-line ternary conditional value expressions using `then`:
 
 ```aipo
-let is_active = true
-let message = if is_active then "Online" else "Offline"
+let active = true
+let message = if active then "Online" else "Offline"
 io.println(message) # "Online"
 ```
 
@@ -39,63 +39,66 @@ io.println(message) # "Online"
 
 ## Pattern Matching (`match ... when`)
 
-The `match` construct compares an expression against one or more patterns per branch:
+The `match` construct branches execution by comparing an expression against one or more patterns per branch:
 
 ```aipo
 let status = "approved"
 
-match status
-when "pending"
-    io.println("Awaiting confirmation...")
-when "approved", "completed"
-    io.println("Operation finished successfully!")
-else
-    io.println("Unrecognized status")
-end
+match status {
+    when "pending" {
+        io.println("Awaiting confirmation...")
+    }
+    when "approved", "completed" {
+        io.println("Operation finished successfully!")
+    }
+    else {
+        io.println("Status unrecognized")
+    }
+}
 ```
 
 ---
 
-## Loops
+## Loop Constructs
 
-All loop constructs in Aipo terminate with the `end` keyword and **never use** the word `do`.
+All loop constructs in Aipo use delimited `{ ... }` blocks and require **no** parentheses or connecting words like `do`.
 
 ### `while`
 
-Executes the body while the boolean condition evaluates to true:
+Executes the loop body as long as the boolean condition is true:
 
 ```aipo
 var i = 0
-while i < 3
+while i < 3 {
     io.println(f"Step: {i}")
     i += 1
-end
+}
 ```
 
 ### `loop`
 
-Canonical continuous loop, designed for cycles that terminate via an explicit `break`:
+Canonical infinite loop, designed for repetitions that terminate via explicit `break`:
 
 ```aipo
-var retries = 0
-loop
-    retries += 1
-    if retries >= 3
+var attempts = 0
+loop {
+    attempts += 1
+    if attempts >= 3 {
         break
-    end
-end
-io.println(f"Total retries: {retries}")
+    }
+}
+io.println(f"Total attempts: {attempts}")
 ```
 
 ### `repeat`
 
-Repeats a block a fixed number of times with an optional iteration index (`repeat count as index`):
+Repeats the block a fixed number of times with an optional iteration counter (`repeat count as index`):
 
 ```aipo
 # Executes 3 times (with indices 0, 1, and 2)
-repeat 3 as idx
+repeat 3 as idx {
     io.println(f"Iteration number: {idx}")
-end
+}
 ```
 
 ### `each`
@@ -103,25 +106,25 @@ end
 Canonical iteration over collections (`List`, `Dict`, `Set`, `Sequence`):
 
 ```aipo
-# Simple list iteration
+# Simple iteration over a list
 let fruits = ["Apple", "Banana", "Orange"]
-each fruit in fruits
+each fruit in fruits {
     io.println(fruit)
-end
+}
 
 # Iteration with index and element
-each idx, fruit in fruits
+each idx, fruit in fruits {
     io.println(f"{idx}: {fruit}")
-end
+}
 
 # Iteration over dictionary (key and value in insertion order)
 let config = {
     "host": "127.0.0.1",
     "port": 5432,
 }
-each key, val in config
+each key, val in config {
     io.println(f"{key} => {val}")
-end
+}
 ```
 
 ---
@@ -131,25 +134,29 @@ end
 In Aipo, errors are neither uncontrolled stack-unwinding exceptions nor easily ignored status codes. Failures are raised explicitly with `fail` (or returned with `return fail(...)`) and handled in transactional blocks with **journaling and automatic atomic rollback**:
 
 ```aipo
-struct Vault
-    balance = 0.0
-end
+struct Vault {
+    var balance = 0.0
+}
 
-impl Vault
-    invariant()
+impl Vault {
+    fn init(initial_balance = 0.0) {
+        self.balance = initial_balance
+    }
+
+    invariant {
         self.balance >= 0.0
-    end
-end
+    }
+}
 
-let v = Vault{balance = 100.0}
+let v = Vault{ balance: 100.0 }
 
-attempt
+attempt {
     # This mutation temporarily drops balance to -100.0
-    v.balance = v.balance - 200.0
-failed err
+    v.balance -= 200.0
+} failed err {
     # Violating the invariant triggers automatic rollback restoring self.balance to 100.0!
     io.println(f"Caught failure: {err.message}")
-end
+}
 
 # The balance remains untouched at its pre-attempt state!
 io.println(f"Preserved balance: {v.balance}") # 100.0
@@ -162,14 +169,12 @@ If any operation inside an `attempt` block executes `fail` or violates a structu
 For expressions where you simply want to provide a fallback recovery value without the boilerplate of an `attempt` block, use the canonical `or_else` operator:
 
 ```aipo
-fn read_file(path)
+fn read_file(path) {
     # If the file does not exist or fails, return fail
     return fail("file not found")
-end
+}
 
 # If read_file raises fail, or_else evaluates and yields the fallback alternative:
 let content = read_file("config.toml") or_else "host = 127.0.0.1"
 io.println(content) # "host = 127.0.0.1"
 ```
-
-

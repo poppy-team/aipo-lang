@@ -21,3 +21,4 @@ Toda questão aberta ou mudança estrutural é formalizada como uma **Proposta d
 | **[ADP-009](/decisions/adp-009)** | C ABI Síncrona Versionada | Aprovado | Interface binária C estável com tipos opacos para embutir o Aipo em C/C++/Zig. |
 | **[ADP-010](/decisions/adp-010)** | Provas Finas de Interoperabilidade | Aprovado | Três provas finas (*thin proofs*) comprovando embedding em Rust, C e JavaScript. |
 | **[ADP-011](/decisions/adp-011)** | Roteiro de Performance & Ergonomia | Aprovado | Compactação de `Value`, fusão `InvokeMethod`, laço hoisted, falhas tipadas e pattern matching. |
+| **[ADP-012](/decisions/adp-012)** | Modernização Ergonômica de Sintaxe (Gleam/Swift Pivot) | Aprovado | Blocos delimitados por chaves `{ ... }`, imutabilidade por padrão em structs, `var self`, `:` simétrico e interfaces automáticas. |

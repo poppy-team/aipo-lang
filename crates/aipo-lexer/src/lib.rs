@@ -264,4 +264,27 @@ line 2"""
             aipo_diagnostics::DiagnosticCode::AIPO_LEX_UNTERMINATED_STRING
         );
     }
+
+    #[test]
+    fn test_integer_division_tokens() {
+        let code = "10 // 2 //= 5";
+        let source = Source::new(SourceId(1), "test.aipo", code);
+        let (tokens, diags) = Lexer::new(&source).tokenize();
+        assert!(diags.is_empty());
+        let kinds: Vec<_> = tokens
+            .into_iter()
+            .filter(|t| !matches!(t.kind, TokenKind::Eof))
+            .map(|t| t.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                TokenKind::IntLiteral("10".into()),
+                TokenKind::SlashSlash,
+                TokenKind::IntLiteral("2".into()),
+                TokenKind::SlashSlashEq,
+                TokenKind::IntLiteral("5".into()),
+            ]
+        );
+    }
 }

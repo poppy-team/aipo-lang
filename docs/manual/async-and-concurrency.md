@@ -6,14 +6,14 @@ O modelo de concorrência do Aipo é **cooperativo, determinístico e baseado em
 
 ## Funções Assíncronas (`async fn`)
 
-Funções que realizam temporização, I/O cooperativo ou orquestração assíncrona são declaradas com `async fn`. Invocar uma função assíncrona agenda a tarefa imediatamente no scheduler cooperativo e retorna seu handle `Task`:
+Funções que realizam temporização, I/O cooperativo ou orquestração assíncrona são declaradas com `async fn` e delimitadas por chaves `{ ... }`. Invocar uma função assíncrona agenda a tarefa imediatamente no scheduler cooperativo e retorna seu handle `Task`:
 
 ```aipo
-async fn buscar_dados(recurso)
+async fn buscar_dados(recurso) {
     # task.sleep é uma primitiva de suspensão cooperativa em tempo virtual
     task.sleep(50)
     return f"Dados para {recurso}"
-end
+}
 
 # Invocação dispara a tarefa e retorna o handle Task
 let tarefa = buscar_dados("usuarios")
@@ -25,26 +25,26 @@ io.println(dados) # "Dados para usuarios"
 
 ---
 
-## Bloco de Espera Sequencial (`await do ... end`)
+## Bloco de Espera Sequencial (`await do { ... }`)
 
-Diferente de ecossistemas onde `await` pode ser inserido aleatoriamente no meio de subexpressões complexas, o Aipo introduz o bloco `await do ... end` para encadeamento sequencial claro e seguro:
+Diferente de ecossistemas onde `await` pode ser inserido aleatoriamente no meio de subexpressões complexas, o Aipo introduz o bloco `await do { ... }` para encadeamento sequencial claro e seguro:
 
 ```aipo
-async fn obter_etapa_1()
+async fn obter_etapa_1() {
     return 10
-end
+}
 
-async fn obter_etapa_2()
+async fn obter_etapa_2() {
     return 20
-end
+}
 
-async fn executar_fluxo()
-    await do
+async fn executar_fluxo() {
+    await do {
         let a = await obter_etapa_1()
         let b = await obter_etapa_2()
         return a + b
-    end
-end
+    }
+}
 
 let total = await executar_fluxo()
 io.println(f"Total acumulado: {total}") # 30
@@ -80,4 +80,3 @@ io.println(resultados) # [10, 20]
 ## Detecção Transitiva de Ciclos (`AIPO_RT_AWAIT_CYCLE`)
 
 A máquina virtual do Aipo mantém um grafo de dependências de espera ativo. Se duas ou mais tarefas entrarem em espera mútua transitiva (deadlock assíncrono), o runtime detecta o ciclo imediatamente e dispara a falha determinística `AIPO_RT_AWAIT_CYCLE` com a cadeia completa dos identificadores envolvidos.
-

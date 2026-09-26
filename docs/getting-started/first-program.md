@@ -32,48 +32,48 @@ Vamos criar um programa que modela uma conta bancária com invariante de saldo p
 
 ```aipo
 # conta.aipo
-struct Conta
+struct Conta {
     titular
-    saldo = 0.0
-    fixed numero
-end
+    numero
+    var saldo = 0.0
+}
 
-impl Conta
-    init(titular, saldo = 0.0, numero = 0)
+impl Conta {
+    fn init(titular, numero = 0, saldo = 0.0) {
         self.titular = titular
-        self.saldo = saldo
         self.numero = numero
-    end
+        self.saldo = saldo
+    }
 
     # Invariante: executada em todas as criações e mutações de campos
-    invariant()
+    invariant {
         self.saldo >= 0.0
-    end
+    }
 
-    fn depositar(self!, valor: Float)
-        if valor <= 0.0
+    fn depositar(var self, valor: Float) {
+        if valor <= 0.0 {
             return fail("Valor de depósito deve ser positivo")
-        end
-        self.saldo = self.saldo + valor
-    end
+        }
+        self.saldo += valor
+    }
 
-    fn sacar(self!, valor: Float)
-        if valor <= 0.0
+    fn sacar(var self, valor: Float) {
+        if valor <= 0.0 {
             return fail("Valor de saque deve ser positivo")
-        end
+        }
         
         # Tenta aplicar a operação. Se violar self.saldo >= 0.0,
         # o bloco attempt reverte automaticamente a mutação!
-        attempt
-            self.saldo = self.saldo - valor
-        failed erro
+        attempt {
+            self.saldo -= valor
+        } failed erro {
             return fail("Saque recusado: saldo insuficiente")
-        end
-    end
-end
+        }
+    }
+}
 
-# Instanciando a conta
-let c = Conta{titular = "Maria Silva", saldo = 150.0, numero = 1042}
+# Instanciando a conta usando dois-pontos (:) consistente
+let c = Conta{ titular: "Maria Silva", numero: 1042, saldo: 150.0 }
 
 io.println(f"Conta criada para: {c.titular}")
 io.println(f"Saldo inicial: {c.saldo}")

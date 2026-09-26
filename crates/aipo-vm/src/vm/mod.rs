@@ -6,7 +6,7 @@ use crate::host::HostContext;
 use crate::value::{GroupId, StructInstance, TaskId, Value, check_finite_float, check_safe_int};
 use aipo_bytecode::BytecodeModule;
 use aipo_bytecode::opcode::Constant;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
@@ -49,6 +49,23 @@ impl HostNative {
             is_async,
         }
     }
+}
+
+/// Execution mode for canonical unit tests (`test("name") do ... end`).
+#[derive(Debug, Clone, Default)]
+pub enum TestMode {
+    /// Tests execute their bodies sequentially on discovery (default, for `aipo run`).
+    #[default]
+    Disabled,
+    /// Discovers test names without executing their bodies.
+    Discover(Rc<RefCell<Vec<String>>>),
+    /// Executes only the matching test in this isolated VM instance.
+    Execute {
+        /// Target test name to execute.
+        target: String,
+        /// Flag set to true if the targeted test was encountered and dispatched.
+        ran: Rc<Cell<bool>>,
+    },
 }
 
 /// Methods that structurally mutate their receiver, so the VM can enforce the
@@ -196,6 +213,8 @@ pub struct Vm {
     host: HostContext,
     /// Byte length of the triggering call instruction (1 for Call0..4, 2 for Call).
     pub(crate) call_inst_len: u8,
+    /// Test execution mode for canonical unit testing.
+    pub test_mode: TestMode,
 }
 
 impl Default for Vm {
@@ -250,7 +269,19 @@ impl Vm {
             invoke_depth: 0,
             host: HostContext::denied(),
             call_inst_len: 2,
+            test_mode: TestMode::Disabled,
         }
+    }
+
+    /// Sets the test execution mode for this VM instance.
+    pub fn set_test_mode(&mut self, mode: TestMode) {
+        self.test_mode = mode;
+    }
+
+    /// Returns the current test execution mode.
+    #[must_use]
+    pub fn test_mode(&self) -> &TestMode {
+        &self.test_mode
     }
 
     /// The host services of this run, for the embedder that owns them.
@@ -266,6 +297,11 @@ impl Vm {
     #[must_use]
     pub fn host(&self) -> &HostContext {
         &self.host
+    }
+
+    /// Takes the unhandled failure that halted execution, if any.
+    pub fn take_halted_failure(&mut self) -> Option<Value> {
+        self.halted_with.take()
     }
 
     #[allow(missing_docs)]

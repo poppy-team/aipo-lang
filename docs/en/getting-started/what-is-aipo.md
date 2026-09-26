@@ -28,18 +28,18 @@ Converting or concatenating values requires clear programmer intent.
 While traditional languages require scattering manual assertions across every method, Aipo introduces the `invariant()` hook inside the struct's `impl` block:
 
 ```aipo
-struct Temperature
-    celsius = 0.0
-end
+struct Temperature {
+    var celsius = 0.0
+}
 
-impl Temperature
-    invariant()
+impl Temperature {
+    invariant {
         self.celsius >= -273.15 # Cannot be below absolute zero
-    end
-end
+    }
+}
 ```
 
-Any mutation that violates an invariant is intercepted at the boundary. Inside `attempt ... failed err` transaction blocks, modifications undergo atomic rollback to their previous state.
+Any mutation that violates an invariant is intercepted at the boundary. Inside `attempt { ... } failed err { ... }` transaction blocks, modifications undergo atomic rollback to their previous state.
 
 ### 3. Deterministic Concurrency
 

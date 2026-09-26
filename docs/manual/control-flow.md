@@ -1,26 +1,26 @@
 # Controle de Fluxo & Falhas
 
-O Aipo oferece estruturas de controle de fluxo limpas e expressivas, combinadas com um modelo transacional de tratamento de erros com rollback atômico.
+O Aipo oferece estruturas de controle de fluxo limpas e expressivas inspiradas na ergonomia moderna de Gleam e Swift: blocos delimitados por chaves `{ ... }` sem parênteses redundantes ao redor de condições, combinados com um modelo transacional de tratamento de erros com rollback atômico.
 
 ---
 
 ## Estruturas Condicionais
 
-### Bloco `if ... elif ... else ... end`
+### Bloco `if ... elif ... else`
 
-Em blocos convencionais, cada ramo é delimitado sem chaves, utilizando `elif` para condições intermediárias e finalizando com a palavra-chave `end`:
+As condições dispensam parênteses obrigatórios e os blocos são abertos e fechados por chaves `{ ... }`. Isso previne a "cegueira de fechamento", habilita destaque visual (*rainbow brackets*) e dobragem de código (*code folding*) nativa em qualquer IDE:
 
 ```aipo
 var pontuacao = 85
 var status = ""
 
-if pontuacao >= 90
+if pontuacao >= 90 {
     status = "Excelente"
-elif pontuacao >= 70
+} elif pontuacao >= 70 {
     status = "Aprovado"
-else
+} else {
     status = "Recuperação"
-end
+}
 
 io.println(status) # "Aprovado"
 ```
@@ -44,21 +44,24 @@ O comando `match` permite bifurcar o fluxo comparando uma expressão contra um o
 ```aipo
 let status = "aprovado"
 
-match status
-when "pendente"
-    io.println("Aguardando confirmação...")
-when "aprovado", "concluido"
-    io.println("Operação finalizada com sucesso!")
-else
-    io.println("Status não reconhecido")
-end
+match status {
+    when "pendente" {
+        io.println("Aguardando confirmação...")
+    }
+    when "aprovado", "concluido" {
+        io.println("Operação finalizada com sucesso!")
+    }
+    else {
+        io.println("Status não reconhecido")
+    }
+}
 ```
 
 ---
 
 ## Estruturas de Repetição
 
-Todas as estruturas de repetição em Aipo são finalizadas com a palavra-chave `end` e **não utilizam** a palavra `do`.
+Todas as estruturas de repetição em Aipo utilizam blocos delimitados `{ ... }` e **dispensam** parênteses ou palavras de ligação como `do`.
 
 ### `while`
 
@@ -66,10 +69,10 @@ Executa o corpo enquanto a condição booleana for verdadeira:
 
 ```aipo
 var i = 0
-while i < 3
+while i < 3 {
     io.println(f"Passo: {i}")
     i += 1
-end
+}
 ```
 
 ### `loop`
@@ -78,12 +81,12 @@ Laço contínuo canônico, projetado para repetições que dependem de `break` e
 
 ```aipo
 var tentativas = 0
-loop
+loop {
     tentativas += 1
-    if tentativas >= 3
+    if tentativas >= 3 {
         break
-    end
-end
+    }
+}
 io.println(f"Total de tentativas: {tentativas}")
 ```
 
@@ -93,9 +96,9 @@ Repete o bloco um número fixo de vezes com um contador opcional (`repeat count 
 
 ```aipo
 # Executa 3 vezes (com índices 0, 1 e 2)
-repeat 3 as idx
+repeat 3 as idx {
     io.println(f"Iteração número: {idx}")
-end
+}
 ```
 
 ### `each`
@@ -105,23 +108,23 @@ Iteração canônica sobre coleções (`List`, `Dict`, `Set`, `Sequence`):
 ```aipo
 # Iteração simples sobre lista
 let frutas = ["Maçã", "Banana", "Laranja"]
-each fruta in frutas
+each fruta in frutas {
     io.println(fruta)
-end
+}
 
 # Iteração com índice e elemento
-each idx, fruta in frutas
+each idx, fruta in frutas {
     io.println(f"{idx}: {fruta}")
-end
+}
 
 # Iteração sobre dicionário (chave e valor na ordem de inserção)
 let config = {
     "host": "127.0.0.1",
     "port": 5432,
 }
-each chave, valor in config
+each chave, valor in config {
     io.println(f"{chave} => {valor}")
-end
+}
 ```
 
 ---
@@ -131,25 +134,29 @@ end
 Em Aipo, erros não são exceções globais com saltos de pilha descontrolados, nem códigos de status que podem ser esquecidos. Falhas operacionais são disparadas explicitamente com `fail` (ou retornadas com `return fail(...)`) e tratadas por blocos transacionais com **journaling e rollback automático**.
 
 ```aipo
-struct Cofre
-    saldo = 0.0
-end
+struct Cofre {
+    var saldo = 0.0
+}
 
-impl Cofre
-    invariant()
+impl Cofre {
+    fn init(saldo_inicial = 0.0) {
+        self.saldo = saldo_inicial
+    }
+
+    invariant {
         self.saldo >= 0.0
-    end
-end
+    }
+}
 
-let c = Cofre{saldo = 100.0}
+let c = Cofre{ saldo: 100.0 }
 
-attempt
+attempt {
     # Esta operação temporariamente reduz o saldo para -100.0
-    c.saldo = c.saldo - 200.0
-failed erro
+    c.saldo -= 200.0
+} failed erro {
     # Como violou a invariante, o rollback restaura self.saldo para 100.0!
     io.println(f"Falha capturada: {erro.message}")
-end
+}
 
 # O saldo permanece exatamente no valor anterior à tentativa!
 io.println(f"Saldo preservado: {c.saldo}") # 100.0
@@ -162,14 +169,12 @@ Se qualquer operação dentro do bloco `attempt` disparar um `fail` ou violar um
 Para expressões onde você deseja apenas prover um valor padrão de recuperação sem a verbosidade de um bloco `attempt`, utilize o operador canônico `or_else`:
 
 ```aipo
-fn ler_arquivo(caminho)
+fn ler_arquivo(caminho) {
     # Se o arquivo não existir ou falhar, retorna fail
     return fail("arquivo não encontrado")
-end
+}
 
 # Se ler_arquivo disparar fail, or_else avalia e retorna a alternativa:
 let conteudo = ler_arquivo("config.toml") or_else "host = 127.0.0.1"
 io.println(conteudo) # "host = 127.0.0.1"
 ```
-
-

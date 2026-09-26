@@ -3,30 +3,30 @@ export to_cents, format_cents, reset_stats, stats
 
 var conversions_applied = 0
 
-fn to_cents(amount: Float) -> Int
+fn to_cents(amount: Float) -> Int {
     conversions_applied += 1
     return Int(amount * 100)
-end
+}
 
-fn format_cents(cents: Int) -> String
+fn format_cents(cents: Int) -> String {
     var sign = ""
     var rest = cents
-    if rest < 0
+    if rest < 0 {
         sign = "-"
         rest = 0 - rest
-    end
-    let unit = String(rest div 100)
+    }
+    let unit = String(rest // 100)
     var cents_text = String(rest % 100)
-    if len(cents_text) == 1
+    if len(cents_text) == 1 {
         cents_text = "0" + cents_text
-    end
+    }
     return sign + unit + "." + cents_text
-end
+}
 
-fn reset_stats()
+fn reset_stats() {
     conversions_applied = 0
-end
+}
 
-fn stats() -> String
+fn stats() -> String {
     return f"conversions: {conversions_applied}"
-end
+}

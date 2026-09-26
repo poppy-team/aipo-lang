@@ -25,21 +25,21 @@ By default, all functions, structs, and variables declared within a module are *
 # File: math_util.aipo
 
 # 1. Private internal helper function
-fn validate_number(n: Int) -> Bool
+fn validate_number(n: Int) -> Bool {
     return n >= 0
-end
+}
 
 # 2. Public API functions
-fn add_positive(a: Int, b: Int) -> Int
-    if not validate_number(a) or not validate_number(b)
+fn add_positive(a: Int, b: Int) -> Int {
+    if not validate_number(a) or not validate_number(b) {
         return fail("numbers must be positive")
-    end
+    }
     return a + b
-end
+}
 
-fn double(n: Int) -> Int
+fn double(n: Int) -> Int {
     return n * 2
-end
+}
 
 # Explicitly export only intended public identifiers:
 export add_positive, double
@@ -261,15 +261,15 @@ my_app/
 
 ### `src/auth/user.aipo`
 ```aipo
-struct User
+struct User {
     id
     name
-    active = true
-end
+    var active = true
+}
 
-fn create_user(id: Int, name: String) -> User
-    return User{id = id, name = name, active = true}
-end
+fn create_user(id: Int, name: String) -> User {
+    return User{ id: id, name: name, active: true }
+}
 
 export User, create_user
 ```

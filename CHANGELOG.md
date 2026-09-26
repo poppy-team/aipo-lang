@@ -5,8 +5,33 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [Não lançado]
 
+- **Pivot Ergonômico de Sintaxe e Filosofia de Design (ADP-012)**:
+  - **Blocos Delimitados por Chaves (`{ ... }`)**: Adoção de blocos explícitos com `{ ... }` em todas as estruturas de controle (`if`, `while`, `loop`, `repeat`, `each`, `match`, `attempt`, `await do`) e definições de itens (`fn`, `struct`, `impl`, `init`, `invariant`, `interface`), eliminando a necessidade de parênteses em condições e abolindo o ruído visual da palavra-chave `end`.
+  - **Imutabilidade de Campos de Struct por Padrão**: Campos declarados de forma simples em `struct` (`id`, `created_at`) são imutáveis por padrão. Mutabilidade exige prefixo explícito `var` (`var status = "idle"`). A palavra-chave `fixed` foi extinta.
+  - **Instanciação Simétrica de Struct com Dois-Pontos (`:`)**: Padronização da inicialização de structs usando pares chave-valor idênticos aos dicionários (`User{ name: "Dev", age: 30 }`), unificando o modelo mental da linguagem.
+  - **Mutabilidade Universal de Receptores (`var self`)**: Substituição de `self!` por `var self` em métodos e hooks de invariante, preservando conformidade com a declaração de variáveis mutáveis da linguagem.
+  - **Subtipagem Estrutural Automática**: Structs satisfazem interfaces implicitamente quando suas assinaturas de método conferem, tornando o top-level `satisfy Type: Interface` opcional (útil como asserção explícita de compilação).
+  - **Divisão Inteira Truncada (`//` e `//=`)**: Adoção de `//` e `//=` para divisão inteira truncada em direção a zero, substituindo `div` e `div=`.
+  - **Formatter Canônico (`aipo-formatter`)**: Atualizado para suportar e formatar canonicamente blocos com `{ ... }`, espaçamento interno ergonômico de chaves em uma linha e alinhamento idempotente.
+  - **Documentação e Exemplos Multi-idiomas**: 100% da documentação oficial (em Português e Inglês) e todos os 24 programas em `examples/` atualizados e validados com 100% de paridade entre a VM e o backend JavaScript.
 - **Recorte da `aipo v0.1.0` (ADP-008)**: a primeira release é da linguagem, com async, CLI mínima, test runner, C ABI síncrona e thin proofs de interoperabilidade Rust/C/JS; engines, editors, registry e web profile completo ficam pós-v1.
+- **Test Runner Canônico `aipo test` (ADP-008, ADP-012)**:
+  - Implementado o comando `aipo test` no CLI para descoberta automática recursiva de testes em arquivos `*_test.aipo` e `test_*.aipo`.
+  - Suporte a filtros de teste (`--filter <substr>`), saída formatada para humanos e streaming NDJSON legível por máquinas (`--message-format <human|jsonl>`) e `--package-cache`.
+  - Isolamento estrito por teste: cada caso de teste roda em uma instância limpa da VM, com congelamento do relógio (`DeterministicClock`) e reset da semente do PRNG para zero (`reset_default_seed(0)`), garantindo determinismo temporal e numérico absoluto.
+  - Interceptação nativa do subcomando de testes através de `TestMode::Discover` e `TestMode::Execute` em `aipo-vm`, com correspondente paridade diferencial em `aipo-js` (`setTestMode`, `testCall`).
+- **C ABI Estável e Embedding Interface (`aipo-c-abi`, ADP-009, ADP-010)**:
+  - Crate dedicada `crates/aipo-c-abi` e cabeçalho canônico C `crates/aipo-c-abi/include/aipo.h` para consumo direto em C, C++, Python ctypes, Go cgo e outras linguagens hospedeiras.
+  - ABI estável, estritamente síncrona e single-threaded (`aipo_runtime_t`), sem promessa de concorrência interna, garantindo integridade sem overhead de locks.
+  - Blindagem total contra panics do Rust: todas as funções exportadas são encapsuladas em `catch_unwind(AssertUnwindSafe(...))`, mapeando falhas internas para códigos C (`AIPO_ERR_FAULT`).
+  - Representação desacoplada de valores em C (`aipo_value_t`), mantendo os invariantes de float finito e inteiros no intervalo seguro ±(2^53 - 1).
+  - Handles geracionais do host (`aipo_handle_t`) validados por índice de slot e contador de geração; acesso após liberação retorna `AIPO_ERR_STALE_HANDLE` sem corrupção de memória.
+  - Registro de funções nativas de host (`aipo_host_fn_t`), com controle de acesso baseado em capacidades (`grant`/`revoke`), retornando `AIPO_ERR_CAPABILITY_DENIED` quando não autorizadas.
+  - Mapeamento transparente de falhas recuperáveis (Model B / `AIPO_ERR_UNCAUGHT_FAILURE`), erros diagnósticos (`AIPO_ERR_DIAGNOSTIC`), e recuperação do buffer do último erro (`aipo_last_error`).
 - **Roteiro de Performance Estrutural e Ergonomia de Linguagem (ADP-011)**: formalizada a estratégia de superação do piso de despacho (~100ns/opcode) através de compactação de `Value` (48B -> 16B/24B), invocação fundida `InvokeMethod` (sem alocação de `BoundMethod`), laço de despacho com variáveis hoisted e superinstruções `Call0..Call4`/`GetLocal0..GetLocal3`; além da expansão ergonômica com falhas estruturadas tipadas (Model B+), pattern matching e type narrowing estático em `aipo-sema`.
+- **Performance — Compactação de Layout de `Value` (P1)**:
+  - Redução do tamanho da enum central `Value` de 40 bytes para 24 bytes (redução de 40% em memória por slot), alinhando o descritor de chamada e economizando largura de banda de cache L1/L2.
+  - Validação empírica A/B comprovou ganho de **-13,94% na mediana de tempo de CPU** em workloads intensivos de pilha e chamadas de função.
 - **Performance — Superinstruções `GetLocal0..7` e `Call0..4` (P4)**:
   - Introduzidos opcodes de byte único `GetLocal0..GetLocal7` (60..67) e `Call0..Call4` (68..72), eliminando decodificação de operandos Big-Endian no caminho quente da VM.
   - A VM rastreia a largura dinâmica da instrução de chamada (`call_inst_len`), garantindo que suspensões cooperativas e temporizadas (`task.sleep`, `task.timeout`, `task.all`, `race`) retrocedam o IP com exatidão matemática.

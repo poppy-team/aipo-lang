@@ -29,7 +29,7 @@ Executa a análise estática completa (Lexer, Parser, HIR, Semântica e verifica
 aipo check src/main.aipo
 ```
 
-Reporta com precisão erros de sintaxe, contratos de interface incompatíveis, referências a variáveis indefinidas e tentativas de mutação de campos `fixed`.
+Reporta com precisão erros de sintaxe, contratos de interface incompatíveis, referências a variáveis indefinidas e tentativas de mutação de campos imutáveis.
 
 ### `aipo build`
 

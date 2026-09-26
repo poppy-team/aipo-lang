@@ -577,11 +577,24 @@ fn register_modules(vm: &mut Vm) {
     vm.define_global("regex", regex::create_module());
     vm.define_global("expect", testing::create_expect_module());
     vm.define_global("testing", testing::create_module());
+    vm.define_global("test", Value::native("test", 2, testing::test_declaration));
     vm.define_global("log", log::create_module());
 }
 
 /// Registers `testing` module metadata.
 fn register_testing(registry: &mut NativeRegistry) {
+    registry.register(NativeFunctionMeta::new(
+        "test",
+        2,
+        None,
+        "Declares a unit test block with name and callback.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "test",
+        2,
+        Some("testing"),
+        "Declares a unit test block with name and callback.",
+    ));
     macro_rules! reg {
         ($name:expr, $arity:expr, $doc:expr) => {
             registry.register(NativeFunctionMeta::new($name, $arity, Some("expect"), $doc));

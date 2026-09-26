@@ -1,83 +1,82 @@
 # Concurrency & Async
 
-Aipo's concurrency model is **cooperative, deterministic, and virtual-time driven**, eliminating low-level data races and flaky test executions.
+Aipo's concurrency model is **cooperative, deterministic, and based on virtual time**. It completely eliminates low-level data races and ensures 100% reproducible test suites with zero artificial wall-clock delays.
 
 ---
 
 ## Asynchronous Functions (`async fn`)
 
-Functions executing timers, cooperative I/O, or asynchronous orchestration are declared with `async fn`. Invoking an async function eagerly schedules it on the cooperative scheduler and returns its `Task` handle:
+Functions performing timing operations, cooperative I/O, or asynchronous orchestration are declared with `async fn` and delimited by curly braces `{ ... }`. Calling an async function schedules the task immediately on the cooperative scheduler and returns its `Task` handle:
 
 ```aipo
-async fn fetch_resource(id)
-    # task.sleep is a virtual-time cooperative suspension primitive
+async fn fetch_data(resource) {
+    # task.sleep suspends execution cooperatively using virtual time ticks
     task.sleep(50)
-    return f"Data for {id}"
-end
+    return f"Data for {resource}"
+}
 
-# Invocation spawns the task and returns a Task handle
-let task_handle = fetch_resource("users")
+# Invoking launches the task and returns a Task handle
+let my_task = fetch_data("users")
 
-# Explicitly awaits completion and unwraps the result
-let data = await task_handle
+# Explicitly await completion to obtain the result
+let data = await my_task
 io.println(data) # "Data for users"
 ```
 
 ---
 
-## Sequential Wait Blocks (`await do ... end`)
+## Sequential Await Block (`await do { ... }`)
 
-Rather than allowing uncontrolled `await` expressions scattered inside complex subexpressions, Aipo mandates explicit `await do ... end` blocks for clear, predictable sequential sequencing:
+Unlike ecosystems where `await` can be dropped into arbitrary nested subexpressions, Aipo provides the `await do { ... }` block for clear, sequential asynchronous execution:
 
 ```aipo
-async fn fetch_step_1()
+async fn step_one() {
     return 10
-end
+}
 
-async fn fetch_step_2()
+async fn step_two() {
     return 20
-end
+}
 
-async fn run_pipeline()
-    await do
-        let a = await fetch_step_1()
-        let b = await fetch_step_2()
+async fn run_pipeline() {
+    await do {
+        let a = await step_one()
+        let b = await step_two()
         return a + b
-    end
-end
+    }
+}
 
 let total = await run_pipeline()
-io.println(f"Total accumulated: {total}") # 30
+io.println(f"Accumulated total: {total}") # 30
 ```
 
-This engineering discipline prevents unmonitored dangling promises and unobserved tasks (`AIPO_SEM_FORGOTTEN_TASK`).
+This discipline prevents unhandled promises and forgotten background tasks (`AIPO_SEM_FORGOTTEN_TASK`).
 
 ---
 
 ## Async Combinators (`task.*`)
 
-The standard library provides high-level primitives:
+The standard library provides powerful high-level combinators:
 
 - **`task.spawn(callable, args_list)`**: Spawns a new concurrent task in the scheduler with the provided arguments.
-- **`task.sleep(ms)`**: Suspends the current task for the specified virtual-time clock ticks.
-- **`task.all(tasks_list)`**: Awaits completion of all tasks in the list, returning a list of results.
-- **`task.race(tasks_list)`**: Resolves when the first task finishes, cooperatively cancelling remaining candidates.
-- **`task.timeout(task, ms)`**: Cancels the target task if it exceeds the specified virtual-time duration.
-- **`task.cancel(task)`**: Cooperatively cancels an active task handle.
-- **`task.group()`**: Creates a structured task group for coordinated lifecycles and cascading cancellation.
+- **`task.sleep(ms)`**: Suspends current task execution for a specified number of virtual time ticks.
+- **`task.all(task_list)`**: Awaits until all tasks in the list complete, returning an ordered list of results.
+- **`task.race(task_list)`**: Resolves as soon as the first task completes, cooperatively cancelling the others.
+- **`task.timeout(target_task, ms)`**: Cancels target task if it exceeds virtual time duration.
+- **`task.cancel(target_task)`**: Cooperatively aborts an active task.
+- **`task.group()`**: Creates a structured task group for coordinated lifecycle and cascading cancellation.
 
 ```aipo
-let t1 = fetch_step_1()
-let t2 = fetch_step_2()
+let t1 = step_one()
+let t2 = step_two()
 
-# Awaits both tasks in deterministic concurrency
+# Await all tasks concurrently with deterministic ordering
 let results = task.all([t1, t2])
 io.println(results) # [10, 20]
 ```
 
 ---
 
-## Cycle Detection (`AIPO_RT_AWAIT_CYCLE`)
+## Transitive Cycle Detection (`AIPO_RT_AWAIT_CYCLE`)
 
-The Aipo runtime tracks dependencies between awaiting tasks. Mutual dependencies trigger the deterministic fault `AIPO_RT_AWAIT_CYCLE` with a full trail of involved identifiers instead of stalling the process indefinitely.
-
+The Aipo runtime maintains an active await-dependency graph. If two or more tasks enter a mutual waiting cycle (async deadlock), the runtime immediately detects it and triggers the deterministic fault `AIPO_RT_AWAIT_CYCLE` with the complete chain of cycle members.

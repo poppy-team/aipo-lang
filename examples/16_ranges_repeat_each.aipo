@@ -2,24 +2,24 @@
 # (and optionally indices); `break` and `continue` shape the flow.
 io.println(0..3)
 var total = 0
-repeat 4 as i
+repeat 4 as i {
     total = total + i
-end
+}
 io.println(total)
-each fruit in ["a", "b"]
+each fruit in ["a", "b"] {
     io.println(fruit)
-end
-each index, value in [10, 20]
+}
+each index, value in [10, 20] {
     io.println(f"{index}:{value}")
-end
+}
 var seen = []
-each n in 0..10
-    if n > 2
+each n in 0..10 {
+    if n > 2 {
         break
-    end
-    if n == 1
+    }
+    if n == 1 {
         continue
-    end
+    }
     seen.add(n)
-end
+}
 io.println(seen)

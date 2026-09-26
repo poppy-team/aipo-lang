@@ -1789,8 +1789,10 @@ function makeGlobals() {
     [vStr('approx'), nat('expect.approx', -1, a => std_expect_approx(a))],
   ]);
   g.set('expect', expectDict);
+  g.set('test', nat('test', 2, () => vNone()));
   g.set('testing', vDict([
     [vStr('expect'), expectDict],
+    [vStr('test'), nat('testing.test', 2, () => vNone())],
     [vStr('equal'), nat('testing.equal', 2, a => std_expect_equal(a[0], a[1]))],
     [vStr('not_equal'), nat('testing.not_equal', 2, a => std_expect_not_equal(a[0], a[1]))],
     [vStr('true'), nat('testing.true', 1, a => std_expect_true(a[0]))],
@@ -3297,6 +3299,10 @@ function beginCall(m, argc) {
       taskCall(m, callee.name, calleeIdx, args);
       return;
     }
+    if (callee.name === 'test' || callee.name === 'testing.test') {
+      testCall(m, calleeIdx, args);
+      return;
+    }
     const r = callee.fn(args);
     m.stack.length = calleeIdx;
     mPush(m, r);
@@ -4077,6 +4083,62 @@ function resolveCall(m, calleeIdx, value) {
 function asyncCall(m, callee, args, calleeIdx) {
   const id = spawnTask(m, callee, args, null);
   resolveCall(m, calleeIdx, vTask(id));
+}
+
+let testMode = 'disabled';
+let testTarget = '';
+let testDiscovered = [];
+let testRan = false;
+
+export function setTestMode(mode, target = '') {
+  testMode = mode;
+  testTarget = target;
+  testDiscovered = [];
+  testRan = false;
+}
+
+export function getTestDiscovered() {
+  return testDiscovered;
+}
+
+export function didTestRun() {
+  return testRan;
+}
+
+function testCall(m, calleeIdx, args) {
+  if (args.length !== 2) {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected 2 arguments for test, got ${args.length}`);
+  }
+  const nameVal = args[0];
+  if (nameVal.t !== 'str') {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected String test name, got ${typeName(nameVal)}`);
+  }
+  const name = nameVal.v;
+  const cb = args[1];
+  if (cb.t !== 'func' && cb.t !== 'closure' && cb.t !== 'native' && cb.t !== 'bound') {
+    fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected callable test body, got ${typeName(cb)}`);
+  }
+
+  if (testMode === 'discover') {
+    testDiscovered.push(name);
+    resolveCall(m, calleeIdx, vNone());
+    return;
+  }
+  if (testMode === 'execute') {
+    if (name === testTarget) {
+      testRan = true;
+      m.stack.length = calleeIdx;
+      mPush(m, cb);
+      beginCall(m, 0, calleeIdx);
+    } else {
+      resolveCall(m, calleeIdx, vNone());
+    }
+    return;
+  }
+  // Disabled (normal run): invoke inline
+  m.stack.length = calleeIdx;
+  mPush(m, cb);
+  beginCall(m, 0, calleeIdx);
 }
 
 function taskCall(m, name, calleeIdx, args) {

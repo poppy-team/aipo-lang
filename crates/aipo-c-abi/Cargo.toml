@@ -1,0 +1,39 @@
+[package]
+name = "aipo-c-abi"
+description = "Synchronous, versioned, single-threaded C ABI and safe Rust embedding interface for Aipo (ADP-008, ADP-009)"
+publish = false
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[dependencies]
+aipo-bytecode = { path = "../aipo-bytecode" }
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-hir = { path = "../aipo-hir" }
+aipo-host = { path = "../aipo-host" }
+aipo-ir = { path = "../aipo-ir" }
+aipo-runtime = { path = "../aipo-runtime" }
+aipo-sema = { path = "../aipo-sema" }
+aipo-source = { path = "../aipo-source" }
+aipo-stdlib = { path = "../aipo-stdlib" }
+aipo-syntax = { path = "../aipo-syntax" }
+aipo-vm = { path = "../aipo-vm" }
+
+[lints.rust]
+unsafe_code = "allow"
+missing_docs = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }

@@ -60,6 +60,23 @@ impl ClockSource for SystemClock {
     }
 }
 
+/// A deterministic clock source with a controllable virtual time.
+#[derive(Debug, Clone, Default)]
+pub struct DeterministicClock {
+    /// The current virtual timestamp in seconds.
+    pub seconds: f64,
+}
+
+impl ClockSource for DeterministicClock {
+    fn wall_seconds(&self) -> f64 {
+        self.seconds
+    }
+
+    fn monotonic_seconds(&self) -> f64 {
+        self.seconds
+    }
+}
+
 static ORIGIN: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 /// The installed clock source, if the `clock` capability was granted.

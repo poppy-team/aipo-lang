@@ -28,18 +28,18 @@ Para concatenar ou converter valores, exige-se intenção explícita ou formata�
 Enquanto linguagens tradicionais exigem que você espalhe asserções ou validações manuais em todos os métodos, o Aipo introduz o hook `invariant()` no bloco `impl` da estrutura:
 
 ```aipo
-struct Temperature
-    celsius = 0.0
-end
+struct Temperature {
+    var celsius = 0.0
+}
 
-impl Temperature
-    invariant()
+impl Temperature {
+    invariant {
         self.celsius >= -273.15 # Não pode ser inferior ao zero absoluto
-    end
-end
+    }
+}
 ```
 
-Qualquer mutação que viole a invariante é interceptada na fronteira da operação. Dentro de blocos de transação `attempt ... failed err`, as alterações sofrem rollback atômico para o estado anterior.
+Qualquer mutação que viole a invariante é interceptada na fronteira da operação. Dentro de blocos de transação `attempt { ... } failed err { ... }`, as alterações sofrem rollback atômico para o estado anterior.
 
 ### 3. Concorrência Determinística
 

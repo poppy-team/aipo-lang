@@ -176,3 +176,102 @@ fn test_end_to_end_multiple_is() {
     assert_eq!(vm.get_global("not_all"), Some(&Value::Bool(false)));
     assert_eq!(vm.get_global("nullable_ok"), Some(&Value::Bool(true)));
 }
+
+#[test]
+fn test_end_to_end_modern_syntax() {
+    let src = Source::new(
+        SourceId::next(),
+        "modern.aipo",
+        r#"
+struct User {
+    id
+    var status
+}
+
+impl User {
+    fn activate(var self) {
+        self.status = "active"
+    }
+}
+
+fn check_status(user: User) {
+    if user.status == "active" {
+        return "online"
+    } else {
+        return "offline"
+    }
+}
+
+var u = User{ id: 101, status: "idle" }
+let initial_state = check_status(u)
+u.activate()
+let final_state = check_status(u)
+"#,
+    );
+
+    let (ast, parse_diags) = parse(&src);
+    assert!(parse_diags.is_empty(), "parse errors: {:?}", parse_diags);
+
+    let hir = lower(ast);
+    let ir = lower_to_ir(&hir);
+    let bytecode = compile(&ir).expect("compilation failed");
+
+    let mut vm = Vm::new();
+    let mut registry = aipo_runtime::NativeRegistry::new();
+    aipo_stdlib::register_stdlib(&mut vm, &mut registry);
+    for decl in &bytecode.structs {
+        let fields: Vec<(&str, bool)> = decl
+            .fields
+            .iter()
+            .map(|(name, fixed)| (name.as_str(), *fixed))
+            .collect();
+        vm.register_struct(decl.name.clone(), fields);
+    }
+    for function in &bytecode.functions {
+        if let Some((type_name, method)) = function.name.split_once('.') {
+            vm.register_struct_method(
+                type_name,
+                method,
+                function.entry_ip,
+                function.params,
+                function.is_async,
+            );
+        }
+    }
+    let _ = vm.run(&bytecode).expect("vm execution failed");
+
+    assert_eq!(
+        vm.get_global("initial_state"),
+        Some(&Value::String(std::rc::Rc::new("offline".to_string())))
+    );
+    assert_eq!(
+        vm.get_global("final_state"),
+        Some(&Value::String(std::rc::Rc::new("online".to_string())))
+    );
+}
+
+#[test]
+fn test_end_to_end_slash_slash_division() {
+    let src = Source::new(
+        SourceId::next(),
+        "div.aipo",
+        r#"
+let a = 14 // 3
+var b = 25
+b //= 4
+"#,
+    );
+
+    let (ast, parse_diags) = parse(&src);
+    assert!(parse_diags.is_empty(), "parse errors: {:?}", parse_diags);
+
+    let hir = lower(ast);
+    let ir = lower_to_ir(&hir);
+    let bytecode = compile(&ir).expect("compilation failed");
+
+    let mut vm = Vm::new();
+    let _ = vm.run(&bytecode).expect("vm execution failed");
+
+    assert_eq!(vm.get_global("a"), Some(&Value::Int(4)));
+    assert_eq!(vm.get_global("b"), Some(&Value::Int(6)));
+}

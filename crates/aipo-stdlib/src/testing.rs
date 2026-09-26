@@ -232,6 +232,12 @@ pub fn create_expect_module() -> Value {
     Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries))))
 }
 
+/// Dummy callback for canonical `test` declaration native.
+/// Real execution is intercepted by `Vm::begin_call`.
+pub fn test_declaration(_args: &[Value]) -> Result<Value, VmFault> {
+    Ok(Value::None)
+}
+
 /// Constructs the canonical `testing` module dictionary.
 #[must_use]
 pub fn create_module() -> Value {
@@ -250,6 +256,7 @@ pub fn create_module() -> Value {
         };
     }
 
+    reg!("test", 2, test_declaration);
     reg!("equal", 2, expect_equal);
     reg!("not_equal", 2, expect_not_equal);
     reg!("true", 1, expect_true);

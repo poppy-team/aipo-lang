@@ -28,6 +28,6 @@ O frontend do Aipo é responsável por processar o código-fonte em texto puro a
 
 ### 5. `aipo-sema`
 - Validador semântico com checagem de tipos estrita e verificação de contratos:
-  - Verificação de contratos de `interface` em declarações `satisfy` (métodos obrigatórios, aridades, receptor `self`, tipos de parâmetros e retornos).
-  - Proibição estática de mutação de campos declarados como `fixed` (`AIPO_SEM_FIXED_REASSIGN`).
+  - Verificação de contratos de `interface` via subtipagem estrutural automática (métodos obrigatórios, aridades, mutabilidade do receptor `self` vs `var self`, tipos de parâmetros e retornos).
+  - Proibição estática de mutação de campos imutáveis de estruturas (`AIPO_SEM_IMMUTABLE_FIELD_REASSIGN`).
   - Diagnósticos dedicados para concorrência (`AIPO_SEM_AWAIT_IN_SUBEXPRESSION`, `AIPO_SEM_FORGOTTEN_TASK`, `AIPO_SEM_NESTED_AWAIT_DO`).

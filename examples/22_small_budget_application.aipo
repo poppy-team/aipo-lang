@@ -1,36 +1,36 @@
 # A tiny budget ledger: structs carry the rules, `attempt` carries the errors.
-struct Entry
+struct Entry {
     label
-    amount
-end
+    var amount
+}
 
-impl Entry
-    init(self!, label, amount)
+impl Entry {
+    init(var self, label, amount) {
         self.label = label
         self.amount = amount
-    end
+    }
 
-    invariant()
+    invariant() {
         self.amount >= 0
-    end
-end
+    }
+}
 
 var ledger = []
-ledger.add(Entry{label = "seed", amount = 100})
-ledger.add(Entry{label = "book", amount = 30})
+ledger.add(Entry{ label: "seed", amount: 100 })
+ledger.add(Entry{ label: "book", amount: 30 })
 
 var spent = 0
-each entry in ledger
+each entry in ledger {
     spent = spent + entry.amount
-end
+}
 io.println(spent)
 io.println(len(ledger))
 
-attempt
-    let bad = Entry{label = "oops", amount = 10}
+attempt {
+    let bad = Entry{ label: "oops", amount: 10 }
     bad.amount = -5
     io.println("unreachable")
-failed err
+} failed err {
     io.println(f"rejected: {err.message}")
-end
+}
 io.println(len(ledger))

@@ -288,4 +288,19 @@ mod tests {
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
+
+    #[test]
+    fn test_modern_struct_immutable_by_default() {
+        let code = "struct User {\n  id\n  var name\n}\n\nvar u = User{ id: 1, name: \"Alice\" }\nu.id = 2";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_FIXED_REASSIGN);
+    }
+
+    #[test]
+    fn test_modern_interface_and_var_self() {
+        let code = "interface Counter {\n  fn increment(var self)\n}\n\nstruct Ticker {\n  var count\n}\n\nimpl Ticker {\n  fn increment(var self) {\n    self.count += 1\n  }\n}\n\nsatisfy Ticker: Counter";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
 }

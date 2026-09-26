@@ -52,22 +52,22 @@ The `math` module provides pure floating-point and integer operations without si
 ### Practical Example: Simple Pendulum Simulation
 
 ```aipo
-struct Pendulum
+struct Pendulum {
     length
     gravity
     angle
     angular_velocity
-end
+}
 
-impl Pendulum
-    init(length, gravity, angle, angular_velocity)
+impl Pendulum {
+    init(length, gravity, angle, angular_velocity) {
         self.length = length
         self.gravity = gravity
         self.angle = angle
         self.angular_velocity = angular_velocity
-    end
+    }
 
-    fn update(self, delta_time)
+    fn update(self, delta_time) {
         # Angular acceleration: (-g / L) * sin(theta)
         let acceleration = (-self.gravity / self.length) * math.sin(self.angle)
         
@@ -78,19 +78,19 @@ impl Pendulum
         let bounded_angle = math.clamp(new_angle, -math.pi, math.pi)
         
         return Pendulum{
-            length = self.length,
-            gravity = self.gravity,
-            angle = bounded_angle,
-            angular_velocity = new_vel,
+            length: self.length,
+            gravity: self.gravity,
+            angle: bounded_angle,
+            angular_velocity: new_vel,
         }
-    end
-end
+    }
+}
 
 let p = Pendulum{
-    length = 2.5,
-    gravity = 9.81,
-    angle = math.rad(45.0),
-    angular_velocity = 0.0,
+    length: 2.5,
+    gravity: 9.81,
+    angle: math.rad(45.0),
+    angular_velocity: 0.0,
 }
 
 let next_p = p.update(0.016)
@@ -137,27 +137,27 @@ let b = text.trim().lower()
 ### Practical Example: Data Sanitization
 
 ```aipo
-fn sanitize_email(raw_email)
+fn sanitize_email(raw_email) {
     let clean = raw_email.trim().lower()
     
-    if not clean.contains("@")
+    if not clean.contains("@") {
         return fail("invalid email: missing at-sign")
-    end
+    }
     
     let parts = clean.split("@")
-    if parts.len() != 2
+    if parts.len() != 2 {
         return fail("invalid email: malformed format")
-    end
+    }
     
     let username = parts[0]
     let domain = parts[1]
     
-    if username.len() == 0 or not domain.contains(".")
+    if username.len() == 0 or not domain.contains(".") {
         return fail("invalid email: empty username or domain")
-    end
+    }
     
     return username + "@" + domain
-end
+}
 
 let raw_input = "  Dev.Aipo@Poppy-Lang.ORG  "
 let final_email = sanitize_email(raw_input)
@@ -253,11 +253,11 @@ let raw_payload = "{\"service\": \"auth\", \"attempts\": 3, \"active\": true}"
 
 # Safe parsing inside an attempt block
 var payload = {}
-attempt
+attempt {
     payload = json.parse(raw_payload)
-failed err
+} failed err {
     payload = {"error": "Malformed JSON", "detail": err.message}
-end
+}
 
 let service_name = payload["service"]
 io.println(f"Requested service: {service_name}")
@@ -422,12 +422,12 @@ io.println(f"Search: {query}")   # "?lang=en&theme=dark"
 Aipo provides an integrated, pure assertion engine requiring zero third-party dependencies:
 
 ```aipo
-fn divide(dividend, divisor)
-    if divisor == 0
+fn divide(dividend, divisor) {
+    if divisor == 0 {
         return fail("division by zero")
-    end
+    }
     return dividend / divisor
-end
+}
 
 # Success assertions
 expect.equal(divide(10, 2), 5.0)
@@ -435,11 +435,11 @@ expect.true(divide(10, 2) > 0.0)
 
 # Expected failure verification using attempt/failed
 var error_message = ""
-attempt
+attempt {
     divide(10, 0)
-failed err
+} failed err {
     error_message = err.message
-end
+}
 
 expect.equal(error_message, "division by zero")
 
@@ -478,10 +478,10 @@ The `task` module coordinates cooperative concurrency running on a **determinist
 ### Practical Example: Concurrent Fetch and Racing
 
 ```aipo
-async fn fetch_data(origin)
+async fn fetch_data(origin) {
     task.sleep(1)
     return f"data-from-{origin}"
-end
+}
 
 let t1 = fetch_data("server-1")
 let t2 = fetch_data("server-2")
@@ -507,11 +507,11 @@ Unlike runtimes where imported scripts can silently scan your filesystem or exfi
 # If the host environment has not granted capability "env.read":
 # Execution faults with: AIPO_RT_CAPABILITY_DENIED (capability: "env.read")
 var current_user = "guest"
-attempt
+attempt {
     current_user = env.get("USER")
-failed err
+} failed err {
     current_user = "guest" # Safe, explicit fallback
-end
+}
 
 io.println(f"Running as: {current_user}")
 ```

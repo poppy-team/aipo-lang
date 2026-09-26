@@ -53,6 +53,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "aipo-c-abi"
+version = "0.1.0"
+dependencies = [
+ "aipo-bytecode",
+ "aipo-diagnostics",
+ "aipo-hir",
+ "aipo-host",
+ "aipo-ir",
+ "aipo-runtime",
+ "aipo-sema",
+ "aipo-source",
+ "aipo-stdlib",
+ "aipo-syntax",
+ "aipo-vm",
+]
+
+[[package]]
 name = "aipo-cli"
 version = "0.1.0"
 dependencies = [

@@ -25,6 +25,12 @@ const SPLITMIX_MUL2: u64 = 0x94d0_49bb_1331_11eb;
 
 static DEFAULT_SEED: Mutex<(i64, i64)> = Mutex::new((0, 0));
 
+/// Resets the default PRNG seed and step count.
+pub fn reset_default_seed(seed: i64) {
+    let mut guard = DEFAULT_SEED.lock().unwrap_or_else(|e| e.into_inner());
+    *guard = (seed, 0);
+}
+
 /// Advances SplitMix64 step given seed and step count.
 #[must_use]
 pub fn splitmix64_step(seed: i64, step: i64) -> u64 {
