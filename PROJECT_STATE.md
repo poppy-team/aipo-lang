@@ -91,14 +91,23 @@
   - Saltos rotulados (`br`, `br_if`) gerenciados via pilha de controle (`ControlFrame`) calculando a profundidade relativa exata para `break` e `continue` em qualquer nível de aninhamento.
   - Diagnóstico e rejeição estática de `break` e `continue` fora de contexto de laço.
   - Suíte de 31 testes de ponta a ponta validados com execução JIT `wasmtime` 100% verde.
+- **Modelo de Memória Linear e Estruturas de Dados Wasm (Marco 3 / P06-G03)**:
+  - Memória linear WebAssembly configurada e exportada (`memory`, com 1 página inicial de 64 KiB expansível dinamicamente).
+  - Alocador nativo de bump em Wasm `__aipo_alloc(size: i32) -> i32` alinhado a 8 bytes, com crescimento sob demanda de páginas de memória (`memory.grow`) e armadilha para OOM.
+  - Pool de strings estáticas na seção de dados Wasm (`DataSection`) com prefixo de tamanho de 4 bytes e suporte à propriedade `.len`.
+  - Layout e alinhamento de memória para structs (`StructLayout`) com cálculo estático de deslocamentos de campos alinhados a 8 bytes e suporte a campos tipados (`Int`, `Float`, `Bool`, ponteiros).
+  - Instanciação de structs (`HirExpr::Construct`) com alocação dinâmica em memória linear, suporte a inicialização nomeada e posicional, e pilha de 8 variáveis locais temporárias (`__struct_temp_0..7`) para aninhamento arbitrário seguro de instâncias de struct literais.
+  - Acesso a campos (`HirExpr::Dot`) e mutação em memória via atribuição direta (`p.x = val`) e composta (`p.x += delta`) emitindo instruções de carregamento e armazenamento de memória (`i64.load`, `f64.load`, `i32.load`, `i64.store`, `f64.store`, `i32.store`).
+  - Rastreamento de tipos de variáveis locais (`LocalKind::Struct, LocalKind::String, LocalKind::Int...`) para desambiguação semântica estrita entre acessos a propriedades de strings e campos de structs.
+  - Suíte de 34 testes de ponta a ponta validados com execução JIT `wasmtime` 100% verde.
 
 ## Next action
 
-Iniciar o **Marco 3: Modelo de Memória Linear e Estruturas de Dados (Memory Model & Dynamic Data Structures)**:
-1. Configuração da seção de memória linear WebAssembly (`MemorySection`) e tabela de limites.
-2. Alocador linear leve embutido para gerenciar alocações dinâmicas de heap na memória Wasm.
-3. Representação de `String` (UTF-8 com comprimento), `Bytes` e `Struct` na memória linear.
-4. Instruções de carga e armazenamento (`i32.load`, `i64.load`, `f64.load`, `i32.store`, etc.) para leitura e escrita de campos.
+Iniciar o **Marco 4: Chamadas de Função, Recursão e Tabela de Indireção (Function Calls, Recursion & Indirect Calls)**:
+1. Suporte a recursão profunda e chamadas inter-modulares diretas.
+2. Tabela de elementos WebAssembly (`TableSection`, `ElementSection`) para despacho indireto (`call_indirect`).
+3. Lowering de closures / funções de primeira classe e passagem de funções como argumentos.
+4. Validação rigorosa de tipos de assinatura e aridade em tempo de execução via `call_indirect`.
 
 ## Recovery order
 

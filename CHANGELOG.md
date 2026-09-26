@@ -24,6 +24,15 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
   - Saltos rotulados (`br`, `br_if`) gerenciados via pilha de controle (`ControlFrame: LoopBreak, LoopContinue, RepeatStep, Block`) calculando a profundidade relativa exata para `break` e `continue` em qualquer nível de aninhamento.
   - Validação estática de rejeição de `break` e `continue` fora de laços com diagnóstico claro de erro de compilação.
   - Suíte de 31 testes de ponta a ponta verdes em `crates/aipo-wasm` validados com o motor JIT `wasmtime`.
+- **Marco 3: Modelo de Memória Linear e Estruturas de Dados (Memory Model & Dynamic Data Structures - ADP-013)**:
+  - Configuração e exportação da memória linear WebAssembly (`memory`, 1 página inicial de 64 KiB expansível dinamicamente via `memory.grow`).
+  - Implementação do alocador de bump nativo WebAssembly `__aipo_alloc(size: i32) -> i32` alinhado a 8 bytes, com crescimento sob demanda de páginas de memória e proteção contra out-of-memory.
+  - Pool de strings estáticas na seção de dados Wasm (`DataSection`) no offset 1024 com prefixo de comprimento little-endian de 4 bytes e suporte a leitura de tamanho de strings via propriedade `.len`.
+  - Layout e alinhamento de memória para structs (`StructLayout`) com cálculo estático de deslocamentos de campos alinhados a 8 bytes e suporte a campos tipados (`Int`, `Float`, `Bool`, ponteiros).
+  - Instanciação de structs (`HirExpr::Construct`) com alocação dinâmica em memória linear, suporte a inicialização nomeada e posicional, e pilha de 8 variáveis locais temporárias (`__struct_temp_0..7`) para aninhamento arbitrário seguro de instâncias de struct literais.
+  - Acesso a campos (`HirExpr::Dot`) e mutação em memória via atribuição direta (`p.x = val`) e composta (`p.x += delta`) emitindo instruções de carregamento e armazenamento de memória (`i64.load`, `f64.load`, `i32.load`, `i64.store`, `f64.store`, `i32.store`).
+  - Rastreamento de tipos de variáveis locais (`LocalKind::Struct, LocalKind::String, LocalKind::Int...`) para desambiguação semântica estrita entre acessos a propriedades de strings e campos de structs.
+  - Suíte de testes de integração expandida para 34 testes de ponta a ponta verdes em `crates/aipo-wasm` verificando isolamento entre instâncias, aninhamento e integridade dos bytes na memória linear.
 
 ## [0.1.0] - 2026-09-26 (Linha de Base Stack VM)
 

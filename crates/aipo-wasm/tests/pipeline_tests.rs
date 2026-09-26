@@ -552,3 +552,172 @@ fn test_error_continue_outside_loop() {
         aipo_wasm::WasmCompileError::UnsupportedStmt { ref message, .. } if message.contains("continue outside of loop")
     ));
 }
+
+// ============================================================================
+// Marco 3: Linear Memory, Structs & Static String Pool Integration Tests
+// ============================================================================
+
+#[test]
+fn test_struct_instantiation_and_field_access() {
+    let code = r#"
+struct Point
+  x
+  y
+end
+
+fn test_point() -> Int {
+  let p = Point{ x: 15, y: 27 }
+  return p.x + p.y
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let func = instance
+        .get_typed_func::<(), i64>(&mut store, "test_point")
+        .expect("exported function `test_point` exists");
+
+    assert_eq!(func.call(&mut store, ()).unwrap(), 42);
+}
+
+#[test]
+fn test_struct_field_mutation_and_compound_assign() {
+    let code = r#"
+struct Point
+  x
+  y
+end
+
+fn test_mutate() -> Int {
+  let p = Point{ x: 10, y: 20 }
+  p.x = 40
+  p.y += 5
+  return p.x + p.y
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let func = instance
+        .get_typed_func::<(), i64>(&mut store, "test_mutate")
+        .expect("exported function `test_mutate` exists");
+
+    // p.x = 40, p.y = 20 + 5 = 25 => 40 + 25 = 65
+    assert_eq!(func.call(&mut store, ()).unwrap(), 65);
+}
+
+#[test]
+fn test_multiple_struct_instances_isolation() {
+    let code = r#"
+struct Counter
+  val
+end
+
+fn test_isolation() -> Int {
+  let c1 = Counter{ val: 10 }
+  let c2 = Counter{ val: 100 }
+  c1.val += 5
+  c2.val += 20
+  return c1.val * 1000 + c2.val
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let func = instance
+        .get_typed_func::<(), i64>(&mut store, "test_isolation")
+        .expect("exported function `test_isolation` exists");
+
+    // c1.val = 15, c2.val = 120 => 15000 + 120 = 15120
+    assert_eq!(func.call(&mut store, ()).unwrap(), 15120);
+}
+
+#[test]
+fn test_nested_struct_instantiation() {
+    let code = r#"
+struct Inner
+  val
+end
+
+struct Outer
+  inner
+  extra
+end
+
+fn test_nested() -> Int {
+  let o = Outer{ inner: Inner{ val: 99 }, extra: 1 }
+  return o.inner.val + o.extra
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let func = instance
+        .get_typed_func::<(), i64>(&mut store, "test_nested")
+        .expect("exported function `test_nested` exists");
+
+    assert_eq!(func.call(&mut store, ()).unwrap(), 100);
+}
+
+#[test]
+fn test_static_string_len() {
+    let code = r#"
+fn test_str_len() -> Int {
+  let s = "Hello, WebAssembly!"
+  return s.len
+}
+
+fn test_empty_len() -> Int {
+  let empty = ""
+  return empty.len
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let len_fn = instance
+        .get_typed_func::<(), i64>(&mut store, "test_str_len")
+        .expect("exported function `test_str_len` exists");
+    assert_eq!(len_fn.call(&mut store, ()).unwrap(), 19);
+
+    let empty_fn = instance
+        .get_typed_func::<(), i64>(&mut store, "test_empty_len")
+        .expect("exported function `test_empty_len` exists");
+    assert_eq!(empty_fn.call(&mut store, ()).unwrap(), 0);
+}
+
+#[test]
+fn test_struct_passed_as_parameter() {
+    let code = r#"
+struct Point
+  x
+  y
+end
+
+fn sum_coords(p: Point) -> Int {
+  return p.x + p.y
+}
+
+fn run() -> Int {
+  let pt = Point{ x: 30, y: 70 }
+  return sum_coords(pt)
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let run_fn = instance
+        .get_typed_func::<(), i64>(&mut store, "run")
+        .expect("exported function `run` exists");
+
+    assert_eq!(run_fn.call(&mut store, ()).unwrap(), 100);
+}
+
+#[test]
+fn test_linear_memory_bytes_and_allocator() {
+    let code = r#"
+fn get_str_ptr() -> Int {
+  let s = "Aipo"
+  return s.len
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let mem = instance
+        .get_memory(&mut store, "memory")
+        .expect("exported linear memory `memory` exists");
+
+    // The data segment starts at 1024 with a 4-byte length prefix (4) followed by b"Aipo"
+    let mut buf = [0u8; 8];
+    mem.read(&mut store, 1024, &mut buf).unwrap();
+    let len = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
+    assert_eq!(len, 4);
+    assert_eq!(&buf[4..8], b"Aipo");
+}

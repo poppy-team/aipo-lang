@@ -2,7 +2,8 @@
 
 use crate::types::WasmFnType;
 use wasm_encoder::{
-    CodeSection, ExportKind, ExportSection, Function, FunctionSection, Module, TypeSection, ValType,
+    CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function, FunctionSection,
+    GlobalSection, GlobalType, MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 /// High-level builder and binary emitter for standard WebAssembly modules.
@@ -12,6 +13,9 @@ pub struct WasmEmitter {
     function_types: Vec<u32>,
     exports: Vec<(String, ExportKind, u32)>,
     code: Vec<Function>,
+    memory: Option<MemoryType>,
+    globals: Vec<(GlobalType, ConstExpr)>,
+    data_segments: Vec<(u32, i32, Vec<u8>)>,
 }
 
 impl WasmEmitter {
@@ -45,12 +49,40 @@ impl WasmEmitter {
             .push((name.into(), ExportKind::Func, func_index));
     }
 
+    /// Enables linear memory with initial and optional maximum pages (each page is 64 KiB).
+    pub fn enable_memory(&mut self, initial_pages: u64, max_pages: Option<u64>) {
+        self.memory = Some(MemoryType {
+            minimum: initial_pages,
+            maximum: max_pages,
+            memory64: false,
+            shared: false,
+            page_size_log2: None,
+        });
+    }
+
+    /// Exports the linear memory under the given public symbol (usually "memory").
+    pub fn export_memory(&mut self, name: impl Into<String>) {
+        self.exports.push((name.into(), ExportKind::Memory, 0));
+    }
+
+    /// Adds a global variable and returns its global index.
+    pub fn add_global(&mut self, global_type: GlobalType, init_expr: &ConstExpr) -> u32 {
+        let idx = self.globals.len() as u32;
+        self.globals.push((global_type, init_expr.clone()));
+        idx
+    }
+
+    /// Adds an active data segment into the data section targeting memory at the given byte offset.
+    pub fn add_data_segment(&mut self, memory_index: u32, offset: i32, data: Vec<u8>) {
+        self.data_segments.push((memory_index, offset, data));
+    }
+
     /// Finalizes the WebAssembly module and returns its encoded binary representation (`.wasm`).
     #[must_use]
     pub fn finish(self) -> Vec<u8> {
         let mut module = Module::new();
 
-        // 1. Type Section
+        // 1. Type Section (1)
         if !self.types.is_empty() {
             let mut type_section = TypeSection::new();
             for fn_type in &self.types {
@@ -62,7 +94,7 @@ impl WasmEmitter {
             module.section(&type_section);
         }
 
-        // 2. Function Section
+        // 2. Function Section (3)
         if !self.function_types.is_empty() {
             let mut fn_section = FunctionSection::new();
             for &type_idx in &self.function_types {
@@ -71,7 +103,23 @@ impl WasmEmitter {
             module.section(&fn_section);
         }
 
-        // 3. Export Section
+        // 3. Memory Section (5)
+        if let Some(mem_type) = self.memory {
+            let mut mem_section = MemorySection::new();
+            mem_section.memory(mem_type);
+            module.section(&mem_section);
+        }
+
+        // 4. Global Section (6)
+        if !self.globals.is_empty() {
+            let mut global_section = GlobalSection::new();
+            for (gt, init) in &self.globals {
+                global_section.global(*gt, init);
+            }
+            module.section(&global_section);
+        }
+
+        // 5. Export Section (7)
         if !self.exports.is_empty() {
             let mut export_section = ExportSection::new();
             for (name, kind, index) in &self.exports {
@@ -80,13 +128,26 @@ impl WasmEmitter {
             module.section(&export_section);
         }
 
-        // 4. Code Section
+        // 6. Code Section (10)
         if !self.code.is_empty() {
             let mut code_section = CodeSection::new();
             for func in &self.code {
                 code_section.function(func);
             }
             module.section(&code_section);
+        }
+
+        // 7. Data Section (11)
+        if !self.data_segments.is_empty() {
+            let mut data_section = DataSection::new();
+            for (mem_idx, offset, bytes) in &self.data_segments {
+                data_section.active(
+                    *mem_idx,
+                    &ConstExpr::i32_const(*offset),
+                    bytes.iter().copied(),
+                );
+            }
+            module.section(&data_section);
         }
 
         module.finish()
