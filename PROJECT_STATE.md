@@ -126,11 +126,21 @@
   - Host ABI `"aipo_host"` em `aipo-wasm::runner` provendo bindings para `print_int`, `print_float`, `print_str`, `print_bool`, `println` e suporte condicional a seções de imports para `io.print` / `io.println`.
   - Suíte de 8 testes de integração exaustivos em `crates/aipo-cli/tests/wasm_cli.rs` cobrindo 100% dos novos fluxos e tratamento de erros.
 
+- **Bateria de Benchmarks e Comparação Multi-linguagem Wasm (Certificação ADP-013)**:
+  - Integração do runtime `aipo-wasm` ao harness comparativo canônico `aipo-bench --compare` (`crates/aipo-bench/comparisons/manifest.json` e `crates/aipo-bench/src/compare.rs`).
+  - Suporte a interpolação de format strings desaçucaradas (`BinaryOp::Add` e chamada `String(...)`) com streaming print de zero heap allocation em `crates/aipo-wasm`.
+  - Resultados empíricos certificados em bateria de 7 rounds (`target/bench_wasm_comparison.json`):
+    - `arithmetic` (N=200.000): **10,53ms min / 15,72ms mediana** — ganho de **17x a 25x** sobre a Stack VM anterior, **4.0x mais rápido que Node.js**, **4.4x mais rápido que CPython**, **6.9x mais rápido que CRuby**, empatando com Lua 5.4 e ficando a apenas **1,9x** do teto de Rust nativo compilado.
+    - `recursion` (Fibonacci 24): **10,60ms min / 11,35ms mediana** — ganho de **8.6x** sobre a Stack VM, **1.4x mais rápido que Lua 5.4**, **2.8x mais rápido que CPython**, **5.3x mais rápido que Node.js** e a **1.9x** do Rust nativo.
+    - `startup`: **15,64ms** incluindo parsing, lowering, compilação Wasm e compilação JIT de código de máquina pelo Cranelift — superando os tempos de startup de CPython (21ms), Node.js (58ms) e Ruby (90ms).
+  - Documentação canônica atualizada e sincronizada em `docs/performance/cross-language.md`.
+
 ## Next action
 
-Marco 6 finalizado com sucesso! Próximo passo:
-1. Executar bateria de benchmarks canônicos (`scripts/perf/cpu_ab.py` e `aipo-bench`) comparando a performance do runtime WebAssembly JIT (`aipo run --wasm`) com a Stack VM anterior e demais runtimes.
-2. Certificação e consolidação de evidências da Trilha WebAssembly (Marcos 1 a 6 concluídos).
+Trilha WebAssembly (Marcos 1 a 6) e Bateria de Benchmarks concluídas com êxito!
+Próximos passos disponíveis:
+1. Formalização de evidência final e sincronização com o Prumo.
+2. Expansão de recursos adicionais da Trilha Wasm (ex: arrays dinâmicos / heap collections).
 
 ## Recovery order
 

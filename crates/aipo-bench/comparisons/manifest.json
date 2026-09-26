@@ -55,6 +55,13 @@
       "required": true
     },
     {
+      "id": "aipo-wasm",
+      "label": "Aipo Wasm JIT",
+      "kind": "aipo-wasm",
+      "script": "aipo/{workload}.aipo",
+      "required": false
+    },
+    {
       "id": "aipo-js",
       "label": "Aipo → JavaScript/Node",
       "kind": "aipo-js",

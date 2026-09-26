@@ -738,7 +738,7 @@ fn validate_manifest(manifest: &Manifest) -> Result<(), String> {
         }
         if !matches!(
             language.kind.as_str(),
-            "aipo" | "aipo-vm" | "aipo-js" | "script" | "self"
+            "aipo" | "aipo-wasm" | "aipo-vm" | "aipo-js" | "script" | "self"
         ) {
             return Err(format!(
                 "unsupported language kind '{}' for '{}'",
@@ -886,7 +886,7 @@ fn resolve_language_command(language: &LanguageSpec) -> Option<(String, PathBuf)
 
 fn language_available(language: &LanguageSpec, aipo_bin: Option<&Path>) -> bool {
     match language.kind.as_str() {
-        "aipo" => aipo_bin.is_some_and(|path| path.is_file()),
+        "aipo" | "aipo-wasm" => aipo_bin.is_some_and(|path| path.is_file()),
         "aipo-js" => command_path("node").is_some(),
         "aipo-vm" | "self" => true,
         "script" => resolve_language_command(language).is_some(),
@@ -982,6 +982,26 @@ fn prepare_invocation(
             Ok(PreparedInvocation {
                 program: Some(aipo_bin.to_path_buf()),
                 args: vec!["run".to_string(), path.display().to_string()],
+                current_dir: None,
+                invocation: InvocationKind::Process,
+                cleanup: None,
+                includes_startup: true,
+                includes_compile: true,
+                setup_ns: duration_ns(setup_start.elapsed()),
+            })
+        }
+        "aipo-wasm" => {
+            let aipo_bin = aipo_bin.ok_or_else(|| "Aipo binary is unavailable".to_string())?;
+            let source = comparison_source(language, &workload.id, n)?;
+            let path = root.join(format!("aipo-wasm-{}.aipo", workload.id));
+            fs::write(&path, source).map_err(|error| error.to_string())?;
+            Ok(PreparedInvocation {
+                program: Some(aipo_bin.to_path_buf()),
+                args: vec![
+                    "run".to_string(),
+                    path.display().to_string(),
+                    "--wasm".to_string(),
+                ],
                 current_dir: None,
                 invocation: InvocationKind::Process,
                 cleanup: None,
@@ -1607,7 +1627,7 @@ fn runtime_versions(
     let mut versions = BTreeMap::new();
     for language in languages {
         let version = match language.kind.as_str() {
-            "aipo" => aipo_bin
+            "aipo" | "aipo-wasm" => aipo_bin
                 .and_then(|path| path.to_str().and_then(command_version))
                 .unwrap_or_else(|| "unavailable".to_string()),
             "aipo-js" => command_version("node").unwrap_or_else(|| "unavailable".to_string()),

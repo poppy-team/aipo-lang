@@ -1093,3 +1093,21 @@ fn add(a: Int, b: Int) -> Int {
     assert!(wat.contains("add"));
     assert!(wat.contains("i64.add"));
 }
+
+#[test]
+fn test_host_io_format_string_interpolation() {
+    let code = r#"
+var total = 42
+io.println(f"checksum:{total}")
+"#;
+    let source = Source::new(SourceId::next(), "test.aipo", code);
+    let (ast, diags) = parse(&source);
+    assert!(diags.is_empty(), "diags: {diags:?}");
+    let hir = lower(ast);
+    let wasm_bytes = compile_hir(&hir).expect("compilation succeeds");
+
+    let mut stdout = Vec::new();
+    let _ = execute_wasm(&wasm_bytes, &mut stdout).expect("execution succeeds");
+    let output = String::from_utf8(stdout).expect("valid utf8");
+    assert_eq!(output, "checksum:42\n");
+}

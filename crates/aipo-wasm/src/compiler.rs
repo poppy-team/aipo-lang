@@ -1565,7 +1565,21 @@ fn infer_expr_kind(
                 LocalKind::Int
             }
         }
+        HirExpr::Binary(BinaryOp::Add, left, right, _) => {
+            let lk = infer_expr_kind(left, locals, functions, table_indices, anon_map);
+            let rk = infer_expr_kind(right, locals, functions, table_indices, anon_map);
+            if matches!(lk, LocalKind::String) || matches!(rk, LocalKind::String) {
+                LocalKind::String
+            } else {
+                LocalKind::Int
+            }
+        }
         HirExpr::Call(callee, _, _) => {
+            if let HirExpr::Identifier(name, _) = &**callee {
+                if name == "String" {
+                    return LocalKind::String;
+                }
+            }
             if let HirExpr::Dot(receiver, method_name, _) = &**callee {
                 if let HirExpr::Identifier(rec_name, _) = &**receiver {
                     if rec_name == "task" && method_name == "spawn" {
@@ -2679,6 +2693,158 @@ fn compress_locals(types: &[WasmType]) -> Vec<(u32, ValType)> {
     compressed
 }
 
+fn is_string_or_format_expr(
+    expr: &HirExpr,
+    locals: &HashMap<String, (u32, WasmType, LocalKind)>,
+) -> bool {
+    match expr {
+        HirExpr::Literal(Literal::String(..), _) => true,
+        HirExpr::Call(callee, args, _) => {
+            if let HirExpr::Identifier(name, _) = &**callee {
+                if name == "String" && args.len() == 1 {
+                    return true;
+                }
+            }
+            false
+        }
+        HirExpr::Binary(BinaryOp::Add, left, right, _) => {
+            is_string_or_format_expr(left, locals) || is_string_or_format_expr(right, locals)
+        }
+        HirExpr::Identifier(name, _) => {
+            if let Some((_, _, kind)) = locals.get(name) {
+                matches!(kind, LocalKind::String)
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compile_print_arg(
+    expr: &HirExpr,
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType, LocalKind)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    structs: &HashMap<String, StructLayout>,
+    static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
+    alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
+    struct_depth: usize,
+    call_depth: usize,
+    io: HostIoHelpers,
+) -> Result<(), WasmCompileError> {
+    match expr {
+        HirExpr::Binary(BinaryOp::Add, left, right, _)
+            if is_string_or_format_expr(left, locals)
+                || is_string_or_format_expr(right, locals) =>
+        {
+            compile_print_arg(
+                left,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth,
+                io,
+            )?;
+            compile_print_arg(
+                right,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth,
+                io,
+            )
+        }
+        HirExpr::Call(callee, args, _)
+            if matches!(&**callee, HirExpr::Identifier(name, _) if name == "String")
+                && args.len() == 1 =>
+        {
+            compile_print_arg(
+                &args[0].value,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth,
+                io,
+            )
+        }
+        _ => {
+            let actual_ty = compile_expr(
+                expr,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth,
+            )?;
+            let kind = infer_expr_kind(expr, locals, functions, table_indices, anon_map);
+            match kind {
+                LocalKind::String => {
+                    coerce_type(func, actual_ty, WasmType::I32);
+                    func.instruction(&Instruction::Call(io.print_str_idx));
+                }
+                LocalKind::Bool => {
+                    coerce_type(func, actual_ty, WasmType::I32);
+                    func.instruction(&Instruction::Call(io.print_bool_idx));
+                }
+                _ => match actual_ty {
+                    WasmType::F64 => {
+                        func.instruction(&Instruction::Call(io.print_float_idx));
+                    }
+                    WasmType::I32 => {
+                        func.instruction(&Instruction::Call(io.print_str_idx));
+                    }
+                    _ => {
+                        func.instruction(&Instruction::Call(io.print_int_idx));
+                    }
+                },
+            }
+            Ok(())
+        }
+    }
+}
+
 /// Compiles an expression and emits its WebAssembly instructions, returning its result type.
 #[allow(clippy::too_many_arguments)]
 fn compile_expr(
@@ -3155,7 +3321,7 @@ fn compile_expr(
             if is_io_call {
                 if let Some(io) = async_helpers.host_io {
                     for arg in args {
-                        let actual_ty = compile_expr(
+                        compile_print_arg(
                             &arg.value,
                             func,
                             locals,
@@ -3170,30 +3336,8 @@ fn compile_expr(
                             async_helpers,
                             struct_depth,
                             call_depth,
+                            io,
                         )?;
-                        let kind =
-                            infer_expr_kind(&arg.value, locals, functions, table_indices, anon_map);
-                        match kind {
-                            LocalKind::String => {
-                                coerce_type(func, actual_ty, WasmType::I32);
-                                func.instruction(&Instruction::Call(io.print_str_idx));
-                            }
-                            LocalKind::Bool => {
-                                coerce_type(func, actual_ty, WasmType::I32);
-                                func.instruction(&Instruction::Call(io.print_bool_idx));
-                            }
-                            _ => match actual_ty {
-                                WasmType::F64 => {
-                                    func.instruction(&Instruction::Call(io.print_float_idx));
-                                }
-                                WasmType::I32 => {
-                                    func.instruction(&Instruction::Call(io.print_str_idx));
-                                }
-                                _ => {
-                                    func.instruction(&Instruction::Call(io.print_int_idx));
-                                }
-                            },
-                        }
                     }
                     if is_println {
                         func.instruction(&Instruction::Call(io.println_idx));
@@ -3672,7 +3816,18 @@ fn infer_expr_type(
             | BinaryOp::LessEqual
             | BinaryOp::Greater
             | BinaryOp::GreaterEqual => Ok(WasmType::I32),
-            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul => {
+            BinaryOp::Add => {
+                let left_ty = infer_expr_type(left, locals, functions, structs, table_indices)?;
+                let right_ty = infer_expr_type(right, locals, functions, structs, table_indices)?;
+                if left_ty == WasmType::I32 || right_ty == WasmType::I32 {
+                    Ok(WasmType::I32)
+                } else if left_ty == WasmType::F64 || right_ty == WasmType::F64 {
+                    Ok(WasmType::F64)
+                } else {
+                    Ok(WasmType::I64)
+                }
+            }
+            BinaryOp::Sub | BinaryOp::Mul => {
                 let left_ty = infer_expr_type(left, locals, functions, structs, table_indices)?;
                 let right_ty = infer_expr_type(right, locals, functions, structs, table_indices)?;
                 if left_ty == WasmType::F64 || right_ty == WasmType::F64 {
@@ -3732,6 +3887,9 @@ fn infer_expr_type(
                 }
             }
             if let HirExpr::Identifier(func_name, _) = &**callee {
+                if func_name == "String" {
+                    return Ok(WasmType::I32);
+                }
                 if let Some((_, _, fn_type)) = functions.get(func_name) {
                     if let Some(&ret) = fn_type.results.first() {
                         return Ok(ret);

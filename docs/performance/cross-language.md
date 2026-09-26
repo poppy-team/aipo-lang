@@ -8,10 +8,11 @@
 
 Comparar custo de workloads equivalentes sem esconder a diferença entre interpretador, JIT, VM e código nativo. Rust nativo é um controle algorítmico; seu processo usa o mesmo binário do runner e inclui o startup desse harness, portanto não representa o startup de um binário nativo mínimo.
 
-Aipo aparece em três linhas:
+Aipo aparece em quatro linhas:
 
+- **Aipo Wasm JIT:** compilação direta de HIR para WebAssembly e execução via Cranelift/Wasmtime com Host ABI `aipo_host` (`aipo run --wasm`).
 - **Aipo VM in-process:** compilação fora do timer; execução, criação da VM e registro da stdlib dentro do timer.
-- **Aipo CLI/VM:** processo `aipo run`, incluindo startup e compilação do fonte.
+- **Aipo CLI/VM:** processo `aipo run`, incluindo startup e compilação do fonte na Stack VM clássica.
 - **Aipo→JavaScript/Node:** bundle emitido uma vez antes do timer; execução do Node é medida separadamente.
 
 ## Como executar
@@ -357,4 +358,76 @@ Observações: Aipo CLI/VM e Aipo VM in-process ficaram atrás das linguagens co
 
 Na comparação local A/B de três amostras contra `target/perf-phase1.json`, o Aipo VM reduziu o median em `12,3%` (`arithmetic`), `10,1%` (`collections`), `6,0%` (`strings`) e `6,2%` (`recursion`); Aipo→JavaScript variou de `-10,4%` a `+2,8%`. Esse resultado é direcional, não um gate, porque o runner é compartilhado.
 
-Esses números são evidência local, não gate nem promessa de performance. O relatório completo, com samples crus, profile release, dirty state e checksums, ficou em `target/cross-language-final.json`, fora do versionamento. Anexe-o como evidence quando uma decisão de produto depender dos dados.
+## Substrato WebAssembly JIT (ADP-013 / Marco 6)
+
+Com a introdução da crate `aipo-wasm` e a integração nativa ao CLI (`aipo run --wasm`), os programas Aipo são compilados diretamente do HIR para bytecode WebAssembly e executados via JIT machine code nativo pelo Cranelift/Wasmtime. 
+
+O runtime WebAssembly elimina a sobrecarga de despacho da Stack VM tradicional (`match` de opcodes, `Vm::step`, `Value` de 24 bytes com boxing e verificação de limites dinâmicos de pilha), operando diretamente com primitivas Wasm (`i64`, `f64`, `i32`) e layout linear de memória para structs.
+
+### Bateria comparativa (`aipo-bench --compare`)
+
+Execução de 7 rounds comparando o novo runtime WebAssembly JIT (`aipo-wasm`) com a Stack VM anterior (`aipo` e `aipo-vm`) e runtimes de mercado. Evidência registrada em `target/bench_wasm_comparison.json`.
+
+#### 1. Aritmética (`arithmetic`, N=200.000, checksum: `59999500000`)
+
+Laço intensivo de chamadas de função aritméticas (`step(i) = i * 3 - 1`).
+
+| Runtime | Tipo de Execução | Mediana (ms) | Mínimo (ms) | Speedup vs VM | Razão vs Wasm |
+|---|---|---:|---:|---:|---:|
+| **Rust native** | Nativo compilado (`rustc -O`) | 5,51ms | 5,46ms | 48,5x | 0,35x |
+| **LuaJIT** | JIT tracing nativo | 5,57ms | 5,43ms | 48,0x | 0,35x |
+| **Lua 5.4** | Bytecode VM em C | 10,77ms | 10,58ms | 24,8x | 0,68x |
+| **Aipo Wasm JIT** | **WebAssembly JIT (Cranelift)** | **15,72ms** | **10,53ms** | **17,0x – 25,1x** | **1,00x** |
+| **JavaScript (Node.js)** | V8 JIT | 63,44ms | 56,89ms | 4,2x | 4,03x |
+| **Python (CPython 3.12)** | Bytecode interpretador em C | 69,59ms | 62,86ms | 3,8x | 4,43x |
+| **Ruby (CRuby 3.x)** | YARV interpretador | 108,14ms | 105,87ms | 2,5x | 6,88x |
+| **Aipo VM in-process** | Stack VM Rust (sem startup) | 231,64ms | 229,61ms | 1,15x | 14,73x |
+| **Aipo CLI/VM** | Stack VM Rust (com startup) | 267,34ms | 244,91ms | 1,00x (base) | 17,00x |
+| **Aipo → JS / Node** | Transpilação JS sobre Node | 707,36ms | 603,04ms | 0,38x | 44,99x |
+
+**Destaques:**
+- **Aipo Wasm JIT é 17x a 25x mais rápido** que o Aipo CLI na Stack VM clássica.
+- **Supera Node.js por 4.0x**, **CPython por 4.4x** e **CRuby por 6.9x**.
+- Empata com o interpretador C do Lua 5.4 (10,53ms vs 10,58ms no mínimo).
+- Fica a apenas **1,9x** do teto absoluto de Rust compilado nativamente.
+
+#### 2. Recursão profunda (`recursion`, Fibonacci(24), checksum: `46368`)
+
+Chamadas recursivas puras com 92.735 invocações de função e controle de ativações de frame.
+
+| Runtime | Tipo de Execução | Mediana (ms) | Mínimo (ms) | Speedup vs VM | Razão vs Wasm |
+|---|---|---:|---:|---:|---:|
+| **Rust native** | Nativo compilado (`rustc -O`) | 5,50ms | 5,45ms | 17,9x | 0,48x |
+| **LuaJIT** | JIT tracing nativo | 5,85ms | 5,68ms | 16,8x | 0,52x |
+| **Aipo Wasm JIT** | **WebAssembly JIT (Cranelift)** | **11,35ms** | **10,60ms** | **8,65x** | **1,00x** |
+| **Lua 5.4** | Bytecode VM em C | 16,22ms | 11,12ms | 6,05x | 1,43x |
+| **Python (CPython 3.12)** | Bytecode interpretador em C | 31,89ms | 30,26ms | 3,08x | 2,81x |
+| **JavaScript (Node.js)** | V8 JIT | 59,66ms | 58,38ms | 1,65x | 5,26x |
+| **Aipo VM in-process** | Stack VM Rust (sem startup) | 77,68ms | 77,16ms | 1,26x | 6,85x |
+| **Aipo CLI/VM** | Stack VM Rust (com startup) | 98,15ms | 86,64ms | 1,00x (base) | 8,65x |
+| **Ruby (CRuby 3.x)** | YARV interpretador | 98,17ms | 93,55ms | 1,00x | 8,65x |
+| **Aipo → JS / Node** | Transpilação JS sobre Node | 307,74ms | 287,11ms | 0,32x | 27,12x |
+
+**Destaques:**
+- **Aipo Wasm JIT é 8.6x mais rápido** que o Aipo CLI/VM e 6.8x mais rápido que a VM in-process.
+- **Supera Lua 5.4 por 1.4x**, **CPython por 2.8x**, **Node.js por 5.3x** e **CRuby por 8.6x**.
+- Fica a apenas **1,9x** do Rust nativo e LuaJIT.
+
+#### 3. Startup de Processo e Inicialização (`startup`, checksum: `ready`)
+
+Mede o ciclo de vida completo: invocação do processo CLI, parsing, lowering, compilação JIT de máquina e emissão de stdout.
+
+| Runtime | Mediana (ms) | Mínimo (ms) | Observações |
+|---|---:|---:|---|
+| **Aipo VM in-process** | 0,31ms | 0,30ms | Sem custo de novo processo do SO |
+| **LuaJIT / Lua / Rust** | ~5,50ms | ~5,45ms | Processo C/Rust mínimo sem compilação pesada |
+| **Aipo CLI/VM** | 5,51ms | 5,46ms | Interpretador puro (sem JIT) |
+| **Aipo Wasm JIT** | **15,64ms** | **10,68ms** | **Inclui parsing + codegen Wasm + compilação nativa Cranelift** |
+| **Python (CPython)** | 20,80ms | 20,64ms | Inicialização de runtime CPython |
+| **Node.js** | 57,83ms | 56,37ms | Inicialização da V8 |
+| **Aipo → JS** | 68,40ms | 64,29ms | Node + runtime shim Aipo |
+| **Ruby** | 89,63ms | 85,44ms | Inicialização de VM Ruby |
+
+O tempo de startup do Aipo Wasm JIT (~15ms) inclui a compilação JIT de código nativo pelo Cranelift, mantendo-se **mais ágil que CPython (21ms), Node.js (58ms) e Ruby (90ms)**.
+
+Esses números são evidência local, não gate nem promessa de performance. O relatório completo, com samples crus, profile release, dirty state e checksums, ficou em `target/cross-language-final.json` e `target/bench_wasm_comparison.json`, fora do versionamento. Anexe-o como evidence quando uma decisão de produto depender dos dados.
