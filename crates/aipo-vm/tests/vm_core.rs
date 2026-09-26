@@ -731,3 +731,24 @@ fn test_metrics_count_executed_instructions_and_constants() {
     assert_eq!(metrics.instructions, 2);
     assert_eq!(metrics.constant_loads, 1);
 }
+
+#[test]
+fn test_unknown_opcode_reports_the_offset_of_the_bad_byte() {
+    // Dispatch decodes the opcode with a `match` so the happy path never builds a
+    // `VmFault`-carrying `Result`. This pins the error that the cold branch must still
+    // produce: same offset, same message.
+    let mut vm = Vm::new();
+    let mut code = Vec::new();
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+    code.push(0xFE);
+    let module = make_test_module(code, vec![Constant::Int(1)], Vec::new());
+
+    match vm.run(&module) {
+        Err(VmError::Fault(VmFault::CorruptedBytecode { offset, reason })) => {
+            assert_eq!(offset, 3, "offset must point at the unknown opcode byte");
+            assert_eq!(reason, "unknown opcode 0xfe");
+        }
+        other => panic!("expected CorruptedBytecode, got {other:?}"),
+    }
+}

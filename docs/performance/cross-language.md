@@ -118,13 +118,14 @@ Ordem recomendada para os próximos experimentos de fields: (1) cache monomórfi
 
 ### Piso de ruído do runner
 
-Este host entrega um piso de ruído de aproximadamente ±5% nos workloads de `fields` e `arithmetic`, o que foi medido diretamente: a mesma mudança lógica, variando apenas a posição de um campo na struct `Vm`, oscilou entre -5,6% e +4,5% (ver "despacho de método sem alocar"). Consequências práticas:
+Este host entrega um piso de ruído de aproximadamente ±5% nos workloads de `fields` e `arithmetic` em condições normais, e uma dispersão muito pior quando há contenção: o mesmo binário já chegou a variar 2,5x entre execuções da mesma configuração, com load average de 7,3 em 4 cores. Consequências práticas:
 
 - Diferença menor que ±5% não é evidência de nada, mesmo com checksums idênticos e MAD pequeno por execução.
-- Um único lote pareado não decide uma mudança. Candidatas precisam de pelo menos dois lotes, idealmente com `arithmetic` como workload de controle, porque ele não toca o caminho alterado e portanto mede deriva do ambiente.
+- Um único lote pareado não decide uma mudança. Mudanças candidatas precisam de pelo menos dois lotes, idealmente com `arithmetic` como workload de controle, porque ele não toca o caminho alterado e portanto mede deriva do ambiente.
 - `arithmetic` não usa structs nem despacho de método, então serve como controle de deriva para experimentos de fields.
 - Movimentar campos em structs grandes altera offsets e alinhamento de cache o suficiente para virar de +7% a neutro sem qualquer mudança semântica. Posição de campo é parte do resultado experimental e deve ser reportada junto do delta.
 - Um lote com MAD pequeno ainda pode estar contaminado pela deriva acumulada ao longo da sessão; comparar o candidato com o baseline medido no mesmo lote continua obrigatório.
+- Quando o host está disputado, wall-clock não decide nada. `scripts/perf/cpu_ab.py` mede tempo de CPU do processo filho (`RUSAGE_CHILDREN`) em vez de wall-clock: sob contenção o wall-clock infla por um fator arbitrário, enquanto o tempo de CPU continua proporcional ao trabalho efetivamente feito, porque tempo removido pelo escalonador não é cobrado. Ainda assim, com dispersão de 2,5x dentro do mesmo binário, o número mínimo de muitas repetições continua sendo o estimador mais confiável, e a conclusão correta é "inconclusivo" quando os intervalos se sobrepõem.
 
 ## O que o relatório contém
 
@@ -271,6 +272,49 @@ Mesmo assim, o ganho não pôde ser demonstrado. Foram quatro lotes pareados, mu
 A mesma mudança lógica, com o mesmo mecanismo, oscilou de -5,6% a +4,5% apenas por mover um campo. Isso indica que o piso de ruído do runner é de aproximadamente ±5% neste host e que diferenças dentro dessa faixa não são evidência. O primeiro lote, que sugeria um ganho convincente de -5,57% com 4 de 4 pares limpos favoring o candidato, foi em boa parte sorte de um lote silencioso; lotes posteriores com ruído controlado o refutaram. O `arithmetic` funciona como workload de controle, pois não tem structs nem despacho de método, e por isso mede deriva do ambiente em vez do efeito da mudança.
 
 Pelo exposto, o protótipo foi revertido. Além da ausência de ganho demonstrado, a mudança exigia duplicar o estado de registro: `struct_methods` é `pub`, então qualquer escrita futura fora de `register_struct_method` desincronizaria o mapa sombra e quebraria o despacho de método silenciosamente, sem que haja ganho de velocidade que pague esse risco.
+
+## Diagnóstico: custo constante por opcode e a taxa do `VmFault` de 72 bytes
+
+Medindo o custo por opcode em três programas de calibração com o mesmo número de iterações, e usando a contagem determinística de instruções como denominador, o custo por opcode é praticamente constante e independente da operação executada:
+
+| Programa | Ops/iter | ns por opcode |
+|---|---:|---:|
+| `i = i + 1` (locais) | ~9 | ~111 |
+| `s = s + i; i = i + 1` | ~14 | ~98 |
+| `arithmetic` (chamadas e globals) | 28 | ~100 |
+
+Um custo constante de cerca de 100ns por opcode, que não muda com a mistura de operações, indica que o custo está no laço de despacho e não em nenhum handler. Ablação descartou a contabilidade de métricas como causa: desligar `metrics_enabled` alterou o resultado em apenas 1% a 2%.
+
+A causa identificada está no topo de `Vm::step`, que executa para **todo** opcode:
+
+```rust
+// antes
+let opcode = OpCode::try_from(opcode_byte).map_err(|b| VmFault::CorruptedBytecode {
+    offset: self.ip - 1,
+    reason: format!("unknown opcode 0x{b:02x}"),
+})?;
+```
+
+`OpCode::try_from` devolve `Result<OpCode, u8>`, ou seja 2 bytes, mas o `.map_err` reconstrói o resultado como `Result<OpCode, VmFault>`. `VmFault` tem 72 bytes, porque várias variantes carregam `String` alocado inline. Portanto cada opcode executado construía e destruía um `Result` de 72 bytes, e o closure que faz a conversão capturava `self`, o que obriga o compilador a manter `ip` em memória. Some-se a isso que todo `Result<_, VmFault>` de `push`, `pop` e `read_u16` também tem 72 bytes, o mesmo custo aparece várias vezes por opcode.
+
+A correção troca o `.map_err` por um `match` que só constrói a falha no ramo frio, mantendo offset e mensagem idênticos:
+
+```rust
+let opcode = match OpCode::try_from(opcode_byte) {
+    Ok(opcode) => opcode,
+    Err(byte) => return Err(VmFault::CorruptedBytecode { /* idêntico ao anterior */ }.into()),
+};
+```
+
+O caminho feliz passa a ser um `match` sobre 2 bytes, sem `Result` largo, sem closure que captura `self` e sem `format!`. O teste `test_unknown_opcode_reports_the_offset_of_the_bad_byte` fixa o erro do ramo frio, e as 56 suítes do workspace passam com contagem de instruções e checksums idênticos.
+
+**A validação de wall-clock ficou inconclusiva e o ganho não está provado.** Durante a medição o host estava com load average de 7,3 em 4 cores e três ou mais processos concorrentes, e o mesmo binário apresentou variação de até 2,5x entre execuções da mesma configuração. Essa dispersão entre execuções é maior do que qualquer efeito plausível, então nenhum número de wall-clock coletado neste host decide esta mudança. O que está demonstrado é apenas a remoção determinística de trabalho, não um ganho de velocidade. Para fechar a medição é preciso um host dedicado ou ocioso, e o comando é:
+
+```sh
+python3 scripts/perf/cpu_ab.py <binario-baseline> <binario-candidato> --workloads arithmetic --rounds 10 --reps 20
+```
+
+O trabalho restante da mesma família é reduzir `VmFault` de 72 bytes, o que tornaria `push`, `pop` e `read_u16` baratos em todo o interpretador. Isso exige uma decisão de API, porque `VmFault` é público e varias variantes são construídas fora do crate.
 
 ## A/B do cache do frame base
 

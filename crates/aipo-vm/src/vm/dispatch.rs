@@ -34,10 +34,22 @@ impl Vm {
         let opcode_byte = module.code[self.ip];
         self.ip += 1;
 
-        let opcode = OpCode::try_from(opcode_byte).map_err(|b| VmFault::CorruptedBytecode {
-            offset: self.ip - 1,
-            reason: format!("unknown opcode 0x{b:02x}"),
-        })?;
+        // Dispatch decodes the opcode with a `match` instead of
+        // `try_from(..).map_err(..)?` on purpose. The `map_err` form built a 72-byte
+        // `VmFault`-carrying `Result` for *every* executed opcode, and its closure captured
+        // `self`, so the interpreter paid for a wide error plus a spilled `ip` on the hot path
+        // just to format a message that only a corrupt module can trigger. The error here is
+        // built on the cold branch only, with the same offset and message as before.
+        let opcode = match OpCode::try_from(opcode_byte) {
+            Ok(opcode) => opcode,
+            Err(byte) => {
+                return Err(VmFault::CorruptedBytecode {
+                    offset: self.ip - 1,
+                    reason: format!("unknown opcode 0x{byte:02x}"),
+                }
+                .into());
+            }
+        };
 
         match opcode {
             OpCode::Constant => {
