@@ -154,6 +154,32 @@ pub enum OpCode {
     ///
     /// Pops the ordinal index and then the collection, pushes the requested projection.
     IterAt = 59,
+    /// Specialized load of local slot 0: no operands.
+    GetLocal0 = 60,
+    /// Specialized load of local slot 1: no operands.
+    GetLocal1 = 61,
+    /// Specialized load of local slot 2: no operands.
+    GetLocal2 = 62,
+    /// Specialized load of local slot 3: no operands.
+    GetLocal3 = 63,
+    /// Specialized load of local slot 4: no operands.
+    GetLocal4 = 64,
+    /// Specialized load of local slot 5: no operands.
+    GetLocal5 = 65,
+    /// Specialized load of local slot 6: no operands.
+    GetLocal6 = 66,
+    /// Specialized load of local slot 7: no operands.
+    GetLocal7 = 67,
+    /// Specialized call with 0 arguments: no operands.
+    Call0 = 68,
+    /// Specialized call with 1 argument: no operands.
+    Call1 = 69,
+    /// Specialized call with 2 arguments: no operands.
+    Call2 = 70,
+    /// Specialized call with 3 arguments: no operands.
+    Call3 = 71,
+    /// Specialized call with 4 arguments: no operands.
+    Call4 = 72,
 }
 
 impl TryFrom<u8> for OpCode {
@@ -220,6 +246,19 @@ impl TryFrom<u8> for OpCode {
             57 => Ok(OpCode::Await),
             58 => Ok(OpCode::TypeIsNullable),
             59 => Ok(OpCode::IterAt),
+            60 => Ok(OpCode::GetLocal0),
+            61 => Ok(OpCode::GetLocal1),
+            62 => Ok(OpCode::GetLocal2),
+            63 => Ok(OpCode::GetLocal3),
+            64 => Ok(OpCode::GetLocal4),
+            65 => Ok(OpCode::GetLocal5),
+            66 => Ok(OpCode::GetLocal6),
+            67 => Ok(OpCode::GetLocal7),
+            68 => Ok(OpCode::Call0),
+            69 => Ok(OpCode::Call1),
+            70 => Ok(OpCode::Call2),
+            71 => Ok(OpCode::Call3),
+            72 => Ok(OpCode::Call4),
             other => Err(other),
         }
     }

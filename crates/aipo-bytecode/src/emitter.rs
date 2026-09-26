@@ -332,10 +332,20 @@ impl BytecodeEmitter {
 
     fn emit_load(&mut self, name: &str, layout: &Layout) {
         match layout.resolve(name) {
-            Slot::Local(slot) => {
-                self.code.push(OpCode::GetLocal as u8);
-                self.push_u16(slot);
-            }
+            Slot::Local(slot) => match slot {
+                0 => self.code.push(OpCode::GetLocal0 as u8),
+                1 => self.code.push(OpCode::GetLocal1 as u8),
+                2 => self.code.push(OpCode::GetLocal2 as u8),
+                3 => self.code.push(OpCode::GetLocal3 as u8),
+                4 => self.code.push(OpCode::GetLocal4 as u8),
+                5 => self.code.push(OpCode::GetLocal5 as u8),
+                6 => self.code.push(OpCode::GetLocal6 as u8),
+                7 => self.code.push(OpCode::GetLocal7 as u8),
+                _ => {
+                    self.code.push(OpCode::GetLocal as u8);
+                    self.push_u16(slot);
+                }
+            },
             Slot::Upvalue(idx) => {
                 self.code.push(OpCode::GetUpvalue as u8);
                 self.push_u16(idx);
@@ -465,9 +475,18 @@ impl BytecodeEmitter {
             }
             CoreInst::Call { arg_count, span } => {
                 self.spans.push((offset, *span));
-                self.code.push(OpCode::Call as u8);
-                let argc = self.fit_u8("call argument", *arg_count);
-                self.code.push(argc);
+                match *arg_count {
+                    0 => self.code.push(OpCode::Call0 as u8),
+                    1 => self.code.push(OpCode::Call1 as u8),
+                    2 => self.code.push(OpCode::Call2 as u8),
+                    3 => self.code.push(OpCode::Call3 as u8),
+                    4 => self.code.push(OpCode::Call4 as u8),
+                    _ => {
+                        self.code.push(OpCode::Call as u8);
+                        let argc = self.fit_u8("call argument", *arg_count);
+                        self.code.push(argc);
+                    }
+                }
             }
             CoreInst::Return { has_value, span } => {
                 self.spans.push((offset, *span));

@@ -310,6 +310,26 @@ impl BytecodeVerifier {
                     }
                     cursor += 3;
                 }
+                OpCode::GetLocal0
+                | OpCode::GetLocal1
+                | OpCode::GetLocal2
+                | OpCode::GetLocal3
+                | OpCode::GetLocal4
+                | OpCode::GetLocal5
+                | OpCode::GetLocal6
+                | OpCode::GetLocal7 => {
+                    let slot = (opcode as u8 - OpCode::GetLocal0 as u8) as usize;
+                    if let Some(func) = Self::enclosing_function(module, cursor) {
+                        let limit = func.params + func.locals;
+                        if slot >= limit {
+                            errors.push(format!(
+                                "GetLocal{slot} slot {slot} out of bounds for function '{}' (limit {limit}) at offset {cursor}",
+                                func.name
+                            ));
+                        }
+                    }
+                    cursor += 1;
+                }
                 OpCode::GetUpvalue | OpCode::SetUpvalue => {
                     if cursor + 3 <= module.code.len() {
                         let slot =

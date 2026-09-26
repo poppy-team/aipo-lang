@@ -226,13 +226,16 @@ impl Vm {
         Err(VmError::Suspended)
     }
 
-    /// Suspends with the machine rewound onto the triggering `OpCode::Call`
-    /// (opcode byte plus `argc` byte), so resuming re-executes the call.
+    /// Suspends with the machine rewound onto the triggering call instruction
+    /// (1 byte for `Call0..4`, 2 bytes for `Call`), so resuming re-executes the call.
     fn suspend_at_call(&mut self, status: TaskStatus) -> Result<(), VmError> {
-        self.ip = self.ip.checked_sub(2).ok_or(VmFault::CorruptedBytecode {
-            offset: self.ip,
-            reason: "call suspension outside a call instruction".to_string(),
-        })?;
+        self.ip =
+            self.ip
+                .checked_sub(self.call_inst_len as usize)
+                .ok_or(VmFault::CorruptedBytecode {
+                    offset: self.ip,
+                    reason: "call suspension outside a call instruction".to_string(),
+                })?;
         self.suspend_current(status)
     }
 

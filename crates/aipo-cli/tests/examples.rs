@@ -90,7 +90,8 @@ fn run_vm(entry: &Path) -> (u8, String, String) {
 }
 
 fn build_and_run_node(entry: &Path, tag: &str) -> (Option<i32>, String, String) {
-    let out_dir = std::env::temp_dir().join(format!("aipo-example-{tag}"));
+    let pid = std::process::id();
+    let out_dir = std::env::temp_dir().join(format!("aipo-example-{pid}-{tag}"));
     let _ = std::fs::remove_dir_all(&out_dir);
     let build = vec![
         "build".to_string(),

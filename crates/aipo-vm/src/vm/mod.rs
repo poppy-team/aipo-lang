@@ -194,6 +194,8 @@ pub struct Vm {
     /// Host services this profile granted, plus the objects behind their handles and the
     /// scopes a host callback opened.
     host: HostContext,
+    /// Byte length of the triggering call instruction (1 for Call0..4, 2 for Call).
+    pub(crate) call_inst_len: u8,
 }
 
 impl Default for Vm {
@@ -247,6 +249,7 @@ impl Vm {
             main_outcome: None,
             invoke_depth: 0,
             host: HostContext::denied(),
+            call_inst_len: 2,
         }
     }
 

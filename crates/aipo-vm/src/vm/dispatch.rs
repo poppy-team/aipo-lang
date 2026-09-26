@@ -120,6 +120,26 @@ impl Vm {
                 }
                 self.push(val)?;
             }
+            OpCode::GetLocal0
+            | OpCode::GetLocal1
+            | OpCode::GetLocal2
+            | OpCode::GetLocal3
+            | OpCode::GetLocal4
+            | OpCode::GetLocal5
+            | OpCode::GetLocal6
+            | OpCode::GetLocal7 => {
+                let slot = (opcode as u8 - OpCode::GetLocal0 as u8) as usize;
+                let base = self.frame_base;
+                let val = self
+                    .stack
+                    .get(base + slot)
+                    .cloned()
+                    .ok_or(VmFault::StackUnderflow)?;
+                if self.metrics_enabled {
+                    self.metrics.local_clones = self.metrics.local_clones.saturating_add(1);
+                }
+                self.push(val)?;
+            }
             OpCode::SetLocal => {
                 let slot = self.read_u16(module)? as usize;
                 let base = self.frame_base;
@@ -291,7 +311,13 @@ impl Vm {
                 }
             }
             OpCode::Call => {
+                self.call_inst_len = 2;
                 let arg_count = self.read_u8(module)? as usize;
+                self.begin_call(module, arg_count)?;
+            }
+            OpCode::Call0 | OpCode::Call1 | OpCode::Call2 | OpCode::Call3 | OpCode::Call4 => {
+                self.call_inst_len = 1;
+                let arg_count = (opcode as u8 - OpCode::Call0 as u8) as usize;
                 self.begin_call(module, arg_count)?;
             }
             OpCode::Await => {
