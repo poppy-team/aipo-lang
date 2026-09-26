@@ -235,7 +235,8 @@ export default defineConfig({
                 { text: 'ADP-009: C ABI Síncrona', link: '/decisions/adp-009' },
                 { text: 'ADP-010: Thin Proofs (Rust, C, JS)', link: '/decisions/adp-010' },
                 { text: 'ADP-011: Roteiro Performance & Ergonomia', link: '/decisions/adp-011' },
-                { text: 'ADP-012: Modernização Ergonômica', link: '/decisions/adp-012' }
+                { text: 'ADP-012: Modernização Ergonômica', link: '/decisions/adp-012' },
+                { text: 'ADP-013: Substrato WebAssembly & Self-Hosting', link: '/decisions/adp-013' }
               ]
             }
           ],
@@ -436,7 +437,8 @@ export default defineConfig({
                 { text: 'ADP-009: Synchronous C ABI', link: '/en/decisions/adp-009' },
                 { text: 'ADP-010: Thin Proofs (Rust, C, JS)', link: '/en/decisions/adp-010' },
                 { text: 'ADP-011: Performance & Ergonomics Roadmap', link: '/en/decisions/adp-011' },
-                { text: 'ADP-012: Modern Syntax Ergonomics', link: '/en/decisions/adp-012' }
+                { text: 'ADP-012: Modern Syntax Ergonomics', link: '/en/decisions/adp-012' },
+                { text: 'ADP-013: WebAssembly Substrate & Self-Hosting', link: '/en/decisions/adp-013' }
               ]
             }
           ],

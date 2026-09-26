@@ -3,7 +3,16 @@
 Todas as alterações notáveis deste projeto são documentadas neste arquivo.
 O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
-## [Não lançado]
+## [0.11.0] - Em desenvolvimento (Trilha WebAssembly & Self-Hosting)
+
+- **Transição Arquitetural para WebAssembly e Roteiro de Self-Hosting (ADP-013)**:
+  - Congelamento formal da versão inicial v0.1.0 (Stack VM) na branch `legacy/v0.1.0-stack-vm` e tag `v0.1.0-stack-vm-final`.
+  - Adoção do WebAssembly (Wasm 2.0 / WASI) como substrato padrão de execução de alta performance, superando o piso de ~100ns do despacho em pilha para ~1-3ns com JIT nativo via Cranelift/Wasmtime.
+  - Setup inicial da crate `aipo-wasm` integrada ao workspace para emissão limpa de arquivos binários `.wasm` via `wasm-encoder`.
+  - Preservação integral de 100% das camadas de frontend (`aipo-source`, `aipo-diagnostics`, `aipo-lexer`, `aipo-syntax`, `aipo-hir`, `aipo-sema`).
+  - Estabelecimento do roteiro de self-hosting em 3 fases, habilitando o futuro compilador auto-hospedado da Aipo sem aprisionamento em FFI.
+
+## [0.1.0] - 2026-09-26 (Linha de Base Stack VM)
 
 - **Pivot Ergonômico de Sintaxe e Filosofia de Design (ADP-012)**:
   - **Blocos Delimitados por Chaves (`{ ... }`)**: Adoção de blocos explícitos com `{ ... }` em todas as estruturas de controle (`if`, `while`, `loop`, `repeat`, `each`, `match`, `attempt`, `await do`) e definições de itens (`fn`, `struct`, `impl`, `init`, `invariant`, `interface`), eliminando a necessidade de parênteses em condições e abolindo o ruído visual da palavra-chave `end`.

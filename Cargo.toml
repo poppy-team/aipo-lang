@@ -22,6 +22,7 @@ members = [
     "crates/aipo-testkit",
     "crates/aipo-bench",
     "crates/aipo-c-abi",
+    "crates/aipo-wasm",
 ]
 
 exclude = ["fuzz"]

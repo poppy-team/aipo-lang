@@ -2,9 +2,9 @@
 
 - Project: **aipo**
 - Prumo: **0.6.0**
-- Current phase: **P05 — `aipo v0.1.0` language release**
-- Active goal: none (P04-G01 through P04-G11 certified)
-- Last completed goal: **P04-G11 — Opt-in GitHub authentication (DONE)**
+- Current phase: **P06 — WebAssembly Execution Substrate & Self-Hosting Foundation (ADP-013)**
+- Active goal: **P06-G01 — WebAssembly target setup, aipo-wasm emitter and foundation**
+- Last completed goal: **P05 — `aipo v0.1.0` language release (DONE, frozen on legacy/v0.1.0-stack-vm)**
 - Completed slices:
   - **S1 (P00-G01)**: Workspace, `aipo-source`, `aipo-diagnostics`
   - **S2 (P00-G02)**: Lexer Core (`aipo-lexer`)
@@ -77,11 +77,15 @@
     - Tipos de valor em C (`aipo_value_t`), handles geracionais (`aipo_handle_t`) com detecção de `AIPO_ERR_STALE_HANDLE`, callbacks nativos (`aipo_host_fn_t`), gating de capacidades (`grant`/`revoke`), e diagnóstico em `aipo_last_error`.
     - Suíte de 8 testes de integração exaustivos cobrindo todo o ciclo de vida, primitivas, callbacks, handles, erros e segurança contra ponteiros nulos.
 - Context methodology: **Lean Progressive Context (LPC)**
-- Last updated: `2026-09-26T11:40:00Z`
+- Last updated: `2026-09-26T12:28:00Z`
 
 ## Next action
 
-Com a conclusão da C ABI (`aipo-c-abi`), do test runner (`aipo test`), das superinstruções e compactação de layout, e a validação integral da suíte de testes (506+ testes Rust e JS diferenciais verdes com zero warnings em clippy), a base técnica do recorte `aipo v0.1.0` (ADP-008, ADP-009, ADP-010, ADP-011, ADP-012) está totalmente implementada e verificada. Próximo passo: consolidar documentação final e submeter release `aipo v0.1.0`.
+Com a branch `legacy/v0.1.0-stack-vm` e tag `v0.1.0-stack-vm-final` congeladas, iniciar a Fase P06 (ADP-013):
+1. Setup da crate `crates/aipo-wasm` no workspace root `Cargo.toml`.
+2. Implementação do emissor de módulos `.wasm` em `aipo-wasm` usando `wasm-encoder`.
+3. Testes unitários de emissão de módulo WebAssembly funcional (seção de tipos, funções, exportações e código).
+4. Verificação de todos os gates de qualidade e commit/push inaugural da nova trilha.
 
 ## Recovery order
 

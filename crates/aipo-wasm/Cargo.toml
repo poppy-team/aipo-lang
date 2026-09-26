@@ -1,0 +1,29 @@
+[package]
+name = "aipo-wasm"
+description = "WebAssembly (Wasm 2.0 / WASI) binary module emitter and execution foundation for Aipo (ADP-013)"
+publish = false
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-ir = { path = "../aipo-ir" }
+aipo-source = { path = "../aipo-source" }
+wasm-encoder = { version = "0.258.0", default-features = false, features = ["std"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
