@@ -5,9 +5,8 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [Não lançado]
 
-### Produto
-
 - **Recorte da `aipo v0.1.0` (ADP-008)**: a primeira release é da linguagem, com async, CLI mínima, test runner, C ABI síncrona e thin proofs de interoperabilidade Rust/C/JS; engines, editors, registry e web profile completo ficam pós-v1.
+- **Roteiro de Performance Estrutural e Ergonomia de Linguagem (ADP-011)**: formalizada a estratégia de superação do piso de despacho (~100ns/opcode) através de compactação de `Value` (48B -> 16B/24B), invocação fundida `InvokeMethod` (sem alocação de `BoundMethod`), laço de despacho com variáveis hoisted e superinstruções `Call0..Call4`/`GetLocal0..GetLocal3`; além da expansão ergonômica com falhas estruturadas tipadas (Model B+), pattern matching e type narrowing estático em `aipo-sema`.
 
 ### Adicionado
 - **Performance — Cross-language benchmark suite**:

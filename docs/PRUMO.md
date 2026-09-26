@@ -43,6 +43,12 @@ Add deployment, configuration, observability, runbooks, backup/recovery, trouble
 - [ADP-003 — Execution budgets](adp/ADP-003-execution-budgets.md) — draft: fuel/memory/interruption undecided
 - [ADP-004 — Unicode identifier policy](adp/ADP-004-unicode-identifier-policy.md) — draft: confusables/NFC/NBSP undecided
 - [ADP-005 — Parser recursion bounds](adp/ADP-005-parser-recursion-bounds.md) — accepted: 128/64/128 robustness bounds
+- [ADP-006 — Wave 3 and Wave 4 open decisions](adp/ADP-006-wave3-wave4-open-decisions.md) — accepted
+- [ADP-007 — Package identity and distribution](adp/ADP-007-package-identity-and-distribution.md) — accepted
+- [ADP-008 — Release aipo v0.1.0 boundary](adp/ADP-008-v0.1.0-language-release.md) — accepted
+- [ADP-009 — Synchronous C ABI](adp/ADP-009-synchronous-c-abi.md) — accepted
+- [ADP-010 — Interoperability thin proofs](adp/ADP-010-interoperability-thin-proofs.md) — accepted
+- [ADP-011 — Performance and ergonomics roadmap](adp/ADP-011-performance-and-ergonomics-roadmap.md) — accepted
 
 Add further architecture, ADR/RFC and specifications as the project grows.
 

@@ -1,0 +1,95 @@
+:root {
+  --vp-c-brand-1: #10b981;
+  --vp-c-brand-2: #059669;
+  --vp-c-brand-3: #047857;
+  --vp-c-brand-soft: rgba(16, 185, 129, 0.14);
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #34d399 20%, #10b981 60%, #059669 90%);
+  --vp-home-hero-image-background-image: radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.22) 0%, rgba(15, 23, 42, 0) 70%);
+  --vp-home-hero-image-filter: drop-shadow(0 0 45px rgba(16, 185, 129, 0.35));
+}
+
+.dark {
+  --vp-c-brand-1: #34d399;
+  --vp-c-brand-2: #10b981;
+  --vp-c-brand-3: #059669;
+  --vp-c-brand-soft: rgba(52, 211, 153, 0.16);
+
+  --vp-c-bg: #090d16;
+  --vp-c-bg-alt: #0d1322;
+  --vp-c-bg-elv: #131c31;
+  --vp-c-bg-soft: #17223b;
+}
+
+/* Feature cards polish */
+.VPFeature {
+  border-radius: 14px !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  border: 1px solid var(--vp-c-border) !important;
+}
+
+.VPFeature:hover {
+  border-color: var(--vp-c-brand-1) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -10px rgba(16, 185, 129, 0.2);
+}
+
+/* Timeline & milestone cards */
+.milestone-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 9999px;
+  background-color: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+  border: 1px solid var(--vp-c-brand-1);
+  margin-bottom: 8px;
+}
+
+.wave-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.wave-card {
+  padding: 20px;
+  border-radius: 12px;
+  background-color: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-border);
+  transition: border-color 0.2s;
+}
+
+.wave-card:hover {
+  border-color: var(--vp-c-brand-1);
+}
+
+.wave-card h4 {
+  margin-top: 0;
+  color: var(--vp-c-brand-1);
+}
+
+/* Benchmarks table enhancement */
+.vp-doc table {
+  width: 100%;
+  display: table;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 16px 0;
+}
+
+.vp-doc th {
+  background-color: var(--vp-c-bg-soft);
+  font-weight: 600;
+  text-align: left;
+}
+
+/* Code block highlight */
+.vp-doc div[class*='language-'] {
+  border-radius: 10px;
+}
