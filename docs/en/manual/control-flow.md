@@ -157,3 +157,19 @@ io.println(f"Preserved balance: {v.balance}") # 100.0
 
 If any operation inside an `attempt` block executes `fail` or violates a structural invariant, all mutations to journaled objects are atomically reverted to their original state.
 
+### Immediate Fallback with `or_else`
+
+For expressions where you simply want to provide a fallback recovery value without the boilerplate of an `attempt` block, use the canonical `or_else` operator:
+
+```aipo
+fn read_file(path)
+    # If the file does not exist or fails, return fail
+    return fail("file not found")
+end
+
+# If read_file raises fail, or_else evaluates and yields the fallback alternative:
+let content = read_file("config.toml") or_else "host = 127.0.0.1"
+io.println(content) # "host = 127.0.0.1"
+```
+
+

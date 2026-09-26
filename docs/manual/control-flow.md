@@ -157,3 +157,19 @@ io.println(f"Saldo preservado: {c.saldo}") # 100.0
 
 Se qualquer operação dentro do bloco `attempt` disparar um `fail` ou violar uma invariante estrutural, todas as mutações ocorridas nos objetos rastreados no journal são revertidas atomicamente para o estado original.
 
+### Fallback Imediato com `or_else`
+
+Para expressões onde você deseja apenas prover um valor padrão de recuperação sem a verbosidade de um bloco `attempt`, utilize o operador canônico `or_else`:
+
+```aipo
+fn ler_arquivo(caminho)
+    # Se o arquivo não existir ou falhar, retorna fail
+    return fail("arquivo não encontrado")
+end
+
+# Se ler_arquivo disparar fail, or_else avalia e retorna a alternativa:
+let conteudo = ler_arquivo("config.toml") or_else "host = 127.0.0.1"
+io.println(conteudo) # "host = 127.0.0.1"
+```
+
+

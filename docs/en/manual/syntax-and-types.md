@@ -1,165 +1,332 @@
 # Syntax & Data Types
 
-Aipo is dynamically and strongly typed. Variables hold values with concrete types, and operations never perform dangerous silent implicit coercions.
+Aipo was engineered to offer lean, deterministic syntax free from dangerous implicit behaviors. This section details the type system, canonical best practices for writing idiomatic code, and modern language features.
 
 ---
 
-## Variables and Immutability
+## The Aipo Way: Principles of Idiomatic Writing
 
-Aipo expressly distinguishes immutable bindings from mutable variables:
+To guarantee clean, high-performance, and accessible code (especially welcoming for developers with ADHD and dyslexia), Aipo establishes clear canonical rules:
 
-- **`let` (Immutable)**: Defines a local constant. Once bound, the identifier cannot be reassigned.
-- **`var` (Mutable)**: Defines a variable that can be reassigned (`=`, `+=`, `-=`, etc.).
+| Canonical Practice (The Aipo Way) | Anti-Pattern to Avoid | Why this matters |
+| :--- | :--- | :--- |
+| `let name = "Dev"` (Immutable by default) | `var name = "Dev"` | Prevents accidental mutation and simplifies reasoning about program state. |
+| `f"User {id}: {email}"` | `"User " + String(id) + ": " + email` | Direct interpolation eliminates visual clutter and intermediate heap allocations. |
+| `r"C:\data\report.csv"` | `"C:\\data\\report.csv"` | Raw strings eliminate backslash pollution in file paths and regex patterns. |
+| `let city = user?.profile?.city` | `if user != none and ...` | Safe navigation avoids redundant nested null-checking boilerplate. |
+| `let port = load_port() or_else 8080` | `attempt port = load_port() failed ...` | `or_else` provides immediate default values in single-line failure expressions. |
+| `data |> filter() |> calculate()` | `calculate(filter(data))` | The pipeline operator expresses data transformations in natural left-to-right order. |
+| `list.add(item)` | `list.push(item)` | `.add()` is the universal canonical insertion method for lists and sets. |
+| `data.lazy().filter(...).collect()` | `data.filter(...).map(...)` | `.lazy()` consumes constant memory without allocating temporary intermediate lists. |
+
+---
+
+## 1. Modern Strings in Aipo
+
+Text handling in Aipo is robust, expressive, and mathematically predictable. Every string is guaranteed to be **valid UTF-8 with automatic Unicode NFC canonical normalization**.
+
+### String Interpolation (`f"..."`)
+Interpolation with the `f` prefix is the canonical way to format messages and compose text:
 
 ```aipo
-# Immutable binding: attempts to reassign trigger a static check error
-let language = "Aipo"
+let user = "Alice"
+let score = 98.5
+let level = 4
 
-# Mutable variable: value can change throughout execution
-var counter = 0
-counter += 1
-counter = counter * 2
-io.println(counter) # 2
+# Interpolation with variables and numeric expressions
+let report = f"Player: {user} | Level: {level} | Points: {score}"
+io.println(report)
+# Prints: "Player: Alice | Level: 4 | Points: 98.5"
+
+# Executing operations directly inside interpolated braces
+let delta = 1.5
+io.println(f"Next milestone: {score + delta}") # 100.0
+```
+
+#### Escaping Literal Braces
+If you need to include literal `{` or `}` characters inside an f-string, duplicate them (<code>&#123;&#123;</code> and <code>&#125;&#125;</code>):
+
+```aipo
+let key = "token"
+let value = "xyz123"
+
+# Renders a JSON object with literal braces and interpolated values
+let json_payload = f"{{\"{key}\": \"{value}\"}}"
+io.println(json_payload) # {"token": "xyz123"}
 ```
 
 ---
 
-## Primitive Types
+### Raw Strings (`r"..."`)
+In conventional languages, writing host file paths on Windows or regular expressions requires doubling every backslash (`\\\\`), generating visual noise that impairs readability.
+
+With Aipo's **Raw Strings** (`r"..."`), backslashes are preserved literally:
+
+```aipo
+# 1. Host system file paths
+let windows_path = r"C:\Users\dev\AppData\Local\Aipo\config.toml"
+io.println(windows_path)
+# Prints literally: C:\Users\dev\AppData\Local\Aipo\config.toml
+
+# 2. Clean regular expression patterns without double backslashes
+let email_pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+io.println(email_pattern)
+```
+
+---
+
+### Multiline Strings (`"""..."""` and `r"""..."""`)
+For long blocks of text, inline documentation, SQL queries, or templates, use triple quotes. They preserve formatting, indentation, and line breaks with clarity:
+
+```aipo
+let sql_query = """
+SELECT u.id, u.name, p.role
+FROM users u
+JOIN permissions p ON p.user_id = u.id
+WHERE u.active = true
+ORDER BY u.name ASC
+"""
+
+io.println(sql_query)
+```
+
+---
+
+### Raw Format Strings (`fr"..."` / `rf"..."`)
+When you need to compose a dynamic regex pattern or a system path containing interpolated variables without escaping backslashes, combine both prefixes:
+
+```aipo
+let folder = "logs"
+let extension = "txt"
+
+# Combines raw string semantics (unescaped backslashes) with variable interpolation:
+let dynamic_path = fr"C:\system\{folder}\app.{extension}"
+io.println(dynamic_path)
+# Prints: C:\system\logs\app.txt
+```
+
+---
+
+### Binary String Conversion (`.encode()` and `.decode()`)
+For networking and binary file I/O, strings and `Bytes` buffers convert directly without third-party dependencies:
+
+```aipo
+let message = "Deterministic Aipo"
+
+# Converts UTF-8 String into a raw Bytes buffer
+let raw_bytes = message.encode()
+io.println(f"Byte size: {raw_bytes.len()}")
+
+# Decodes Bytes buffer back into a normalized UTF-8 NFC String
+let original_text = raw_bytes.decode()
+io.println(original_text) # "Deterministic Aipo"
+```
+
+---
+
+## 2. Variables and Immutability
+
+Aipo adopts the immutable-by-default principle:
+
+```aipo
+# Immutable: compiler prevents subsequent reassignments
+let service_fee = 0.15
+
+# Mutable: reserved for loop accumulators or local state
+var accumulated_total = 100.0
+accumulated_total += 25.0
+io.println(accumulated_total) # 125.0
+```
+
+::: tip Golden Rule
+Always start new variable declarations with `let`. Only change to `var` if the variable is explicitly mutated in the local execution flow.
+:::
+
+---
+
+## 3. Primitive Types & Safe Arithmetic
 
 ### Integers (`Int`)
-64-bit signed integers (`i64`). Supports decimal, hexadecimal (`0x`), binary (`0b`), and octal (`0o`) notation, plus underscores for visual grouping:
+Signed 64-bit integers (`i64`). Supports base prefixes and visual grouping with underscores (`_`):
 
 ```aipo
 let decimal = 42
-let hex = 0x2A
-let bin = 0b101010
-let million = 1_000_000
+let million = 1_000_000   # Visual separator for effortless readability
+let hexadecimal = 0xFF   # 255
+let binary = 0b101010    # 42
+let octal = 0o777        # 511
 ```
 
-### Floats (`Float`)
-IEEE 754 64-bit double-precision floating-point numbers:
+### Floating-Point (`Float`)
+64-bit IEEE 754 double-precision numbers:
 
 ```aipo
 let pi = 3.14159
-let rate = 0.05
+let fractional = 0.005
 ```
 
-### Booleans (`Bool`)
-Pure logical truth values (`true` and `false`):
+### Real Division vs Truncated Integer Division (`div`)
+In Aipo, the `/` operator always returns a `Float`. To perform truncated integer division, use the canonical `div` keyword:
 
 ```aipo
-let is_active = true
-let is_ready = false
+let a = 10
+let b = 3
+
+let real_div = a / b      # 3.3333333333333335 (Float)
+let integer_div = a div b # 3 (Int)
+
+# Compound assignment is also supported
+var value = 20
+value div= 3
+io.println(value) # 6
 ```
 
-### Text (`String`)
-Canonical UTF-8 strings with automatic Unicode NFC normalization at construction boundaries. Supports formatted interpolation with the `f"..."` prefix and concatenation via `+`:
-
-```aipo
-let version = "0.1.0"
-let message = f"Welcome to Aipo v{version}!"
-io.println(message)
-```
-
-### Null Value (`None`)
-Represents the explicit absence of a value (`none`):
-
-```aipo
-let optional_value = none
-```
+::: warning No Silent NaN or Infinity
+Aipo's value model strictly forbids corrupted values like `NaN` or `Infinity`. Invalid mathematical operations (such as division by zero or square roots of negative numbers) trigger structured runtime failures immediately.
+:::
 
 ---
 
-## Collections
+## 4. Idiomatic Collections
 
-### Lists (`List`)
-Ordered dynamic arrays indexed from 0. Adding elements to a list uses `.add()` (not `push`):
+### 1. Lists (`List`)
+Ordered dynamic arrays indexed from `0`.
+- Element insertion: use `.add(item)` (Aipo standardizes on `.add` across lists and sets).
+- Reverse indexing: negative indices count from the end (`[-1]` accesses the last element).
+- Trailing commas are fully supported in multiline lists.
 
 ```aipo
-var items = [1, 2, 3]
-io.println(items[0]) # 1
+let languages = [
+    "Rust",
+    "Aipo",
+    "TypeScript",
+]
 
-# Append an element to the end
-items.add(4)
-io.println(items.len()) # 4
+languages.add("Odin")
 
-# Check containment
-io.println(items.contains(3)) # true
+io.println(languages[0])   # "Rust"
+io.println(languages[-1])  # "Odin"
+io.println(languages.len()) # 4
 ```
 
-Higher-order collection methods available in stdlib and VM: `map`, `flat_map`, `reduce`, `any`, `all`, `filter`, `sort`, `sort_by`.
-
-### Dictionaries (`Dict`)
-Indexable key-value mappings that preserve original insertion order. Checking existence is done via `.has(key)`:
+### 2. Dictionaries (`Dict`)
+Associative key-value maps declared with `{}` that strictly preserve original insertion order:
 
 ```aipo
 let config = {
-    "host": "localhost",
-    "port": 8080,
+    "server": "api.aipo.dev",
+    "port": 8443,
+    "ssl": true,
 }
 
+# Explicit presence verification with .has()
 if config.has("port")
-    io.println(f"Connecting to port: {config[\"port\"]}")
+    let port = config["port"]
+    io.println(f"Configured port: {port}")
 end
 ```
 
-::: tip 💡 Why is there no `dict.get()` method?
-Aipo follows the canonical architectural decision (ADP-001) to eliminate an ambiguous `get()` method that could not distinguish a missing key from a key whose stored value is `none`. Instead, use `dict.has(key)` for explicit presence checks and `dict[key]` for direct access.
+::: tip Why is there no `dict.get()` method?
+Aipo intentionally omits `get(key)` to prevent the classic ambiguity where a `none` return value could mean either that the key does not exist or that the key exists with an explicit value of `none`. In Aipo, use `dict.has(key)` to check existence and `dict[key]` to retrieve the value.
 :::
 
-### Sets (`Set`)
-Collections of unique elements that preserve the insertion order of first arrival:
+### 3. Insertion-Ordered Sets (`Set`)
+Store unique elements while preserving the order in which they were first added:
 
 ```aipo
-var s = Set()
-s.add("alpha")
-s.add("beta")
-s.add("alpha") # Ignored: duplicates are discarded
+let tags = Set(["backend", "compiler", "backend"]) # Duplicate discarded
 
-io.println(s.has("beta")) # true (uses .has(), not .contains())
-io.println(s.len())        # 2
+tags.add("cli")
+io.println(tags.has("backend")) # true
+io.println(tags.len())           # 3
+io.println(tags.to_list())       # ["backend", "compiler", "cli"]
 ```
 
-### Lazy Sequences (`Sequence`)
-On-demand evaluated generator sequences that process data without allocating intermediate collections in memory. Created by calling `.lazy()` on any collection:
+### 4. Lazy Sequences (`Sequence`)
+To process high-volume datasets without allocating intermediate collections, create an on-demand sequence with `.lazy()`:
 
 ```aipo
-let seq = [1, 2, 3, 4, 5].lazy()
-    .filter(x => x % 2 != 0)
-    .map(x => x * 10)
+let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-let result = seq.to_list()
-io.println(result) # [10, 30, 50]
-```
+# The pipeline below evaluates on demand in constant memory:
+let tripled_evens = numbers.lazy()
+    .filter(x => x % 2 == 0)
+    .map(x => x * 3)
+    .take(2)
+    .collect()
 
----
-
-## Binary Data (`Bytes`)
-
-Contiguous byte buffers engineered for high-performance network protocols and binary I/O:
-
-```aipo
-let b = Bytes(16) # Allocates 16 zeroed bytes
-b.write_u32_le(0, 42)
-let val = b.read_u32_le(0)
-io.println(val) # 42
+io.println(tripled_evens) # [6, 12]
 ```
 
 ---
 
-## Operators & Precedence
+## 5. Modern & Expressive Operators
 
-- **Arithmetic**: `+`, `-`, `*`, `/`, `//` (truncated integer division), `%` (modulo)
-- **Comparison**: `==`, `!=`, `<`, `<=`, `>`, `>=`
-- **Logical**: `and`, `or`, `not`
-- **Safe Navigation**: `?.` (evaluates left-hand side; if `none`, avoids accessing fields or evaluating method arguments)
-- **Lazy Fallback**: `or_else` (evaluates right-hand side only if left-hand side fails or is null)
-- **Pipe Operator**: `|>` for call chaining:
+### Safe Navigation (`?.`)
+Avoids nested null checks. If any link in the chain is `none`, the entire expression resolves to `none` without throwing a runtime error:
 
 ```aipo
-let result = value
-    |> normalize
-    |> validate
-    |> persist
+struct Address
+    city
+end
+
+struct User
+    address
+end
+
+let u1 = User{ address = Address{ city = "Curitiba" } }
+let u2 = User{ address = none }
+
+io.println(u1?.address?.city) # "Curitiba"
+io.println(u2?.address?.city) # none
 ```
 
+### Failure Fallback Operator (`or_else`)
+Provides an immediate fallback value if an expression produces a `fail`, without needing an explicit `attempt` block:
+
+```aipo
+fn load_port(env)
+    if env == "production"
+        return 443
+    end
+    return fail("unknown environment")
+end
+
+# If load_port() produces a fail, or_else evaluates the right-hand fallback:
+let port = load_port("test") or_else 8080
+io.println(f"Active port: {port}") # 8080
+```
+
+### Pipeline Operator (`|>`)
+Allows data transformations to be organized in a natural left-to-right sequence:
+
+```aipo
+fn clean(txt)
+    return txt.trim()
+end
+
+fn highlight(txt, prefix)
+    return prefix + txt
+end
+
+# "  alert  " is passed as first argument to clean(), and result to highlight():
+let label = "  alert  " |> clean() |> highlight("[URGENT] ")
+io.println(label) # "[URGENT] alert"
+```
+
+### Type Checking (`is`)
+Checks whether a value matches a concrete language type:
+
+```aipo
+let value = 42
+
+if value is Int
+    io.println("It is a safe 64-bit integer")
+end
+
+# To check for absence of value, check equality with none directly:
+let data = none
+if data == none
+    io.println("Value is null")
+end
+```
