@@ -77,7 +77,7 @@
     - Tipos de valor em C (`aipo_value_t`), handles geracionais (`aipo_handle_t`) com detecção de `AIPO_ERR_STALE_HANDLE`, callbacks nativos (`aipo_host_fn_t`), gating de capacidades (`grant`/`revoke`), e diagnóstico em `aipo_last_error`.
     - Suíte de 8 testes de integração exaustivos cobrindo todo o ciclo de vida, primitivas, callbacks, handles, erros e segurança contra ponteiros nulos.
 - Context methodology: **Lean Progressive Context (LPC)**
-- Last updated: `2026-09-26T13:24:00Z`
+- Last updated: `2026-09-26T14:12:00Z`
 - **Fio Vertical Fino Wasm (Marco 1 / P06-G01)**:
   - Crate `aipo-wasm` integrada ao workspace com emissor de seções Wasm (`WasmEmitter`), mapeamento de tipos (`WasmType`, `WasmFnType`), e compilador de HIR para Wasm (`compile_hir`).
   - Suporte a funções aritméticas com contratos estáticos (`Int`, `Float`, `Bool`) e inferência de retorno.
@@ -85,13 +85,20 @@
   - Emissão de operadores aritméticos (`+`, `-`, `*`, `//`, `/`, `%`) e relacionais (`==`, `!=`, `<`, `<=`, `>`, `>=`).
   - Chamadas diretas entre funções compiladas e geração de ponto de entrada (`__top_level__`).
   - Suíte de 17 testes automatizados com execução JIT direta via `wasmtime` 100% verde.
+- **Controle de Fluxo Estruturado Wasm (Marco 2 / P06-G02)**:
+  - Implementação completa de blocos condicionais (`if`, `elif`, `else`) e expressões de valor condicional (`if c then a else b`).
+  - Implementação de laços de repetição mapeados para Wasm `block` + `loop`: `while condition { ... }`, `loop { ... }` incondicional, e `repeat count [as i] { ... }` com passo e contador de iteração.
+  - Saltos rotulados (`br`, `br_if`) gerenciados via pilha de controle (`ControlFrame`) calculando a profundidade relativa exata para `break` e `continue` em qualquer nível de aninhamento.
+  - Diagnóstico e rejeição estática de `break` e `continue` fora de contexto de laço.
+  - Suíte de 31 testes de ponta a ponta validados com execução JIT `wasmtime` 100% verde.
 
 ## Next action
 
-Iniciar o **Marco 2: Controle de Fluxo Estruturado (Structured Control Flow)**:
-1. Implementar estruturas de controle em `aipo-wasm`: blocos (`block ... end`), condicionais (`if ... else ... end`), e laços estruturados (`while`, `loop`, `repeat`).
-2. Mapear `break` e `continue` para saltos rotulados (`br`, `br_if`) em profundidade de bloco Wasm.
-3. Testes de integração de controle de fluxo executados com `wasmtime`.
+Iniciar o **Marco 3: Modelo de Memória Linear e Estruturas de Dados (Memory Model & Dynamic Data Structures)**:
+1. Configuração da seção de memória linear WebAssembly (`MemorySection`) e tabela de limites.
+2. Alocador linear leve embutido para gerenciar alocações dinâmicas de heap na memória Wasm.
+3. Representação de `String` (UTF-8 com comprimento), `Bytes` e `Struct` na memória linear.
+4. Instruções de carga e armazenamento (`i32.load`, `i64.load`, `f64.load`, `i32.store`, etc.) para leitura e escrita de campos.
 
 ## Recovery order
 

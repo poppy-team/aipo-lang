@@ -18,6 +18,12 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
   - Emissão de operadores aritméticos (`+`, `-`, `*`, `//`, `/`, `%`) com promoção automática de inteiros em divisões flutuantes `/` e operadores relacionais de comparação (`==`, `!=`, `<`, `<=`, `>`, `>=`).
   - Chamadas diretas entre funções compiladas no módulo Wasm e geração de ponto de entrada para scripts de nível superior (`__top_level__`).
   - Execução e verificação de ponta a ponta com o motor JIT `wasmtime` na suíte de integração de 17 testes automatizados em `aipo-wasm`.
+- **Marco 2: Controle de Fluxo Estruturado (Structured Control Flow - ADP-013)**:
+  - Implementação completa de controle de fluxo estruturado em WebAssembly: blocos condicionais (`if`, `elif`, `else`) e expressões de valor condicional (`if c then a else b`).
+  - Mapeamento de laços para os blocos formais `block` e `loop` do WebAssembly: `while condition { ... }`, `loop { ... }` incondicional, e `repeat count [as i] { ... }` com passo e contador de iteração.
+  - Saltos rotulados (`br`, `br_if`) gerenciados via pilha de controle (`ControlFrame: LoopBreak, LoopContinue, RepeatStep, Block`) calculando a profundidade relativa exata para `break` e `continue` em qualquer nível de aninhamento.
+  - Validação estática de rejeição de `break` e `continue` fora de laços com diagnóstico claro de erro de compilação.
+  - Suíte de 31 testes de ponta a ponta verdes em `crates/aipo-wasm` validados com o motor JIT `wasmtime`.
 
 ## [0.1.0] - 2026-09-26 (Linha de Base Stack VM)
 

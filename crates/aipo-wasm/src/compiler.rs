@@ -4,11 +4,24 @@ use crate::emitter::WasmEmitter;
 use crate::error::WasmCompileError;
 use crate::types::{WasmFnType, WasmType};
 use aipo_ast::{BinaryOp, Literal, UnaryOp};
-use aipo_hir::{HirExpr, HirFunctionDecl, HirItem, HirParam, HirProgram, HirStmt};
+use aipo_hir::{HirExpr, HirFunctionDecl, HirIfStmt, HirItem, HirParam, HirProgram, HirStmt};
 use aipo_lexer::{parse_float_literal, parse_int_literal};
 use aipo_source::SourceSpan;
 use std::collections::HashMap;
-use wasm_encoder::{Function, Instruction, ValType};
+use wasm_encoder::{BlockType, Function, Instruction, ValType};
+
+/// Represents a frame in the WebAssembly structured control stack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlFrame {
+    /// Outer block of a loop (target for forward `break`).
+    LoopBreak,
+    /// Loop header (target for backward `continue`).
+    LoopContinue,
+    /// Step/increment block of a `repeat` loop (target for `continue`).
+    RepeatStep,
+    /// Standard structured block (e.g., `if` condition or inline block).
+    Block,
+}
 
 /// Compiles an `HirProgram` into a standard WebAssembly binary module (`.wasm`).
 ///
@@ -153,6 +166,28 @@ fn infer_body_return_type(
             HirStmt::Return(None, _) => {
                 return None;
             }
+            HirStmt::If(s) => {
+                if let Some(ty) = infer_body_return_type(&s.then_branch, locals, functions) {
+                    return Some(ty);
+                }
+                for (_, elif_body) in &s.elif_branches {
+                    if let Some(ty) = infer_body_return_type(elif_body, locals, functions) {
+                        return Some(ty);
+                    }
+                }
+                if let Some(else_branch) = &s.else_branch {
+                    if let Some(ty) = infer_body_return_type(else_branch, locals, functions) {
+                        return Some(ty);
+                    }
+                }
+            }
+            HirStmt::While(_, loop_body, _)
+            | HirStmt::Loop(loop_body, _)
+            | HirStmt::Repeat(_, _, loop_body, _) => {
+                if let Some(ty) = infer_body_return_type(loop_body, locals, functions) {
+                    return Some(ty);
+                }
+            }
             _ => {}
         }
     }
@@ -167,6 +202,95 @@ fn infer_body_return_type(
     } else {
         None
     }
+}
+
+/// Recursively scans statements to register all declared locals.
+fn pre_scan_stmts(
+    stmts: &[HirStmt],
+    params_count: usize,
+    locals: &mut HashMap<String, (u32, WasmType)>,
+    declared_locals: &mut Vec<WasmType>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    repeat_id: &mut u32,
+) -> Result<(), WasmCompileError> {
+    for stmt in stmts {
+        match stmt {
+            HirStmt::Let(name, init_expr, _) | HirStmt::Var(name, init_expr, _) => {
+                let ty = infer_expr_type(init_expr, locals, functions).unwrap_or(WasmType::I64);
+                let idx = (params_count + declared_locals.len()) as u32;
+                declared_locals.push(ty);
+                locals.insert(name.clone(), (idx, ty));
+            }
+            HirStmt::If(s) => {
+                pre_scan_stmts(
+                    &s.then_branch,
+                    params_count,
+                    locals,
+                    declared_locals,
+                    functions,
+                    repeat_id,
+                )?;
+                for (_, elif_body) in &s.elif_branches {
+                    pre_scan_stmts(
+                        elif_body,
+                        params_count,
+                        locals,
+                        declared_locals,
+                        functions,
+                        repeat_id,
+                    )?;
+                }
+                if let Some(else_branch) = &s.else_branch {
+                    pre_scan_stmts(
+                        else_branch,
+                        params_count,
+                        locals,
+                        declared_locals,
+                        functions,
+                        repeat_id,
+                    )?;
+                }
+            }
+            HirStmt::While(_, body, _) | HirStmt::Loop(body, _) => {
+                pre_scan_stmts(
+                    body,
+                    params_count,
+                    locals,
+                    declared_locals,
+                    functions,
+                    repeat_id,
+                )?;
+            }
+            HirStmt::Repeat(_, maybe_index, body, _) => {
+                *repeat_id += 1;
+                let id = *repeat_id;
+                // repeat_limit slot
+                let limit_idx = (params_count + declared_locals.len()) as u32;
+                declared_locals.push(WasmType::I64);
+                locals.insert(format!("__repeat_limit_{id}"), (limit_idx, WasmType::I64));
+                // repeat_idx slot
+                let idx_idx = (params_count + declared_locals.len()) as u32;
+                declared_locals.push(WasmType::I64);
+                locals.insert(format!("__repeat_idx_{id}"), (idx_idx, WasmType::I64));
+                // user index variable if specified
+                if let Some(name) = maybe_index {
+                    let user_idx = (params_count + declared_locals.len()) as u32;
+                    declared_locals.push(WasmType::I64);
+                    locals.insert(name.clone(), (user_idx, WasmType::I64));
+                }
+                pre_scan_stmts(
+                    body,
+                    params_count,
+                    locals,
+                    declared_locals,
+                    functions,
+                    repeat_id,
+                )?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// Compiles a single function's body into a WebAssembly `Function`.
@@ -186,110 +310,33 @@ fn compile_function_body(
         locals.insert(param.name.clone(), (i as u32, ty));
     }
 
-    // Pre-scan pass to register local variable declarations (let/var)
-    for stmt in body {
-        match stmt {
-            HirStmt::Let(name, init_expr, _) | HirStmt::Var(name, init_expr, _) => {
-                let ty = infer_expr_type(init_expr, &locals, functions)?;
-                let idx = (params.len() + declared_locals.len()) as u32;
-                declared_locals.push(ty);
-                locals.insert(name.clone(), (idx, ty));
-            }
-            _ => {}
-        }
-    }
+    // Pre-scan pass to register all local variable declarations (let/var/repeat)
+    let mut pre_scan_repeat_id = 0;
+    pre_scan_stmts(
+        body,
+        params.len(),
+        &mut locals,
+        &mut declared_locals,
+        functions,
+        &mut pre_scan_repeat_id,
+    )?;
 
     // Build the Wasm function with its locals declaration
     let locals_spec = compress_locals(&declared_locals);
     let mut func = Function::new(locals_spec);
+    let mut control_stack: Vec<ControlFrame> = Vec::new();
+    let mut emit_repeat_id = 0;
 
-    let mut terminated = false;
-    let stmt_count = body.len();
-
-    for (idx, stmt) in body.iter().enumerate() {
-        let is_last = idx + 1 == stmt_count;
-        match stmt {
-            HirStmt::Let(name, init_expr, _) | HirStmt::Var(name, init_expr, _) => {
-                let (local_idx, local_ty) = locals[name];
-                let expr_ty = compile_expr(init_expr, &mut func, &locals, functions)?;
-                coerce_type(&mut func, expr_ty, local_ty);
-                func.instruction(&Instruction::LocalSet(local_idx));
-            }
-            HirStmt::Assign(target, expr, span) => {
-                if let HirExpr::Identifier(name, _) = target {
-                    if let Some(&(local_idx, target_ty)) = locals.get(name) {
-                        let expr_ty = compile_expr(expr, &mut func, &locals, functions)?;
-                        coerce_type(&mut func, expr_ty, target_ty);
-                        func.instruction(&Instruction::LocalSet(local_idx));
-                    } else {
-                        return Err(WasmCompileError::UnknownVariable {
-                            name: name.clone(),
-                            span: *span,
-                        });
-                    }
-                } else {
-                    return Err(WasmCompileError::UnsupportedStmt {
-                        message: "only identifier assignment is supported in Marco 1".into(),
-                        span: *span,
-                    });
-                }
-            }
-            HirStmt::CompoundAssign(op, target, expr, span) => {
-                if let HirExpr::Identifier(name, _) = target {
-                    if let Some(&(local_idx, target_ty)) = locals.get(name) {
-                        func.instruction(&Instruction::LocalGet(local_idx));
-                        let expr_ty = compile_expr(expr, &mut func, &locals, functions)?;
-                        emit_binary_op(&mut func, *op, target_ty, expr_ty, *span)?;
-                        func.instruction(&Instruction::LocalSet(local_idx));
-                    } else {
-                        return Err(WasmCompileError::UnknownVariable {
-                            name: name.clone(),
-                            span: *span,
-                        });
-                    }
-                } else {
-                    return Err(WasmCompileError::UnsupportedStmt {
-                        message: "only identifier compound assignment is supported in Marco 1"
-                            .into(),
-                        span: *span,
-                    });
-                }
-            }
-            HirStmt::Return(maybe_expr, span) => {
-                if let Some(expr) = maybe_expr {
-                    let expr_ty = compile_expr(expr, &mut func, &locals, functions)?;
-                    if let Some(expected_ret) = return_type {
-                        coerce_type(&mut func, expr_ty, expected_ret);
-                    }
-                } else if return_type.is_some() {
-                    return Err(WasmCompileError::TypeMismatch {
-                        expected: format!("{return_type:?}"),
-                        found: "void".into(),
-                        span: *span,
-                    });
-                }
-                func.instruction(&Instruction::Return);
-                terminated = true;
-            }
-            HirStmt::Expr(expr) => {
-                let expr_ty = compile_expr(expr, &mut func, &locals, functions)?;
-                if is_last && return_type.is_some() {
-                    if let Some(expected_ret) = return_type {
-                        coerce_type(&mut func, expr_ty, expected_ret);
-                    }
-                    terminated = true;
-                } else {
-                    func.instruction(&Instruction::Drop);
-                }
-            }
-            other => {
-                return Err(WasmCompileError::UnsupportedStmt {
-                    message: format!("statement `{other:?}` is scheduled for Milestone 2"),
-                    span: program_stmt_span(other),
-                });
-            }
-        }
-    }
+    let terminated = compile_stmts(
+        body,
+        &mut func,
+        &locals,
+        functions,
+        &mut control_stack,
+        return_type,
+        true,
+        &mut emit_repeat_id,
+    )?;
 
     // Ensure valid Wasm block termination
     if !terminated {
@@ -310,6 +357,461 @@ fn compile_function_body(
 
     func.instruction(&Instruction::End);
     Ok(func)
+}
+
+/// Compiles a slice of statements into a WebAssembly `Function`.
+#[allow(clippy::too_many_arguments)]
+fn compile_stmts(
+    stmts: &[HirStmt],
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    return_type: Option<WasmType>,
+    is_top_level: bool,
+    repeat_id: &mut u32,
+) -> Result<bool, WasmCompileError> {
+    let mut terminated = false;
+    let stmt_count = stmts.len();
+
+    for (idx, stmt) in stmts.iter().enumerate() {
+        let is_last = idx + 1 == stmt_count;
+        match stmt {
+            HirStmt::Let(name, init_expr, _) | HirStmt::Var(name, init_expr, _) => {
+                let (local_idx, local_ty) = locals[name];
+                let expr_ty = compile_expr(init_expr, func, locals, functions, control_stack)?;
+                coerce_type(func, expr_ty, local_ty);
+                func.instruction(&Instruction::LocalSet(local_idx));
+            }
+            HirStmt::Assign(target, expr, span) => {
+                if let HirExpr::Identifier(name, _) = target {
+                    if let Some(&(local_idx, target_ty)) = locals.get(name) {
+                        let expr_ty = compile_expr(expr, func, locals, functions, control_stack)?;
+                        coerce_type(func, expr_ty, target_ty);
+                        func.instruction(&Instruction::LocalSet(local_idx));
+                    } else {
+                        return Err(WasmCompileError::UnknownVariable {
+                            name: name.clone(),
+                            span: *span,
+                        });
+                    }
+                } else {
+                    return Err(WasmCompileError::UnsupportedStmt {
+                        message: "only identifier assignment is supported in Wasm backend".into(),
+                        span: *span,
+                    });
+                }
+            }
+            HirStmt::CompoundAssign(op, target, expr, span) => {
+                if let HirExpr::Identifier(name, _) = target {
+                    if let Some(&(local_idx, target_ty)) = locals.get(name) {
+                        func.instruction(&Instruction::LocalGet(local_idx));
+                        let expr_ty = compile_expr(expr, func, locals, functions, control_stack)?;
+                        emit_binary_op(func, *op, target_ty, expr_ty, *span)?;
+                        func.instruction(&Instruction::LocalSet(local_idx));
+                    } else {
+                        return Err(WasmCompileError::UnknownVariable {
+                            name: name.clone(),
+                            span: *span,
+                        });
+                    }
+                } else {
+                    return Err(WasmCompileError::UnsupportedStmt {
+                        message: "only identifier compound assignment is supported in Wasm backend"
+                            .into(),
+                        span: *span,
+                    });
+                }
+            }
+            HirStmt::Return(maybe_expr, span) => {
+                if let Some(expr) = maybe_expr {
+                    let expr_ty = compile_expr(expr, func, locals, functions, control_stack)?;
+                    if let Some(expected_ret) = return_type {
+                        coerce_type(func, expr_ty, expected_ret);
+                    }
+                } else if return_type.is_some() {
+                    return Err(WasmCompileError::TypeMismatch {
+                        expected: format!("{return_type:?}"),
+                        found: "void".into(),
+                        span: *span,
+                    });
+                }
+                func.instruction(&Instruction::Return);
+                terminated = true;
+            }
+            HirStmt::If(if_stmt) => {
+                compile_if_stmt(
+                    if_stmt,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    return_type,
+                    repeat_id,
+                )?;
+            }
+            HirStmt::While(cond, loop_body, _) => {
+                compile_while_stmt(
+                    cond,
+                    loop_body,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    return_type,
+                    repeat_id,
+                )?;
+            }
+            HirStmt::Loop(loop_body, _) => {
+                compile_loop_stmt(
+                    loop_body,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    return_type,
+                    repeat_id,
+                )?;
+            }
+            HirStmt::Repeat(count, maybe_index, loop_body, _) => {
+                compile_repeat_stmt(
+                    count,
+                    maybe_index.as_deref(),
+                    loop_body,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    return_type,
+                    repeat_id,
+                )?;
+            }
+            HirStmt::Break(span) => {
+                if let Some(pos) = control_stack
+                    .iter()
+                    .rev()
+                    .position(|f| *f == ControlFrame::LoopBreak)
+                {
+                    func.instruction(&Instruction::Br(pos as u32));
+                } else {
+                    return Err(WasmCompileError::UnsupportedStmt {
+                        message: "break outside of loop".into(),
+                        span: *span,
+                    });
+                }
+            }
+            HirStmt::Continue(span) => {
+                if let Some(pos) = control_stack.iter().rev().position(|f| {
+                    *f == ControlFrame::RepeatStep || *f == ControlFrame::LoopContinue
+                }) {
+                    func.instruction(&Instruction::Br(pos as u32));
+                } else {
+                    return Err(WasmCompileError::UnsupportedStmt {
+                        message: "continue outside of loop".into(),
+                        span: *span,
+                    });
+                }
+            }
+            HirStmt::Expr(expr) => {
+                let expr_ty = compile_expr(expr, func, locals, functions, control_stack)?;
+                if is_top_level && is_last && return_type.is_some() {
+                    if let Some(expected_ret) = return_type {
+                        coerce_type(func, expr_ty, expected_ret);
+                    }
+                    terminated = true;
+                } else {
+                    func.instruction(&Instruction::Drop);
+                }
+            }
+            other => {
+                return Err(WasmCompileError::UnsupportedStmt {
+                    message: format!("statement `{other:?}` is scheduled for Milestone 3"),
+                    span: program_stmt_span(other),
+                });
+            }
+        }
+    }
+
+    Ok(terminated)
+}
+
+/// Compiles an `if ... elif ... else` statement block.
+fn compile_if_stmt(
+    if_stmt: &HirIfStmt,
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    return_type: Option<WasmType>,
+    repeat_id: &mut u32,
+) -> Result<(), WasmCompileError> {
+    let cond_ty = compile_expr(&if_stmt.condition, func, locals, functions, control_stack)?;
+    coerce_to_bool(func, cond_ty);
+
+    control_stack.push(ControlFrame::Block);
+    func.instruction(&Instruction::If(BlockType::Empty));
+    compile_stmts(
+        &if_stmt.then_branch,
+        func,
+        locals,
+        functions,
+        control_stack,
+        return_type,
+        false,
+        repeat_id,
+    )?;
+
+    let has_elifs = !if_stmt.elif_branches.is_empty();
+    let has_else = if_stmt.else_branch.is_some();
+
+    if has_elifs || has_else {
+        func.instruction(&Instruction::Else);
+
+        let mut elif_count = 0;
+        for (elif_cond, elif_body) in &if_stmt.elif_branches {
+            let e_cond_ty = compile_expr(elif_cond, func, locals, functions, control_stack)?;
+            coerce_to_bool(func, e_cond_ty);
+
+            control_stack.push(ControlFrame::Block);
+            func.instruction(&Instruction::If(BlockType::Empty));
+            compile_stmts(
+                elif_body,
+                func,
+                locals,
+                functions,
+                control_stack,
+                return_type,
+                false,
+                repeat_id,
+            )?;
+            func.instruction(&Instruction::Else);
+            elif_count += 1;
+        }
+
+        if let Some(else_branch) = &if_stmt.else_branch {
+            compile_stmts(
+                else_branch,
+                func,
+                locals,
+                functions,
+                control_stack,
+                return_type,
+                false,
+                repeat_id,
+            )?;
+        }
+
+        for _ in 0..elif_count {
+            control_stack.pop();
+            func.instruction(&Instruction::End);
+        }
+    }
+
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+    Ok(())
+}
+
+/// Compiles a `while condition { body }` loop.
+#[allow(clippy::too_many_arguments)]
+fn compile_while_stmt(
+    cond: &HirExpr,
+    loop_body: &[HirStmt],
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    return_type: Option<WasmType>,
+    repeat_id: &mut u32,
+) -> Result<(), WasmCompileError> {
+    // Outer block for forward break
+    control_stack.push(ControlFrame::LoopBreak);
+    func.instruction(&Instruction::Block(BlockType::Empty));
+
+    // Inner loop for backward continue
+    control_stack.push(ControlFrame::LoopContinue);
+    func.instruction(&Instruction::Loop(BlockType::Empty));
+
+    // Evaluate condition
+    let cond_ty = compile_expr(cond, func, locals, functions, control_stack)?;
+    coerce_to_bool(func, cond_ty);
+    func.instruction(&Instruction::I32Eqz);
+
+    // If condition is false, break forward out of outer block
+    let break_depth = control_stack
+        .iter()
+        .rev()
+        .position(|f| *f == ControlFrame::LoopBreak)
+        .unwrap() as u32;
+    func.instruction(&Instruction::BrIf(break_depth));
+
+    // Body
+    compile_stmts(
+        loop_body,
+        func,
+        locals,
+        functions,
+        control_stack,
+        return_type,
+        false,
+        repeat_id,
+    )?;
+
+    // Jump back to loop start
+    let loop_depth = control_stack
+        .iter()
+        .rev()
+        .position(|f| *f == ControlFrame::LoopContinue)
+        .unwrap() as u32;
+    func.instruction(&Instruction::Br(loop_depth));
+
+    // Close loop and block
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+
+    Ok(())
+}
+
+/// Compiles an unconditional `loop { body }` structure.
+fn compile_loop_stmt(
+    loop_body: &[HirStmt],
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    return_type: Option<WasmType>,
+    repeat_id: &mut u32,
+) -> Result<(), WasmCompileError> {
+    // Outer block for forward break
+    control_stack.push(ControlFrame::LoopBreak);
+    func.instruction(&Instruction::Block(BlockType::Empty));
+
+    // Inner loop for backward continue
+    control_stack.push(ControlFrame::LoopContinue);
+    func.instruction(&Instruction::Loop(BlockType::Empty));
+
+    // Body
+    compile_stmts(
+        loop_body,
+        func,
+        locals,
+        functions,
+        control_stack,
+        return_type,
+        false,
+        repeat_id,
+    )?;
+
+    // Jump back to start
+    let loop_depth = control_stack
+        .iter()
+        .rev()
+        .position(|f| *f == ControlFrame::LoopContinue)
+        .unwrap() as u32;
+    func.instruction(&Instruction::Br(loop_depth));
+
+    // Close loop and block
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+
+    Ok(())
+}
+
+/// Compiles a counted `repeat count [as i] { body }` loop.
+#[allow(clippy::too_many_arguments)]
+fn compile_repeat_stmt(
+    count: &HirExpr,
+    maybe_index: Option<&str>,
+    loop_body: &[HirStmt],
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    return_type: Option<WasmType>,
+    repeat_id: &mut u32,
+) -> Result<(), WasmCompileError> {
+    *repeat_id += 1;
+    let id = *repeat_id;
+    let limit_slot = locals[&format!("__repeat_limit_{id}")].0;
+    let idx_slot = locals[&format!("__repeat_idx_{id}")].0;
+
+    // Evaluate count and store in limit_slot
+    let count_ty = compile_expr(count, func, locals, functions, control_stack)?;
+    coerce_type(func, count_ty, WasmType::I64);
+    func.instruction(&Instruction::LocalSet(limit_slot));
+
+    // Initialize repeat index to 0
+    func.instruction(&Instruction::I64Const(0));
+    func.instruction(&Instruction::LocalSet(idx_slot));
+
+    // Outer block for break
+    control_stack.push(ControlFrame::LoopBreak);
+    func.instruction(&Instruction::Block(BlockType::Empty));
+
+    // Inner loop for continue/iterations
+    control_stack.push(ControlFrame::LoopContinue);
+    func.instruction(&Instruction::Loop(BlockType::Empty));
+
+    // Condition check: repeat_idx < repeat_limit
+    func.instruction(&Instruction::LocalGet(idx_slot));
+    func.instruction(&Instruction::LocalGet(limit_slot));
+    func.instruction(&Instruction::I64LtS);
+    func.instruction(&Instruction::I32Eqz);
+    let break_depth = control_stack
+        .iter()
+        .rev()
+        .position(|f| *f == ControlFrame::LoopBreak)
+        .unwrap() as u32;
+    func.instruction(&Instruction::BrIf(break_depth));
+
+    // Update user index variable if specified
+    if let Some(name) = maybe_index {
+        let user_idx_slot = locals[name].0;
+        func.instruction(&Instruction::LocalGet(idx_slot));
+        func.instruction(&Instruction::LocalSet(user_idx_slot));
+    }
+
+    // Step block: `continue` jumps here to perform the increment
+    control_stack.push(ControlFrame::RepeatStep);
+    func.instruction(&Instruction::Block(BlockType::Empty));
+    compile_stmts(
+        loop_body,
+        func,
+        locals,
+        functions,
+        control_stack,
+        return_type,
+        false,
+        repeat_id,
+    )?;
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+
+    // Increment index: repeat_idx += 1
+    func.instruction(&Instruction::LocalGet(idx_slot));
+    func.instruction(&Instruction::I64Const(1));
+    func.instruction(&Instruction::I64Add);
+    func.instruction(&Instruction::LocalSet(idx_slot));
+
+    // Repeat loop
+    let loop_depth = control_stack
+        .iter()
+        .rev()
+        .position(|f| *f == ControlFrame::LoopContinue)
+        .unwrap() as u32;
+    func.instruction(&Instruction::Br(loop_depth));
+
+    // Close loop and block
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+
+    Ok(())
 }
 
 /// Helper to get span from statement.
@@ -358,6 +860,7 @@ fn compile_expr(
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType)>,
     functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
 ) -> Result<WasmType, WasmCompileError> {
     match expr {
         HirExpr::Literal(lit, span) => match lit {
@@ -400,7 +903,7 @@ fn compile_expr(
             }
         }
         HirExpr::Unary(op, inner, span) => {
-            let inner_ty = compile_expr(inner, func, locals, functions)?;
+            let inner_ty = compile_expr(inner, func, locals, functions, control_stack)?;
             match op {
                 UnaryOp::Neg => match inner_ty {
                     WasmType::I64 => {
@@ -443,26 +946,26 @@ fn compile_expr(
             match op {
                 BinaryOp::Div => {
                     // In Aipo, `/` is always IEEE 754 float division
-                    let l_ty = compile_expr(left, func, locals, functions)?;
+                    let l_ty = compile_expr(left, func, locals, functions, control_stack)?;
                     coerce_type(func, l_ty, WasmType::F64);
-                    let r_ty = compile_expr(right, func, locals, functions)?;
+                    let r_ty = compile_expr(right, func, locals, functions, control_stack)?;
                     coerce_type(func, r_ty, WasmType::F64);
                     func.instruction(&Instruction::F64Div);
                     Ok(WasmType::F64)
                 }
                 BinaryOp::IntDiv => {
                     // Integer division `//` operates on signed 64-bit integers
-                    let l_ty = compile_expr(left, func, locals, functions)?;
+                    let l_ty = compile_expr(left, func, locals, functions, control_stack)?;
                     coerce_type(func, l_ty, WasmType::I64);
-                    let r_ty = compile_expr(right, func, locals, functions)?;
+                    let r_ty = compile_expr(right, func, locals, functions, control_stack)?;
                     coerce_type(func, r_ty, WasmType::I64);
                     func.instruction(&Instruction::I64DivS);
                     Ok(WasmType::I64)
                 }
                 BinaryOp::Mod => {
-                    let l_ty = compile_expr(left, func, locals, functions)?;
+                    let l_ty = compile_expr(left, func, locals, functions, control_stack)?;
                     coerce_type(func, l_ty, WasmType::I64);
-                    let r_ty = compile_expr(right, func, locals, functions)?;
+                    let r_ty = compile_expr(right, func, locals, functions, control_stack)?;
                     coerce_type(func, r_ty, WasmType::I64);
                     func.instruction(&Instruction::I64RemS);
                     Ok(WasmType::I64)
@@ -473,9 +976,9 @@ fn compile_expr(
                     } else {
                         WasmType::I64
                     };
-                    let l_ty = compile_expr(left, func, locals, functions)?;
+                    let l_ty = compile_expr(left, func, locals, functions, control_stack)?;
                     coerce_type(func, l_ty, target_ty);
-                    let r_ty = compile_expr(right, func, locals, functions)?;
+                    let r_ty = compile_expr(right, func, locals, functions, control_stack)?;
                     coerce_type(func, r_ty, target_ty);
 
                     match (op, target_ty) {
@@ -500,9 +1003,9 @@ fn compile_expr(
                     } else {
                         WasmType::I64
                     };
-                    let l_ty = compile_expr(left, func, locals, functions)?;
+                    let l_ty = compile_expr(left, func, locals, functions, control_stack)?;
                     coerce_type(func, l_ty, compare_ty);
-                    let r_ty = compile_expr(right, func, locals, functions)?;
+                    let r_ty = compile_expr(right, func, locals, functions, control_stack)?;
                     coerce_type(func, r_ty, compare_ty);
 
                     match (op, compare_ty) {
@@ -534,6 +1037,27 @@ fn compile_expr(
                 }),
             }
         }
+        HirExpr::If(cond, then_expr, else_expr, _) => {
+            let res_ty = infer_expr_type(then_expr, locals, functions)?;
+            let cond_ty = compile_expr(cond, func, locals, functions, control_stack)?;
+            coerce_to_bool(func, cond_ty);
+
+            control_stack.push(ControlFrame::Block);
+            func.instruction(&Instruction::If(BlockType::Result(res_ty.into())));
+
+            let t_ty = compile_expr(then_expr, func, locals, functions, control_stack)?;
+            coerce_type(func, t_ty, res_ty);
+
+            func.instruction(&Instruction::Else);
+
+            let e_ty = compile_expr(else_expr, func, locals, functions, control_stack)?;
+            coerce_type(func, e_ty, res_ty);
+
+            control_stack.pop();
+            func.instruction(&Instruction::End);
+
+            Ok(res_ty)
+        }
         HirExpr::Call(callee, args, span) => {
             if let HirExpr::Identifier(func_name, _) = &**callee {
                 if let Some(&(func_idx, _, ref fn_type)) = functions.get(func_name) {
@@ -545,7 +1069,8 @@ fn compile_expr(
                         });
                     }
                     for (arg, &expected_ty) in args.iter().zip(fn_type.params.iter()) {
-                        let actual_ty = compile_expr(&arg.value, func, locals, functions)?;
+                        let actual_ty =
+                            compile_expr(&arg.value, func, locals, functions, control_stack)?;
                         coerce_type(func, actual_ty, expected_ty);
                     }
                     func.instruction(&Instruction::Call(func_idx));
@@ -602,6 +1127,23 @@ fn emit_binary_op(
         }
     };
     Ok(())
+}
+
+/// Coerces a value on top of the Wasm stack to boolean `i32` (0 or 1).
+fn coerce_to_bool(func: &mut Function, ty: WasmType) {
+    match ty {
+        WasmType::I32 => {
+            // Already i32 (boolean or integer flag)
+        }
+        WasmType::I64 => {
+            func.instruction(&Instruction::I64Const(0));
+            func.instruction(&Instruction::I64Ne);
+        }
+        WasmType::F64 => {
+            func.instruction(&Instruction::F64Const(0.0.into()));
+            func.instruction(&Instruction::F64Ne);
+        }
+    }
 }
 
 /// Coerces a value on top of the Wasm stack from `from` type to `to` type.
@@ -679,6 +1221,7 @@ fn infer_expr_type(
                 span: expr.span(),
             }),
         },
+        HirExpr::If(_, then_expr, _, _) => infer_expr_type(then_expr, locals, functions),
         HirExpr::Call(callee, _, span) => {
             if let HirExpr::Identifier(func_name, _) = &**callee {
                 if let Some((_, _, fn_type)) = functions.get(func_name) {
