@@ -33,6 +33,15 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
   - Acesso a campos (`HirExpr::Dot`) e mutação em memória via atribuição direta (`p.x = val`) e composta (`p.x += delta`) emitindo instruções de carregamento e armazenamento de memória (`i64.load`, `f64.load`, `i32.load`, `i64.store`, `f64.store`, `i32.store`).
   - Rastreamento de tipos de variáveis locais (`LocalKind::Struct, LocalKind::String, LocalKind::Int...`) para desambiguação semântica estrita entre acessos a propriedades de strings e campos de structs.
   - Suíte de testes de integração expandida para 34 testes de ponta a ponta verdes em `crates/aipo-wasm` verificando isolamento entre instâncias, aninhamento e integridade dos bytes na memória linear.
+- **Marco 4: Chamadas de Função, Recursão e Tabela de Indireção (Function Calls, Recursion & Indirect Calls - ADP-013)**:
+  - Emissor WebAssembly estendido com suporte a tabelas de funções (`TableSection`, Seção 4) e segmentos ativos de elementos (`ElementSection`, Seção 9) em estrita conformidade com a ordenação canônica de seções do Wasm 2.0.
+  - População automática da Tabela 0 (`funcref`) indexando todas as funções declaradas e funções anônimas sintetizadas (`__anon_fn_N`).
+  - Suporte nativo completo a recursão direta (`factorial`, `fibonacci`) e recursão mútua (`is_even`, `is_odd`) emitindo instruções diretas `call` de zero overhead.
+  - Implementação de despacho indireto via `call_indirect` para funções de primeira classe, suporte a atribuição de referências de função a variáveis locais (`let f = increment`), e passagem de funções como parâmetros de ordem superior (`apply(f, x)`).
+  - Suporte completo a funções anônimas e lambdas curtas (`x => x * 2`, `(a, b) => a + b`), sintetizadas e compiladas como funções canônicas do módulo e registradas na Tabela 0.
+  - Pré-registro de assinaturas de tipos para chamadas indiretas (`indirect_sigs`) cobrindo aridades de 0 a 8 com deduplicação estrutural de tipos.
+  - Pilha de 8 temporários de chamada indireta (`__call_temp_0..7`) para suporte seguro a aninhamento arbitrário de chamadas indiretas (`f(g(h(x)))`).
+  - Suíte de testes de integração expandida para 45 testes automatizados verdes em `crates/aipo-wasm` (40 de pipeline + 5 de emitter), executados e validados pelo motor JIT `wasmtime`.
 
 ## [0.1.0] - 2026-09-26 (Linha de Base Stack VM)
 

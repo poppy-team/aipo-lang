@@ -721,3 +721,171 @@ fn get_str_ptr() -> Int {
     assert_eq!(len, 4);
     assert_eq!(&buf[4..8], b"Aipo");
 }
+
+#[test]
+fn test_direct_recursion_factorial_and_fibonacci() {
+    let code = r#"
+fn factorial(n: Int) -> Int {
+  if n <= 1 {
+    return 1
+  }
+  return n * factorial(n - 1)
+}
+
+fn fibonacci(n: Int) -> Int {
+  if n <= 0 {
+    return 0
+  }
+  if n == 1 {
+    return 1
+  }
+  return fibonacci(n - 1) + fibonacci(n - 2)
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let fact_fn = instance
+        .get_typed_func::<i64, i64>(&mut store, "factorial")
+        .expect("exported function `factorial` exists");
+    let fib_fn = instance
+        .get_typed_func::<i64, i64>(&mut store, "fibonacci")
+        .expect("exported function `fibonacci` exists");
+
+    assert_eq!(fact_fn.call(&mut store, 5).unwrap(), 120);
+    assert_eq!(fact_fn.call(&mut store, 6).unwrap(), 720);
+    assert_eq!(fib_fn.call(&mut store, 7).unwrap(), 13);
+    assert_eq!(fib_fn.call(&mut store, 10).unwrap(), 55);
+}
+
+#[test]
+fn test_mutual_recursion_even_odd() {
+    let code = r#"
+fn is_even(n: Int) -> Int {
+  if n == 0 {
+    return 1
+  }
+  return is_odd(n - 1)
+}
+
+fn is_odd(n: Int) -> Int {
+  if n == 0 {
+    return 0
+  }
+  return is_even(n - 1)
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let is_even_fn = instance
+        .get_typed_func::<i64, i64>(&mut store, "is_even")
+        .expect("exported function `is_even` exists");
+    let is_odd_fn = instance
+        .get_typed_func::<i64, i64>(&mut store, "is_odd")
+        .expect("exported function `is_odd` exists");
+
+    assert_eq!(is_even_fn.call(&mut store, 4).unwrap(), 1);
+    assert_eq!(is_even_fn.call(&mut store, 7).unwrap(), 0);
+    assert_eq!(is_odd_fn.call(&mut store, 7).unwrap(), 1);
+    assert_eq!(is_odd_fn.call(&mut store, 4).unwrap(), 0);
+}
+
+#[test]
+fn test_higher_order_function_with_named_functions() {
+    let code = r#"
+fn square(x: Int) -> Int {
+  return x * x
+}
+
+fn double(x: Int) -> Int {
+  return x + x
+}
+
+fn apply(f, x: Int) -> Int {
+  return f(x)
+}
+
+fn run_square() -> Int {
+  return apply(square, 6)
+}
+
+fn run_double() -> Int {
+  return apply(double, 21)
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let run_sq = instance
+        .get_typed_func::<(), i64>(&mut store, "run_square")
+        .expect("exported function `run_square` exists");
+    let run_db = instance
+        .get_typed_func::<(), i64>(&mut store, "run_double")
+        .expect("exported function `run_double` exists");
+
+    assert_eq!(run_sq.call(&mut store, ()).unwrap(), 36);
+    assert_eq!(run_db.call(&mut store, ()).unwrap(), 42);
+}
+
+#[test]
+fn test_first_class_function_variable_assignment() {
+    let code = r#"
+fn increment(n: Int) -> Int {
+  return n + 1
+}
+
+fn run() -> Int {
+  let f = increment
+  return f(99)
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let run_fn = instance
+        .get_typed_func::<(), i64>(&mut store, "run")
+        .expect("exported function `run` exists");
+
+    assert_eq!(run_fn.call(&mut store, ()).unwrap(), 100);
+}
+
+#[test]
+fn test_anonymous_lambda_functions() {
+    let code = r#"
+fn run_arrow() -> Int {
+  let mul_three = x => x * 3
+  return mul_three(14)
+}
+
+fn apply_op(f, val: Int) -> Int {
+  return f(val)
+}
+
+fn run_passed_lambda() -> Int {
+  return apply_op(x => x + 10, 32)
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let run_arrow = instance
+        .get_typed_func::<(), i64>(&mut store, "run_arrow")
+        .expect("exported function `run_arrow` exists");
+    let run_passed = instance
+        .get_typed_func::<(), i64>(&mut store, "run_passed_lambda")
+        .expect("exported function `run_passed_lambda` exists");
+
+    assert_eq!(run_arrow.call(&mut store, ()).unwrap(), 42);
+    assert_eq!(run_passed.call(&mut store, ()).unwrap(), 42);
+}
+
+#[test]
+fn test_nested_indirect_call_depth() {
+    let code = r#"
+fn add_one(x: Int) -> Int {
+  return x + 1
+}
+
+fn run() -> Int {
+  let f = add_one
+  return f(f(f(10)))
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let run_fn = instance
+        .get_typed_func::<(), i64>(&mut store, "run")
+        .expect("exported function `run` exists");
+
+    assert_eq!(run_fn.call(&mut store, ()).unwrap(), 13);
+}

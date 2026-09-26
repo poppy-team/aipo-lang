@@ -2,8 +2,9 @@
 
 use crate::types::WasmFnType;
 use wasm_encoder::{
-    CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function, FunctionSection,
-    GlobalSection, GlobalType, MemorySection, MemoryType, Module, TypeSection, ValType,
+    CodeSection, ConstExpr, DataSection, ElementSection, Elements, ExportKind, ExportSection,
+    Function, FunctionSection, GlobalSection, GlobalType, MemorySection, MemoryType, Module,
+    RefType, TableSection, TableType, TypeSection, ValType,
 };
 
 /// High-level builder and binary emitter for standard WebAssembly modules.
@@ -13,6 +14,8 @@ pub struct WasmEmitter {
     function_types: Vec<u32>,
     exports: Vec<(String, ExportKind, u32)>,
     code: Vec<Function>,
+    table: Option<TableType>,
+    elements: Vec<(u32, i32, Vec<u32>)>,
     memory: Option<MemoryType>,
     globals: Vec<(GlobalType, ConstExpr)>,
     data_segments: Vec<(u32, i32, Vec<u8>)>,
@@ -47,6 +50,22 @@ impl WasmEmitter {
     pub fn export_function(&mut self, name: impl Into<String>, func_index: u32) {
         self.exports
             .push((name.into(), ExportKind::Func, func_index));
+    }
+
+    /// Enables the indirect function table (Table 0) with funcref elements.
+    pub fn enable_table(&mut self, minimum: u64, maximum: Option<u64>) {
+        self.table = Some(TableType {
+            element_type: RefType::FUNCREF,
+            minimum,
+            maximum,
+            table64: false,
+            shared: false,
+        });
+    }
+
+    /// Adds an element segment targeting a table at a fixed offset with function indices.
+    pub fn add_element_segment(&mut self, table_index: u32, offset: i32, func_indices: Vec<u32>) {
+        self.elements.push((table_index, offset, func_indices));
     }
 
     /// Enables linear memory with initial and optional maximum pages (each page is 64 KiB).
@@ -103,14 +122,21 @@ impl WasmEmitter {
             module.section(&fn_section);
         }
 
-        // 3. Memory Section (5)
+        // 3. Table Section (4)
+        if let Some(table_type) = self.table {
+            let mut table_section = TableSection::new();
+            table_section.table(table_type);
+            module.section(&table_section);
+        }
+
+        // 4. Memory Section (5)
         if let Some(mem_type) = self.memory {
             let mut mem_section = MemorySection::new();
             mem_section.memory(mem_type);
             module.section(&mem_section);
         }
 
-        // 4. Global Section (6)
+        // 5. Global Section (6)
         if !self.globals.is_empty() {
             let mut global_section = GlobalSection::new();
             for (gt, init) in &self.globals {
@@ -119,7 +145,7 @@ impl WasmEmitter {
             module.section(&global_section);
         }
 
-        // 5. Export Section (7)
+        // 6. Export Section (7)
         if !self.exports.is_empty() {
             let mut export_section = ExportSection::new();
             for (name, kind, index) in &self.exports {
@@ -128,7 +154,20 @@ impl WasmEmitter {
             module.section(&export_section);
         }
 
-        // 6. Code Section (10)
+        // 7. Element Section (9)
+        if !self.elements.is_empty() {
+            let mut elem_section = ElementSection::new();
+            for (table_idx, offset, func_indices) in &self.elements {
+                elem_section.active(
+                    Some(*table_idx),
+                    &ConstExpr::i32_const(*offset),
+                    Elements::Functions(std::borrow::Cow::Borrowed(func_indices.as_slice())),
+                );
+            }
+            module.section(&elem_section);
+        }
+
+        // 8. Code Section (10)
         if !self.code.is_empty() {
             let mut code_section = CodeSection::new();
             for func in &self.code {
@@ -137,7 +176,7 @@ impl WasmEmitter {
             module.section(&code_section);
         }
 
-        // 7. Data Section (11)
+        // 9. Data Section (11)
         if !self.data_segments.is_empty() {
             let mut data_section = DataSection::new();
             for (mem_idx, offset, bytes) in &self.data_segments {

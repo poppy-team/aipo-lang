@@ -111,3 +111,64 @@ fn test_wasmtime_execution_of_emitted_module() {
     let result = add_func.call(&mut store, (15, 27)).expect("call succeeds");
     assert_eq!(result, 42);
 }
+
+#[test]
+fn test_wasmtime_execution_of_call_indirect() {
+    let mut emitter = WasmEmitter::new();
+
+    // Signature 0: (i64) -> i64 (for square & double)
+    let math_sig = WasmFnType::new(vec![WasmType::I64], vec![WasmType::I64]);
+    let math_type_idx = emitter.add_type(math_sig);
+
+    // Signature 1: (i32, i64) -> i64 (for invoke_indirect)
+    let dispatcher_sig = WasmFnType::new(vec![WasmType::I32, WasmType::I64], vec![WasmType::I64]);
+    let dispatcher_type_idx = emitter.add_type(dispatcher_sig);
+
+    // Func 0: square(x: i64) -> i64
+    let mut f0 = Function::new([]);
+    f0.instruction(&Instruction::LocalGet(0));
+    f0.instruction(&Instruction::LocalGet(0));
+    f0.instruction(&Instruction::I64Mul);
+    f0.instruction(&Instruction::End);
+    let f0_idx = emitter.add_function(math_type_idx, f0);
+
+    // Func 1: double(x: i64) -> i64
+    let mut f1 = Function::new([]);
+    f1.instruction(&Instruction::LocalGet(0));
+    f1.instruction(&Instruction::LocalGet(0));
+    f1.instruction(&Instruction::I64Add);
+    f1.instruction(&Instruction::End);
+    let f1_idx = emitter.add_function(math_type_idx, f1);
+
+    // Table 0: 2 function references
+    emitter.enable_table(2, Some(2));
+    emitter.add_element_segment(0, 0, vec![f0_idx, f1_idx]);
+
+    // Func 2: dispatch(table_idx: i32, arg: i64) -> i64
+    let mut f2 = Function::new([]);
+    f2.instruction(&Instruction::LocalGet(1)); // push argument
+    f2.instruction(&Instruction::LocalGet(0)); // push table index
+    f2.instruction(&Instruction::CallIndirect {
+        type_index: math_type_idx,
+        table_index: 0,
+    });
+    f2.instruction(&Instruction::End);
+    let f2_idx = emitter.add_function(dispatcher_type_idx, f2);
+    emitter.export_function("dispatch", f2_idx);
+
+    let wasm_bytes = emitter.finish();
+
+    let engine = wasmtime::Engine::default();
+    let module = wasmtime::Module::new(&engine, &wasm_bytes).expect("wasm module valid");
+    let mut store = wasmtime::Store::new(&engine, ());
+    let instance = wasmtime::Instance::new(&mut store, &module, &[]).expect("wasm instantiation");
+    let dispatch_func = instance
+        .get_typed_func::<(i32, i64), i64>(&mut store, "dispatch")
+        .expect("exported function exists");
+
+    // Call table element 0 (square(7)) => 49
+    assert_eq!(dispatch_func.call(&mut store, (0, 7)).unwrap(), 49);
+
+    // Call table element 1 (double(7)) => 14
+    assert_eq!(dispatch_func.call(&mut store, (1, 7)).unwrap(), 14);
+}

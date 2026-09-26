@@ -100,14 +100,23 @@
   - Acesso a campos (`HirExpr::Dot`) e mutação em memória via atribuição direta (`p.x = val`) e composta (`p.x += delta`) emitindo instruções de carregamento e armazenamento de memória (`i64.load`, `f64.load`, `i32.load`, `i64.store`, `f64.store`, `i32.store`).
   - Rastreamento de tipos de variáveis locais (`LocalKind::Struct, LocalKind::String, LocalKind::Int...`) para desambiguação semântica estrita entre acessos a propriedades de strings e campos de structs.
   - Suíte de 34 testes de ponta a ponta validados com execução JIT `wasmtime` 100% verde.
+- **Chamadas de Função, Recursão e Tabela de Indireção Wasm (Marco 4 / P06-G04)**:
+  - Emissor WebAssembly estendido com `TableSection` (Seção 4) e `ElementSection` (Seção 9) seguindo estritamente a ordenação canônica de seções do Wasm 2.0.
+  - População automática da Tabela 0 (`funcref`) indexando todas as funções declaradas e funções anônimas sintetizadas (`__anon_fn_N`).
+  - Suporte nativo completo a recursão direta (`factorial`, `fibonacci`) e recursão mútua (`is_even`, `is_odd`) emitindo instruções diretas `call` de zero overhead.
+  - Implementação de despacho indireto via `call_indirect` para funções de primeira classe, suporte a atribuição de referências de função a variáveis locais (`let f = increment`), e passagem de funções como parâmetros de ordem superior (`apply(f, x)`).
+  - Suporte completo a funções anônimas e lambdas curtas (`x => x * 2`, `(a, b) => a + b`), sintetizadas e compiladas como funções canônicas do módulo e registradas na Tabela 0.
+  - Pré-registro de assinaturas de tipos para chamadas indiretas (`indirect_sigs`) cobrindo aridades de 0 a 8 com deduplicação estrutural de tipos.
+  - Pilha de 8 temporários de chamada indireta (`__call_temp_0..7`) para suporte seguro a aninhamento arbitrário de chamadas indiretas (`f(g(h(x)))`).
+  - Suíte de testes de integração expandida para 45 testes automatizados verdes em `crates/aipo-wasm` (40 de pipeline + 5 de emitter), executados e validados pelo motor JIT `wasmtime`.
 
 ## Next action
 
-Iniciar o **Marco 4: Chamadas de Função, Recursão e Tabela de Indireção (Function Calls, Recursion & Indirect Calls)**:
-1. Suporte a recursão profunda e chamadas inter-modulares diretas.
-2. Tabela de elementos WebAssembly (`TableSection`, `ElementSection`) para despacho indireto (`call_indirect`).
-3. Lowering de closures / funções de primeira classe e passagem de funções como argumentos.
-4. Validação rigorosa de tipos de assinatura e aridade em tempo de execução via `call_indirect`.
+Iniciar o **Marco 5: Concorrência e Async Substrate (ADP-013)**:
+1. Projeto do modelo de tarefas assíncronas cooperativas em WebAssembly.
+2. Suporte a `async fn`, `task.spawn`, e `await` cooperativo.
+3. Event loop / scheduler determinístico embutido no runtime Wasm.
+4. Conformance e paridade com o modelo async semântico da Aipo.
 
 ## Recovery order
 

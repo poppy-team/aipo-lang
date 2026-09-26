@@ -25,7 +25,7 @@ enum ControlFrame {
     Block,
 }
 
-/// High-level type tag for local variables to disambiguate field accesses and string properties.
+/// High-level type tag for local variables to disambiguate field accesses, string properties, and function pointers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum LocalKind {
     Int,
@@ -33,6 +33,7 @@ enum LocalKind {
     Bool,
     String,
     Struct(String),
+    Fn(u32),
 }
 
 /// Describes the byte layout of a struct in linear memory.
@@ -65,6 +66,25 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     }
     refine_struct_layouts(program, &mut structs);
 
+    // Pass 0.2: Collect anonymous functions and assign synthetic names
+    let mut anon_map = HashMap::new();
+    let mut anon_decls = Vec::new();
+    collect_anon_functions(program, &mut anon_map, &mut anon_decls);
+
+    let mut func_decls: Vec<HirFunctionDecl> = Vec::new();
+    for item in &program.items {
+        if let HirItem::Fn(func) = item {
+            if func.is_async {
+                return Err(WasmCompileError::UnsupportedItem {
+                    message: "async functions are scheduled for Milestone 5 (ADP-013)".into(),
+                    span: func.span,
+                });
+            }
+            func_decls.push(func.clone());
+        }
+    }
+    func_decls.extend(anon_decls);
+
     // Pass 0.5: Linear Memory and Static String Pool
     emitter.enable_memory(1, None);
     emitter.export_memory("memory");
@@ -75,6 +95,7 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
 
     collect_program_strings(
         program,
+        &func_decls,
         &mut static_strings,
         &mut data_segments,
         &mut next_static_offset,
@@ -106,48 +127,55 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
         (alloc_func_idx, alloc_type_idx, alloc_fn_type),
     );
 
-    // Pass 1: Collect signatures of all declared functions
-    let mut func_decls: Vec<&HirFunctionDecl> = Vec::new();
-    for item in &program.items {
-        match item {
-            HirItem::Fn(func) => {
-                if func.is_async {
-                    return Err(WasmCompileError::UnsupportedItem {
-                        message: "async functions are scheduled for Milestone 5 (ADP-013)".into(),
-                        span: func.span,
-                    });
-                }
-                let params = func.params.iter().map(param_wasm_type).collect::<Vec<_>>();
-                let ret = resolve_return_type(
-                    &func.return_type,
-                    &func.params,
-                    &func.body,
-                    &functions,
-                    &structs,
-                );
-                let fn_type = WasmFnType::new(params, ret.into_iter().collect());
-                let type_idx = emitter.add_type(fn_type.clone());
-                let func_idx = functions.len() as u32;
-                functions.insert(func.name.clone(), (func_idx, type_idx, fn_type));
-                func_decls.push(func);
-            }
-            HirItem::Struct(_) | HirItem::Export(_) | HirItem::Import(_) => {
-                // Metadata items handled or deferred
-            }
-            other => {
-                return Err(WasmCompileError::UnsupportedItem {
-                    message: format!("item `{other:?}` is not yet supported in Wasm backend"),
-                    span: program.span,
-                });
-            }
+    // Pre-register standard indirect call signatures for arities 0..=8
+    let mut indirect_sigs: HashMap<usize, u32> = HashMap::new();
+    for arity in 0..=8 {
+        let sig = WasmFnType::new(vec![WasmType::I64; arity], vec![WasmType::I64]);
+        let t_idx = emitter.add_type(sig);
+        indirect_sigs.insert(arity, t_idx);
+    }
+
+    // Pass 1: Collect signatures of all declared and anonymous functions
+    for func in &func_decls {
+        let params = func.params.iter().map(param_wasm_type).collect::<Vec<_>>();
+        let ret = resolve_return_type(
+            &func.return_type,
+            &func.params,
+            &func.body,
+            &functions,
+            &structs,
+        );
+        let fn_type = WasmFnType::new(params, ret.into_iter().collect());
+        let type_idx = emitter.add_type(fn_type.clone());
+        let func_idx = functions.len() as u32;
+        functions.insert(func.name.clone(), (func_idx, type_idx, fn_type));
+    }
+
+    // Pass 1.5: Setup Table 0 for indirect function calls (call_indirect)
+    let mut table_indices: HashMap<String, u32> = HashMap::new();
+    if !func_decls.is_empty() {
+        let table_size = func_decls.len() as u64;
+        emitter.enable_table(table_size, Some(table_size));
+        let mut func_indices = Vec::new();
+        for (table_idx, func) in func_decls.iter().enumerate() {
+            let (func_idx, _, _) = functions[&func.name];
+            func_indices.push(func_idx);
+            table_indices.insert(func.name.clone(), table_idx as u32);
         }
+        emitter.add_element_segment(0, 0, func_indices);
     }
 
     // Top-level statements become an entrypoint function `__top_level__`
     let top_level_info = if !program.statements.is_empty() {
         let mut top_locals = HashMap::new();
-        let ret =
-            infer_body_return_type(&program.statements, &mut top_locals, &functions, &structs);
+        let ret = infer_body_return_type(
+            &program.statements,
+            &mut top_locals,
+            &functions,
+            &structs,
+            &table_indices,
+            &anon_map,
+        );
         let fn_type = WasmFnType::new(vec![], ret.into_iter().collect());
         let type_idx = emitter.add_type(fn_type.clone());
         let func_idx = functions.len() as u32;
@@ -158,7 +186,7 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     };
 
     // Pass 2: Compile the body of each function
-    for func in func_decls {
+    for func in &func_decls {
         let (_, type_idx, fn_type) = &functions[&func.name];
         let compiled_fn = compile_function_body(
             &func.name,
@@ -168,6 +196,9 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
             &functions,
             &structs,
             &static_strings,
+            &table_indices,
+            &anon_map,
+            &indirect_sigs,
             alloc_func_idx,
         )?;
         let assigned_idx = emitter.add_function(*type_idx, compiled_fn);
@@ -184,6 +215,9 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
             &functions,
             &structs,
             &static_strings,
+            &table_indices,
+            &anon_map,
+            &indirect_sigs,
             alloc_func_idx,
         )?;
         let assigned_idx = emitter.add_function(type_idx, compiled_fn);
@@ -191,6 +225,113 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     }
 
     Ok(emitter.finish())
+}
+
+/// Collects all anonymous functions and closures from the program.
+fn collect_anon_functions(
+    program: &HirProgram,
+    anon_map: &mut HashMap<SourceSpan, String>,
+    anon_decls: &mut Vec<HirFunctionDecl>,
+) {
+    for item in &program.items {
+        if let HirItem::Fn(func) = item {
+            collect_stmts_anon_functions(&func.body, anon_map, anon_decls);
+        }
+    }
+    collect_stmts_anon_functions(&program.statements, anon_map, anon_decls);
+}
+
+fn collect_stmts_anon_functions(
+    stmts: &[HirStmt],
+    anon_map: &mut HashMap<SourceSpan, String>,
+    anon_decls: &mut Vec<HirFunctionDecl>,
+) {
+    for stmt in stmts {
+        match stmt {
+            HirStmt::Let(_, expr, _) | HirStmt::Var(_, expr, _) | HirStmt::Expr(expr) => {
+                collect_expr_anon_functions(expr, anon_map, anon_decls);
+            }
+            HirStmt::Assign(t, e, _) | HirStmt::CompoundAssign(_, t, e, _) => {
+                collect_expr_anon_functions(t, anon_map, anon_decls);
+                collect_expr_anon_functions(e, anon_map, anon_decls);
+            }
+            HirStmt::Return(Some(expr), _) => {
+                collect_expr_anon_functions(expr, anon_map, anon_decls);
+            }
+            HirStmt::If(s) => {
+                collect_expr_anon_functions(&s.condition, anon_map, anon_decls);
+                collect_stmts_anon_functions(&s.then_branch, anon_map, anon_decls);
+                for (cond, body) in &s.elif_branches {
+                    collect_expr_anon_functions(cond, anon_map, anon_decls);
+                    collect_stmts_anon_functions(body, anon_map, anon_decls);
+                }
+                if let Some(else_branch) = &s.else_branch {
+                    collect_stmts_anon_functions(else_branch, anon_map, anon_decls);
+                }
+            }
+            HirStmt::While(cond, body, _) => {
+                collect_expr_anon_functions(cond, anon_map, anon_decls);
+                collect_stmts_anon_functions(body, anon_map, anon_decls);
+            }
+            HirStmt::Loop(body, _) => {
+                collect_stmts_anon_functions(body, anon_map, anon_decls);
+            }
+            HirStmt::Repeat(count, _, body, _) => {
+                collect_expr_anon_functions(count, anon_map, anon_decls);
+                collect_stmts_anon_functions(body, anon_map, anon_decls);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_expr_anon_functions(
+    expr: &HirExpr,
+    anon_map: &mut HashMap<SourceSpan, String>,
+    anon_decls: &mut Vec<HirFunctionDecl>,
+) {
+    match expr {
+        HirExpr::Fn(func_expr) => {
+            collect_stmts_anon_functions(&func_expr.body, anon_map, anon_decls);
+            let anon_name = format!("__anon_fn_{}", anon_decls.len());
+            anon_map.insert(func_expr.span, anon_name.clone());
+            anon_decls.push(HirFunctionDecl {
+                name: anon_name,
+                is_async: func_expr.is_async,
+                params: func_expr.params.clone(),
+                return_type: func_expr.return_type.clone(),
+                body: func_expr.body.clone(),
+                span: func_expr.span,
+            });
+        }
+        HirExpr::Call(callee, args, _) => {
+            collect_expr_anon_functions(callee, anon_map, anon_decls);
+            for arg in args {
+                collect_expr_anon_functions(&arg.value, anon_map, anon_decls);
+            }
+        }
+        HirExpr::Binary(_, left, right, _) => {
+            collect_expr_anon_functions(left, anon_map, anon_decls);
+            collect_expr_anon_functions(right, anon_map, anon_decls);
+        }
+        HirExpr::Unary(_, inner, _) => {
+            collect_expr_anon_functions(inner, anon_map, anon_decls);
+        }
+        HirExpr::If(cond, then_e, else_e, _) => {
+            collect_expr_anon_functions(cond, anon_map, anon_decls);
+            collect_expr_anon_functions(then_e, anon_map, anon_decls);
+            collect_expr_anon_functions(else_e, anon_map, anon_decls);
+        }
+        HirExpr::Construct(_, fields, _) => {
+            for (_, field_expr) in fields {
+                collect_expr_anon_functions(field_expr, anon_map, anon_decls);
+            }
+        }
+        HirExpr::Dot(receiver, _, _) => {
+            collect_expr_anon_functions(receiver, anon_map, anon_decls);
+        }
+        _ => {}
+    }
 }
 
 /// Registers struct layout in linear memory (fields aligned to 8 bytes).
@@ -375,14 +516,13 @@ fn build_allocator_function() -> Function {
 /// Collects static string literals into the linear memory data segment pool.
 fn collect_program_strings(
     program: &HirProgram,
+    func_decls: &[HirFunctionDecl],
     static_strings: &mut HashMap<String, i32>,
     data_segments: &mut Vec<(i32, Vec<u8>)>,
     next_offset: &mut i32,
 ) {
-    for item in &program.items {
-        if let HirItem::Fn(func) = item {
-            collect_stmts_strings(&func.body, static_strings, data_segments, next_offset);
-        }
+    for func in func_decls {
+        collect_stmts_strings(&func.body, static_strings, data_segments, next_offset);
     }
     collect_stmts_strings(
         &program.statements,
@@ -535,7 +675,14 @@ fn resolve_return_type(
             };
             locals.insert(param.name.clone(), (i as u32, ty, kind));
         }
-        infer_body_return_type(body, &mut locals, functions, structs)
+        infer_body_return_type(
+            body,
+            &mut locals,
+            functions,
+            structs,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
     }
 }
 
@@ -545,19 +692,22 @@ fn infer_body_return_type(
     locals: &mut HashMap<String, (u32, WasmType, LocalKind)>,
     functions: &HashMap<String, (u32, u32, WasmFnType)>,
     structs: &HashMap<String, StructLayout>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
 ) -> Option<WasmType> {
     let mut has_return = false;
     for stmt in body {
         match stmt {
             HirStmt::Let(name, expr, _) | HirStmt::Var(name, expr, _) => {
-                let ty = infer_expr_type(expr, locals, functions, structs).unwrap_or(WasmType::I64);
-                let kind = infer_expr_kind(expr, locals);
+                let ty = infer_expr_type(expr, locals, functions, structs, table_indices)
+                    .unwrap_or(WasmType::I64);
+                let kind = infer_expr_kind(expr, locals, functions, table_indices, anon_map);
                 let idx = locals.len() as u32;
                 locals.insert(name.clone(), (idx, ty, kind));
             }
             HirStmt::Return(Some(expr), _) => {
                 has_return = true;
-                if let Ok(ty) = infer_expr_type(expr, locals, functions, structs) {
+                if let Ok(ty) = infer_expr_type(expr, locals, functions, structs, table_indices) {
                     return Some(ty);
                 }
             }
@@ -565,20 +715,37 @@ fn infer_body_return_type(
                 return None;
             }
             HirStmt::If(s) => {
-                if let Some(ty) = infer_body_return_type(&s.then_branch, locals, functions, structs)
-                {
+                if let Some(ty) = infer_body_return_type(
+                    &s.then_branch,
+                    locals,
+                    functions,
+                    structs,
+                    table_indices,
+                    anon_map,
+                ) {
                     return Some(ty);
                 }
                 for (_, elif_body) in &s.elif_branches {
-                    if let Some(ty) = infer_body_return_type(elif_body, locals, functions, structs)
-                    {
+                    if let Some(ty) = infer_body_return_type(
+                        elif_body,
+                        locals,
+                        functions,
+                        structs,
+                        table_indices,
+                        anon_map,
+                    ) {
                         return Some(ty);
                     }
                 }
                 if let Some(else_branch) = &s.else_branch {
-                    if let Some(ty) =
-                        infer_body_return_type(else_branch, locals, functions, structs)
-                    {
+                    if let Some(ty) = infer_body_return_type(
+                        else_branch,
+                        locals,
+                        functions,
+                        structs,
+                        table_indices,
+                        anon_map,
+                    ) {
                         return Some(ty);
                     }
                 }
@@ -586,7 +753,14 @@ fn infer_body_return_type(
             HirStmt::While(_, loop_body, _)
             | HirStmt::Loop(loop_body, _)
             | HirStmt::Repeat(_, _, loop_body, _) => {
-                if let Some(ty) = infer_body_return_type(loop_body, locals, functions, structs) {
+                if let Some(ty) = infer_body_return_type(
+                    loop_body,
+                    locals,
+                    functions,
+                    structs,
+                    table_indices,
+                    anon_map,
+                ) {
                     return Some(ty);
                 }
             }
@@ -595,7 +769,7 @@ fn infer_body_return_type(
     }
     // If the last statement is an expression statement, its type is the implicit return
     if let Some(HirStmt::Expr(expr)) = body.last() {
-        if let Ok(ty) = infer_expr_type(expr, locals, functions, structs) {
+        if let Ok(ty) = infer_expr_type(expr, locals, functions, structs, table_indices) {
             return Some(ty);
         }
     }
@@ -607,6 +781,7 @@ fn infer_body_return_type(
 }
 
 /// Recursively scans statements to register all declared locals and helpers.
+#[allow(clippy::too_many_arguments)]
 fn pre_scan_stmts(
     stmts: &[HirStmt],
     params_count: usize,
@@ -614,14 +789,16 @@ fn pre_scan_stmts(
     declared_locals: &mut Vec<WasmType>,
     functions: &HashMap<String, (u32, u32, WasmFnType)>,
     structs: &HashMap<String, StructLayout>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
     repeat_id: &mut u32,
 ) -> Result<(), WasmCompileError> {
     for stmt in stmts {
         match stmt {
             HirStmt::Let(name, init_expr, _) | HirStmt::Var(name, init_expr, _) => {
-                let ty =
-                    infer_expr_type(init_expr, locals, functions, structs).unwrap_or(WasmType::I64);
-                let kind = infer_expr_kind(init_expr, locals);
+                let ty = infer_expr_type(init_expr, locals, functions, structs, table_indices)
+                    .unwrap_or(WasmType::I64);
+                let kind = infer_expr_kind(init_expr, locals, functions, table_indices, anon_map);
                 let idx = (params_count + declared_locals.len()) as u32;
                 declared_locals.push(ty);
                 locals.insert(name.clone(), (idx, ty, kind));
@@ -634,6 +811,8 @@ fn pre_scan_stmts(
                     declared_locals,
                     functions,
                     structs,
+                    table_indices,
+                    anon_map,
                     repeat_id,
                 )?;
                 for (_, elif_body) in &s.elif_branches {
@@ -644,6 +823,8 @@ fn pre_scan_stmts(
                         declared_locals,
                         functions,
                         structs,
+                        table_indices,
+                        anon_map,
                         repeat_id,
                     )?;
                 }
@@ -655,6 +836,8 @@ fn pre_scan_stmts(
                         declared_locals,
                         functions,
                         structs,
+                        table_indices,
+                        anon_map,
                         repeat_id,
                     )?;
                 }
@@ -667,6 +850,8 @@ fn pre_scan_stmts(
                     declared_locals,
                     functions,
                     structs,
+                    table_indices,
+                    anon_map,
                     repeat_id,
                 )?;
             }
@@ -700,6 +885,8 @@ fn pre_scan_stmts(
                     declared_locals,
                     functions,
                     structs,
+                    table_indices,
+                    anon_map,
                     repeat_id,
                 )?;
             }
@@ -713,6 +900,9 @@ fn pre_scan_stmts(
 fn infer_expr_kind(
     expr: &HirExpr,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
 ) -> LocalKind {
     match expr {
         HirExpr::Literal(Literal::Int(..), _) => LocalKind::Int,
@@ -720,10 +910,30 @@ fn infer_expr_kind(
         HirExpr::Literal(Literal::Bool(..), _) => LocalKind::Bool,
         HirExpr::Literal(Literal::String(..), _) => LocalKind::String,
         HirExpr::Construct(name, ..) => LocalKind::Struct(name.clone()),
-        HirExpr::Identifier(name, _) => locals
-            .get(name)
-            .map(|(_, _, k)| k.clone())
-            .unwrap_or(LocalKind::Int),
+        HirExpr::Identifier(name, _) => {
+            if let Some((_, _, k)) = locals.get(name) {
+                k.clone()
+            } else if table_indices.contains_key(name) {
+                if let Some((_, type_idx, _)) = functions.get(name) {
+                    LocalKind::Fn(*type_idx)
+                } else {
+                    LocalKind::Int
+                }
+            } else {
+                LocalKind::Int
+            }
+        }
+        HirExpr::Fn(func_expr) => {
+            if let Some(anon_name) = anon_map.get(&func_expr.span) {
+                if let Some((_, type_idx, _)) = functions.get(anon_name) {
+                    LocalKind::Fn(*type_idx)
+                } else {
+                    LocalKind::Int
+                }
+            } else {
+                LocalKind::Int
+            }
+        }
         _ => LocalKind::Int,
     }
 }
@@ -738,6 +948,9 @@ fn compile_function_body(
     functions: &HashMap<String, (u32, u32, WasmFnType)>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
 ) -> Result<Function, WasmCompileError> {
     let mut locals: HashMap<String, (u32, WasmType, LocalKind)> = HashMap::new();
@@ -770,6 +983,16 @@ fn compile_function_body(
         );
     }
 
+    // Allocate 8 helper scratch locals for call nesting
+    for d in 0..8 {
+        let idx = (params.len() + declared_locals.len()) as u32;
+        declared_locals.push(WasmType::I32);
+        locals.insert(
+            format!("__call_temp_{d}"),
+            (idx, WasmType::I32, LocalKind::Int),
+        );
+    }
+
     let dot_temp_idx = (params.len() + declared_locals.len()) as u32;
     declared_locals.push(WasmType::I32);
     locals.insert(
@@ -786,6 +1009,8 @@ fn compile_function_body(
         &mut declared_locals,
         functions,
         structs,
+        table_indices,
+        anon_map,
         &mut pre_scan_repeat_id,
     )?;
 
@@ -803,10 +1028,14 @@ fn compile_function_body(
         &mut control_stack,
         structs,
         static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
         alloc_func_idx,
         return_type,
         true,
         &mut emit_repeat_id,
+        0,
         0,
     )?;
 
@@ -841,11 +1070,15 @@ fn compile_stmts(
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
     return_type: Option<WasmType>,
     is_top_level: bool,
     repeat_id: &mut u32,
     struct_depth: usize,
+    call_depth: usize,
 ) -> Result<bool, WasmCompileError> {
     let mut terminated = false;
     let stmt_count = stmts.len();
@@ -863,8 +1096,12 @@ fn compile_stmts(
                     control_stack,
                     structs,
                     static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
                     alloc_func_idx,
                     struct_depth,
+                    call_depth,
                 )?;
                 coerce_type(func, expr_ty, local_ty);
                 func.instruction(&Instruction::LocalSet(local_idx));
@@ -880,8 +1117,12 @@ fn compile_stmts(
                             control_stack,
                             structs,
                             static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
                             alloc_func_idx,
                             struct_depth,
+                            call_depth,
                         )?;
                         coerce_type(func, expr_ty, target_ty);
                         func.instruction(&Instruction::LocalSet(local_idx));
@@ -921,8 +1162,12 @@ fn compile_stmts(
                             control_stack,
                             structs,
                             static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
                             alloc_func_idx,
                             struct_depth,
+                            call_depth,
                         )?;
                         coerce_type(func, r_ty, WasmType::I32);
                         let val_ty = compile_expr(
@@ -933,8 +1178,12 @@ fn compile_stmts(
                             control_stack,
                             structs,
                             static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
                             alloc_func_idx,
                             struct_depth,
+                            call_depth,
                         )?;
                         coerce_type(func, val_ty, field_ty);
                         match field_ty {
@@ -986,8 +1235,12 @@ fn compile_stmts(
                             control_stack,
                             structs,
                             static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
                             alloc_func_idx,
                             struct_depth,
+                            call_depth,
                         )?;
                         emit_binary_op(func, *op, target_ty, expr_ty, *span)?;
                         func.instruction(&Instruction::LocalSet(local_idx));
@@ -1028,8 +1281,12 @@ fn compile_stmts(
                             control_stack,
                             structs,
                             static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
                             alloc_func_idx,
                             struct_depth,
+                            call_depth,
                         )?;
                         coerce_type(func, r_ty, WasmType::I32);
                         func.instruction(&Instruction::LocalSet(dot_temp));
@@ -1068,8 +1325,12 @@ fn compile_stmts(
                             control_stack,
                             structs,
                             static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
                             alloc_func_idx,
                             struct_depth,
+                            call_depth,
                         )?;
                         emit_binary_op(func, *op, field_ty, expr_ty, *span)?;
                         match field_ty {
@@ -1119,8 +1380,12 @@ fn compile_stmts(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     if let Some(expected_ret) = return_type {
                         coerce_type(func, expr_ty, expected_ret);
@@ -1144,10 +1409,14 @@ fn compile_stmts(
                     control_stack,
                     structs,
                     static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
                     alloc_func_idx,
                     return_type,
                     repeat_id,
                     struct_depth,
+                    call_depth,
                 )?;
             }
             HirStmt::While(cond, loop_body, _) => {
@@ -1160,10 +1429,14 @@ fn compile_stmts(
                     control_stack,
                     structs,
                     static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
                     alloc_func_idx,
                     return_type,
                     repeat_id,
                     struct_depth,
+                    call_depth,
                 )?;
             }
             HirStmt::Loop(loop_body, _) => {
@@ -1175,10 +1448,14 @@ fn compile_stmts(
                     control_stack,
                     structs,
                     static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
                     alloc_func_idx,
                     return_type,
                     repeat_id,
                     struct_depth,
+                    call_depth,
                 )?;
             }
             HirStmt::Repeat(count, maybe_index, loop_body, _) => {
@@ -1192,10 +1469,14 @@ fn compile_stmts(
                     control_stack,
                     structs,
                     static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
                     alloc_func_idx,
                     return_type,
                     repeat_id,
                     struct_depth,
+                    call_depth,
                 )?;
             }
             HirStmt::Break(span) => {
@@ -1233,8 +1514,12 @@ fn compile_stmts(
                     control_stack,
                     structs,
                     static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
                     alloc_func_idx,
                     struct_depth,
+                    call_depth,
                 )?;
                 if is_top_level && is_last && return_type.is_some() {
                     if let Some(expected_ret) = return_type {
@@ -1247,7 +1532,7 @@ fn compile_stmts(
             }
             other => {
                 return Err(WasmCompileError::UnsupportedStmt {
-                    message: format!("statement `{other:?}` is scheduled for Milestone 4"),
+                    message: format!("statement `{other:?}` is scheduled for Milestone 5"),
                     span: program_stmt_span(other),
                 });
             }
@@ -1267,10 +1552,14 @@ fn compile_if_stmt(
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
     return_type: Option<WasmType>,
     repeat_id: &mut u32,
     struct_depth: usize,
+    call_depth: usize,
 ) -> Result<(), WasmCompileError> {
     let cond_ty = compile_expr(
         &if_stmt.condition,
@@ -1280,8 +1569,12 @@ fn compile_if_stmt(
         control_stack,
         structs,
         static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
         alloc_func_idx,
         struct_depth,
+        call_depth,
     )?;
     coerce_to_bool(func, cond_ty);
 
@@ -1295,11 +1588,15 @@ fn compile_if_stmt(
         control_stack,
         structs,
         static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
         alloc_func_idx,
         return_type,
         false,
         repeat_id,
         struct_depth,
+        call_depth,
     )?;
 
     let has_elifs = !if_stmt.elif_branches.is_empty();
@@ -1318,8 +1615,12 @@ fn compile_if_stmt(
                 control_stack,
                 structs,
                 static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
                 alloc_func_idx,
                 struct_depth,
+                call_depth,
             )?;
             coerce_to_bool(func, e_cond_ty);
 
@@ -1333,11 +1634,15 @@ fn compile_if_stmt(
                 control_stack,
                 structs,
                 static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
                 alloc_func_idx,
                 return_type,
                 false,
                 repeat_id,
                 struct_depth,
+                call_depth,
             )?;
             func.instruction(&Instruction::Else);
             elif_count += 1;
@@ -1352,11 +1657,15 @@ fn compile_if_stmt(
                 control_stack,
                 structs,
                 static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
                 alloc_func_idx,
                 return_type,
                 false,
                 repeat_id,
                 struct_depth,
+                call_depth,
             )?;
         }
 
@@ -1382,10 +1691,14 @@ fn compile_while_stmt(
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
     return_type: Option<WasmType>,
     repeat_id: &mut u32,
     struct_depth: usize,
+    call_depth: usize,
 ) -> Result<(), WasmCompileError> {
     control_stack.push(ControlFrame::LoopBreak);
     func.instruction(&Instruction::Block(BlockType::Empty));
@@ -1401,8 +1714,12 @@ fn compile_while_stmt(
         control_stack,
         structs,
         static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
         alloc_func_idx,
         struct_depth,
+        call_depth,
     )?;
     coerce_to_bool(func, cond_ty);
     func.instruction(&Instruction::I32Eqz);
@@ -1422,11 +1739,15 @@ fn compile_while_stmt(
         control_stack,
         structs,
         static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
         alloc_func_idx,
         return_type,
         false,
         repeat_id,
         struct_depth,
+        call_depth,
     )?;
 
     let loop_depth = control_stack
@@ -1454,10 +1775,14 @@ fn compile_loop_stmt(
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
     return_type: Option<WasmType>,
     repeat_id: &mut u32,
     struct_depth: usize,
+    call_depth: usize,
 ) -> Result<(), WasmCompileError> {
     control_stack.push(ControlFrame::LoopBreak);
     func.instruction(&Instruction::Block(BlockType::Empty));
@@ -1473,11 +1798,15 @@ fn compile_loop_stmt(
         control_stack,
         structs,
         static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
         alloc_func_idx,
         return_type,
         false,
         repeat_id,
         struct_depth,
+        call_depth,
     )?;
 
     let loop_depth = control_stack
@@ -1507,10 +1836,14 @@ fn compile_repeat_stmt(
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
     return_type: Option<WasmType>,
     repeat_id: &mut u32,
     struct_depth: usize,
+    call_depth: usize,
 ) -> Result<(), WasmCompileError> {
     *repeat_id += 1;
     let id = *repeat_id;
@@ -1525,8 +1858,12 @@ fn compile_repeat_stmt(
         control_stack,
         structs,
         static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
         alloc_func_idx,
         struct_depth,
+        call_depth,
     )?;
     coerce_type(func, count_ty, WasmType::I64);
     func.instruction(&Instruction::LocalSet(limit_slot));
@@ -1567,11 +1904,15 @@ fn compile_repeat_stmt(
         control_stack,
         structs,
         static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
         alloc_func_idx,
         return_type,
         false,
         repeat_id,
         struct_depth,
+        call_depth,
     )?;
     control_stack.pop();
     func.instruction(&Instruction::End);
@@ -1646,8 +1987,12 @@ fn compile_expr(
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
     struct_depth: usize,
+    call_depth: usize,
 ) -> Result<WasmType, WasmCompileError> {
     match expr {
         HirExpr::Literal(lit, span) => match lit {
@@ -1693,10 +2038,31 @@ fn compile_expr(
             if let Some(&(idx, ty, _)) = locals.get(name) {
                 func.instruction(&Instruction::LocalGet(idx));
                 Ok(ty)
+            } else if let Some(&table_idx) = table_indices.get(name) {
+                func.instruction(&Instruction::I32Const(table_idx as i32));
+                Ok(WasmType::I32)
             } else {
                 Err(WasmCompileError::UnknownVariable {
                     name: name.clone(),
                     span: *span,
+                })
+            }
+        }
+        HirExpr::Fn(func_expr) => {
+            if let Some(anon_name) = anon_map.get(&func_expr.span) {
+                if let Some(&table_idx) = table_indices.get(anon_name) {
+                    func.instruction(&Instruction::I32Const(table_idx as i32));
+                    Ok(WasmType::I32)
+                } else {
+                    Err(WasmCompileError::UnsupportedExpr {
+                        message: format!("anonymous function `{anon_name}` missing from table"),
+                        span: func_expr.span,
+                    })
+                }
+            } else {
+                Err(WasmCompileError::UnsupportedExpr {
+                    message: "unregistered anonymous function".into(),
+                    span: func_expr.span,
                 })
             }
         }
@@ -1709,8 +2075,12 @@ fn compile_expr(
                 control_stack,
                 structs,
                 static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
                 alloc_func_idx,
                 struct_depth,
+                call_depth,
             )?;
             match op {
                 UnaryOp::Neg => match inner_ty {
@@ -1748,8 +2118,8 @@ fn compile_expr(
             }
         }
         HirExpr::Binary(op, left, right, span) => {
-            let left_ty = infer_expr_type(left, locals, functions, structs)?;
-            let right_ty = infer_expr_type(right, locals, functions, structs)?;
+            let left_ty = infer_expr_type(left, locals, functions, structs, table_indices)?;
+            let right_ty = infer_expr_type(right, locals, functions, structs, table_indices)?;
 
             match op {
                 BinaryOp::Div => {
@@ -1761,8 +2131,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, l_ty, WasmType::F64);
                     let r_ty = compile_expr(
@@ -1773,8 +2147,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, r_ty, WasmType::F64);
                     func.instruction(&Instruction::F64Div);
@@ -1789,8 +2167,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, l_ty, WasmType::I64);
                     let r_ty = compile_expr(
@@ -1801,8 +2183,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, r_ty, WasmType::I64);
                     func.instruction(&Instruction::I64DivS);
@@ -1817,8 +2203,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, l_ty, WasmType::I64);
                     let r_ty = compile_expr(
@@ -1829,8 +2219,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, r_ty, WasmType::I64);
                     func.instruction(&Instruction::I64RemS);
@@ -1850,8 +2244,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, l_ty, target_ty);
                     let r_ty = compile_expr(
@@ -1862,8 +2260,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, r_ty, target_ty);
 
@@ -1897,8 +2299,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, l_ty, compare_ty);
                     let r_ty = compile_expr(
@@ -1909,8 +2315,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, r_ty, compare_ty);
 
@@ -1944,7 +2354,7 @@ fn compile_expr(
             }
         }
         HirExpr::If(cond, then_expr, else_expr, _) => {
-            let res_ty = infer_expr_type(then_expr, locals, functions, structs)?;
+            let res_ty = infer_expr_type(then_expr, locals, functions, structs, table_indices)?;
             let cond_ty = compile_expr(
                 cond,
                 func,
@@ -1953,8 +2363,12 @@ fn compile_expr(
                 control_stack,
                 structs,
                 static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
                 alloc_func_idx,
                 struct_depth,
+                call_depth,
             )?;
             coerce_to_bool(func, cond_ty);
 
@@ -1969,8 +2383,12 @@ fn compile_expr(
                 control_stack,
                 structs,
                 static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
                 alloc_func_idx,
                 struct_depth,
+                call_depth,
             )?;
             coerce_type(func, t_ty, res_ty);
 
@@ -1984,8 +2402,12 @@ fn compile_expr(
                 control_stack,
                 structs,
                 static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
                 alloc_func_idx,
                 struct_depth,
+                call_depth,
             )?;
             coerce_type(func, e_ty, res_ty);
 
@@ -1995,8 +2417,10 @@ fn compile_expr(
             Ok(res_ty)
         }
         HirExpr::Call(callee, args, span) => {
+            // Case 1: Direct function call
             if let HirExpr::Identifier(func_name, _) = &**callee {
-                if let Some(&(func_idx, _, ref fn_type)) = functions.get(func_name) {
+                if !locals.contains_key(func_name) && functions.contains_key(func_name) {
+                    let (func_idx, _, ref fn_type) = functions[func_name];
                     if args.len() != fn_type.params.len() {
                         return Err(WasmCompileError::TypeMismatch {
                             expected: format!("{} arguments", fn_type.params.len()),
@@ -2013,29 +2437,114 @@ fn compile_expr(
                             control_stack,
                             structs,
                             static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
                             alloc_func_idx,
                             struct_depth,
+                            call_depth,
                         )?;
                         coerce_type(func, actual_ty, expected_ty);
                     }
                     func.instruction(&Instruction::Call(func_idx));
-                    if let Some(&ret) = fn_type.results.first() {
-                        Ok(ret)
-                    } else {
-                        Ok(WasmType::I32)
-                    }
-                } else {
-                    Err(WasmCompileError::UnknownVariable {
-                        name: func_name.clone(),
-                        span: *span,
-                    })
+                    return Ok(fn_type.results.first().copied().unwrap_or(WasmType::I64));
                 }
-            } else {
-                Err(WasmCompileError::UnsupportedExpr {
-                    message: "indirect calls are scheduled for Milestone 4".into(),
-                    span: *span,
-                })
             }
+
+            // Case 2: Indirect Call (call_indirect) via Table 0
+            let temp_name = format!("__call_temp_{}", call_depth.min(7));
+            let call_temp = locals[&temp_name].0;
+            let callee_ty = compile_expr(
+                callee,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                struct_depth,
+                call_depth + 1,
+            )?;
+            coerce_type(func, callee_ty, WasmType::I32);
+            func.instruction(&Instruction::LocalSet(call_temp));
+
+            // Determine target signature
+            let (type_idx, expected_params, ret_ty) =
+                if let HirExpr::Identifier(name, _) = &**callee {
+                    if let Some((_, _, LocalKind::Fn(t_idx))) = locals.get(name) {
+                        let fn_sig = &functions
+                            .values()
+                            .find(|(_, idx, _)| idx == t_idx)
+                            .unwrap()
+                            .2;
+                        (
+                            *t_idx,
+                            fn_sig.params.clone(),
+                            fn_sig.results.first().copied(),
+                        )
+                    } else if let Some((_, t_idx, fn_sig)) = functions.get(name) {
+                        (
+                            *t_idx,
+                            fn_sig.params.clone(),
+                            fn_sig.results.first().copied(),
+                        )
+                    } else {
+                        let params = vec![WasmType::I64; args.len()];
+                        let ret = Some(WasmType::I64);
+                        let t_idx = indirect_sigs.get(&args.len()).copied().unwrap_or(0);
+                        (t_idx, params, ret)
+                    }
+                } else if let HirExpr::Fn(func_expr) = &**callee {
+                    let anon_name = &anon_map[&func_expr.span];
+                    let (_, t_idx, fn_sig) = &functions[anon_name];
+                    (
+                        *t_idx,
+                        fn_sig.params.clone(),
+                        fn_sig.results.first().copied(),
+                    )
+                } else {
+                    let params = vec![WasmType::I64; args.len()];
+                    let ret = Some(WasmType::I64);
+                    let t_idx = indirect_sigs.get(&args.len()).copied().unwrap_or(0);
+                    (t_idx, params, ret)
+                };
+
+            // Evaluate arguments onto stack
+            for (arg, expected_ty) in args.iter().zip(
+                expected_params
+                    .iter()
+                    .chain(std::iter::repeat(&WasmType::I64)),
+            ) {
+                let actual_ty = compile_expr(
+                    &arg.value,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    struct_depth,
+                    call_depth + 1,
+                )?;
+                coerce_type(func, actual_ty, *expected_ty);
+            }
+
+            // Push table index and emit CallIndirect
+            func.instruction(&Instruction::LocalGet(call_temp));
+            func.instruction(&Instruction::CallIndirect {
+                type_index: type_idx,
+                table_index: 0,
+            });
+
+            Ok(ret_ty.unwrap_or(WasmType::I64))
         }
         HirExpr::Construct(type_name, fields, span) => {
             if let Some(struct_layout) = structs.get(type_name) {
@@ -2069,8 +2578,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth + 1,
+                        call_depth,
                     )?;
                     coerce_type(func, val_ty, field_ty);
                     match field_ty {
@@ -2141,8 +2654,12 @@ fn compile_expr(
                     control_stack,
                     structs,
                     static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
                     alloc_func_idx,
                     struct_depth,
+                    call_depth,
                 )?;
                 coerce_type(func, r_ty, WasmType::I32);
                 func.instruction(&Instruction::I32Load(MemArg {
@@ -2172,8 +2689,12 @@ fn compile_expr(
                         control_stack,
                         structs,
                         static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
                         alloc_func_idx,
                         struct_depth,
+                        call_depth,
                     )?;
                     coerce_type(func, r_ty, WasmType::I32);
                     match ty {
@@ -2297,6 +2818,7 @@ fn infer_expr_type(
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
     functions: &HashMap<String, (u32, u32, WasmFnType)>,
     structs: &HashMap<String, StructLayout>,
+    table_indices: &HashMap<String, u32>,
 ) -> Result<WasmType, WasmCompileError> {
     match expr {
         HirExpr::Literal(lit, _) => match lit {
@@ -2309,6 +2831,8 @@ fn infer_expr_type(
         HirExpr::Identifier(name, span) => {
             if let Some((_, ty, _)) = locals.get(name) {
                 Ok(*ty)
+            } else if table_indices.contains_key(name) {
+                Ok(WasmType::I32)
             } else {
                 Err(WasmCompileError::UnknownVariable {
                     name: name.clone(),
@@ -2316,8 +2840,11 @@ fn infer_expr_type(
                 })
             }
         }
+        HirExpr::Fn(..) => Ok(WasmType::I32),
         HirExpr::Unary(op, inner, _) => match op {
-            UnaryOp::Neg | UnaryOp::Pos => infer_expr_type(inner, locals, functions, structs),
+            UnaryOp::Neg | UnaryOp::Pos => {
+                infer_expr_type(inner, locals, functions, structs, table_indices)
+            }
             UnaryOp::Not => Ok(WasmType::I32),
         },
         HirExpr::Binary(op, left, right, _) => match op {
@@ -2330,8 +2857,8 @@ fn infer_expr_type(
             | BinaryOp::Greater
             | BinaryOp::GreaterEqual => Ok(WasmType::I32),
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul => {
-                let left_ty = infer_expr_type(left, locals, functions, structs)?;
-                let right_ty = infer_expr_type(right, locals, functions, structs)?;
+                let left_ty = infer_expr_type(left, locals, functions, structs, table_indices)?;
+                let right_ty = infer_expr_type(right, locals, functions, structs, table_indices)?;
                 if left_ty == WasmType::F64 || right_ty == WasmType::F64 {
                     Ok(WasmType::F64)
                 } else {
@@ -2343,7 +2870,9 @@ fn infer_expr_type(
                 span: expr.span(),
             }),
         },
-        HirExpr::If(_, then_expr, _, _) => infer_expr_type(then_expr, locals, functions, structs),
+        HirExpr::If(_, then_expr, _, _) => {
+            infer_expr_type(then_expr, locals, functions, structs, table_indices)
+        }
         HirExpr::Construct(..) => Ok(WasmType::I32),
         HirExpr::Dot(receiver, field_name, _) => {
             let receiver_struct_name = match &**receiver {
@@ -2373,30 +2902,15 @@ fn infer_expr_type(
                 Ok(field_info.map(|(_, ty)| ty).unwrap_or(WasmType::I64))
             }
         }
-        HirExpr::Call(callee, _, span) => {
+        HirExpr::Call(callee, _, _) => {
             if let HirExpr::Identifier(func_name, _) = &**callee {
                 if let Some((_, _, fn_type)) = functions.get(func_name) {
                     if let Some(&ret) = fn_type.results.first() {
-                        Ok(ret)
-                    } else {
-                        Err(WasmCompileError::TypeMismatch {
-                            expected: "value-returning function".to_string(),
-                            found: "void function".to_string(),
-                            span: *span,
-                        })
+                        return Ok(ret);
                     }
-                } else {
-                    Err(WasmCompileError::UnknownVariable {
-                        name: func_name.clone(),
-                        span: *span,
-                    })
                 }
-            } else {
-                Err(WasmCompileError::UnsupportedExpr {
-                    message: "indirect calls are scheduled for Milestone 4".to_string(),
-                    span: *span,
-                })
             }
+            Ok(WasmType::I64)
         }
         other => Err(WasmCompileError::UnsupportedExpr {
             message: format!("expression `{other:?}` is not supported in Wasm backend"),
