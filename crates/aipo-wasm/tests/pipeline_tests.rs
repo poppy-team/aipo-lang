@@ -228,7 +228,7 @@ fn test_error_unknown_variable() {
 }
 
 #[test]
-fn test_error_async_function_unsupported_in_marco_1() {
+fn test_async_function_compiles_to_wasm() {
     let source = Source::new(
         SourceId::next(),
         "test.aipo",
@@ -237,11 +237,10 @@ fn test_error_async_function_unsupported_in_marco_1() {
     let (ast, diags) = parse(&source);
     assert!(diags.is_empty());
     let hir = lower(ast);
-    let err = compile_hir(&hir).unwrap_err();
-    assert!(matches!(
-        err,
-        aipo_wasm::WasmCompileError::UnsupportedItem { .. }
-    ));
+    let wasm_bytes = compile_hir(&hir).expect("async function should compile successfully");
+    // Validate it's a proper wasm module (magic number \0asm)
+    assert!(wasm_bytes.len() > 8);
+    assert_eq!(&wasm_bytes[0..4], b"\0asm");
 }
 
 // =========================================================================
@@ -888,4 +887,126 @@ fn run() -> Int {
         .expect("exported function `run` exists");
 
     assert_eq!(run_fn.call(&mut store, ()).unwrap(), 13);
+}
+
+// =========================================================================
+// Marco 5: Async / Await Runtime Tests
+// =========================================================================
+
+#[test]
+fn test_async_function_exports_runtime_functions() {
+    let code = r#"
+async fn compute() -> Int {
+  return 100
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+
+    // Runtime functions should be exported
+    instance
+        .get_func(&mut store, "__aipo_task_create")
+        .expect("__aipo_task_create should be exported");
+    instance
+        .get_func(&mut store, "__aipo_task_drive")
+        .expect("__aipo_task_drive should be exported");
+    instance
+        .get_func(&mut store, "__aipo_await")
+        .expect("__aipo_await should be exported");
+    instance
+        .get_func(&mut store, "__aipo_task_sleep")
+        .expect("__aipo_task_sleep should be exported");
+    instance
+        .get_func(&mut store, "__aipo_task_cancel")
+        .expect("__aipo_task_cancel should be exported");
+
+    // Virtual time global should be exported
+    instance
+        .get_global(&mut store, "__aipo_virtual_time")
+        .expect("__aipo_virtual_time global should be exported");
+}
+
+#[test]
+fn test_async_function_wrapper_returns_task_handle() {
+    let code = r#"
+async fn compute() -> Int {
+  return 42
+}
+
+fn run() -> Int {
+  let task = compute()
+  return task
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let run_fn = instance
+        .get_typed_func::<(), i64>(&mut store, "run")
+        .expect("exported function `run` exists");
+
+    // The task handle is a pointer (i32 cast to i64), should be > 0
+    let result = run_fn.call(&mut store, ()).unwrap();
+    assert!(result > 0, "task handle should be a non-zero pointer, got {result}");
+}
+
+#[test]
+fn test_await_drives_async_task_to_completion() {
+    let code = r#"
+async fn compute() -> Int {
+  return 42
+}
+
+fn run() -> Int {
+  let task = compute()
+  return await task
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let run_fn = instance
+        .get_typed_func::<(), i64>(&mut store, "run")
+        .expect("exported function `run` exists");
+
+    assert_eq!(run_fn.call(&mut store, ()).unwrap(), 42);
+}
+
+#[test]
+fn test_async_function_with_parameters() {
+    let code = r#"
+async fn add(a: Int, b: Int) -> Int {
+  return a + b
+}
+
+fn run() -> Int {
+  let task = add(10, 32)
+  return await task
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let run_fn = instance
+        .get_typed_func::<(), i64>(&mut store, "run")
+        .expect("exported function `run` exists");
+
+    assert_eq!(run_fn.call(&mut store, ()).unwrap(), 42);
+}
+
+#[test]
+fn test_multiple_async_tasks_independent() {
+    let code = r#"
+async fn square(x: Int) -> Int {
+  return x * x
+}
+
+fn run() -> Int {
+  let t1 = square(3)
+  let t2 = square(4)
+  let a = await t1
+  let b = await t2
+  return a + b
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let run_fn = instance
+        .get_typed_func::<(), i64>(&mut store, "run")
+        .expect("exported function `run` exists");
+
+    // 3*3 + 4*4 = 9 + 16 = 25
+    assert_eq!(run_fn.call(&mut store, ()).unwrap(), 25);
 }

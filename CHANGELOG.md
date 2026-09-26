@@ -42,6 +42,16 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
   - Pré-registro de assinaturas de tipos para chamadas indiretas (`indirect_sigs`) cobrindo aridades de 0 a 8 com deduplicação estrutural de tipos.
   - Pilha de 8 temporários de chamada indireta (`__call_temp_0..7`) para suporte seguro a aninhamento arbitrário de chamadas indiretas (`f(g(h(x)))`).
   - Suíte de testes de integração expandida para 45 testes automatizados verdes em `crates/aipo-wasm` (40 de pipeline + 5 de emitter), executados e validados pelo motor JIT `wasmtime`.
+- **Marco 5: Runtime Async/Await (Async/Await Runtime - ADP-013)**:
+  - Implementação completa do runtime cooperativo de tarefas assíncronas integrado ao módulo WebAssembly, sem dependências externas.
+  - Estrutura `AsyncHelpers` centralizando os índices das 5 funções intrínsecas do runtime: `__aipo_task_create`, `__aipo_task_drive`, `__aipo_await`, `__aipo_task_sleep`, `__aipo_task_cancel`.
+  - Layout de memória linear de 48 bytes por tarefa: status (i32@0: Pending/Running/Ready/Cancelled), fn_table_idx (i32@4), result (i64@8), state (i32@16), arg_count (i32@20), arg0 (i64@24), arg1 (i64@32), next_ptr (i32@40).
+  - Compilação de funções `async fn` com divisão automática em corpo canônico (`__async_body_{name}`) e função wrapper que cria o handle de tarefa via `__aipo_task_create`.
+  - Despacho polimórfico via `call_indirect` no `__aipo_task_drive` com suporte a aridades 0, 1 e 2, permitindo passagem de argumentos para corpos assíncronos com diferentes assinaturas.
+  - Compilação de `HirExpr::Await` com chamada ao intrínseco `__aipo_await` que conduz a tarefa até conclusão (status Ready) e retorna o resultado como `I64`.
+  - Exportação do global `__aipo_virtual_time` (i64, mutável) para controle de tempo virtual por runtimes externos.
+  - Propagação do parâmetro `async_helpers` por toda a cadeia de compilação: `compile_function_body`, `compile_stmts`, `compile_if_stmt`, `compile_while_stmt`, `compile_loop_stmt`, `compile_repeat_stmt` e `compile_expr` com todas as ~50 chamadas recursivas internas atualizadas.
+  - Suíte de testes de integração expandida para 50 testes automatizados verdes em `crates/aipo-wasm` (45 de pipeline + 5 de emitter), incluindo 6 testes específicos de async: compilação de função assíncrona, exportação de funções de runtime, retorno de task handle, `await` conduzindo tarefa, funções assíncronas com parâmetros, e múltiplas tarefas independentes.
 
 ## [0.1.0] - 2026-09-26 (Linha de Base Stack VM)
 

@@ -84,6 +84,12 @@ impl WasmEmitter {
         self.exports.push((name.into(), ExportKind::Memory, 0));
     }
 
+    /// Exports a global variable under the given public symbol.
+    pub fn export_global(&mut self, name: impl Into<String>, global_index: u32) {
+        self.exports
+            .push((name.into(), ExportKind::Global, global_index));
+    }
+
     /// Adds a global variable and returns its global index.
     pub fn add_global(&mut self, global_type: GlobalType, init_expr: &ConstExpr) -> u32 {
         let idx = self.globals.len() as u32;

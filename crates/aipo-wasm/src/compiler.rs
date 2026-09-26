@@ -34,6 +34,7 @@ enum LocalKind {
     String,
     Struct(String),
     Fn(u32),
+    Task,
 }
 
 /// Describes the byte layout of a struct in linear memory.
@@ -41,6 +42,16 @@ enum LocalKind {
 struct StructLayout {
     size: u32,
     fields: HashMap<String, (u32, WasmType)>,
+}
+
+/// Helper containing function indices of built-in async runtime functions.
+#[derive(Debug, Clone, Copy)]
+struct AsyncHelpers {
+    task_create_idx: u32,
+    task_drive_idx: u32,
+    await_idx: u32,
+    task_sleep_idx: u32,
+    task_cancel_idx: u32,
 }
 
 /// Compiles an `HirProgram` into a standard WebAssembly binary module (`.wasm`).
@@ -72,15 +83,23 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     collect_anon_functions(program, &mut anon_map, &mut anon_decls);
 
     let mut func_decls: Vec<HirFunctionDecl> = Vec::new();
+    let mut async_wrappers: Vec<(String, String, Vec<HirParam>)> = Vec::new();
     for item in &program.items {
         if let HirItem::Fn(func) = item {
             if func.is_async {
-                return Err(WasmCompileError::UnsupportedItem {
-                    message: "async functions are scheduled for Milestone 5 (ADP-013)".into(),
+                let inner_body_name = format!("__async_body_{}", func.name);
+                func_decls.push(HirFunctionDecl {
+                    name: inner_body_name.clone(),
+                    is_async: false,
+                    params: func.params.clone(),
+                    return_type: func.return_type.clone(),
+                    body: func.body.clone(),
                     span: func.span,
                 });
+                async_wrappers.push((func.name.clone(), inner_body_name, func.params.clone()));
+            } else {
+                func_decls.push(func.clone());
             }
-            func_decls.push(func.clone());
         }
     }
     func_decls.extend(anon_decls);
@@ -116,6 +135,17 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
         &ConstExpr::i32_const(heap_start),
     );
 
+    // Global 1: Virtual Time in milliseconds (`__aipo_virtual_time`)
+    let virtual_time_idx = emitter.add_global(
+        GlobalType {
+            val_type: ValType::I64,
+            mutable: true,
+            shared: false,
+        },
+        &ConstExpr::i64_const(0),
+    );
+    emitter.export_global("__aipo_virtual_time", virtual_time_idx);
+
     // Function 0: Built-in Allocator `__aipo_alloc(size: i32) -> i32`
     let alloc_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I32]);
     let alloc_type_idx = emitter.add_type(alloc_fn_type.clone());
@@ -135,27 +165,113 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
         indirect_sigs.insert(arity, t_idx);
     }
 
+    // Built-in Async Runtime Functions (Milestone 5 / ADP-013)
+    // Function 1: `__aipo_task_create(fn_table_idx: i32, arg_count: i32, arg0: i64, arg1: i64) -> i32`
+    let task_create_fn_type = WasmFnType::new(
+        vec![WasmType::I32, WasmType::I32, WasmType::I64, WasmType::I64],
+        vec![WasmType::I32],
+    );
+    let task_create_type_idx = emitter.add_type(task_create_fn_type.clone());
+    let task_create_fn = build_task_create_function(alloc_func_idx);
+    let task_create_func_idx = emitter.add_function(task_create_type_idx, task_create_fn);
+    emitter.export_function("__aipo_task_create", task_create_func_idx);
+    functions.insert(
+        "__aipo_task_create".to_string(),
+        (task_create_func_idx, task_create_type_idx, task_create_fn_type),
+    );
+
+    // Function 2: `__aipo_task_drive(task_ptr: i32) -> i64`
+    let task_drive_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I64]);
+    let task_drive_type_idx = emitter.add_type(task_drive_fn_type.clone());
+    let task_drive_fn = build_task_drive_function(
+        indirect_sigs[&0],
+        indirect_sigs[&1],
+        indirect_sigs[&2],
+    );
+    let task_drive_func_idx = emitter.add_function(task_drive_type_idx, task_drive_fn);
+    emitter.export_function("__aipo_task_drive", task_drive_func_idx);
+    functions.insert(
+        "__aipo_task_drive".to_string(),
+        (task_drive_func_idx, task_drive_type_idx, task_drive_fn_type),
+    );
+
+    // Function 3: `__aipo_await(task_ptr: i32) -> i64`
+    let await_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I64]);
+    let await_type_idx = emitter.add_type(await_fn_type.clone());
+    let await_fn = build_await_function(task_drive_func_idx);
+    let await_func_idx = emitter.add_function(await_type_idx, await_fn);
+    emitter.export_function("__aipo_await", await_func_idx);
+    functions.insert(
+        "__aipo_await".to_string(),
+        (await_func_idx, await_type_idx, await_fn_type),
+    );
+
+    // Function 4: `__aipo_task_sleep(duration_ms: i64) -> i64`
+    let task_sleep_fn_type = WasmFnType::new(vec![WasmType::I64], vec![WasmType::I64]);
+    let task_sleep_type_idx = emitter.add_type(task_sleep_fn_type.clone());
+    let task_sleep_fn = build_task_sleep_function();
+    let task_sleep_func_idx = emitter.add_function(task_sleep_type_idx, task_sleep_fn);
+    emitter.export_function("__aipo_task_sleep", task_sleep_func_idx);
+    functions.insert(
+        "__aipo_task_sleep".to_string(),
+        (task_sleep_func_idx, task_sleep_type_idx, task_sleep_fn_type),
+    );
+
+    // Function 5: `__aipo_task_cancel(task_ptr: i32) -> i64`
+    let task_cancel_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I64]);
+    let task_cancel_type_idx = emitter.add_type(task_cancel_fn_type.clone());
+    let task_cancel_fn = build_task_cancel_function();
+    let task_cancel_func_idx = emitter.add_function(task_cancel_type_idx, task_cancel_fn);
+    emitter.export_function("__aipo_task_cancel", task_cancel_func_idx);
+    functions.insert(
+        "__aipo_task_cancel".to_string(),
+        (task_cancel_func_idx, task_cancel_type_idx, task_cancel_fn_type),
+    );
+
+    let async_helpers = AsyncHelpers {
+        task_create_idx: task_create_func_idx,
+        task_drive_idx: task_drive_func_idx,
+        await_idx: await_func_idx,
+        task_sleep_idx: task_sleep_func_idx,
+        task_cancel_idx: task_cancel_func_idx,
+    };
+
     // Pass 1: Collect signatures of all declared and anonymous functions
     for func in &func_decls {
         let params = func.params.iter().map(param_wasm_type).collect::<Vec<_>>();
-        let ret = resolve_return_type(
-            &func.return_type,
-            &func.params,
-            &func.body,
-            &functions,
-            &structs,
-        );
+        let ret = if func.name.starts_with("__async_body_") {
+            Some(WasmType::I64)
+        } else {
+            resolve_return_type(
+                &func.return_type,
+                &func.params,
+                &func.body,
+                &functions,
+                &structs,
+            )
+        };
         let fn_type = WasmFnType::new(params, ret.into_iter().collect());
         let type_idx = emitter.add_type(fn_type.clone());
         let func_idx = functions.len() as u32;
         functions.insert(func.name.clone(), (func_idx, type_idx, fn_type));
     }
 
+    // Register async wrapper function signatures (returning task_ptr: i32)
+    let mut async_wrapper_infos = Vec::new();
+    for (name, inner_body_name, params) in &async_wrappers {
+        let params_wasm = params.iter().map(param_wasm_type).collect::<Vec<_>>();
+        let fn_type = WasmFnType::new(params_wasm, vec![WasmType::I32]);
+        let type_idx = emitter.add_type(fn_type.clone());
+        let func_idx = functions.len() as u32;
+        functions.insert(name.clone(), (func_idx, type_idx, fn_type));
+        async_wrapper_infos.push((name.clone(), inner_body_name.clone(), params.len(), type_idx));
+    }
+
     // Pass 1.5: Setup Table 0 for indirect function calls (call_indirect)
     let mut table_indices: HashMap<String, u32> = HashMap::new();
+    let table_size = (func_decls.len() as u64).max(1);
+    emitter.enable_table(table_size, Some(table_size));
     if !func_decls.is_empty() {
-        let table_size = func_decls.len() as u64;
-        emitter.enable_table(table_size, Some(table_size));
         let mut func_indices = Vec::new();
         for (table_idx, func) in func_decls.iter().enumerate() {
             let (func_idx, _, _) = functions[&func.name];
@@ -200,9 +316,22 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
             &anon_map,
             &indirect_sigs,
             alloc_func_idx,
+            async_helpers,
         )?;
         let assigned_idx = emitter.add_function(*type_idx, compiled_fn);
         emitter.export_function(&func.name, assigned_idx);
+    }
+
+    // Compile async wrapper functions
+    for (name, inner_body_name, param_count, type_idx) in async_wrapper_infos {
+        let inner_table_idx = table_indices[&inner_body_name];
+        let wrapper_fn = build_async_wrapper_function(
+            inner_table_idx,
+            param_count,
+            async_helpers.task_create_idx,
+        );
+        let assigned_idx = emitter.add_function(type_idx, wrapper_fn);
+        emitter.export_function(&name, assigned_idx);
     }
 
     // Compile top-level entrypoint if present
@@ -219,6 +348,7 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
             &anon_map,
             &indirect_sigs,
             alloc_func_idx,
+            async_helpers,
         )?;
         let assigned_idx = emitter.add_function(type_idx, compiled_fn);
         emitter.export_function("__top_level__", assigned_idx);
@@ -280,6 +410,9 @@ fn collect_stmts_anon_functions(
                 collect_expr_anon_functions(count, anon_map, anon_decls);
                 collect_stmts_anon_functions(body, anon_map, anon_decls);
             }
+            HirStmt::AwaitDo(stmts, _) => {
+                collect_stmts_anon_functions(stmts, anon_map, anon_decls);
+            }
             _ => {}
         }
     }
@@ -303,6 +436,9 @@ fn collect_expr_anon_functions(
                 body: func_expr.body.clone(),
                 span: func_expr.span,
             });
+        }
+        HirExpr::Await(inner, _) => {
+            collect_expr_anon_functions(inner, anon_map, anon_decls);
         }
         HirExpr::Call(callee, args, _) => {
             collect_expr_anon_functions(callee, anon_map, anon_decls);
@@ -400,6 +536,9 @@ fn scan_stmts_for_constructs(stmts: &[HirStmt], structs: &mut HashMap<String, St
                 scan_expr_for_constructs(count, structs);
                 scan_stmts_for_constructs(body, structs);
             }
+            HirStmt::AwaitDo(stmts, _) => {
+                scan_stmts_for_constructs(stmts, structs);
+            }
             _ => {}
         }
     }
@@ -407,6 +546,9 @@ fn scan_stmts_for_constructs(stmts: &[HirStmt], structs: &mut HashMap<String, St
 
 fn scan_expr_for_constructs(expr: &HirExpr, structs: &mut HashMap<String, StructLayout>) {
     match expr {
+        HirExpr::Await(inner, _) => {
+            scan_expr_for_constructs(inner, structs);
+        }
         HirExpr::Construct(type_name, fields, _) => {
             let mut float_fields = Vec::new();
             for (maybe_name, field_expr) in fields {
@@ -513,6 +655,311 @@ fn build_allocator_function() -> Function {
     alloc_fn
 }
 
+/// Builds the `__aipo_task_create(fn_table_idx: i32, arg_count: i32, arg0: i64, arg1: i64) -> i32` function.
+fn build_task_create_function(alloc_func_idx: u32) -> Function {
+    // 1 local: local 4 (task_ptr: i32)
+    let mut func = Function::new([(1, ValType::I32)]);
+
+    // task_ptr = alloc(48)
+    func.instruction(&Instruction::I32Const(48));
+    func.instruction(&Instruction::Call(alloc_func_idx));
+    func.instruction(&Instruction::LocalSet(4));
+
+    // [task_ptr + 0] = status = 0 (Pending)
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    // [task_ptr + 4] = fn_table_idx (param 0)
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 4,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    // [task_ptr + 8] = result = 0 (i64)
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::I64Const(0));
+    func.instruction(&Instruction::I64Store(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+
+    // [task_ptr + 16] = state = 0 (i32)
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 16,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    // [task_ptr + 20] = arg_count (param 1)
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 20,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    // [task_ptr + 24] = arg0 (param 2)
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::I64Store(MemArg {
+        offset: 24,
+        align: 3,
+        memory_index: 0,
+    }));
+
+    // [task_ptr + 32] = arg1 (param 3)
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I64Store(MemArg {
+        offset: 32,
+        align: 3,
+        memory_index: 0,
+    }));
+
+    // [task_ptr + 40] = next_ptr = 0 (i32)
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 40,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    // return task_ptr
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::End);
+
+    func
+}
+
+/// Builds the `__aipo_task_drive(task_ptr: i32) -> i64` function.
+fn build_task_drive_function(sig_0: u32, sig_1: u32, sig_2: u32) -> Function {
+    // 4 locals:
+    // local 1: status (i32)
+    // local 2: fn_idx (i32)
+    // local 3: arg_count (i32)
+    // local 4: res (i64)
+    let mut func = Function::new([(3, ValType::I32), (1, ValType::I64)]);
+
+    // status = [task_ptr + 0]
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalSet(1));
+
+    // if status == 2 (Ready) -> return [task_ptr + 8]
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I32Const(2));
+    func.instruction(&Instruction::I32Eq);
+    func.instruction(&Instruction::If(BlockType::Empty));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::Return);
+    func.instruction(&Instruction::End);
+
+    // if status == 4 (Cancelled) -> trap (unreachable)
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I32Const(4));
+    func.instruction(&Instruction::I32Eq);
+    func.instruction(&Instruction::If(BlockType::Empty));
+    func.instruction(&Instruction::Unreachable);
+    func.instruction(&Instruction::End);
+
+    // mark status = 1 (Running)
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Const(1));
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    // fn_idx = [task_ptr + 4]
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 4,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalSet(2));
+
+    // arg_count = [task_ptr + 20]
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 20,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalSet(3));
+
+    // Dispatch via call_indirect based on arg_count
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32Eqz);
+    func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+    // Arity 0
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::CallIndirect {
+        type_index: sig_0,
+        table_index: 0,
+    });
+    func.instruction(&Instruction::Else);
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32Const(1));
+    func.instruction(&Instruction::I32Eq);
+    func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+    // Arity 1: load arg0 from [task_ptr + 24]
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 24,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::CallIndirect {
+        type_index: sig_1,
+        table_index: 0,
+    });
+    func.instruction(&Instruction::Else);
+    // Arity 2: load arg0 from [task_ptr + 24], arg1 from [task_ptr + 32]
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 24,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 32,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::CallIndirect {
+        type_index: sig_2,
+        table_index: 0,
+    });
+    func.instruction(&Instruction::End);
+    func.instruction(&Instruction::End);
+
+    // Save result to local 4
+    func.instruction(&Instruction::LocalSet(4));
+
+    // [task_ptr + 8] = res
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::I64Store(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+
+    // mark status = 2 (Ready)
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Const(2));
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    // return res
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::End);
+
+    func
+}
+
+/// Builds the `__aipo_await(task_ptr: i32) -> i64` function.
+fn build_await_function(task_drive_func_idx: u32) -> Function {
+    let mut func = Function::new([]);
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::Call(task_drive_func_idx));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds the `__aipo_task_sleep(duration_ms: i64) -> i64` function.
+/// Advances `__aipo_virtual_time` (Global 1) by `duration_ms` and returns 0.
+fn build_task_sleep_function() -> Function {
+    let mut func = Function::new([]);
+    func.instruction(&Instruction::GlobalGet(1));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Add);
+    func.instruction(&Instruction::GlobalSet(1));
+    func.instruction(&Instruction::I64Const(0));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds the `__aipo_task_cancel(task_ptr: i32) -> i64` function.
+/// Marks the task's status as Cancelled (4) and returns 0.
+fn build_task_cancel_function() -> Function {
+    let mut func = Function::new([]);
+    // [task_ptr + 0] = 4 (Cancelled)
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Const(4));
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::I64Const(0));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds a wrapper function for an `async fn` that creates a `Task` handle and returns it (`task_ptr: i32`).
+fn build_async_wrapper_function(
+    inner_table_idx: u32,
+    param_count: usize,
+    task_create_func_idx: u32,
+) -> Function {
+    let mut func = Function::new([]);
+    // arg 0: fn_table_idx
+    func.instruction(&Instruction::I32Const(inner_table_idx as i32));
+
+    // arg 1: arg_count
+    func.instruction(&Instruction::I32Const(param_count as i32));
+
+    // arg 2: arg0
+    if param_count > 0 {
+        func.instruction(&Instruction::LocalGet(0));
+    } else {
+        func.instruction(&Instruction::I64Const(0));
+    }
+
+    // arg 3: arg1
+    if param_count > 1 {
+        func.instruction(&Instruction::LocalGet(1));
+    } else {
+        func.instruction(&Instruction::I64Const(0));
+    }
+
+    // call __aipo_task_create
+    func.instruction(&Instruction::Call(task_create_func_idx));
+    func.instruction(&Instruction::End);
+    func
+}
+
 /// Collects static string literals into the linear memory data segment pool.
 fn collect_program_strings(
     program: &HirProgram,
@@ -572,6 +1019,9 @@ fn collect_stmts_strings(
                 collect_expr_strings(count, static_strings, data_segments, next_offset);
                 collect_stmts_strings(body, static_strings, data_segments, next_offset);
             }
+            HirStmt::AwaitDo(stmts, _) => {
+                collect_stmts_strings(stmts, static_strings, data_segments, next_offset);
+            }
             _ => {}
         }
     }
@@ -584,6 +1034,9 @@ fn collect_expr_strings(
     next_offset: &mut i32,
 ) {
     match expr {
+        HirExpr::Await(inner, _) => {
+            collect_expr_strings(inner, static_strings, data_segments, next_offset);
+        }
         HirExpr::Literal(Literal::String(text, _), _) => {
             if !static_strings.contains_key(text) {
                 let offset = *next_offset;
@@ -764,6 +1217,18 @@ fn infer_body_return_type(
                     return Some(ty);
                 }
             }
+            HirStmt::AwaitDo(stmts, _) => {
+                if let Some(ty) = infer_body_return_type(
+                    stmts,
+                    locals,
+                    functions,
+                    structs,
+                    table_indices,
+                    anon_map,
+                ) {
+                    return Some(ty);
+                }
+            }
             _ => {}
         }
     }
@@ -890,6 +1355,19 @@ fn pre_scan_stmts(
                     repeat_id,
                 )?;
             }
+            HirStmt::AwaitDo(stmts, _) => {
+                pre_scan_stmts(
+                    stmts,
+                    params_count,
+                    locals,
+                    declared_locals,
+                    functions,
+                    structs,
+                    table_indices,
+                    anon_map,
+                    repeat_id,
+                )?;
+            }
             _ => {}
         }
     }
@@ -934,6 +1412,23 @@ fn infer_expr_kind(
                 LocalKind::Int
             }
         }
+        HirExpr::Call(callee, _, _) => {
+            if let HirExpr::Dot(receiver, method_name, _) = &**callee {
+                if let HirExpr::Identifier(rec_name, _) = &**receiver {
+                    if rec_name == "task" && method_name == "spawn" {
+                        return LocalKind::Task;
+                    }
+                }
+            }
+            if let HirExpr::Identifier(name, _) = &**callee {
+                if let Some((_, _, fn_type)) = functions.get(name) {
+                    if fn_type.results.first() == Some(&WasmType::I32) {
+                        return LocalKind::Task;
+                    }
+                }
+            }
+            LocalKind::Int
+        }
         _ => LocalKind::Int,
     }
 }
@@ -952,6 +1447,7 @@ fn compile_function_body(
     anon_map: &HashMap<SourceSpan, String>,
     indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
 ) -> Result<Function, WasmCompileError> {
     let mut locals: HashMap<String, (u32, WasmType, LocalKind)> = HashMap::new();
     let mut declared_locals: Vec<WasmType> = Vec::new();
@@ -1032,6 +1528,7 @@ fn compile_function_body(
         anon_map,
         indirect_sigs,
         alloc_func_idx,
+        async_helpers,
         return_type,
         true,
         &mut emit_repeat_id,
@@ -1074,6 +1571,7 @@ fn compile_stmts(
     anon_map: &HashMap<SourceSpan, String>,
     indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
     return_type: Option<WasmType>,
     is_top_level: bool,
     repeat_id: &mut u32,
@@ -1100,6 +1598,7 @@ fn compile_stmts(
                     anon_map,
                     indirect_sigs,
                     alloc_func_idx,
+                    async_helpers,
                     struct_depth,
                     call_depth,
                 )?;
@@ -1121,6 +1620,7 @@ fn compile_stmts(
                             anon_map,
                             indirect_sigs,
                             alloc_func_idx,
+                            async_helpers,
                             struct_depth,
                             call_depth,
                         )?;
@@ -1166,6 +1666,7 @@ fn compile_stmts(
                             anon_map,
                             indirect_sigs,
                             alloc_func_idx,
+                            async_helpers,
                             struct_depth,
                             call_depth,
                         )?;
@@ -1182,6 +1683,7 @@ fn compile_stmts(
                             anon_map,
                             indirect_sigs,
                             alloc_func_idx,
+                            async_helpers,
                             struct_depth,
                             call_depth,
                         )?;
@@ -1239,6 +1741,7 @@ fn compile_stmts(
                             anon_map,
                             indirect_sigs,
                             alloc_func_idx,
+                            async_helpers,
                             struct_depth,
                             call_depth,
                         )?;
@@ -1285,6 +1788,7 @@ fn compile_stmts(
                             anon_map,
                             indirect_sigs,
                             alloc_func_idx,
+                            async_helpers,
                             struct_depth,
                             call_depth,
                         )?;
@@ -1329,6 +1833,7 @@ fn compile_stmts(
                             anon_map,
                             indirect_sigs,
                             alloc_func_idx,
+                            async_helpers,
                             struct_depth,
                             call_depth,
                         )?;
@@ -1384,6 +1889,7 @@ fn compile_stmts(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -1413,6 +1919,7 @@ fn compile_stmts(
                     anon_map,
                     indirect_sigs,
                     alloc_func_idx,
+                    async_helpers,
                     return_type,
                     repeat_id,
                     struct_depth,
@@ -1433,6 +1940,7 @@ fn compile_stmts(
                     anon_map,
                     indirect_sigs,
                     alloc_func_idx,
+                    async_helpers,
                     return_type,
                     repeat_id,
                     struct_depth,
@@ -1452,6 +1960,7 @@ fn compile_stmts(
                     anon_map,
                     indirect_sigs,
                     alloc_func_idx,
+                    async_helpers,
                     return_type,
                     repeat_id,
                     struct_depth,
@@ -1473,6 +1982,7 @@ fn compile_stmts(
                     anon_map,
                     indirect_sigs,
                     alloc_func_idx,
+                    async_helpers,
                     return_type,
                     repeat_id,
                     struct_depth,
@@ -1518,6 +2028,7 @@ fn compile_stmts(
                     anon_map,
                     indirect_sigs,
                     alloc_func_idx,
+                    async_helpers,
                     struct_depth,
                     call_depth,
                 )?;
@@ -1528,6 +2039,30 @@ fn compile_stmts(
                     terminated = true;
                 } else {
                     func.instruction(&Instruction::Drop);
+                }
+            }
+            HirStmt::AwaitDo(inner_stmts, _) => {
+                let inner_term = compile_stmts(
+                    inner_stmts,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    return_type,
+                    false,
+                    repeat_id,
+                    struct_depth,
+                    call_depth,
+                )?;
+                if inner_term {
+                    terminated = true;
                 }
             }
             other => {
@@ -1556,6 +2091,7 @@ fn compile_if_stmt(
     anon_map: &HashMap<SourceSpan, String>,
     indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
     return_type: Option<WasmType>,
     repeat_id: &mut u32,
     struct_depth: usize,
@@ -1573,6 +2109,7 @@ fn compile_if_stmt(
         anon_map,
         indirect_sigs,
         alloc_func_idx,
+        async_helpers,
         struct_depth,
         call_depth,
     )?;
@@ -1592,6 +2129,7 @@ fn compile_if_stmt(
         anon_map,
         indirect_sigs,
         alloc_func_idx,
+        async_helpers,
         return_type,
         false,
         repeat_id,
@@ -1619,6 +2157,7 @@ fn compile_if_stmt(
                 anon_map,
                 indirect_sigs,
                 alloc_func_idx,
+                async_helpers,
                 struct_depth,
                 call_depth,
             )?;
@@ -1638,6 +2177,7 @@ fn compile_if_stmt(
                 anon_map,
                 indirect_sigs,
                 alloc_func_idx,
+                async_helpers,
                 return_type,
                 false,
                 repeat_id,
@@ -1661,6 +2201,7 @@ fn compile_if_stmt(
                 anon_map,
                 indirect_sigs,
                 alloc_func_idx,
+                async_helpers,
                 return_type,
                 false,
                 repeat_id,
@@ -1695,6 +2236,7 @@ fn compile_while_stmt(
     anon_map: &HashMap<SourceSpan, String>,
     indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
     return_type: Option<WasmType>,
     repeat_id: &mut u32,
     struct_depth: usize,
@@ -1718,6 +2260,7 @@ fn compile_while_stmt(
         anon_map,
         indirect_sigs,
         alloc_func_idx,
+        async_helpers,
         struct_depth,
         call_depth,
     )?;
@@ -1743,6 +2286,7 @@ fn compile_while_stmt(
         anon_map,
         indirect_sigs,
         alloc_func_idx,
+        async_helpers,
         return_type,
         false,
         repeat_id,
@@ -1779,6 +2323,7 @@ fn compile_loop_stmt(
     anon_map: &HashMap<SourceSpan, String>,
     indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
     return_type: Option<WasmType>,
     repeat_id: &mut u32,
     struct_depth: usize,
@@ -1802,6 +2347,7 @@ fn compile_loop_stmt(
         anon_map,
         indirect_sigs,
         alloc_func_idx,
+        async_helpers,
         return_type,
         false,
         repeat_id,
@@ -1840,6 +2386,7 @@ fn compile_repeat_stmt(
     anon_map: &HashMap<SourceSpan, String>,
     indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
     return_type: Option<WasmType>,
     repeat_id: &mut u32,
     struct_depth: usize,
@@ -1862,6 +2409,7 @@ fn compile_repeat_stmt(
         anon_map,
         indirect_sigs,
         alloc_func_idx,
+        async_helpers,
         struct_depth,
         call_depth,
     )?;
@@ -1908,6 +2456,7 @@ fn compile_repeat_stmt(
         anon_map,
         indirect_sigs,
         alloc_func_idx,
+        async_helpers,
         return_type,
         false,
         repeat_id,
@@ -1991,6 +2540,7 @@ fn compile_expr(
     anon_map: &HashMap<SourceSpan, String>,
     indirect_sigs: &HashMap<usize, u32>,
     alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
     struct_depth: usize,
     call_depth: usize,
 ) -> Result<WasmType, WasmCompileError> {
@@ -2079,6 +2629,7 @@ fn compile_expr(
                 anon_map,
                 indirect_sigs,
                 alloc_func_idx,
+                async_helpers,
                 struct_depth,
                 call_depth,
             )?;
@@ -2135,6 +2686,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2151,6 +2703,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2171,6 +2724,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2187,6 +2741,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2207,6 +2762,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2223,6 +2779,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2248,6 +2805,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2264,6 +2822,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2303,6 +2862,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2319,6 +2879,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2367,6 +2928,7 @@ fn compile_expr(
                 anon_map,
                 indirect_sigs,
                 alloc_func_idx,
+                async_helpers,
                 struct_depth,
                 call_depth,
             )?;
@@ -2387,6 +2949,7 @@ fn compile_expr(
                 anon_map,
                 indirect_sigs,
                 alloc_func_idx,
+                async_helpers,
                 struct_depth,
                 call_depth,
             )?;
@@ -2406,6 +2969,7 @@ fn compile_expr(
                 anon_map,
                 indirect_sigs,
                 alloc_func_idx,
+                async_helpers,
                 struct_depth,
                 call_depth,
             )?;
@@ -2441,6 +3005,7 @@ fn compile_expr(
                             anon_map,
                             indirect_sigs,
                             alloc_func_idx,
+                async_helpers,
                             struct_depth,
                             call_depth,
                         )?;
@@ -2466,6 +3031,7 @@ fn compile_expr(
                 anon_map,
                 indirect_sigs,
                 alloc_func_idx,
+                async_helpers,
                 struct_depth,
                 call_depth + 1,
             )?;
@@ -2531,6 +3097,7 @@ fn compile_expr(
                     anon_map,
                     indirect_sigs,
                     alloc_func_idx,
+                async_helpers,
                     struct_depth,
                     call_depth + 1,
                 )?;
@@ -2582,6 +3149,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                        async_helpers,
                         struct_depth + 1,
                         call_depth,
                     )?;
@@ -2658,6 +3226,7 @@ fn compile_expr(
                     anon_map,
                     indirect_sigs,
                     alloc_func_idx,
+                async_helpers,
                     struct_depth,
                     call_depth,
                 )?;
@@ -2693,6 +3262,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
+                async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2730,6 +3300,30 @@ fn compile_expr(
                     })
                 }
             }
+        }
+        HirExpr::Await(inner, _span) => {
+            // Compile the inner expression — should produce task_ptr (I32)
+            let inner_ty = compile_expr(
+                inner,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth,
+            )?;
+            // Coerce to I32 if needed (task handle is an I32 pointer)
+            coerce_type(func, inner_ty, WasmType::I32);
+            // Call __aipo_await(task_ptr) -> i64
+            func.instruction(&Instruction::Call(async_helpers.await_idx));
+            Ok(WasmType::I64)
         }
         other => Err(WasmCompileError::UnsupportedExpr {
             message: format!("expression `{other:?}` is not yet supported in Wasm backend"),
@@ -2873,6 +3467,7 @@ fn infer_expr_type(
         HirExpr::If(_, then_expr, _, _) => {
             infer_expr_type(then_expr, locals, functions, structs, table_indices)
         }
+        HirExpr::Await(..) => Ok(WasmType::I64),
         HirExpr::Construct(..) => Ok(WasmType::I32),
         HirExpr::Dot(receiver, field_name, _) => {
             let receiver_struct_name = match &**receiver {
@@ -2903,6 +3498,17 @@ fn infer_expr_type(
             }
         }
         HirExpr::Call(callee, _, _) => {
+            if let HirExpr::Dot(receiver, method_name, _) = &**callee {
+                if let HirExpr::Identifier(rec_name, _) = &**receiver {
+                    if rec_name == "task" {
+                        match method_name.as_str() {
+                            "spawn" => return Ok(WasmType::I32),
+                            "sleep" | "cancel" | "race" | "all" => return Ok(WasmType::I64),
+                            _ => {}
+                        }
+                    }
+                }
+            }
             if let HirExpr::Identifier(func_name, _) = &**callee {
                 if let Some((_, _, fn_type)) = functions.get(func_name) {
                     if let Some(&ret) = fn_type.results.first() {
