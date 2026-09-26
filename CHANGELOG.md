@@ -11,6 +11,13 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
   - Setup inicial da crate `aipo-wasm` integrada ao workspace para emissão limpa de arquivos binários `.wasm` via `wasm-encoder`.
   - Preservação integral de 100% das camadas de frontend (`aipo-source`, `aipo-diagnostics`, `aipo-lexer`, `aipo-syntax`, `aipo-hir`, `aipo-sema`).
   - Estabelecimento do roteiro de self-hosting em 3 fases, habilitando o futuro compilador auto-hospedado da Aipo sem aprisionamento em FFI.
+- **Marco 1: O Fio Vertical Fino (Thin Vertical Slice - ADP-013)**:
+  - Implementação completa do compilador de HIR para Wasm (`aipo_wasm::compile_hir`) em `crates/aipo-wasm/src/compiler.rs`.
+  - Suporte a funções aritméticas com contratos estáticos (`Int`, `Float`, `Bool`) e resolução automática de tipos e inferência de retorno.
+  - Alocação e compressão de variáveis locais Wasm (`let`, `var`), reatribuição (`=`) e atribuições compostas (`+=`, `-=`, `*=`, `//=`, `%=`).
+  - Emissão de operadores aritméticos (`+`, `-`, `*`, `//`, `/`, `%`) com promoção automática de inteiros em divisões flutuantes `/` e operadores relacionais de comparação (`==`, `!=`, `<`, `<=`, `>`, `>=`).
+  - Chamadas diretas entre funções compiladas no módulo Wasm e geração de ponto de entrada para scripts de nível superior (`__top_level__`).
+  - Execução e verificação de ponta a ponta com o motor JIT `wasmtime` na suíte de integração de 17 testes automatizados em `aipo-wasm`.
 
 ## [0.1.0] - 2026-09-26 (Linha de Base Stack VM)
 

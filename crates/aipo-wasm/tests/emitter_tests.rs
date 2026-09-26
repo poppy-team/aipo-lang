@@ -79,3 +79,35 @@ fn test_type_deduplication_and_multiple_functions() {
     assert!(bytes.windows(7).any(|w| w == b"f64_add"));
     assert!(bytes.windows(7).any(|w| w == b"f64_mul"));
 }
+
+#[test]
+fn test_wasmtime_execution_of_emitted_module() {
+    let mut emitter = WasmEmitter::new();
+
+    // Exported function `add(i64, i64) -> i64`
+    let fn_type = WasmFnType::new(vec![WasmType::I64, WasmType::I64], vec![WasmType::I64]);
+    let type_idx = emitter.add_type(fn_type);
+
+    let mut func = Function::new([]);
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I64Add);
+    func.instruction(&Instruction::End);
+
+    let func_idx = emitter.add_function(type_idx, func);
+    emitter.export_function("add", func_idx);
+
+    let wasm_bytes = emitter.finish();
+
+    // Verify JIT execution via Wasmtime
+    let engine = wasmtime::Engine::default();
+    let module = wasmtime::Module::new(&engine, &wasm_bytes).expect("wasm module valid");
+    let mut store = wasmtime::Store::new(&engine, ());
+    let instance = wasmtime::Instance::new(&mut store, &module, &[]).expect("wasm instantiation");
+    let add_func = instance
+        .get_typed_func::<(i64, i64), i64>(&mut store, "add")
+        .expect("exported function exists");
+
+    let result = add_func.call(&mut store, (15, 27)).expect("call succeeds");
+    assert_eq!(result, 42);
+}

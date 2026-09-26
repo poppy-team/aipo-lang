@@ -10,10 +10,17 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+aipo-ast = { path = "../aipo-ast" }
 aipo-diagnostics = { path = "../aipo-diagnostics" }
+aipo-hir = { path = "../aipo-hir" }
 aipo-ir = { path = "../aipo-ir" }
+aipo-lexer = { path = "../aipo-lexer" }
 aipo-source = { path = "../aipo-source" }
 wasm-encoder = { version = "0.258.0", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+aipo-syntax = { path = "../aipo-syntax" }
+wasmtime = { version = "34.0", default-features = false, features = ["cranelift", "runtime", "std"] }
 
 [lints.rust]
 unsafe_code = "forbid"

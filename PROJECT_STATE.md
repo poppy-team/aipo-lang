@@ -77,15 +77,21 @@
     - Tipos de valor em C (`aipo_value_t`), handles geracionais (`aipo_handle_t`) com detecção de `AIPO_ERR_STALE_HANDLE`, callbacks nativos (`aipo_host_fn_t`), gating de capacidades (`grant`/`revoke`), e diagnóstico em `aipo_last_error`.
     - Suíte de 8 testes de integração exaustivos cobrindo todo o ciclo de vida, primitivas, callbacks, handles, erros e segurança contra ponteiros nulos.
 - Context methodology: **Lean Progressive Context (LPC)**
-- Last updated: `2026-09-26T12:28:00Z`
+- Last updated: `2026-09-26T13:24:00Z`
+- **Fio Vertical Fino Wasm (Marco 1 / P06-G01)**:
+  - Crate `aipo-wasm` integrada ao workspace com emissor de seções Wasm (`WasmEmitter`), mapeamento de tipos (`WasmType`, `WasmFnType`), e compilador de HIR para Wasm (`compile_hir`).
+  - Suporte a funções aritméticas com contratos estáticos (`Int`, `Float`, `Bool`) e inferência de retorno.
+  - Alocação e compressão de variáveis locais Wasm (`let`, `var`), reatribuição (`=`) e atribuições compostas (`+=`, `-=`, `*=`, `//=`, `%=`).
+  - Emissão de operadores aritméticos (`+`, `-`, `*`, `//`, `/`, `%`) e relacionais (`==`, `!=`, `<`, `<=`, `>`, `>=`).
+  - Chamadas diretas entre funções compiladas e geração de ponto de entrada (`__top_level__`).
+  - Suíte de 17 testes automatizados com execução JIT direta via `wasmtime` 100% verde.
 
 ## Next action
 
-Com a branch `legacy/v0.1.0-stack-vm` e tag `v0.1.0-stack-vm-final` congeladas, iniciar a Fase P06 (ADP-013):
-1. Setup da crate `crates/aipo-wasm` no workspace root `Cargo.toml`.
-2. Implementação do emissor de módulos `.wasm` em `aipo-wasm` usando `wasm-encoder`.
-3. Testes unitários de emissão de módulo WebAssembly funcional (seção de tipos, funções, exportações e código).
-4. Verificação de todos os gates de qualidade e commit/push inaugural da nova trilha.
+Iniciar o **Marco 2: Controle de Fluxo Estruturado (Structured Control Flow)**:
+1. Implementar estruturas de controle em `aipo-wasm`: blocos (`block ... end`), condicionais (`if ... else ... end`), e laços estruturados (`while`, `loop`, `repeat`).
+2. Mapear `break` e `continue` para saltos rotulados (`br`, `br_if`) em profundidade de bloco Wasm.
+3. Testes de integração de controle de fluxo executados com `wasmtime`.
 
 ## Recovery order
 
