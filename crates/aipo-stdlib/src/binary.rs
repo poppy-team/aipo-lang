@@ -918,11 +918,7 @@ pub fn create_module() -> Value {
         ($name:expr, $arity:expr, $func:expr) => {
             entries.push((
                 Value::String(Rc::new($name.to_string())),
-                Value::Native {
-                    name: concat!("binary.", $name).to_string(),
-                    arity: $arity,
-                    func: $func,
-                },
+                Value::native(concat!("binary.", $name), $arity, $func),
             ));
         };
     }

@@ -193,19 +193,11 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("get".to_string())),
-            Value::Native {
-                name: "env.get".to_string(),
-                arity: 1,
-                func: unavailable,
-            },
+            Value::native("env.get", 1, unavailable),
         ),
         (
             Value::String(Rc::new("has".to_string())),
-            Value::Native {
-                name: "env.has".to_string(),
-                arity: 1,
-                func: unavailable,
-            },
+            Value::native("env.has", 1, unavailable),
         ),
     ];
     Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries))))

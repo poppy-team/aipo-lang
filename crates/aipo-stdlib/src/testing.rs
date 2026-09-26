@@ -214,11 +214,7 @@ pub fn create_expect_module() -> Value {
         ($name:expr, $arity:expr, $func:expr) => {
             entries.push((
                 Value::String(Rc::new($name.to_string())),
-                Value::Native {
-                    name: concat!("expect.", $name).to_string(),
-                    arity: $arity,
-                    func: $func,
-                },
+                Value::native(concat!("expect.", $name), $arity, $func),
             ));
         };
     }
@@ -249,11 +245,7 @@ pub fn create_module() -> Value {
         ($name:expr, $arity:expr, $func:expr) => {
             entries.push((
                 Value::String(Rc::new($name.to_string())),
-                Value::Native {
-                    name: concat!("testing.", $name).to_string(),
-                    arity: $arity,
-                    func: $func,
-                },
+                Value::native(concat!("testing.", $name), $arity, $func),
             ));
         };
     }

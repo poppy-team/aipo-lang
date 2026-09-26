@@ -450,11 +450,7 @@ fn test_host_native_dispatches_with_vm_context() {
     );
     vm.define_global(
         "read_context",
-        Value::Native {
-            name: "test.read_context".to_string(),
-            arity: 1,
-            func: unused_native,
-        },
+        Value::native("test.read_context", 1, unused_native),
     );
     vm.register_host_native("test.read_context", 1, host_context_reads_vm);
 
@@ -486,19 +482,15 @@ fn test_ordinary_native_still_dispatches_without_a_host_callback() {
     let mut vm = Vm::new();
     vm.define_global(
         "ordinary",
-        Value::Native {
-            name: "test.ordinary".to_string(),
-            arity: 1,
-            func: |args| {
-                let Some(&Value::Int(value)) = args.first() else {
-                    return Err(VmFault::TypeMismatch {
-                        expected: "Int".to_string(),
-                        actual: args.first().map_or("none", Value::type_name).to_string(),
-                    });
-                };
-                Ok(Value::Int(value + 1))
-            },
-        },
+        Value::native("test.ordinary", 1, |args| {
+            let Some(&Value::Int(value)) = args.first() else {
+                return Err(VmFault::TypeMismatch {
+                    expected: "Int".to_string(),
+                    actual: args.first().map_or("none", Value::type_name).to_string(),
+                });
+            };
+            Ok(Value::Int(value + 1))
+        }),
     );
 
     let module = make_test_module(
@@ -526,11 +518,7 @@ fn test_ordinary_native_still_dispatches_without_a_host_callback() {
 #[test]
 fn test_host_native_error_preserves_the_operand_stack() {
     let mut vm = Vm::new();
-    let callee = Value::Native {
-        name: "test.host_error".to_string(),
-        arity: 1,
-        func: unused_native,
-    };
+    let callee = Value::native("test.host_error", 1, unused_native);
     let argument = Value::Int(7);
     vm.stack = vec![callee.clone(), argument.clone()];
     vm.ip = 0;
@@ -547,11 +535,7 @@ fn test_host_native_error_preserves_the_operand_stack() {
 #[test]
 fn test_host_native_arity_mismatch_faults_without_calling_the_placeholder() {
     let mut vm = Vm::new();
-    let callee = Value::Native {
-        name: "test.arity".to_string(),
-        arity: 2,
-        func: unused_native,
-    };
+    let callee = Value::native("test.arity", 2, unused_native);
     let first = Value::Int(1);
     let second = Value::Int(2);
     vm.stack = vec![callee.clone(), first.clone(), second.clone()];
@@ -607,11 +591,7 @@ fn async_native_module(await_result: bool) -> BytecodeModule {
 fn define_async_native(vm: &mut Vm) {
     vm.define_global(
         "async_native",
-        Value::Native {
-            name: "test.async_native".to_string(),
-            arity: 1,
-            func: unused_native,
-        },
+        Value::native("test.async_native", 1, unused_native),
     );
     vm.register_host_async_native("test.async_native", 1, host_async_value);
 }
@@ -643,11 +623,7 @@ fn test_async_host_native_error_keeps_runtime_fault() {
     let mut vm = Vm::new();
     vm.define_global(
         "async_native",
-        Value::Native {
-            name: "test.async_native".to_string(),
-            arity: 1,
-            func: unused_native,
-        },
+        Value::native("test.async_native", 1, unused_native),
     );
     vm.register_host_async_native("test.async_native", 1, host_async_fault);
     let error = vm

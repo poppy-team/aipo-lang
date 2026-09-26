@@ -345,91 +345,47 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("spawn".to_string())),
-            Value::Native {
-                name: "poppy.spawn".to_string(),
-                arity: 3,
-                func: poppy_spawn,
-            },
+            Value::native("poppy.spawn", 3, poppy_spawn),
         ),
         (
             Value::String(Rc::new("despawn".to_string())),
-            Value::Native {
-                name: "poppy.despawn".to_string(),
-                arity: 1,
-                func: poppy_despawn,
-            },
+            Value::native("poppy.despawn", 1, poppy_despawn),
         ),
         (
             Value::String(Rc::new("query".to_string())),
-            Value::Native {
-                name: "poppy.query".to_string(),
-                arity: 1,
-                func: poppy_query,
-            },
+            Value::native("poppy.query", 1, poppy_query),
         ),
         (
             Value::String(Rc::new("get_position".to_string())),
-            Value::Native {
-                name: "poppy.get_position".to_string(),
-                arity: 1,
-                func: poppy_get_position,
-            },
+            Value::native("poppy.get_position", 1, poppy_get_position),
         ),
         (
             Value::String(Rc::new("set_position".to_string())),
-            Value::Native {
-                name: "poppy.set_position".to_string(),
-                arity: 3,
-                func: poppy_set_position,
-            },
+            Value::native("poppy.set_position", 3, poppy_set_position),
         ),
         (
             Value::String(Rc::new("get_velocity".to_string())),
-            Value::Native {
-                name: "poppy.get_velocity".to_string(),
-                arity: 1,
-                func: poppy_get_velocity,
-            },
+            Value::native("poppy.get_velocity", 1, poppy_get_velocity),
         ),
         (
             Value::String(Rc::new("set_velocity".to_string())),
-            Value::Native {
-                name: "poppy.set_velocity".to_string(),
-                arity: 3,
-                func: poppy_set_velocity,
-            },
+            Value::native("poppy.set_velocity", 3, poppy_set_velocity),
         ),
         (
             Value::String(Rc::new("random_float".to_string())),
-            Value::Native {
-                name: "poppy.random_float".to_string(),
-                arity: 0,
-                func: poppy_random_float,
-            },
+            Value::native("poppy.random_float", 0, poppy_random_float),
         ),
         (
             Value::String(Rc::new("random_int".to_string())),
-            Value::Native {
-                name: "poppy.random_int".to_string(),
-                arity: 2,
-                func: poppy_random_int,
-            },
+            Value::native("poppy.random_int", 2, poppy_random_int),
         ),
         (
             Value::String(Rc::new("step".to_string())),
-            Value::Native {
-                name: "poppy.step".to_string(),
-                arity: 0,
-                func: poppy_step,
-            },
+            Value::native("poppy.step", 0, poppy_step),
         ),
         (
             Value::String(Rc::new("digest".to_string())),
-            Value::Native {
-                name: "poppy.digest".to_string(),
-                arity: 0,
-                func: poppy_digest,
-            },
+            Value::native("poppy.digest", 0, poppy_digest),
         ),
     ];
 

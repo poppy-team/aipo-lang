@@ -368,19 +368,11 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("parse".to_string())),
-            Value::Native {
-                name: "json.parse".to_string(),
-                arity: 1,
-                func: json_parse,
-            },
+            Value::native("json.parse", 1, json_parse),
         ),
         (
             Value::String(Rc::new("stringify".to_string())),
-            Value::Native {
-                name: "json.stringify".to_string(),
-                arity: 1,
-                func: json_stringify,
-            },
+            Value::native("json.stringify", 1, json_stringify),
         ),
     ];
     Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries))))

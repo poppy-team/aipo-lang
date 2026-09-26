@@ -440,23 +440,16 @@ pub enum Value {
     /// VM-managed bytecode function pointer.
     Function {
         /// Target entry point instruction offset.
-        entry_ip: usize,
+        entry_ip: u32,
         /// Expected number of parameters.
-        arity: usize,
+        arity: u16,
         /// `true` for `async fn`: calling produces a `Task` instead of running.
         is_async: bool,
     },
     /// Closure capturing upvalues.
     Closure(Rc<ClosureData>),
     /// Native host function callable by the VM.
-    Native {
-        /// Native function name.
-        name: String,
-        /// Expected argument count.
-        arity: usize,
-        /// Native function callback pointer.
-        func: fn(&[Value]) -> Result<Value, VmFault>,
-    },
+    Native(Rc<NativeData>),
     /// Compact integer in the canonical `Byte` range `0..=255`.
     Byte(u8),
     /// Managed mutable binary buffer (`Bytes`).
@@ -479,7 +472,7 @@ pub enum Value {
         /// Receiver struct instance.
         receiver: Rc<RefCell<StructInstance>>,
         /// Entry instruction pointer in the bytecode.
-        entry_ip: usize,
+        entry_ip: u32,
         /// Total arity including receiver parameter.
         total_arity: u16,
         /// Whether the method is async.
@@ -509,6 +502,23 @@ pub enum Value {
     /// call site to the callee prologue as a marker rather than as a value. No Aipo program
     /// can observe it: the prologue replaces every marker it can reach before the body runs.
     Unset,
+}
+
+/// Native host function metadata and callback pointer.
+#[derive(Debug, Clone)]
+pub struct NativeData {
+    /// Native function name.
+    pub name: String,
+    /// Expected argument count.
+    pub arity: usize,
+    /// Native function callback pointer.
+    pub func: fn(&[Value]) -> Result<Value, VmFault>,
+}
+
+impl PartialEq for NativeData {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.arity == other.arity
+    }
 }
 
 /// Closure metadata and captured upvalues allocated on the heap.
@@ -592,11 +602,11 @@ impl Value {
         arity: usize,
         func: fn(&[Value]) -> Result<Value, VmFault>,
     ) -> Self {
-        Self::Native {
+        Self::Native(Rc::new(NativeData {
             name: name.into(),
             arity,
             func,
-        }
+        }))
     }
 
     /// Constructs a new bound method value.
@@ -641,7 +651,7 @@ impl Value {
             Self::Struct(_) => "struct",
             Self::Function { .. }
             | Self::Closure(_)
-            | Self::Native { .. }
+            | Self::Native(_)
             | Self::BoundMethod(_)
             | Self::StructMethod { .. } => "Function",
             Self::Byte(_) => "Byte",
@@ -1163,18 +1173,7 @@ impl PartialEq for Value {
                 let b = b.borrow();
                 a.type_name == b.type_name && a.fields == b.fields
             }
-            (
-                Self::Native {
-                    name: n1,
-                    arity: a1,
-                    ..
-                },
-                Self::Native {
-                    name: n2,
-                    arity: a2,
-                    ..
-                },
-            ) => n1 == n2 && a1 == a2,
+            (Self::Native(n1), Self::Native(n2)) => n1.name == n2.name && n1.arity == n2.arity,
             (Self::Failure(a), Self::Failure(b)) => a.message == b.message,
             _ => false,
         }
@@ -1208,8 +1207,8 @@ impl fmt::Debug for Value {
             Self::Closure(c) => {
                 write!(f, "<closure@{} arity={}>", c.entry_ip, c.arity)
             }
-            Self::Native { name, arity, .. } => {
-                write!(f, "<native fn {name} arity={arity}>")
+            Self::Native(native) => {
+                write!(f, "<native fn {} arity={}>", native.name, native.arity)
             }
             Self::Byte(b) => write!(f, "{b}"),
             Self::Bytes(b) => write!(f, "Bytes({} bytes)", b.borrow().len()),
@@ -1285,7 +1284,7 @@ impl fmt::Display for Value {
             }
             Self::Function { entry_ip, .. } => write!(f, "<fn@{entry_ip}>"),
             Self::Closure(c) => write!(f, "<closure@{}>", c.entry_ip),
-            Self::Native { name, .. } => write!(f, "<fn {name}>"),
+            Self::Native(native) => write!(f, "<fn {}>", native.name),
             Self::StructMethod { entry_ip, .. } => write!(f, "<method@{entry_ip}>"),
             Self::Byte(b) => write!(f, "{b}"),
             Self::Bytes(_) => write!(f, "<bytes>"),

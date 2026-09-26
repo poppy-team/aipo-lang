@@ -346,11 +346,7 @@ pub fn url_parse(args: &[Value]) -> Result<Value, VmFault> {
 pub fn create_module() -> Value {
     let entries = vec![(
         Value::String(Rc::new("parse".to_string())),
-        Value::Native {
-            name: "url.parse".to_string(),
-            arity: 1,
-            func: url_parse,
-        },
+        Value::native("url.parse", 1, url_parse),
     )];
     Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries))))
 }

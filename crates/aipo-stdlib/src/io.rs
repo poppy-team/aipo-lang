@@ -102,19 +102,11 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("print".to_string())),
-            Value::Native {
-                name: "io.print".to_string(),
-                arity: 1,
-                func: io_print,
-            },
+            Value::native("io.print", 1, io_print),
         ),
         (
             Value::String(Rc::new("println".to_string())),
-            Value::Native {
-                name: "io.println".to_string(),
-                arity: 1,
-                func: io_println,
-            },
+            Value::native("io.println", 1, io_println),
         ),
     ];
 

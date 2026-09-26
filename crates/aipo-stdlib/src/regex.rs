@@ -301,27 +301,15 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("compile".to_string())),
-            Value::Native {
-                name: "regex.compile".to_string(),
-                arity: 1,
-                func: regex_compile,
-            },
+            Value::native("regex.compile", 1, regex_compile),
         ),
         (
             Value::String(Rc::new("is_match".to_string())),
-            Value::Native {
-                name: "regex.is_match".to_string(),
-                arity: 2,
-                func: regex_is_match,
-            },
+            Value::native("regex.is_match", 2, regex_is_match),
         ),
         (
             Value::String(Rc::new("replace".to_string())),
-            Value::Native {
-                name: "regex.replace".to_string(),
-                arity: 3,
-                func: regex_replace,
-            },
+            Value::native("regex.replace", 3, regex_replace),
         ),
     ];
     Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries))))

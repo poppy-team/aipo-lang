@@ -274,51 +274,27 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("join".to_string())),
-            Value::Native {
-                name: "path.join".to_string(),
-                arity: usize::MAX,
-                func: path_join,
-            },
+            Value::native("path.join", usize::MAX, path_join),
         ),
         (
             Value::String(Rc::new("normalize".to_string())),
-            Value::Native {
-                name: "path.normalize".to_string(),
-                arity: 1,
-                func: path_normalize,
-            },
+            Value::native("path.normalize", 1, path_normalize),
         ),
         (
             Value::String(Rc::new("is_absolute".to_string())),
-            Value::Native {
-                name: "path.is_absolute".to_string(),
-                arity: 1,
-                func: path_is_absolute,
-            },
+            Value::native("path.is_absolute", 1, path_is_absolute),
         ),
         (
             Value::String(Rc::new("basename".to_string())),
-            Value::Native {
-                name: "path.basename".to_string(),
-                arity: usize::MAX,
-                func: path_basename,
-            },
+            Value::native("path.basename", usize::MAX, path_basename),
         ),
         (
             Value::String(Rc::new("dirname".to_string())),
-            Value::Native {
-                name: "path.dirname".to_string(),
-                arity: 1,
-                func: path_dirname,
-            },
+            Value::native("path.dirname", 1, path_dirname),
         ),
         (
             Value::String(Rc::new("ext".to_string())),
-            Value::Native {
-                name: "path.ext".to_string(),
-                arity: 1,
-                func: path_ext,
-            },
+            Value::native("path.ext", 1, path_ext),
         ),
     ];
     Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries))))

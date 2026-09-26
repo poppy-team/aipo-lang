@@ -80,7 +80,6 @@ fn test_strict_bool_conditions() {
 
 #[test]
 fn test_value_size_bounds() {
-    // Assert that Value memory footprint does not regress beyond 40 bytes.
-    assert!(std::mem::size_of::<Value>() <= 40);
+    // Assert that Value memory footprint is exactly 24 bytes (Proposal P1).
+    assert_eq!(std::mem::size_of::<Value>(), 24);
 }
-

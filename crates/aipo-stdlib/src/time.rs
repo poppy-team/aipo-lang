@@ -963,83 +963,43 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("now".to_string())),
-            Value::Native {
-                name: "time.now".to_string(),
-                arity: 0,
-                func: time_now,
-            },
+            Value::native("time.now", 0, time_now),
         ),
         (
             Value::String(Rc::new("monotonic".to_string())),
-            Value::Native {
-                name: "time.monotonic".to_string(),
-                arity: 0,
-                func: time_monotonic,
-            },
+            Value::native("time.monotonic", 0, time_monotonic),
         ),
         (
             Value::String(Rc::new("date".to_string())),
-            Value::Native {
-                name: "time.date".to_string(),
-                arity: 3,
-                func: time_date,
-            },
+            Value::native("time.date", 3, time_date),
         ),
         (
             Value::String(Rc::new("time_of_day".to_string())),
-            Value::Native {
-                name: "time.time_of_day".to_string(),
-                arity: usize::MAX,
-                func: time_time_of_day,
-            },
+            Value::native("time.time_of_day", usize::MAX, time_time_of_day),
         ),
         (
             Value::String(Rc::new("date_time".to_string())),
-            Value::Native {
-                name: "time.date_time".to_string(),
-                arity: usize::MAX,
-                func: time_date_time,
-            },
+            Value::native("time.date_time", usize::MAX, time_date_time),
         ),
         (
             Value::String(Rc::new("parse_date".to_string())),
-            Value::Native {
-                name: "time.parse_date".to_string(),
-                arity: 1,
-                func: time_parse_date,
-            },
+            Value::native("time.parse_date", 1, time_parse_date),
         ),
         (
             Value::String(Rc::new("parse_time".to_string())),
-            Value::Native {
-                name: "time.parse_time".to_string(),
-                arity: 1,
-                func: time_parse_time,
-            },
+            Value::native("time.parse_time", 1, time_parse_time),
         ),
         (
             Value::String(Rc::new("parse_iso".to_string())),
-            Value::Native {
-                name: "time.parse_iso".to_string(),
-                arity: 1,
-                func: time_parse_iso,
-            },
+            Value::native("time.parse_iso", 1, time_parse_iso),
         ),
         (
             Value::String(Rc::new("parse_datetime".to_string())),
-            Value::Native {
-                name: "time.parse_datetime".to_string(),
-                arity: 1,
-                func: time_parse_iso,
-            },
+            Value::native("time.parse_datetime", 1, time_parse_iso),
         ),
         (
             Value::String(Rc::new("duration".to_string())),
-            Value::Native {
-                name: "time.duration".to_string(),
-                arity: 1,
-                func: time_duration,
-            },
+            Value::native("time.duration", 1, time_duration),
         ),
     ];
 

@@ -409,59 +409,31 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("create".to_string())),
-            Value::Native {
-                name: "random.create".to_string(),
-                arity: 1,
-                func: random_create,
-            },
+            Value::native("random.create", 1, random_create),
         ),
         (
             Value::String(Rc::new("seed".to_string())),
-            Value::Native {
-                name: "random.seed".to_string(),
-                arity: 1,
-                func: random_seed,
-            },
+            Value::native("random.seed", 1, random_seed),
         ),
         (
             Value::String(Rc::new("int".to_string())),
-            Value::Native {
-                name: "random.int".to_string(),
-                arity: 2,
-                func: random_int,
-            },
+            Value::native("random.int", 2, random_int),
         ),
         (
             Value::String(Rc::new("float".to_string())),
-            Value::Native {
-                name: "random.float".to_string(),
-                arity: 0,
-                func: random_float,
-            },
+            Value::native("random.float", 0, random_float),
         ),
         (
             Value::String(Rc::new("bool".to_string())),
-            Value::Native {
-                name: "random.bool".to_string(),
-                arity: 0,
-                func: random_bool,
-            },
+            Value::native("random.bool", 0, random_bool),
         ),
         (
             Value::String(Rc::new("choice".to_string())),
-            Value::Native {
-                name: "random.choice".to_string(),
-                arity: 1,
-                func: random_choice,
-            },
+            Value::native("random.choice", 1, random_choice),
         ),
         (
             Value::String(Rc::new("shuffle".to_string())),
-            Value::Native {
-                name: "random.shuffle".to_string(),
-                arity: 1,
-                func: random_shuffle,
-            },
+            Value::native("random.shuffle", 1, random_shuffle),
         ),
     ];
     Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries))))

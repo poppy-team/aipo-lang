@@ -424,19 +424,11 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("read_text".to_string())),
-            Value::Native {
-                name: "fs.read_text".to_string(),
-                arity: 1,
-                func: unavailable,
-            },
+            Value::native("fs.read_text", 1, unavailable),
         ),
         (
             Value::String(Rc::new("roots".to_string())),
-            Value::Native {
-                name: "fs.roots".to_string(),
-                arity: 0,
-                func: unavailable,
-            },
+            Value::native("fs.roots", 0, unavailable),
         ),
     ];
     Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries))))

@@ -140,16 +140,12 @@ fn register_methods(vm: &mut Vm) {
     regex::register_methods(vm);
 }
 
-fn native(
+pub(crate) fn native(
     name: &str,
     arity: usize,
     func: fn(&[Value]) -> Result<Value, aipo_vm::VmFault>,
 ) -> Value {
-    Value::Native {
-        name: name.to_string(),
-        arity,
-        func,
-    }
+    Value::native(name, arity, func)
 }
 
 /// Registers Prelude V1 metadata (including core-type conversions) and globally available values.

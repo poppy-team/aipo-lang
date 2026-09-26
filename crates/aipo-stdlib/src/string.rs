@@ -718,163 +718,83 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("len".to_string())),
-            Value::Native {
-                name: "string.len".to_string(),
-                arity: 1,
-                func: string_len,
-            },
+            Value::native("string.len", 1, string_len),
         ),
         (
             Value::String(Rc::new("byte_len".to_string())),
-            Value::Native {
-                name: "string.byte_len".to_string(),
-                arity: 1,
-                func: string_byte_len,
-            },
+            Value::native("string.byte_len", 1, string_byte_len),
         ),
         (
             Value::String(Rc::new("find".to_string())),
-            Value::Native {
-                name: "string.find".to_string(),
-                arity: 2,
-                func: string_find,
-            },
+            Value::native("string.find", 2, string_find),
         ),
         (
             Value::String(Rc::new("capitalize".to_string())),
-            Value::Native {
-                name: "string.capitalize".to_string(),
-                arity: 1,
-                func: string_capitalize,
-            },
+            Value::native("string.capitalize", 1, string_capitalize),
         ),
         (
             Value::String(Rc::new("reverse".to_string())),
-            Value::Native {
-                name: "string.reverse".to_string(),
-                arity: 1,
-                func: string_reverse,
-            },
+            Value::native("string.reverse", 1, string_reverse),
         ),
         (
             Value::String(Rc::new("format".to_string())),
-            Value::Native {
-                name: "string.format".to_string(),
-                arity: 2,
-                func: string_format,
-            },
+            Value::native("string.format", 2, string_format),
         ),
         (
             Value::String(Rc::new("contains".to_string())),
-            Value::Native {
-                name: "string.contains".to_string(),
-                arity: 2,
-                func: string_contains,
-            },
+            Value::native("string.contains", 2, string_contains),
         ),
         (
             Value::String(Rc::new("starts_with".to_string())),
-            Value::Native {
-                name: "string.starts_with".to_string(),
-                arity: 2,
-                func: string_starts_with,
-            },
+            Value::native("string.starts_with", 2, string_starts_with),
         ),
         (
             Value::String(Rc::new("ends_with".to_string())),
-            Value::Native {
-                name: "string.ends_with".to_string(),
-                arity: 2,
-                func: string_ends_with,
-            },
+            Value::native("string.ends_with", 2, string_ends_with),
         ),
         (
             Value::String(Rc::new("lower".to_string())),
-            Value::Native {
-                name: "string.lower".to_string(),
-                arity: 1,
-                func: string_lower,
-            },
+            Value::native("string.lower", 1, string_lower),
         ),
         (
             Value::String(Rc::new("upper".to_string())),
-            Value::Native {
-                name: "string.upper".to_string(),
-                arity: 1,
-                func: string_upper,
-            },
+            Value::native("string.upper", 1, string_upper),
         ),
         (
             Value::String(Rc::new("trim".to_string())),
-            Value::Native {
-                name: "string.trim".to_string(),
-                arity: 1,
-                func: string_trim,
-            },
+            Value::native("string.trim", 1, string_trim),
         ),
         (
             Value::String(Rc::new("split".to_string())),
-            Value::Native {
-                name: "string.split".to_string(),
-                arity: 2,
-                func: string_split,
-            },
+            Value::native("string.split", 2, string_split),
         ),
         (
             Value::String(Rc::new("join".to_string())),
-            Value::Native {
-                name: "string.join".to_string(),
-                arity: 2,
-                func: string_join,
-            },
+            Value::native("string.join", 2, string_join),
         ),
         (
             Value::String(Rc::new("replace".to_string())),
-            Value::Native {
-                name: "string.replace".to_string(),
-                arity: 3,
-                func: string_replace,
-            },
+            Value::native("string.replace", 3, string_replace),
         ),
         (
             Value::String(Rc::new("slice".to_string())),
-            Value::Native {
-                name: "string.slice".to_string(),
-                arity: 3,
-                func: string_slice,
-            },
+            Value::native("string.slice", 3, string_slice),
         ),
         (
             Value::String(Rc::new("graphemes".to_string())),
-            Value::Native {
-                name: "string.graphemes".to_string(),
-                arity: 1,
-                func: string_graphemes,
-            },
+            Value::native("string.graphemes", 1, string_graphemes),
         ),
         (
             Value::String(Rc::new("words".to_string())),
-            Value::Native {
-                name: "string.words".to_string(),
-                arity: 1,
-                func: string_words,
-            },
+            Value::native("string.words", 1, string_words),
         ),
         (
             Value::String(Rc::new("lines".to_string())),
-            Value::Native {
-                name: "string.lines".to_string(),
-                arity: 1,
-                func: string_lines,
-            },
+            Value::native("string.lines", 1, string_lines),
         ),
         (
             Value::String(Rc::new("casefold".to_string())),
-            Value::Native {
-                name: "string.casefold".to_string(),
-                arity: 1,
-                func: string_casefold,
-            },
+            Value::native("string.casefold", 1, string_casefold),
         ),
     ];
 

@@ -746,203 +746,103 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("abs".to_string())),
-            Value::Native {
-                name: "math.abs".to_string(),
-                arity: 1,
-                func: math_abs,
-            },
+            Value::native("math.abs", 1, math_abs),
         ),
         (
             Value::String(Rc::new("min".to_string())),
-            Value::Native {
-                name: "math.min".to_string(),
-                arity: 2,
-                func: math_min,
-            },
+            Value::native("math.min", 2, math_min),
         ),
         (
             Value::String(Rc::new("max".to_string())),
-            Value::Native {
-                name: "math.max".to_string(),
-                arity: 2,
-                func: math_max,
-            },
+            Value::native("math.max", 2, math_max),
         ),
         (
             Value::String(Rc::new("floor".to_string())),
-            Value::Native {
-                name: "math.floor".to_string(),
-                arity: 1,
-                func: math_floor,
-            },
+            Value::native("math.floor", 1, math_floor),
         ),
         (
             Value::String(Rc::new("ceil".to_string())),
-            Value::Native {
-                name: "math.ceil".to_string(),
-                arity: 1,
-                func: math_ceil,
-            },
+            Value::native("math.ceil", 1, math_ceil),
         ),
         (
             Value::String(Rc::new("round".to_string())),
-            Value::Native {
-                name: "math.round".to_string(),
-                arity: 1,
-                func: math_round,
-            },
+            Value::native("math.round", 1, math_round),
         ),
         (
             Value::String(Rc::new("sqrt".to_string())),
-            Value::Native {
-                name: "math.sqrt".to_string(),
-                arity: 1,
-                func: math_sqrt,
-            },
+            Value::native("math.sqrt", 1, math_sqrt),
         ),
         (
             Value::String(Rc::new("pow".to_string())),
-            Value::Native {
-                name: "math.pow".to_string(),
-                arity: 2,
-                func: math_pow,
-            },
+            Value::native("math.pow", 2, math_pow),
         ),
         (
             Value::String(Rc::new("truncate".to_string())),
-            Value::Native {
-                name: "math.truncate".to_string(),
-                arity: 1,
-                func: math_truncate,
-            },
+            Value::native("math.truncate", 1, math_truncate),
         ),
         (
             Value::String(Rc::new("clamp".to_string())),
-            Value::Native {
-                name: "math.clamp".to_string(),
-                arity: 3,
-                func: math_clamp,
-            },
+            Value::native("math.clamp", 3, math_clamp),
         ),
         (
             Value::String(Rc::new("sin".to_string())),
-            Value::Native {
-                name: "math.sin".to_string(),
-                arity: 1,
-                func: math_sin,
-            },
+            Value::native("math.sin", 1, math_sin),
         ),
         (
             Value::String(Rc::new("cos".to_string())),
-            Value::Native {
-                name: "math.cos".to_string(),
-                arity: 1,
-                func: math_cos,
-            },
+            Value::native("math.cos", 1, math_cos),
         ),
         (
             Value::String(Rc::new("tan".to_string())),
-            Value::Native {
-                name: "math.tan".to_string(),
-                arity: 1,
-                func: math_tan,
-            },
+            Value::native("math.tan", 1, math_tan),
         ),
         (
             Value::String(Rc::new("asin".to_string())),
-            Value::Native {
-                name: "math.asin".to_string(),
-                arity: 1,
-                func: math_asin,
-            },
+            Value::native("math.asin", 1, math_asin),
         ),
         (
             Value::String(Rc::new("acos".to_string())),
-            Value::Native {
-                name: "math.acos".to_string(),
-                arity: 1,
-                func: math_acos,
-            },
+            Value::native("math.acos", 1, math_acos),
         ),
         (
             Value::String(Rc::new("atan".to_string())),
-            Value::Native {
-                name: "math.atan".to_string(),
-                arity: 1,
-                func: math_atan,
-            },
+            Value::native("math.atan", 1, math_atan),
         ),
         (
             Value::String(Rc::new("atan2".to_string())),
-            Value::Native {
-                name: "math.atan2".to_string(),
-                arity: 2,
-                func: math_atan2,
-            },
+            Value::native("math.atan2", 2, math_atan2),
         ),
         (
             Value::String(Rc::new("hypot".to_string())),
-            Value::Native {
-                name: "math.hypot".to_string(),
-                arity: 2,
-                func: math_hypot,
-            },
+            Value::native("math.hypot", 2, math_hypot),
         ),
         (
             Value::String(Rc::new("log".to_string())),
-            Value::Native {
-                name: "math.log".to_string(),
-                arity: 1,
-                func: math_log,
-            },
+            Value::native("math.log", 1, math_log),
         ),
         (
             Value::String(Rc::new("log2".to_string())),
-            Value::Native {
-                name: "math.log2".to_string(),
-                arity: 1,
-                func: math_log2,
-            },
+            Value::native("math.log2", 1, math_log2),
         ),
         (
             Value::String(Rc::new("log10".to_string())),
-            Value::Native {
-                name: "math.log10".to_string(),
-                arity: 1,
-                func: math_log10,
-            },
+            Value::native("math.log10", 1, math_log10),
         ),
         (
             Value::String(Rc::new("exp".to_string())),
-            Value::Native {
-                name: "math.exp".to_string(),
-                arity: 1,
-                func: math_exp,
-            },
+            Value::native("math.exp", 1, math_exp),
         ),
         (
             Value::String(Rc::new("sign".to_string())),
-            Value::Native {
-                name: "math.sign".to_string(),
-                arity: 1,
-                func: math_sign,
-            },
+            Value::native("math.sign", 1, math_sign),
         ),
         (
             Value::String(Rc::new("rad".to_string())),
-            Value::Native {
-                name: "math.rad".to_string(),
-                arity: 1,
-                func: math_rad,
-            },
+            Value::native("math.rad", 1, math_rad),
         ),
         (
             Value::String(Rc::new("deg".to_string())),
-            Value::Native {
-                name: "math.deg".to_string(),
-                arity: 1,
-                func: math_deg,
-            },
+            Value::native("math.deg", 1, math_deg),
         ),
         (
             Value::String(Rc::new("pi".to_string())),

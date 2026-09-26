@@ -415,7 +415,7 @@ impl Vm {
                             {
                                 self.push(Value::StructMethod {
                                     receiver: inst.clone(),
-                                    entry_ip,
+                                    entry_ip: entry_ip as u32,
                                     total_arity: total_arity as u16,
                                     is_async,
                                 })?;
@@ -985,8 +985,8 @@ impl Vm {
                             offset: self.ip - 2,
                             reason: format!("function index {fn_idx} out of bounds"),
                         })?;
-                let entry_ip = info.entry_ip;
-                let arity = info.params;
+                let entry_ip = info.entry_ip as u32;
+                let arity = info.params as u16;
                 let is_async = info.is_async;
                 self.push(Value::Function {
                     entry_ip,

@@ -40,7 +40,9 @@ impl Vm {
             return Ok(());
         }
         let is_failure_inspector = match &callee {
-            Value::Native { name, .. } => name == "expect.failure" || name == "testing.failure",
+            Value::Native(native) => {
+                native.name == "expect.failure" || native.name == "testing.failure"
+            }
             _ => false,
         };
         if !is_failure_inspector {
@@ -63,7 +65,7 @@ impl Vm {
                 if self.metrics_enabled {
                     self.metrics.function_calls = self.metrics.function_calls.saturating_add(1);
                 }
-                self.check_arity(arg_count, arity)?;
+                self.check_arity(arg_count, arity as usize)?;
                 if is_async {
                     // Calling an async function spawns it eagerly and yields
                     // its `Task`; awaiting stays explicit (`await`, joins).
@@ -89,7 +91,7 @@ impl Vm {
                     None,
                 );
                 self.refresh_frame_base();
-                self.ip = entry_ip;
+                self.ip = entry_ip as usize;
             }
             Value::Closure(closure) => {
                 if self.metrics_enabled {
@@ -117,7 +119,10 @@ impl Vm {
                 self.refresh_frame_base();
                 self.ip = closure.entry_ip;
             }
-            Value::Native { name, arity, func } => {
+            Value::Native(native) => {
+                let name = native.name.as_str();
+                let arity = native.arity;
+                let func = native.func;
                 if self.metrics_enabled {
                     self.metrics.native_calls = self.metrics.native_calls.saturating_add(1);
                 }
@@ -127,13 +132,13 @@ impl Vm {
                         actual: if name.is_empty() {
                             "<empty>".to_string()
                         } else {
-                            name
+                            name.to_string()
                         },
                     }
                     .into());
                 }
                 self.check_arity(arg_count, arity)?;
-                if let Some(entry) = self.host_natives.get(&name).copied() {
+                if let Some(entry) = self.host_natives.get(name).copied() {
                     if arity != entry.arity {
                         return Err(VmFault::TypeMismatch {
                             expected: format!("native value arity {}", entry.arity),
@@ -165,7 +170,7 @@ impl Vm {
                     };
                 }
                 if matches!(
-                    name.as_str(),
+                    name,
                     "task.spawn"
                         | "task.sleep"
                         | "task.all"
@@ -175,7 +180,7 @@ impl Vm {
                         | "task.group"
                 ) {
                     let args = self.stack[callee_idx + 1..callee_idx + 1 + arg_count].to_vec();
-                    return self.task_call(&name, callee_idx, &args);
+                    return self.task_call(name, callee_idx, &args);
                 }
                 let result = func(&self.stack[callee_idx + 1..callee_idx + 1 + arg_count])?;
                 self.stack.truncate(callee_idx);
@@ -229,8 +234,8 @@ impl Vm {
                             // An `async fn` method is an `async fn`: calling it yields a
                             // `Task` whose body carries the receiver as argument 0.
                             let callee = Value::Function {
-                                entry_ip,
-                                arity: total_arity,
+                                entry_ip: entry_ip as u32,
+                                arity: total_arity as u16,
                                 is_async,
                             };
                             let mut args = Vec::with_capacity(total_arity);
@@ -287,7 +292,7 @@ impl Vm {
                 if is_async {
                     let callee = Value::Function {
                         entry_ip,
-                        arity: total_arity,
+                        arity: total_arity as u16,
                         is_async,
                     };
                     let mut args = Vec::with_capacity(total_arity);
@@ -312,7 +317,7 @@ impl Vm {
                 ));
                 self.upvalue_frames.push(None);
                 self.refresh_frame_base();
-                self.ip = entry_ip;
+                self.ip = entry_ip as usize;
             }
             other => {
                 return Err(VmFault::NotCallable {

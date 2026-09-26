@@ -18,59 +18,31 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("spawn".to_string())),
-            Value::Native {
-                name: "task.spawn".to_string(),
-                arity: 2,
-                func: dummy_task_fn,
-            },
+            Value::native("task.spawn", 2, dummy_task_fn),
         ),
         (
             Value::String(Rc::new("sleep".to_string())),
-            Value::Native {
-                name: "task.sleep".to_string(),
-                arity: 1,
-                func: dummy_task_fn,
-            },
+            Value::native("task.sleep", 1, dummy_task_fn),
         ),
         (
             Value::String(Rc::new("all".to_string())),
-            Value::Native {
-                name: "task.all".to_string(),
-                arity: 1,
-                func: dummy_task_fn,
-            },
+            Value::native("task.all", 1, dummy_task_fn),
         ),
         (
             Value::String(Rc::new("race".to_string())),
-            Value::Native {
-                name: "task.race".to_string(),
-                arity: 1,
-                func: dummy_task_fn,
-            },
+            Value::native("task.race", 1, dummy_task_fn),
         ),
         (
             Value::String(Rc::new("timeout".to_string())),
-            Value::Native {
-                name: "task.timeout".to_string(),
-                arity: 2,
-                func: dummy_task_fn,
-            },
+            Value::native("task.timeout", 2, dummy_task_fn),
         ),
         (
             Value::String(Rc::new("cancel".to_string())),
-            Value::Native {
-                name: "task.cancel".to_string(),
-                arity: 1,
-                func: dummy_task_fn,
-            },
+            Value::native("task.cancel", 1, dummy_task_fn),
         ),
         (
             Value::String(Rc::new("group".to_string())),
-            Value::Native {
-                name: "task.group".to_string(),
-                arity: 0,
-                func: dummy_task_fn,
-            },
+            Value::native("task.group", 0, dummy_task_fn),
         ),
     ];
 

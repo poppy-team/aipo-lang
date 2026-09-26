@@ -66,7 +66,7 @@ impl Vm {
             let outcome = match self.struct_invariant_entries.get(&type_name).copied() {
                 Some(entry_ip) => {
                     let callee = Value::Function {
-                        entry_ip,
+                        entry_ip: entry_ip as u32,
                         arity: 1,
                         is_async: false,
                     };

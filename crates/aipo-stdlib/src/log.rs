@@ -96,11 +96,7 @@ pub fn create_module() -> Value {
         ($name:expr, $func:expr) => {
             entries.push((
                 Value::String(Rc::new($name.to_string())),
-                Value::Native {
-                    name: concat!("log.", $name).to_string(),
-                    arity: usize::MAX,
-                    func: $func,
-                },
+                Value::native(concat!("log.", $name), usize::MAX, $func),
             ));
         };
     }

@@ -838,7 +838,7 @@ impl Vm {
         let (entry_ip, arity, cells) = match callee.clone() {
             Value::Function {
                 entry_ip, arity, ..
-            } => (entry_ip, arity, None),
+            } => (entry_ip as usize, arity as usize, None),
             Value::Closure(closure) => (
                 closure.entry_ip,
                 closure.arity,
@@ -1642,7 +1642,7 @@ impl Vm {
         match arg {
             Value::Function { .. }
             | Value::Closure(_)
-            | Value::Native { .. }
+            | Value::Native(_)
             | Value::BoundMethod(_)
             | Value::StructMethod { .. }
             | Value::Type(_) => Ok(arg.clone()),

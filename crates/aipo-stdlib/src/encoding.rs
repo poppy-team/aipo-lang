@@ -284,67 +284,35 @@ pub fn create_module() -> Value {
     let entries = vec![
         (
             Value::String(Rc::new("base64_encode".to_string())),
-            Value::Native {
-                name: "encoding.base64_encode".to_string(),
-                arity: 1,
-                func: encoding_base64_encode,
-            },
+            Value::native("encoding.base64_encode", 1, encoding_base64_encode),
         ),
         (
             Value::String(Rc::new("base64_decode".to_string())),
-            Value::Native {
-                name: "encoding.base64_decode".to_string(),
-                arity: 1,
-                func: encoding_base64_decode,
-            },
+            Value::native("encoding.base64_decode", 1, encoding_base64_decode),
         ),
         (
             Value::String(Rc::new("base64url_encode".to_string())),
-            Value::Native {
-                name: "encoding.base64url_encode".to_string(),
-                arity: 1,
-                func: encoding_base64url_encode,
-            },
+            Value::native("encoding.base64url_encode", 1, encoding_base64url_encode),
         ),
         (
             Value::String(Rc::new("base64url_decode".to_string())),
-            Value::Native {
-                name: "encoding.base64url_decode".to_string(),
-                arity: 1,
-                func: encoding_base64url_decode,
-            },
+            Value::native("encoding.base64url_decode", 1, encoding_base64url_decode),
         ),
         (
             Value::String(Rc::new("hex_encode".to_string())),
-            Value::Native {
-                name: "encoding.hex_encode".to_string(),
-                arity: 1,
-                func: encoding_hex_encode,
-            },
+            Value::native("encoding.hex_encode", 1, encoding_hex_encode),
         ),
         (
             Value::String(Rc::new("hex_decode".to_string())),
-            Value::Native {
-                name: "encoding.hex_decode".to_string(),
-                arity: 1,
-                func: encoding_hex_decode,
-            },
+            Value::native("encoding.hex_decode", 1, encoding_hex_decode),
         ),
         (
             Value::String(Rc::new("utf8_encode".to_string())),
-            Value::Native {
-                name: "encoding.utf8_encode".to_string(),
-                arity: 1,
-                func: encoding_utf8_encode,
-            },
+            Value::native("encoding.utf8_encode", 1, encoding_utf8_encode),
         ),
         (
             Value::String(Rc::new("utf8_decode".to_string())),
-            Value::Native {
-                name: "encoding.utf8_decode".to_string(),
-                arity: 1,
-                func: encoding_utf8_decode,
-            },
+            Value::native("encoding.utf8_decode", 1, encoding_utf8_decode),
         ),
     ];
     Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries))))

@@ -41,7 +41,7 @@ impl Vm {
                 value,
                 Value::Function { .. }
                     | Value::Closure(_)
-                    | Value::Native { .. }
+                    | Value::Native(_)
                     | Value::BoundMethod(_)
                     | Value::StructMethod { .. }
             );
