@@ -77,3 +77,10 @@ fn test_strict_bool_conditions() {
     assert!(Value::None.as_bool().is_err());
     assert_eq!(Value::Bool(true).not().unwrap(), Value::Bool(false));
 }
+
+#[test]
+fn test_value_size_bounds() {
+    // Assert that Value memory footprint does not regress beyond 40 bytes.
+    assert!(std::mem::size_of::<Value>() <= 40);
+}
+
