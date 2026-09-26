@@ -56,44 +56,52 @@ features:
 **Aipo** was engineered to offer clean, expressive syntax without sacrificing technical rigor and predictability. Instead of dangerous implicit coercions (such as `"1" + 2 == "12"`), Aipo pairs dynamic, strong typing with **optional structural contracts**, **transactional failure recovery**, and a **deterministic async system**.
 
 ```aipo
-// Canonical Aipo example: structs, invariants, and async
-struct Account {
-  id: String,
-  var balance: Float,
-  fixed created_at: Int,
+# Canonical Aipo example: structs, invariants, and async
+struct Account
+    fixed id
+    balance = 0.0
+    fixed created_at
+end
 
-  invariant() {
-    self.balance >= 0.0
-  }
-}
-
-interface Payable {
-  fn transfer(target: Account, amount: Float) -> Result
-}
-
-impl Payable for Account {
-  fn transfer(target: Account, amount: Float) {
-    if amount <= 0.0 then
-      fail "Amount must be positive"
+impl Account
+    init(id, balance = 0.0, created_at = 0)
+        self.id = id
+        self.balance = balance
+        self.created_at = created_at
     end
 
-    // If any invariant fails, all mutations are rolled back automatically
-    attempt
-      self.balance -= amount
-      target.balance += amount
-    recover e
-      fail "Transfer cancelled: " + e
+    invariant()
+        self.balance >= 0.0
     end
-  }
-}
 
-async fn process_payment(acc: Account, amount: Float) {
-  let timer = task.sleep(100)
-  await do
-    timer
-    print("Payment completed for " + acc.id)
-  end
-}
+    fn transfer(self!, target: Account, amount: Float)
+        if amount <= 0.0
+            return fail("Amount must be positive")
+        end
+
+        # If any invariant fails, all mutations are rolled back automatically
+        attempt
+            self.balance = self.balance - amount
+            target.balance = target.balance + amount
+        failed err
+            return fail(f"Transfer cancelled: {err.message}")
+        end
+    end
+end
+
+interface Payable
+    fn transfer(self!, target: Account, amount: Float)
+end
+
+satisfy Account: Payable
+
+async fn process_payment(acc: Account, amount: Float)
+    let timer = task.sleep(100)
+    await do
+        timer
+        io.println(f"Payment completed for {acc.id}")
+    end
+end
 ```
 
 ::: tip 💡 Getting started in 3 simple steps

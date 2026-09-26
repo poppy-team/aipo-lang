@@ -192,9 +192,9 @@ pub fn binary_read_i64_le(args: &[Value]) -> Result<Value, VmFault> {
     let val = i64::from_le_bytes(slice);
     match check_safe_int(val) {
         Ok(safe) => Ok(Value::Int(safe)),
-        Err(_) => Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("integer {val} outside safe range"),
-        }))),
+        Err(_) => Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "integer {val} outside safe range"
+        ))))),
     }
 }
 
@@ -218,9 +218,9 @@ pub fn binary_read_i64_be(args: &[Value]) -> Result<Value, VmFault> {
     let val = i64::from_be_bytes(slice);
     match check_safe_int(val) {
         Ok(safe) => Ok(Value::Int(safe)),
-        Err(_) => Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("integer {val} outside safe range"),
-        }))),
+        Err(_) => Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "integer {val} outside safe range"
+        ))))),
     }
 }
 
@@ -246,9 +246,9 @@ pub fn binary_read_u64_le(args: &[Value]) -> Result<Value, VmFault> {
     if val <= 9_007_199_254_740_991 {
         Ok(Value::Int(val as i64))
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("unsigned integer {val} outside safe range"),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "unsigned integer {val} outside safe range"
+        )))))
     }
 }
 
@@ -274,9 +274,9 @@ pub fn binary_read_u64_be(args: &[Value]) -> Result<Value, VmFault> {
     if val <= 9_007_199_254_740_991 {
         Ok(Value::Int(val as i64))
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("unsigned integer {val} outside safe range"),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "unsigned integer {val} outside safe range"
+        )))))
     }
 }
 
@@ -361,9 +361,9 @@ pub fn binary_write_i8(args: &[Value]) -> Result<Value, VmFault> {
         Value::Int(n) if (-128..=127).contains(n) => *n as i8 as u8,
         Value::Byte(b) => *b,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for i8 (-128..=127)"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for i8 (-128..=127)"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -387,9 +387,9 @@ pub fn binary_write_u8(args: &[Value]) -> Result<Value, VmFault> {
         Value::Byte(b) => *b,
         Value::Int(n) if (0..=255).contains(n) => *n as u8,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for u8 (0..=255)"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for u8 (0..=255)"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -412,9 +412,9 @@ pub fn binary_write_i16_le(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if (i64::from(i16::MIN)..=i64::from(i16::MAX)).contains(n) => *n as i16,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for i16"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for i16"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -437,9 +437,9 @@ pub fn binary_write_i16_be(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if (i64::from(i16::MIN)..=i64::from(i16::MAX)).contains(n) => *n as i16,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for i16"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for i16"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -462,9 +462,9 @@ pub fn binary_write_u16_le(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if (0..=65535).contains(n) => *n as u16,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for u16 (0..=65535)"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for u16 (0..=65535)"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -487,9 +487,9 @@ pub fn binary_write_u16_be(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if (0..=65535).contains(n) => *n as u16,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for u16 (0..=65535)"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for u16 (0..=65535)"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -512,9 +512,9 @@ pub fn binary_write_i32_le(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(n) => *n as i32,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for i32"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for i32"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -537,9 +537,9 @@ pub fn binary_write_i32_be(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(n) => *n as i32,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for i32"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for i32"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -562,9 +562,9 @@ pub fn binary_write_u32_le(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if (0..=4_294_967_295_i64).contains(n) => *n as u32,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for u32"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for u32"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -587,9 +587,9 @@ pub fn binary_write_u32_be(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if (0..=4_294_967_295_i64).contains(n) => *n as u32,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for u32"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for u32"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -652,9 +652,9 @@ pub fn binary_write_u64_le(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if *n >= 0 => *n as u64,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} must be non-negative for u64"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} must be non-negative for u64"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -677,9 +677,9 @@ pub fn binary_write_u64_be(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if *n >= 0 => *n as u64,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} must be non-negative for u64"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} must be non-negative for u64"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -801,18 +801,18 @@ pub fn binary_read_varint(args: &[Value]) -> Result<Value, VmFault> {
         let payload = (byte & 0x7F) as u64;
 
         if shift >= 64 || (shift == 63 && payload > 1) {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: "varint overflow: exceeds 64-bit integer".to_string(),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(
+                "varint overflow: exceeds 64-bit integer".to_string(),
+            ))));
         }
 
         result |= payload << shift;
         if (byte & 0x80) == 0 {
             #[allow(clippy::cast_possible_wrap)]
             if result > 9_007_199_254_740_991 {
-                return Ok(Value::Failure(Rc::new(FailureValue {
-                    message: format!("varint value {result} exceeds safe integer range"),
-                })));
+                return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                    "varint value {result} exceeds safe integer range"
+                )))));
             }
             #[allow(clippy::cast_possible_wrap)]
             let res_int = result as i64;
@@ -824,9 +824,9 @@ pub fn binary_read_varint(args: &[Value]) -> Result<Value, VmFault> {
         shift += 7;
     }
 
-    Ok(Value::Failure(Rc::new(FailureValue {
-        message: "unexpected end of bytes while reading varint".to_string(),
-    })))
+    Ok(Value::Failure(Rc::new(FailureValue::new(
+        "unexpected end of bytes while reading varint".to_string(),
+    ))))
 }
 
 /// `binary.write_varint(bytes, offset, value)`
@@ -840,9 +840,9 @@ pub fn binary_write_varint(args: &[Value]) -> Result<Value, VmFault> {
     let val = match &args[2] {
         Value::Int(n) if *n >= 0 => *n as u64,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("varint value {n} must be non-negative"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "varint value {n} must be non-negative"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {

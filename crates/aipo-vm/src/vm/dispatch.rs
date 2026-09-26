@@ -5,7 +5,7 @@ use super::{FieldLookup, Vm};
 use crate::fault::{VmError, VmFault};
 use crate::frame::HandlerFrame;
 use crate::value::{
-    DictMap, FailureValue, MethodKind, StructInstance, Value, check_finite_float, check_safe_int,
+    DictMap, MethodKind, StructInstance, Value, check_finite_float, check_safe_int,
 };
 use aipo_bytecode::BytecodeModule;
 use aipo_bytecode::opcode::{Constant, OpCode};
@@ -351,6 +351,10 @@ impl Vm {
                         self.push(Value::String(Rc::new(err.message.clone())))?;
                         return Ok(false);
                     }
+                    if field_name == "payload" {
+                        self.push(err.payload.clone())?;
+                        return Ok(false);
+                    }
                     self.push(target)?;
                     return Ok(false);
                 }
@@ -380,23 +384,15 @@ impl Vm {
                             if self.metrics_enabled {
                                 self.metrics.field_hits = self.metrics.field_hits.saturating_add(1);
                             }
-                            if let Some((entry_ip, total_arity, is_async)) = self
-                                .struct_methods
-                                .get(&(type_name.clone(), field_name.clone()))
+                            if let Some((entry_ip, total_arity, is_async)) =
+                                self.lookup_struct_method(&type_name, field_name)
                             {
-                                let entry_ip = *entry_ip;
-                                let total_arity = *total_arity;
-                                let is_async = *is_async;
-                                self.push(Value::bound_method(
-                                    format!("{type_name}.{field_name}"),
-                                    total_arity.saturating_sub(1),
-                                    target.clone(),
-                                    MethodKind::Function {
-                                        entry_ip,
-                                        total_arity,
-                                        is_async,
-                                    },
-                                ))?;
+                                self.push(Value::StructMethod {
+                                    receiver: inst.clone(),
+                                    entry_ip,
+                                    total_arity: total_arity as u16,
+                                    is_async,
+                                })?;
                             } else if let Some((arity, func)) = self
                                 .method_natives
                                 .get(&(type_name.clone(), field_name.clone()))
@@ -1096,12 +1092,12 @@ impl Vm {
             }
             OpCode::Fail => {
                 let err_val = self.pop()?;
-                let message = match err_val {
-                    Value::String(s) => (*s).clone(),
-                    Value::Failure(f) => f.message.clone(),
-                    other => other.to_string(),
+                let (message, payload) = match &err_val {
+                    Value::String(s) => ((**s).clone(), Value::None),
+                    Value::Failure(f) => (f.message.clone(), f.payload.clone()),
+                    other => (other.to_string(), other.clone()),
                 };
-                let failure = Value::Failure(Rc::new(FailureValue { message }));
+                let failure = Value::failure_with_payload(message, payload);
                 self.handle_failure(failure)?;
             }
             OpCode::FillSelfCapture => {

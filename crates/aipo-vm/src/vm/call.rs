@@ -266,6 +266,54 @@ impl Vm {
                     }
                 }
             }
+            Value::StructMethod {
+                receiver,
+                entry_ip,
+                total_arity,
+                is_async,
+            } => {
+                if self.metrics_enabled {
+                    self.metrics.bound_method_calls =
+                        self.metrics.bound_method_calls.saturating_add(1);
+                }
+                let total_arity = total_arity as usize;
+                if arg_count + 1 != total_arity {
+                    return Err(VmFault::TypeMismatch {
+                        expected: format!("{} arguments", total_arity.saturating_sub(1)),
+                        actual: format!("{arg_count} arguments"),
+                    }
+                    .into());
+                }
+                if is_async {
+                    let callee = Value::Function {
+                        entry_ip,
+                        arity: total_arity,
+                        is_async,
+                    };
+                    let mut args = Vec::with_capacity(total_arity);
+                    args.push(Value::Struct(receiver));
+                    args.extend(
+                        self.stack[callee_idx + 1..callee_idx + 1 + arg_count]
+                            .iter()
+                            .cloned(),
+                    );
+                    let id = self.spawn_task(callee, args, None)?;
+                    self.stack.truncate(callee_idx);
+                    self.push(Value::Task(id))?;
+                    return Ok(());
+                }
+                self.stack[callee_idx] = Value::Struct(receiver);
+                let journal_start = self.mutation_journal.len();
+                self.frames.push(CallFrame::method(
+                    self.ip,
+                    callee_idx,
+                    arg_count + 1,
+                    journal_start,
+                ));
+                self.upvalue_frames.push(None);
+                self.refresh_frame_base();
+                self.ip = entry_ip;
+            }
             other => {
                 return Err(VmFault::NotCallable {
                     type_name: other.type_name().to_string(),

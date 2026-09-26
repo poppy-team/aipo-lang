@@ -134,9 +134,7 @@ impl TypeTag {
 }
 
 fn recoverable(message: impl Into<String>) -> Value {
-    Value::Failure(Rc::new(FailureValue {
-        message: message.into(),
-    }))
+    Value::Failure(Rc::new(FailureValue::new(message.into())))
 }
 
 fn type_error(expected: &str, actual: &Value) -> VmFault {

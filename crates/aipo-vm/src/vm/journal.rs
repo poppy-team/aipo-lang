@@ -98,7 +98,7 @@ impl Vm {
                 // Canon returns the direct fields of every participating instance to the state
                 // the operation started from before the failure propagates.
                 self.rollback_mutations(base);
-                self.handle_failure(Value::Failure(Rc::new(FailureValue { message })))?;
+                self.handle_failure(Value::Failure(Rc::new(FailureValue::new(message))))?;
                 Ok(())
             }
         }

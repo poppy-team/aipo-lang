@@ -31,9 +31,7 @@ fn with_regex<R>(pattern: &str, f: impl FnOnce(&regex::Regex) -> R) -> Result<R,
 }
 
 fn recoverable(message: impl Into<String>) -> Value {
-    Value::Failure(Rc::new(FailureValue {
-        message: message.into(),
-    }))
+    Value::Failure(Rc::new(FailureValue::new(message.into())))
 }
 
 fn expect_string<'a>(val: &'a Value, op: &str) -> Result<&'a str, VmFault> {

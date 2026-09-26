@@ -7,7 +7,7 @@ This manual formally documents syntax, data types, module boundaries, integrity 
 ## Manual Sections
 
 - **[Syntax & Data Types](/en/manual/syntax-and-types)**: Primitives, literals, dynamic collections (`List`, `Dict`, `Set`, `Sequence`), binary `Bytes`, and operators.
-- **[Control Flow & Failures](/en/manual/control-flow)**: Conditional branches, deterministic loops, explicit `fail`, and the transactional `attempt ... recover` block.
+- **[Control Flow & Failures](/en/manual/control-flow)**: Conditional branches, deterministic loops, explicit `fail`, and the transactional `attempt ... failed` block.
 - **[Functions, Closures & Lambdas](/en/manual/functions-and-closures)**: Function declarations, named arguments, default values, anonymous functions, concise `=>` arrow syntax, and local functions with self-recursion.
 - **[Interfaces & Contracts](/en/manual/interfaces-and-contracts)**: Structs, immutable `fixed` fields, `interface` with `satisfy`, `init` hooks, `invariant()` predicates, and signature contracts.
 - **[Concurrency & Async](/en/manual/async-and-concurrency)**: `async fn`, sequential `await do ... end`, task combinators (`task.spawn`, `task.sleep`, `task.all`, `task.race`), and the virtual-time scheduler.

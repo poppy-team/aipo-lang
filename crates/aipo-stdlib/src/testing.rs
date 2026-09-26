@@ -38,9 +38,9 @@ pub fn expect_equal(args: &[Value]) -> Result<Value, VmFault> {
     if act == exp {
         Ok(Value::None)
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("expect.equal failed: expected {exp}, got {act}"),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "expect.equal failed: expected {exp}, got {act}"
+        )))))
     }
 }
 
@@ -52,9 +52,9 @@ pub fn expect_not_equal(args: &[Value]) -> Result<Value, VmFault> {
     if act != exp {
         Ok(Value::None)
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("expect.not_equal failed: expected values to differ, both are {act}"),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "expect.not_equal failed: expected values to differ, both are {act}"
+        )))))
     }
 }
 
@@ -64,9 +64,10 @@ pub fn expect_true(args: &[Value]) -> Result<Value, VmFault> {
     if let Value::Bool(true) = &args[0] {
         Ok(Value::None)
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("expect.true failed: expected true, got {}", args[0]),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "expect.true failed: expected true, got {}",
+            args[0]
+        )))))
     }
 }
 
@@ -76,9 +77,10 @@ pub fn expect_false(args: &[Value]) -> Result<Value, VmFault> {
     if let Value::Bool(false) = &args[0] {
         Ok(Value::None)
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("expect.false failed: expected false, got {}", args[0]),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "expect.false failed: expected false, got {}",
+            args[0]
+        )))))
     }
 }
 
@@ -88,9 +90,10 @@ pub fn expect_none(args: &[Value]) -> Result<Value, VmFault> {
     if let Value::None = &args[0] {
         Ok(Value::None)
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("expect.none failed: expected none, got {}", args[0]),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "expect.none failed: expected none, got {}",
+            args[0]
+        )))))
     }
 }
 
@@ -100,9 +103,9 @@ pub fn expect_some(args: &[Value]) -> Result<Value, VmFault> {
     if !matches!(&args[0], Value::None) {
         Ok(Value::None)
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: "expect.some failed: expected a value, got none".to_string(),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(
+            "expect.some failed: expected a value, got none".to_string(),
+        ))))
     }
 }
 
@@ -112,9 +115,10 @@ pub fn expect_failure(args: &[Value]) -> Result<Value, VmFault> {
     if args[0].is_failure() {
         Ok(Value::None)
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("expect.failure failed: expected Failure, got {}", args[0]),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "expect.failure failed: expected Failure, got {}",
+            args[0]
+        )))))
     }
 }
 
@@ -158,9 +162,9 @@ pub fn expect_contains(args: &[Value]) -> Result<Value, VmFault> {
     if found {
         Ok(Value::None)
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("expect.contains failed: collection does not contain {elem}"),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "expect.contains failed: collection does not contain {elem}"
+        )))))
     }
 }
 
@@ -196,9 +200,9 @@ pub fn expect_approx(args: &[Value]) -> Result<Value, VmFault> {
     if diff <= tol {
         Ok(Value::None)
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("expect.approx failed: difference {diff} exceeds tolerance {tol}"),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "expect.approx failed: difference {diff} exceeds tolerance {tol}"
+        )))))
     }
 }
 

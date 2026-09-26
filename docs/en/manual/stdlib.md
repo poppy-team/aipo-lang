@@ -3,7 +3,7 @@
 The Aipo standard library is built around three non-negotiable principles:
 1. **Absolute Determinism**: The same operation produces identical bit-for-bit results on the native Rust VM and the JavaScript runtime.
 2. **Security by Default (*Deny-by-Default*)**: Access to host system resources (filesystem, environment variables, system clock) requires explicit capability grants.
-3. **Ergonomic Dual Invocation**: Functions across canonical modules can be invoked either as module functions (`string.len(txt)`) or as receiver methods on the value (`txt.len()`).
+3. **Unified Global Environment**: Standard library modules are ambient global built-ins (`math`, `string`, `io`, `task`, `time`, `env`, `fs`, `random`, `json`, `encoding`, `binary`, `path`, `url`, `regex`, `expect`, `testing`, `log`). No `import` is required or permitted to access them; the `import` statement is strictly reserved for local project modules and external packages.
 
 ---
 
@@ -19,7 +19,7 @@ The Aipo standard library is built around three non-negotiable principles:
 | [`time` & `Duration`](#6-time-duration-module) | High-precision timing, pure civil calendar dates, and duration math | 🔒 Yes (`clock.*`) |
 | [`binary` & `Bytes`](#7-binary-bytes-module) | Contiguous raw byte buffer reads/writes (LE/BE) and LEB128 varints | ❌ No |
 | [`path` & `url`](#8-path-url-modules) | Cross-platform path normalization and URL decomposition | ❌ No |
-| [`testing`](#9-testing-expect-module) | Integrated assertion engine for pure, self-contained unit tests | ❌ No |
+| [`testing` & `expect`](#9-testing-expect-module) | Integrated assertion engine for pure, self-contained unit tests | ❌ No |
 | [`task`](#10-task-module-async-concurrency) | Asynchronous task combinators, groups, races, and timeouts | ❌ No |
 | [`fs` & `env`](#11-fs-env-modules-host-resources) | Sandboxed filesystem I/O and isolated environment variable lookups | 🔒 Yes (`fs.*`, `env`) |
 
@@ -52,181 +52,189 @@ The `math` module provides pure floating-point and integer operations without si
 ### Practical Example: Simple Pendulum Simulation
 
 ```aipo
-import math
+struct Pendulum
+    length
+    gravity
+    angle
+    angular_velocity
+end
 
-struct Pendulum {
-    length: Float,
-    gravity: Float,
-    angle: Float,
-    angular_velocity: Float
-}
+impl Pendulum
+    init(length, gravity, angle, angular_velocity)
+        self.length = length
+        self.gravity = gravity
+        self.angle = angle
+        self.angular_velocity = angular_velocity
+    end
 
-impl Pendulum {
-    fn update(self, delta_time: Float) -> Pendulum {
-        // Angular acceleration: (-g / L) * sin(theta)
-        let accel = (-self.gravity / self.length) * math.sin(self.angle)
+    fn update(self, delta_time)
+        # Angular acceleration: (-g / L) * sin(theta)
+        let acceleration = (-self.gravity / self.length) * math.sin(self.angle)
         
-        let new_vel = self.angular_velocity + accel * delta_time
+        let new_vel = self.angular_velocity + acceleration * delta_time
         let new_angle = self.angle + new_vel * delta_time
         
-        // Clamp angle safely within rendering bounds
-        let normalized_angle = math.clamp(new_angle, -math.pi, math.pi)
+        # Keep angle bounded within [-pi, pi]
+        let bounded_angle = math.clamp(new_angle, -math.pi, math.pi)
         
-        return Pendulum {
-            length: self.length,
-            gravity: self.gravity,
-            angle: normalized_angle,
-            angular_velocity: new_vel
+        return Pendulum{
+            length = self.length,
+            gravity = self.gravity,
+            angle = bounded_angle,
+            angular_velocity = new_vel,
         }
-    }
+    end
+end
+
+let p = Pendulum{
+    length = 2.5,
+    gravity = 9.81,
+    angle = math.rad(45.0),
+    angular_velocity = 0.0,
 }
 
-let p = Pendulum {
-    length: 2.5,
-    gravity: 9.81,
-    angle: math.rad(45.0),
-    angular_velocity: 0.0
-}
-
-let p_next = p.update(0.016)
-print("New angle: " + String(p_next.angle))
+let next_p = p.update(0.016)
+io.println(f"New angle: {next_p.angle}")
 ```
 
-::: tip Cognitive Anchor
-Aipo strictly prohibits `NaN` and infinity values in its runtime value model. Division by zero or square roots of negative numbers immediately trigger recoverable `fail` values, preventing silent data corruption from propagating through your program.
+::: tip Cognitive Insight
+Aipo completely forbids `NaN` and infinite floats in its value system. Any division by zero or negative square root immediately triggers a recoverable failure with `fail`, preventing silent state corruption.
 :::
 
 ---
 
 ## 2. `string` Module
 
-In Aipo, **every string literal and computed string is validated UTF-8 and automatically normalized to Unicode Normalization Form C (NFC)**. This eliminates insidious bugs caused by visually identical composed diacritics.
+In Aipo, **every string is strictly validated UTF-8 and automatically normalized to Canonical Form C (NFC)**. This eliminates insidious comparison bugs caused by composed vs decomposed diacritics.
 
-### Dual Invocation: Function vs Method
-Choose whichever syntax best fits your mental flow:
+### Dual Invocation: Module Function vs Method
+Choose whichever syntax makes your code most readable:
 ```aipo
-import string
-
 let text = "  Aipo Language  "
 
-// Module-function style:
+# Module function style:
 let a = string.trim(text)
 
-// Receiver-method style (identical implementation and performance):
+# Receiver method style (identical semantics with zero overhead):
 let b = text.trim().lower()
 ```
 
-### Essential Operations
+### Core Operations
 
 | Method | Signature | Description |
 | :--- | :--- | :--- |
-| `.len()` | `() -> Int` | Number of Unicode codepoints (characters) |
-| `.byte_len()` | `() -> Int` | Number of raw UTF-8 bytes in memory |
-| `.trim()` | `() -> String` | Strips leading and trailing whitespace |
-| `.split(sep)` | `String -> List` | Splits text into list of substrings |
-| `.join(list)` | `List -> String` | Joins a list of items using this separator |
-| `.contains(sub)` | `String -> Bool` | Checks if substring exists |
-| `.starts_with(pre)` | `String -> Bool` | Tests starting prefix |
-| `.ends_with(suf)` | `String -> Bool` | Tests ending suffix |
-| `.replace(old, new)` | `(String, String) -> String` | Replaces occurrences of a substring |
-| `.upper()` / `.lower()` | `() -> String` | Unicode-aware uppercase/lowercase conversion |
+| `.len()` | `() -> Int` | Number of Unicode scalar values |
+| `.byte_len()` | `() -> Int` | Number of raw bytes in memory |
+| `.trim()` | `() -> String` | Strips whitespace from both ends |
+| `.split(sep)` | `String -> List` | Splits string into a list of chunks |
+| `.join(list)` | `List -> String` | Joins a list of items using separator |
+| `.contains(sub)` | `String -> Bool` | Checks if substring is present |
+| `.starts_with(pre)` | `String -> Bool` | Checks prefix |
+| `.ends_with(suf)` | `String -> Bool` | Checks suffix |
+| `.replace(old, new)` | `(String, String) -> String` | Replaces occurrences of substring |
+| `.upper()` / `.lower()` | `() -> String` | Unicode-aware uppercase or lowercase |
 
-### Practical Example: Input Sanitization Pipeline
+### Practical Example: Data Sanitization
 
 ```aipo
-import string
-
-fn sanitize_email(raw_email: String) -> String {
+fn sanitize_email(raw_email)
     let clean = raw_email.trim().lower()
     
-    if not clean.contains("@") then
-        fail "invalid email: missing @"
+    if not clean.contains("@")
+        return fail("invalid email: missing at-sign")
     end
     
     let parts = clean.split("@")
-    if parts.len() != 2 then
-        fail "invalid email: incorrect structure"
+    if parts.len() != 2
+        return fail("invalid email: malformed format")
     end
     
-    let user = parts[0]
+    let username = parts[0]
     let domain = parts[1]
     
-    if user.len() == 0 or not domain.contains(".") then
-        fail "invalid email: user or domain cannot be empty"
+    if username.len() == 0 or not domain.contains(".")
+        return fail("invalid email: empty username or domain")
     end
     
-    return user + "@" + domain
-}
+    return username + "@" + domain
+end
 
-let input_email = "  Dev.Aipo@Poppy-Lang.ORG  "
-let final_email = sanitize_email(input_email)
-print("Sanitized email: " + final_email)
-// Prints: "Sanitized email: dev.aipo@poppy-lang.org"
+let raw_input = "  Dev.Aipo@Poppy-Lang.ORG  "
+let final_email = sanitize_email(raw_input)
+io.println(f"Sanitized email: {final_email}")
+# Prints: "Sanitized email: dev.aipo@poppy-lang.org"
 ```
 
 ---
 
 ## 3. Collections: `List`, `Dict`, `Set`, `Sequence`
 
-Aipo provides four core data structures designed for readability and runtime predictability:
+Aipo offers four core data structures designed for high efficiency and predictable ergonomics:
 
 ```mermaid
 graph LR
-    List["List [a, b, c]<br>0-indexed, dynamic array"]
-    Dict["Dict #{k: v}<br>Hash map with fast key lookups"]
-    Set["Set {a, b, c}<br>Unique values + insertion order"]
-    Sequence["Sequence<br>Lazy iterator without intermediate allocations"]
+    List["List [a, b, c]<br>Zero-indexed, dynamic growth"]
+    Dict["Dict {k: v}<br>Key-value associative map"]
+    Set["Set([a, b, c])<br>Unique items + insertion order"]
+    Sequence["Sequence (.lazy())<br>Demand-driven lazy pipeline"]
 ```
 
 ### 1. `List`
-Dynamic array indexed by integer offsets:
+Dynamic zero-indexed collection:
 ```aipo
 let numbers = [10, 20, 30]
-numbers.push(40)
-print(numbers[0])   // 10
-print(numbers[-1])  // 40 (negative indexing counts from the end)
+numbers.add(40)
+
+io.println(numbers[0])  # 10
+io.println(numbers[-1]) # 40 (negative indices count from end)
 ```
 
 ### 2. `Dict`
-Key-value associative map created using the `#{}` syntax:
+Associative hash map defined with `{}` syntax:
 ```aipo
-let config = #{
+let config = {
     "port": 8080,
     "host": "localhost",
-    "debug": true
+    "debug": true,
 }
 
-print(config["port"]) // 8080
+io.println(config["port"]) # 8080
 config["port"] = 9000
+io.println(config["port"]) # 9000
 ```
 
-### 3. `Set` (Insertion-Ordered Unique Values)
-Unlike standard sets in Python or JavaScript, Aipo's `Set` **strictly preserves the original insertion order of elements**:
+### 3. `Set` (Insertion-Ordered Unique Sets)
+Unlike traditional sets in other languages, Aipo sets **strictly preserve original insertion order**:
 ```aipo
 let tags = Set()
 tags.add("rust")
 tags.add("aipo")
-tags.add("rust") // Duplicate entry is silently ignored
+tags.add("rust") # Duplicate silently ignored
 
-print(tags.len()) // 2
-print(tags.to_list()) // ["rust", "aipo"] - deterministic order guaranteed!
+io.println(tags.len()) # 2
+io.println(tags.has("aipo")) # true
+io.println(tags.to_list()) # ["rust", "aipo"] - insertion order guaranteed!
 ```
 
-### 4. `Sequence` (Lazy Evaluation Pipelines)
-Chaining `.map()` and `.filter()` over large lists produces wasteful intermediate heap allocations. Aipo's `Sequence` evaluates items **lazily on demand**, maintaining a flat \(O(1)\) memory footprint:
+### 4. `Sequence` (Lazy Pipelines)
+Chaining transformations on standard lists allocates intermediate lists in memory. The `Sequence` type, created via `.lazy()`, evaluates elements **on demand** with constant memory usage:
 
 ```aipo
-let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+let items = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-// This pipeline allocates zero intermediate arrays:
-let result = Sequence(data)
-    .filter(fn(x) => x % 2 == 0)
-    .map(fn(x) => x * 10)
-    .take(3)
-    .to_list()
+# This pipeline evaluates on demand with zero intermediate allocations:
+let seq = items.lazy()
+let evens = seq.filter(x => x % 2 == 0)
+let scaled = evens.map(x => x * 10)
+let taken = scaled.take(3)
+let result = taken.collect()
 
-print(result) // [20, 40, 60]
+io.println(result) # [20, 40, 60]
 ```
+
+Available `Sequence` methods:
+- **Intermediate Pipeline Stages (return a new `Sequence`)**: `.map(fn)`, `.filter(fn)`, `.flat_map(fn)`, `.take(n)`, `.skip(n)`, `.distinct()`, `.zip(other)`, `.chain(other)`, `.chunk(size)`, `.window(size)`, `.enumerate()`.
+- **Terminal Consumers (drive evaluation and return final value)**: `.collect()`, `.find(fn)`, `.any(fn)`, `.all(fn)`, `.count()`, `.reduce(initial, fn)`.
 
 ---
 
@@ -234,261 +242,280 @@ print(result) // [20, 40, 60]
 
 The `json` module provides deterministic serialization and deserialization with strict safety guarantees.
 
-### Key Signatures
-- `json.parse(text: String) -> Value`: Parses JSON text into Aipo values. **Strictly rejects duplicate object keys** with a recoverable failure, preventing security discrepancies across microservices.
-- `json.stringify(value: Value, pretty: Bool = false) -> String`: Serializes values into canonical JSON. Detects object reference cycles and fails gracefully without recursion crashes.
+### Core Signatures
+- `json.parse(text)`: Parses JSON text into native Aipo values. **Strictly rejects duplicate object keys** with an immediate failure, eliminating subtle security vulnerabilities in API parsers.
+- `json.stringify(value, pretty = false)`: Serializes Aipo values into canonical JSON text. Detects circular graphs and fails gracefully instead of blowing the stack.
 
-### Practical Example: Parsing, Validating, and Serializing
+### Practical Example: Reading, Validating, and Serializing
 
 ```aipo
-import json
+let raw_payload = "{\"service\": \"auth\", \"attempts\": 3, \"active\": true}"
 
-let incoming_payload = "{\"service\": \"auth\", \"retries\": 3, \"active\": true}"
-
-// Safely parse within an attempt block
-let payload = attempt
-    json.parse(incoming_payload)
-recover err
-    #{ "error": "Malformed JSON payload", "detail": err }
+# Safe parsing inside an attempt block
+var payload = {}
+attempt
+    payload = json.parse(raw_payload)
+failed err
+    payload = {"error": "Malformed JSON", "detail": err.message}
 end
 
-print("Requested service: " + payload["service"])
+let service_name = payload["service"]
+io.println(f"Requested service: {service_name}")
 
-// Enrich dictionary and format pretty-printed output
-payload["timestamp"] = 1727330000
-let response_json = json.stringify(payload, true)
-print(response_json)
+# Adding metadata and emitting formatted output (pretty = true)
+payload["updated_at"] = 1727330000
+let output_json = json.stringify(payload, true)
+io.println(output_json)
 ```
 
 ---
 
 ## 5. `random` Module
 
-The `random` module is powered by **SplitMix64**, a high-performance 64-bit pseudo-random number generator offering **100% mathematical reproducibility** across native and JavaScript targets.
+The `random` module is built on **SplitMix64**, a 64-bit high-performance pseudo-random number generator offering **exact mathematical reproducibility** across the Rust VM and JavaScript runtime.
 
-### Global Generator vs Seeded Instances
-Use the global default generator for convenience, or instantiate isolated `Rng` structs for reproducible simulations and unit tests:
+### Global Generator vs Independent Seeded Generator
+You can use the global PRNG or instantiate isolated generators via `random.create(seed)` for simulations and repeatable testing:
 
 ```aipo
-import random
-
-// 1. Quick global generation
+# 1. Quick global generation
 let d6 = random.int(1, 6)
-let chance = random.float() // [0.0, 1.0)
-let coin_flip = random.bool()
+let probability = random.float() # [0.0, 1.0)
+let coin = random.bool()
 
-// 2. Seeded generator for 100% reproducible tests
+# 2. Seeded generator for 100% reproducible tests
 let game_rng = random.create(42)
 
-let chosen_monster = game_rng.choice(["Goblin", "Orc", "Dragon"])
+let chosen_enemy = game_rng.choice(["Goblin", "Orc", "Dragon"])
 let rolled_stats = game_rng.shuffle([10, 14, 18, 8, 12])
 
-print("Encountered: " + chosen_monster)
-print("Shuffled stats: " + String(rolled_stats))
+io.println(f"Enemy: {chosen_enemy}")
+io.print("Shuffled stats: ")
+io.println(rolled_stats)
 ```
 
-::: tip Why Determinism Matters
-In game development, procedural world generation, and automated testing, having a random generator that behaves identically across Linux, Windows, macOS, and web browsers eliminates phantom bugs (*heisenbugs*).
+::: tip Why This Matters
+In automated test suites and multiplayer games, a PRNG that behaves identically across all architectures and operating systems eliminates flaky tests and impossible-to-reproduce heisenbugs.
 :::
 
 ---
 
 ## 6. `time` & `Duration` Module
 
-Time measurement in Aipo is divided into two decoupled domains:
-1. **Physical Host Clock**: System wall-clock and monotonic timers (`time.now()`, `time.monotonic()`), treated as sensitive external capabilities guarded by the **Host ABI**.
-2. **Pure Calendar Dates & Durations**: Pure calendar representations (`Date`, `DateTime`) and high-precision intervals (`Duration`) independent of host timezone quirks.
+Time measurement in Aipo cleanly decouples two concepts:
+1. **Physical Host Clock**: Real machine readings (`time.now()`, `time.monotonic()`), treated as sensitive host capabilities protected by **Capability** security.
+2. **Pure Calendar Dates & Durations**: Pure civil date values (`time.date()`, `time.time_of_day()`, `time.parse_iso()`) and durations (`Duration`) that are independent of host system access.
 
-### Host Clock (Capability-Gated)
+### Host Clock Readings (Protected by Capability)
 ```aipo
-import time
+# Requires the host to grant capability 'clock.wall'
+let now_duration = time.now()
 
-// Requires host application to grant 'clock.wall' capability
-let now_seconds = time.now()
-
-// Requires 'clock.monotonic' capability (ideal for high-precision benchmarking)
+# Requires capability 'clock.monotonic' (ideal for benchmarks)
 let start = time.monotonic()
-// ... execute compute-heavy logic ...
+# ... heavy computation ...
 let finish = time.monotonic()
 let elapsed = finish - start
-print("Elapsed time: " + String(elapsed) + "s")
+io.println(f"Elapsed: {elapsed.total_seconds()}s")
 ```
 
 ### Pure Civil Dates & Durations
 ```aipo
-import time
-
-// Construct pure civil calendar date (Year, Month, Day)
+# Pure civil date construction (Year, Month, Day)
 let release_date = time.date(2026, 9, 26)
+io.println(release_date.to_iso()) # "2026-09-26"
+io.println(f"Year: {release_date.year}, Month: {release_date.month}, Day: {release_date.day}")
 
-print("Is leap year? " + String(release_date.is_leap()))
-print("Days in month: " + String(release_date.days_in_month()))
-print("ISO-8601: " + release_date.to_iso()) // "2026-09-26"
+# Creating and calculating Durations
+let d1 = Duration(120.5) # 120.5 seconds
+let d2 = Duration(30.0)
+let total = d1 + d2
 
-// Duration arithmetic
-let span = Duration(120.5) // 120.5 seconds
-print("In minutes: " + String(span.minutes()))
+io.println(f"Total in seconds: {total.total_seconds()}")
+io.println(f"Total in milliseconds: {total.total_milliseconds()}")
 ```
 
 ---
 
 ## 7. `binary` & `Bytes` Module
 
-The `Bytes` value type and `binary` module facilitate low-level contiguous memory buffer manipulation with explicit endianness (Little-Endian / Big-Endian) and LEB128 compression.
+The `Bytes` type and `binary` module provide contiguous byte buffer manipulation with explicit endianness controls (Little-Endian / Big-Endian) and LEB128 varint compression.
 
 ### Practical Example: Binary Network Packet Serialization
 
-Consider constructing a game state packet with a binary layout:
-- Byte 0: Packet type ID (`u8`)
+Constructing a fixed binary network packet header:
+- Byte 0: Message opcode (`u8`)
 - Bytes 1-2: Player ID (`u16 Little-Endian`)
-- Bytes 3-6: Position X (`f32 Little-Endian`)
-- Bytes 7-10: Position Y (`f32 Little-Endian`)
+- Bytes 3-6: X coordinate (`f32 Little-Endian`)
+- Bytes 7-10: Y coordinate (`f32 Little-Endian`)
 
 ```aipo
-import binary
+# Allocate a contiguous 11-byte buffer
+let buffer = Bytes(11)
 
-// Allocate contiguous byte buffer
-let packet = Bytes(11)
+# Write fields into the packet
+binary.write_u8(buffer, 0, 1)          # MsgType = 1 (Position)
+binary.write_u16_le(buffer, 1, 1042)   # Player ID = 1042
+binary.write_f32_le(buffer, 3, 128.5)  # X = 128.5
+binary.write_f32_le(buffer, 7, -64.25) # Y = -64.25
 
-// Write fields with explicit endianness
-binary.write_u8(packet, 0, 0x01)         // PacketType = 1 (Movement)
-binary.write_u16_le(packet, 1, 1042)      // Player ID = 1042
-binary.write_f32_le(packet, 3, 128.5)     // Pos X = 128.5
-binary.write_f32_le(packet, 7, -64.25)    // Pos Y = -64.25
+io.println(f"Buffer size: {buffer.len()} bytes")
 
-print("Packet size: " + String(packet.len()) + " bytes")
+# Corresponding read on receiver
+let msg_type = binary.read_u8(buffer, 0)
+let player_id = binary.read_u16_le(buffer, 1)
+let pos_x = binary.read_f32_le(buffer, 3)
+let pos_y = binary.read_f32_le(buffer, 7)
 
-// Symmetrical reading on the receiving side
-let msg_type = binary.read_u8(packet, 0)
-let player_id = binary.read_u16_le(packet, 1)
-let x = binary.read_f32_le(packet, 3)
-let y = binary.read_f32_le(packet, 7)
+io.println(f"Packet: type={msg_type}, player={player_id}, x={pos_x}, y={pos_y}")
+```
 
-print("Received packet: Player #" + String(player_id) + " at (" + String(x) + ", " + String(y) + ")")
+Additionally, strings can be encoded directly into `Bytes` and decoded back:
+```aipo
+let greeting = "Hello Aipo"
+let raw_bytes = greeting.encode()
+let decoded = raw_bytes.decode()
+io.println(decoded) # "Hello Aipo"
 ```
 
 ---
 
 ## 8. `path` & `url` Modules
 
-To prevent bugs when running scripts across Windows (`C:\path\file`) and POSIX systems (`/path/file`), the `path` module **normalizes all separators to forward slashes (`/`)** and resolves relative parent segments logically.
+To prevent cross-platform bugs between Windows backslashes (`\`) and Unix slashes (`/`), `path` **normalizes all separators to forward slashes (`/`)** and resolves paths safely.
 
 ### Practical Example with `path` and `url`
 
 ```aipo
-import path
-import url
+# 1. Cross-platform path normalization
+let raw_path = "src/models/../controllers/auth.aipo"
+let clean = path.normalize(raw_path)
+io.println(clean) # "src/controllers/auth.aipo"
 
-// 1. Cross-platform path normalization
-let messy_path = "src\\models\\..\\controllers\\auth.aipo"
-let clean_path = path.normalize(messy_path)
-print(clean_path) // "src/controllers/auth.aipo"
+let parent_dir = path.dirname(clean)
+let file_name = path.basename(clean)
+let extension = path.ext(clean)
 
-print("Parent directory: " + path.dirname(clean_path)) // "src/controllers"
-print("File basename: " + path.basename(clean_path))   // "auth.aipo"
-print("File extension: " + path.extension(clean_path)) // "aipo"
+io.println(f"Parent directory: {parent_dir}") # "src/controllers"
+io.println(f"Base name: {file_name}")        # "auth.aipo"
+io.println(f"Extension: {extension}")        # ".aipo"
 
-// 2. URL parsing and query extraction
-let endpoint = "https://aipolang.vercel.app/manual/stdlib?lang=en&theme=dark#top"
-let parsed = url.parse(endpoint)
+# 2. WHATWG URL parsing
+let address = "https://aipolang.vercel.app/manual/stdlib?lang=en&theme=dark#top"
+let parsed = url.parse(address)
 
-print("Protocol: " + parsed["protocol"]) // "https"
-print("Host: " + parsed["host"])         // "aipolang.vercel.app"
-print("Path: " + parsed["path"])         // "/manual/stdlib"
-print("Query: " + parsed["query"])       // "lang=en&theme=dark"
+let proto = parsed["protocol"]
+let host = parsed["host"]
+let pathname = parsed["pathname"]
+let query = parsed["search"]
+
+io.println(f"Protocol: {proto}") # "https:"
+io.println(f"Host: {host}")       # "aipolang.vercel.app"
+io.println(f"Pathname: {pathname}") # "/manual/stdlib"
+io.println(f"Search: {query}")   # "?lang=en&theme=dark"
 ```
 
 ---
 
-## 9. `testing` (`expect`) Module
+## 9. `testing` & `expect` Module
 
-Aipo includes a native testing engine eliminating the need for third-party test frameworks:
+Aipo provides an integrated, pure assertion engine requiring zero third-party dependencies:
 
 ```aipo
-import testing: expect
-
-fn divide(dividend: Int, divisor: Int) -> Int {
-    if divisor == 0 then
-        fail "division by zero"
+fn divide(dividend, divisor)
+    if divisor == 0
+        return fail("division by zero")
     end
     return dividend / divisor
-}
+end
 
-// Positive assertion cases
-expect(divide(10, 2)).to_equal(5)
-expect(divide(10, 3)).to_equal(3)
+# Success assertions
+expect.equal(divide(10, 2), 5.0)
+expect.true(divide(10, 2) > 0.0)
 
-// Expected failure assertion
-expect(fn() => divide(10, 0)).to_fail_with("division by zero")
+# Expected failure verification using attempt/failed
+var error_message = ""
+attempt
+    divide(10, 0)
+failed err
+    error_message = err.message
+end
 
-print("All tests passed successfully!")
+expect.equal(error_message, "division by zero")
+
+io.println("All tests passed successfully!")
 ```
+
+Canonical assertions:
+- `expect.equal(actual, expected)`
+- `expect.not_equal(actual, expected)`
+- `expect.true(value)`
+- `expect.false(value)`
+- `expect.none(value)`
+- `expect.some(value)`
+- `expect.failure(value)`
+- `expect.contains(collection, element)`
+- `expect.approx(actual, expected, tolerance = 0.0001)`
 
 ---
 
 ## 10. `task` Module (Async Concurrency)
 
-The `task` module drives cooperative asynchronous concurrency on top of a **deterministic virtual-time task scheduler**.
+The `task` module coordinates cooperative concurrency running on a **deterministic scheduler driven by virtual clock ticks**.
 
 ### Async Combinators
 
 | Combinator | Signature | Description |
 | :--- | :--- | :--- |
-| `task.spawn(fn)` | `async fn -> Task` | Spawns task into cooperative scheduler queue |
-| `task.sleep(dur)` | `Duration -> Task` | Suspends active task for virtual duration |
-| `task.all(tasks)` | `List<Task> -> Task` | Awaits all tasks to resolve successfully |
-| `task.race(tasks)` | `List<Task> -> Task` | Resolves to the value of the first task to complete |
-| `task.timeout(task, dur)` | `(Task, Duration) -> Task` | Aborts task with failure if duration expires |
+| `task.spawn(fn, [args])` | `(Callable, List) -> Task` | Spawns a task and queues it in the cooperative scheduler |
+| `task.sleep(dur)` | `Duration -> None` | Suspends execution of current task for virtual clock ticks |
+| `task.all(tasks)` | `List<Task> -> List` | Awaits all tasks and returns list of completed values |
+| `task.race(tasks)` | `List<Task> -> Value` | Returns the result of the first task to complete |
+| `task.timeout(task, dur)` | `(Task, Duration) -> Value` | Runs task with deadline; faults with "timeout" if exceeded |
 | `task.cancel(task)` | `Task -> None` | Cooperatively cancels a pending task |
+| `task.group()` | `() -> TaskGroup` | Creates a structured task group |
 
-### Practical Example: Concurrent Services Race with Timeout
+### Practical Example: Concurrent Fetch and Racing
 
 ```aipo
-import task
+async fn fetch_data(origin)
+    task.sleep(1)
+    return f"data-from-{origin}"
+end
 
-async fn query_endpoint(endpoint_name: String, latency_seconds: Float) -> String {
-    task.sleep(Duration(latency_seconds))
-    return "Response from " + endpoint_name
-}
+let t1 = fetch_data("server-1")
+let t2 = fetch_data("server-2")
 
-async fn fetch_fastest_data() -> String {
-    let t1 = task.spawn(fn() => query_endpoint("North-America", 0.15))
-    let t2 = task.spawn(fn() => query_endpoint("South-America", 0.05))
-    let t3 = task.spawn(fn() => query_endpoint("Europe", 0.20))
-    
-    // Race tasks: fastest response wins
-    let race_task = task.race([t1, t2, t3])
-    
-    // Enforce 0.5s maximum timeout ceiling
-    let result = await do
-        task.timeout(race_task, Duration(0.5))
-    end
-    
-    return result
-}
+# All combinator: waits for both tasks and returns complete results list
+let all_results = task.all([t1, t2])
+io.println(all_results) # [data-from-server-1, data-from-server-2]
+
+# Race combinator: first to settle wins
+let t3 = fetch_data("north")
+let t4 = fetch_data("south")
+let winner = task.race([t3, t4])
+io.println(winner)
 ```
 
 ---
 
 ## 11. `fs` & `env` Modules (Host Resources)
 
-Unlike Python or Node.js where any third-party script can silently read sensitive environment variables or traverse your filesystem, **Aipo blocks all host interaction by default**.
+Unlike runtimes where imported scripts can silently scan your filesystem or exfiltrate private credentials, **Aipo blocks all host access by default**.
 
 ```aipo
-import fs
-import env
-
-// If the host application has not explicitly granted "env.read":
-// Execution is halted with: AIPO_RT_CAPABILITY_DENIED (capability: "env.read")
-let current_user = attempt
-    env.get("USER")
-recover err
-    "guest" // Safe, transparent recovery fallback
+# If the host environment has not granted capability "env.read":
+# Execution faults with: AIPO_RT_CAPABILITY_DENIED (capability: "env.read")
+var current_user = "guest"
+attempt
+    current_user = env.get("USER")
+failed err
+    current_user = "guest" # Safe, explicit fallback
 end
 
-print("Running as: " + current_user)
+io.println(f"Running as: {current_user}")
 ```
 
-::: warning Security Charter
-When a capability is withheld by the host, the function **does not pretend the resource is missing** and **does not return deceptive empty values**. It raises a structured, auditable fault with canonical code `AIPO_RT_CAPABILITY_DENIED`.
+::: warning Security Guarantee
+When a capability is denied, the function **does not pretend the resource does not exist** and **never returns silent empty defaults**. It generates a structured fault with code `AIPO_RT_CAPABILITY_DENIED`, enabling transparent auditing and resilient recovery via `attempt ... failed`.
 :::

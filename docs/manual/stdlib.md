@@ -2,8 +2,8 @@
 
 A biblioteca padrão do Aipo foi projetada sob três princípios inegociáveis:
 1. **Determinismo Absoluto**: A mesma operação produz os mesmos resultados bit a bit na VM nativa em Rust e no backend JavaScript.
-2. **Segurança por Padrão (*Deny-by-Default*)**: Acesso a recursos do sistema hospedeiro (arquivos, variáveis de ambiente, relógio) exige concessão explícita de permissões.
-3. **Ergonomia com Dupla Invocação**: Funções de módulos canônicos podem ser chamadas tanto como funções de módulo (`string.len(txt)`) quanto como métodos no receptor (`txt.len()`).
+2. **Segurança por Padrão (*Deny-by-Default*)**: Acesso a recursos do sistema hospedeiro (arquivos, variáveis de ambiente, relógio) exige concessão explícita de permissões (Capabilities).
+3. **Ambiente Global Unificado**: Os módulos da biblioteca padrão são built-ins globais (`math`, `string`, `io`, `task`, `time`, `env`, `fs`, `random`, `json`, `encoding`, `binary`, `path`, `url`, `regex`, `expect`, `testing`, `log`). Não é necessário — e nem permitido — usar `import` para acessá-los; a palavra-chave `import` é reservada exclusivamente para arquivos locais do projeto e pacotes externos.
 
 ---
 
@@ -19,7 +19,7 @@ A biblioteca padrão do Aipo foi projetada sob três princípios inegociáveis:
 | [`time` & `Duration`](#6-modulo-time-duration) | Relógio de alta precisão, datas civis puras e intervalos de tempo | 🔒 Sim (`clock.*`) |
 | [`binary` & `Bytes`](#7-modulo-binary-bytes) | Leitura/escrita de buffers brutos Little/Big Endian e varints LEB128 | ❌ Não |
 | [`path` & `url`](#8-modulos-path-url) | Manipulação lógica de caminhos de arquivos e decomposição de URLs | ❌ Não |
-| [`testing`](#9-modulo-testing-expect) | Framework integrado de asserções puras para testes de unidade | ❌ Não |
+| [`testing` & `expect`](#9-modulo-testing-expect) | Framework integrado de asserções puras para testes de unidade | ❌ Não |
 | [`task`](#10-modulo-task-concorrencia-assincrona) | Combinadores de tarefas assíncronas, grupos, corridas e timeouts | ❌ Não |
 | [`fs` & `env`](#11-modulos-fs-env-recursos-do-host) | Leitura e gravação de arquivos e variáveis de ambiente isoladas | 🔒 Sim (`fs.*`, `env`) |
 
@@ -52,44 +52,49 @@ O módulo `math` provê operações numéricas de ponto flutuante e inteiras sem
 ### Exemplo Prático: Física de Pêndulo Simples
 
 ```aipo
-import math
+struct Pendulo
+    comprimento
+    gravidade
+    angulo
+    velocidade_angular
+end
 
-struct Pendulo {
-    comprimento: Float,
-    gravidade: Float,
-    angulo: Float,
-    velocidade_angular: Float
-}
+impl Pendulo
+    init(comprimento, gravidade, angulo, velocidade_angular)
+        self.comprimento = comprimento
+        self.gravidade = gravidade
+        self.angulo = angulo
+        self.velocidade_angular = velocidade_angular
+    end
 
-impl Pendulo {
-    fn atualizar(self, delta_tempo: Float) -> Pendulo {
-        // Aceleração angular: (-g / L) * sin(theta)
+    fn atualizar(self, delta_tempo)
+        # Aceleração angular: (-g / L) * sin(theta)
         let aceleracao = (-self.gravidade / self.comprimento) * math.sin(self.angulo)
         
         let nova_vel = self.velocidade_angular + aceleracao * delta_tempo
         let novo_angulo = self.angulo + nova_vel * delta_tempo
         
-        // Mantém o ângulo contido no intervalo seguro de visualização
+        # Mantém o ângulo contido no intervalo seguro [-pi, pi]
         let angulo_normalizado = math.clamp(novo_angulo, -math.pi, math.pi)
         
-        return Pendulo {
-            comprimento: self.comprimento,
-            gravidade: self.gravidade,
-            angulo: angulo_normalizado,
-            velocidade_angular: nova_vel
+        return Pendulo{
+            comprimento = self.comprimento,
+            gravidade = self.gravidade,
+            angulo = angulo_normalizado,
+            velocidade_angular = nova_vel,
         }
-    }
-}
+    end
+end
 
-let p = Pendulo {
-    comprimento: 2.5,
-    gravidade: 9.81,
-    angulo: math.rad(45.0),
-    velocidade_angular: 0.0
+let p = Pendulo{
+    comprimento = 2.5,
+    gravidade = 9.81,
+    angulo = math.rad(45.0),
+    velocidade_angular = 0.0,
 }
 
 let p_proximo = p.atualizar(0.016)
-print("Novo ângulo: " + String(p_proximo.angulo))
+io.println(f"Novo angulo: {p_proximo.angulo}")
 ```
 
 ::: tip Dica Cognitiva
@@ -105,14 +110,12 @@ Em Aipo, **toda string é validada em UTF-8 e automaticamente normalizada na For
 ### Invocação Dupla: Função vs Método
 Você pode usar a sintaxe que achar mais legível no seu código:
 ```aipo
-import string
-
 let texto = "  Aipo Language  "
 
-// Estilo função do módulo:
+# Estilo função do módulo:
 let a = string.trim(texto)
 
-// Estilo método no objeto (equivalente e com zero custo extra):
+# Estilo método no receptor (equivalente e com zero custo extra):
 let b = texto.trim().lower()
 ```
 
@@ -134,70 +137,70 @@ let b = texto.trim().lower()
 ### Exemplo Prático: Limpeza e Sanitização de Dados
 
 ```aipo
-import string
-
-fn sanitizar_email(email_bruto: String) -> String {
+fn sanitizar_email(email_bruto)
     let limpo = email_bruto.trim().lower()
     
-    if not limpo.contains("@") then
-        fail "email inválido: sem arroba"
+    if not limpo.contains("@")
+        return fail("email invalido: sem arroba")
     end
     
     let partes = limpo.split("@")
-    if partes.len() != 2 then
-        fail "email inválido: formato incorreto"
+    if partes.len() != 2
+        return fail("email invalido: formato incorreto")
     end
     
     let usuario = partes[0]
     let dominio = partes[1]
     
-    if usuario.len() == 0 or not dominio.contains(".") then
-        fail "email inválido: usuário ou domínio vazio"
+    if usuario.len() == 0 or not dominio.contains(".")
+        return fail("email invalido: usuario ou dominio vazio")
     end
     
     return usuario + "@" + dominio
-}
+end
 
 let entrada = "  Dev.Aipo@Poppy-Lang.ORG  "
 let email_final = sanitizar_email(entrada)
-print("Email sanitizado: " + email_final)
-// Imprime: "Email sanitizado: dev.aipo@poppy-lang.org"
+io.println(f"Email sanitizado: {email_final}")
+# Imprime: "Email sanitizado: dev.aipo@poppy-lang.org"
 ```
 
 ---
 
 ## 3. Coleções: `List`, `Dict`, `Set`, `Sequence`
 
-O Aipo disponibiliza quatro estruturas de dados centrais, projetadas para cobrir desde manipulação rápida até pipelines de dados eficientes:
+O Aipo disponibiliza quatro estruturas de dados centrais, projetadas para cobrir desde manipulação rápida até pipelines de dados com alta eficiência:
 
 ```mermaid
 graph LR
     List["List [a, b, c]<br>Ordenada por índice, dinâmica"]
-    Dict["Dict #{k: v}<br>Chave-valor com busca rápida"]
-    Set["Set {a, b, c}<br>Valores únicos + Ordem de inserção"]
-    Sequence["Sequence<br>Pipeline lazy sem alocação intermediária"]
+    Dict["Dict {k: v}<br>Chave-valor com busca direta"]
+    Set["Set([a, b, c])<br>Valores únicos + Ordem de inserção"]
+    Sequence["Sequence (.lazy())<br>Pipeline sem alocação intermediária"]
 ```
 
 ### 1. `List`
 Coleção dinâmica indexada por inteiros (`0`-based):
 ```aipo
 let numeros = [10, 20, 30]
-numeros.push(40)
-print(numeros[0])   // 10
-print(numeros[-1])  // 40 (índices negativos contam do final)
+numeros.add(40)
+
+io.println(numeros[0])  # 10
+io.println(numeros[-1]) # 40 (índices negativos contam a partir do final)
 ```
 
 ### 2. `Dict`
-Tabela associativa de chave e valor criada com a sintaxe `#{}`:
+Tabela associativa de chave e valor criada com a sintaxe `{}`:
 ```aipo
-let config = #{
+let config = {
     "porta": 8080,
     "host": "localhost",
-    "debug": true
+    "debug": true,
 }
 
-print(config["porta"]) // 8080
+io.println(config["porta"]) # 8080
 config["porta"] = 9000
+io.println(config["porta"]) # 9000
 ```
 
 ### 3. `Set` (Conjuntos com Ordem de Inserção)
@@ -206,89 +209,93 @@ Diferente de conjuntos convencionais em outras linguagens, o `Set` do Aipo **pre
 let tags = Set()
 tags.add("rust")
 tags.add("aipo")
-tags.add("rust") // Duplicata é ignorada silenciosamente
+tags.add("rust") # Duplicata é ignorada silenciosamente
 
-print(tags.len()) // 2
-print(tags.to_list()) // ["rust", "aipo"] - ordem garantida!
+io.println(tags.len()) # 2
+io.println(tags.has("aipo")) # true
+io.println(tags.to_list()) # ["rust", "aipo"] - ordem garantida!
 ```
 
-### 4. `Sequence` (Pipelines Preguiçosos / Lazy)
-Ao trabalhar com grandes volumes de dados, operações como `.map()` e `.filter()` encadeadas em listas criam coleções temporárias no heap. O tipo `Sequence` avalia cada elemento **sob demanda**, consumindo memória constante:
+### 4. `Sequence` (Pipelines Lazy / Preguiçosos)
+Ao encadear transformações em listas convencionais, cada chamada a `.map()` ou `.filter()` cria uma lista temporária na memória. O tipo `Sequence`, obtido através de `.lazy()`, avalia cada elemento **sob demanda**, consumindo memória constante:
 
 ```aipo
 let dados = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-// O pipeline abaixo NÃO aloca listas intermediárias:
-let resultado = Sequence(dados)
-    .filter(fn(x) => x % 2 == 0)
-    .map(fn(x) => x * 10)
-    .take(3)
-    .to_list()
+# O pipeline abaixo avalia sob demanda e não cria coleções intermediárias:
+let seq = dados.lazy()
+let pares = seq.filter(x => x % 2 == 0)
+let multiplicados = pares.map(x => x * 10)
+let primeiros = multiplicados.take(3)
+let resultado = primeiros.collect()
 
-print(resultado) // [20, 40, 60]
+io.println(resultado) # [20, 40, 60]
 ```
+
+Métodos disponíveis em `Sequence`:
+- **Estágios Intermediários (retornam nova `Sequence`)**: `.map(fn)`, `.filter(fn)`, `.flat_map(fn)`, `.take(n)`, `.skip(n)`, `.distinct()`, `.zip(other)`, `.chain(other)`, `.chunk(size)`, `.window(size)`, `.enumerate()`.
+- **Estágios Terminais (consomem e retornam o valor final)**: `.collect()`, `.find(fn)`, `.any(fn)`, `.all(fn)`, `.count()`, `.reduce(initial, fn)`.
 
 ---
 
 ## 4. Módulo `json`
 
-O módulo `json` fornece serialização e desserialização determinísticas com garantias estritas de segurança.
+O módulo `json` fornece serialização e desserialização determinísticas com garantias estritas de integridade.
 
 ### Assinaturas Principais
-- `json.parse(texto: String) -> Value`: Converte texto JSON em valores do Aipo. **Rejeita chaves duplicadas** em objetos JSON disparando uma falha imediata, prevenindo vulnerabilidades de inconsistência em APIs.
-- `json.stringify(valor: Value, pretty: Bool = false) -> String`: Converte valores do Aipo em texto JSON padronizado. Detecta ciclos no grafo de objetos e falha graciosamente.
+- `json.parse(texto)`: Converte texto JSON em valores nativos do Aipo. **Rejeita chaves duplicadas** em objetos JSON disparando uma falha imediata, prevenindo vulnerabilidades de inconsistência em APIs.
+- `json.stringify(valor, pretty = false)`: Converte valores do Aipo em texto JSON padronizado. Detecta ciclos no grafo de objetos e falha com segurança em vez de estourar a pilha.
 
 ### Exemplo Prático: Leitura, Validação e Serialização
 
 ```aipo
-import json
-
 let carga_recebida = "{\"servico\": \"auth\", \"tentativas\": 3, \"ativo\": true}"
 
-// Parse seguro dentro de um bloco attempt
-let payload = attempt
-    json.parse(carga_recebida)
-recover err
-    #{ "erro": "JSON malformado", "detalhe": err }
+# Parse seguro dentro de um bloco attempt
+var payload = {}
+attempt
+    payload = json.parse(carga_recebida)
+failed err
+    payload = {"erro": "JSON malformado", "detalhe": err.message}
 end
 
-print("Serviço solicitado: " + payload["servico"])
+let servico = payload["servico"]
+io.println(f"Servico solicitado: {servico}")
 
-// Adicionando metadados e gerando nova saída formatada
+# Adicionando metadados e gerando nova saída formatada (pretty = true)
 payload["atualizado_em"] = 1727330000
 let resposta_json = json.stringify(payload, true)
-print(resposta_json)
+io.println(resposta_json)
 ```
 
 ---
 
 ## 5. Módulo `random`
 
-O módulo `random` é implementado sobre o algoritmo **SplitMix64**, um gerador de números pseudo-aleatórios (PRNG) de 64 bits de altíssima performance, com **reprodutibilidade matemática exata** entre diferentes plataformas.
+O módulo `random` é implementado sobre o algoritmo **SplitMix64**, um gerador de números pseudo-aleatórios (PRNG) de 64 bits de altíssima performance, com **reprodutibilidade matemática exata** entre a VM nativa em Rust e o runtime JavaScript.
 
-### Gerador com Semente vs Gerador Global
-Você pode usar tanto o gerador global quanto criar instâncias independentes de `Rng` para simulações e testes:
+### Gerador Global vs Gerador com Semente Independente
+Você pode usar tanto o gerador global quanto criar instâncias isoladas com `random.create(seed)` para simulações e testes:
 
 ```aipo
-import random
-
-// 1. Uso global rápido
+# 1. Uso global rápido
 let d6 = random.int(1, 6)
-let probabilidade = random.float() // [0.0, 1.0)
+let probabilidade = random.float() # [0.0, 1.0)
 let moeda = random.bool()
 
-// 2. Uso com semente explícita para testes 100% reproduzíveis
+# 2. Uso com semente explícita para testes 100% reproduzíveis
 let rng_jogo = random.create(42)
 
 let inimigo_sorteado = rng_jogo.choice(["Goblin", "Orc", "Dragao"])
 let atributos = rng_jogo.shuffle([10, 14, 18, 8, 12])
 
-print("Inimigo: " + inimigo_sorteado)
-print("Atributos embaralhados: " + String(atributos))
+io.println(f"Inimigo: {inimigo_sorteado}")
+io.print("Atributos: ")
+io.println(atributos)
 ```
 
 ::: tip Por que isso importa?
-Em testes automatizados e jogos multiplayer, ter um gerador que se comporta exatamente igual em qualquer máquina e em qualquer sistema operacional elimina bugs difíceis de reproduzir (*heisenbugs*).
+Em testes automatizados e jogos multiplayer, ter um gerador que se comporta exatamente igual em qualquer máquina e em qualquer sistema operacional elimina testes instáveis (*flaky tests*) e bugs impossíveis de reproduzir.
 :::
 
 ---
@@ -297,44 +304,42 @@ Em testes automatizados e jogos multiplayer, ter um gerador que se comporta exat
 
 A medição de tempo no Aipo separa claramente dois conceitos:
 1. **Tempo Físico do Sistema**: Medido pelo relógio da máquina (`time.now()`, `time.monotonic()`), considerado um recurso externo sensível protegido por **Capability** na Host ABI.
-2. **Tempo Calendário Civil & Durações**: Operações puras de data civil (`Date`, `DateTime`) e intervalos (`Duration`) que não dependem do sistema operacional.
+2. **Tempo Calendário Civil & Durações**: Operações puras de data civil (`time.date()`, `time.time_of_day()`, `time.parse_iso()`) e intervalos (`Duration`) que não dependem do sistema operacional.
 
 ### Relógio Host (Protegido por Capability)
 ```aipo
-import time
+# Requer que o anfitrião conceda a capability 'clock.wall'
+let agora_duracao = time.now()
 
-// Requer que a aplicação anfitriã conceda a capability 'clock.wall'
-let agora_segundos = time.now()
-
-// Requer capability 'clock.monotonic' (ideal para medir performance)
+# Requer capability 'clock.monotonic' (ideal para medição de performance)
 let inicio = time.monotonic()
-// ... executa trabalho pesado ...
+# ... executa trabalho pesado ...
 let fim = time.monotonic()
 let diferenca = fim - inicio
-print("Tempo decorrido: " + String(diferenca) + "s")
+io.println(f"Tempo decorrido: {diferenca.total_seconds()}s")
 ```
 
-### Datas Civis & Intervalos de Tempo
+### Datas Civis Puras & Intervalos de Tempo
 ```aipo
-import time
+# Construção de data civil pura (Ano, Mês, Dia)
+let lancamento = time.date(2026, 9, 26)
+io.println(lancamento.to_iso()) # "2026-09-26"
+io.println(f"Ano: {lancamento.year}, Mes: {lancamento.month}, Dia: {lancamento.day}")
 
-// Construção de data civil pura (Ano, Mês, Dia)
-let data_lancamento = time.date(2026, 9, 26)
+# Criação e cálculo de Durações
+let d1 = Duration(120.5) # 120.5 segundos
+let d2 = Duration(30.0)
+let total = d1 + d2
 
-print("Ano bissexto? " + String(data_lancamento.is_leap()))
-print("Dias no mês: " + String(data_lancamento.days_in_month()))
-print("Formato ISO: " + data_lancamento.to_iso()) // "2026-09-26"
-
-// Criação e cálculo de Durações
-let intervalo = Duration(120.5) // 120.5 segundos
-print("Em minutos: " + String(intervalo.minutes()))
+io.println(f"Total em segundos: {total.total_seconds()}")
+io.println(f"Total em milissegundos: {total.total_milliseconds()}")
 ```
 
 ---
 
 ## 7. Módulo `binary` & `Bytes`
 
-O tipo `Bytes` e o módulo `binary` oferecem manipulação de streams de bytes contíguos em memória com controle de endianness (Little-Endian / Big-Endian) e compressão LEB128.
+O tipo `Bytes` e o módulo `binary` oferecem manipulação de buffers contíguos de bytes em memória com controle de endianness (Little-Endian / Big-Endian) e compressão LEB128.
 
 ### Exemplo Prático: Serialização de Pacote de Rede Binário
 
@@ -345,26 +350,32 @@ Imagine construir um cabeçalho de protocolo com formato fixo:
 - Bytes 7-10: Coordenada Y (`f32 Little-Endian`)
 
 ```aipo
-import binary
-
-// Aloca um buffer inicial contíguo
+# Aloca um buffer inicial contíguo de 11 bytes
 let buffer = Bytes(11)
 
-// Escrita dos campos no pacote
-binary.write_u8(buffer, 0, 0x01)         // MsgType = 1 (Posição)
-binary.write_u16_le(buffer, 1, 1042)      // Player ID = 1042
-binary.write_f32_le(buffer, 3, 128.5)     // X = 128.5
-binary.write_f32_le(buffer, 7, -64.25)    // Y = -64.25
+# Escrita dos campos no pacote
+binary.write_u8(buffer, 0, 1)          # MsgType = 1 (Posição)
+binary.write_u16_le(buffer, 1, 1042)   # Player ID = 1042
+binary.write_f32_le(buffer, 3, 128.5)  # X = 128.5
+binary.write_f32_le(buffer, 7, -64.25) # Y = -64.25
 
-print("Tamanho do pacote: " + String(buffer.len()) + " bytes")
+io.println(f"Tamanho do buffer: {buffer.len()} bytes")
 
-// Leitura correspondente no receptor
+# Leitura correspondente no receptor
 let tipo = binary.read_u8(buffer, 0)
 let player_id = binary.read_u16_le(buffer, 1)
 let pos_x = binary.read_f32_le(buffer, 3)
 let pos_y = binary.read_f32_le(buffer, 7)
 
-print("Pacote lido: Jogador #" + String(player_id) + " em (" + String(pos_x) + ", " + String(pos_y) + ")")
+io.println(f"Pacote: tipo={tipo}, player={player_id}, x={pos_x}, y={pos_y}")
+```
+
+Além disso, strings podem ser convertidas diretamente para bytes e vice-versa:
+```aipo
+let texto = "Olá Aipo"
+let bytes_utf8 = texto.encode()
+let texto_recuperado = bytes_utf8.decode()
+io.println(texto_recuperado) # "Olá Aipo"
 ```
 
 ---
@@ -376,53 +387,75 @@ Para evitar inconsistências entre Windows (`C:\caminho\arquivo`) e sistemas Uni
 ### Exemplo Prático com `path` e `url`
 
 ```aipo
-import path
-import url
-
-// 1. Normalização de caminhos multiplataforma
-let caminho_bruto = "src\\models\\..\\controllers\\auth.aipo"
+# 1. Normalização de caminhos multiplataforma
+let caminho_bruto = "src/models/../controllers/auth.aipo"
 let normalizado = path.normalize(caminho_bruto)
-print(normalizado) // "src/controllers/auth.aipo"
+io.println(normalizado) # "src/controllers/auth.aipo"
 
-print("Diretório pai: " + path.dirname(normalizado)) // "src/controllers"
-print("Nome do arquivo: " + path.basename(normalizado)) // "auth.aipo"
-print("Extensão: " + path.extension(normalizado)) // "aipo"
+let pai = path.dirname(normalizado)
+let base = path.basename(normalizado)
+let extensao = path.ext(normalizado)
 
-// 2. Análise e montagem de URLs
+io.println(f"Diretorio pai: {pai}")   # "src/controllers"
+io.println(f"Nome do arquivo: {base}") # "auth.aipo"
+io.println(f"Extensao: {extensao}")   # ".aipo"
+
+# 2. Análise de URL (padrão WHATWG)
 let endereco = "https://aipolang.vercel.app/manual/stdlib?lang=pt&tema=dark#topo"
 let parsed = url.parse(endereco)
 
-print("Protocolo: " + parsed["protocol"]) // "https"
-print("Host: " + parsed["host"])           // "aipolang.vercel.app"
-print("Caminho: " + parsed["path"])       // "/manual/stdlib"
-print("Query: " + parsed["query"])         // "lang=pt&tema=dark"
+let proto = parsed["protocol"]
+let host = parsed["host"]
+let rota = parsed["pathname"]
+let busca = parsed["search"]
+
+io.println(f"Protocolo: {proto}") # "https:"
+io.println(f"Host: {host}")       # "aipolang.vercel.app"
+io.println(f"Pathname: {rota}")   # "/manual/stdlib"
+io.println(f"Search: {busca}")   # "?lang=pt&tema=dark"
 ```
 
 ---
 
-## 9. Módulo `testing` (`expect`)
+## 9. Módulo `testing` & `expect`
 
-O Aipo vem acompanhado de um mecanismo nativo de testes de unidade sem necessidade de bibliotecas externas:
+O Aipo vem acompanhado de um mecanismo nativo de asserções puras sem dependência de bibliotecas externas:
 
 ```aipo
-import testing: expect
-
-fn dividir(dividendo: Int, divisor: Int) -> Int {
-    if divisor == 0 then
-        fail "divisao por zero"
+fn dividir(dividendo, divisor)
+    if divisor == 0
+        return fail("divisao por zero")
     end
     return dividendo / divisor
-}
+end
 
-// Teste de caso de sucesso
-expect(dividir(10, 2)).to_equal(5)
-expect(dividir(10, 3)).to_equal(3)
+# Asserções de sucesso
+expect.equal(dividir(10, 2), 5.0)
+expect.true(dividir(10, 2) > 0.0)
 
-// Teste de caso de falha esperada
-expect(fn() => dividir(10, 0)).to_fail_with("divisao por zero")
+# Verificação de falha esperada usando attempt/failed
+var mensagem_erro = ""
+attempt
+    dividir(10, 0)
+failed err
+    mensagem_erro = err.message
+end
 
-print("Todos os testes passaram com sucesso!")
+expect.equal(mensagem_erro, "divisao por zero")
+
+io.println("Todos os testes passaram com sucesso!")
 ```
+
+Asserções canônicas disponíveis:
+- `expect.equal(atual, esperado)`
+- `expect.not_equal(atual, esperado)`
+- `expect.true(valor)`
+- `expect.false(valor)`
+- `expect.none(valor)`
+- `expect.some(valor)`
+- `expect.failure(valor)`
+- `expect.contains(coleção, elemento)`
+- `expect.approx(atual, esperado, tolerancia = 0.0001)`
 
 ---
 
@@ -434,61 +467,55 @@ O módulo `task` orquestra a concorrência cooperativa da linguagem, operando so
 
 | Combinador | Assinatura | Comportamento |
 | :--- | :--- | :--- |
-| `task.spawn(fn)` | `async fn -> Task` | Cria uma tarefa e a enfileira no scheduler cooperativo |
-| `task.sleep(dur)` | `Duration -> Task` | Suspende a execução da tarefa atual por um período |
-| `task.all(tasks)` | `List<Task> -> Task` | Aguarda todas as tarefas completarem com sucesso |
-| `task.race(tasks)` | `List<Task> -> Task` | Retorna o resultado da primeira tarefa a concluir |
-| `task.timeout(task, dur)` | `(Task, Duration) -> Task` | Interrompe a tarefa com falha se o prazo expirar |
+| `task.spawn(fn, [args])` | `(Callable, List) -> Task` | Cria uma tarefa e a enfileira no scheduler cooperativo |
+| `task.sleep(dur)` | `Duration -> None` | Suspende a execução da tarefa atual por uma quantidade de ticks |
+| `task.all(tasks)` | `List<Task> -> List` | Aguarda todas as tarefas completarem e retorna a lista de resultados |
+| `task.race(tasks)` | `List<Task> -> Value` | Retorna o resultado da primeira tarefa a concluir |
+| `task.timeout(task, dur)` | `(Task, Duration) -> Value` | Executa a tarefa com limite de tempo; falha com "timeout" se expirar |
 | `task.cancel(task)` | `Task -> None` | Cancela cooperativamente uma tarefa pendente |
+| `task.group()` | `() -> TaskGroup` | Cria um grupo de tarefas estruturado |
 
-### Exemplo Prático: Busca Paralela com Timeout
+### Exemplo Prático: Busca Paralela e Disputa
 
 ```aipo
-import task
+async fn buscar_dados(origem)
+    task.sleep(1)
+    return f"dados-de-{origem}"
+end
 
-async fn buscar_dados_servidor(servidor: String, delay_segundos: Float) -> String {
-    task.sleep(Duration(delay_segundos))
-    return "Resposta de " + servidor
-}
+let t1 = buscar_dados("servidor-1")
+let t2 = buscar_dados("servidor-2")
 
-async fn obter_resposta_mais_rapida() -> String {
-    let t1 = task.spawn(fn() => buscar_dados_servidor("Norte-America", 0.15))
-    let t2 = task.spawn(fn() => buscar_dados_servidor("America-Sul", 0.05))
-    let t3 = task.spawn(fn() => buscar_dados_servidor("Europa", 0.20))
-    
-    // Disputa (race): quem responder primeiro vence
-    let primeira = task.race([t1, t2, t3])
-    
-    // Aguarda com timeout máximo de 0.5 segundos
-    let resultado = await do
-        task.timeout(primeira, Duration(0.5))
-    end
-    
-    return resultado
-}
+# Combinador all: aguarda ambas as tarefas e retorna a lista completa
+let todos = task.all([t1, t2])
+io.println(todos) # [dados-de-servidor-1, dados-de-servidor-2]
+
+# Disputa (race): quem responder primeiro vence
+let t3 = buscar_dados("norte")
+let t4 = buscar_dados("sul")
+let primeiro = task.race([t3, t4])
+io.println(primeiro)
 ```
 
 ---
 
 ## 11. Módulos `fs` & `env` (Recursos do Host)
 
-Diferente de Python ou Node.js, onde qualquer script importado tem permissão irrestrita para ler seu disco ou enviar suas variáveis de ambiente para a internet, **o Aipo bloqueia acessos ao hospedeiro por padrão**.
+Diferente de runtimes onde qualquer script importado tem permissão irrestrita para ler seu disco ou enviar suas variáveis de ambiente para a internet, **o Aipo bloqueia acessos ao hospedeiro por padrão**.
 
 ```aipo
-import fs
-import env
-
-// Se o host não tiver concedido permissão "env.read":
-// A execução é interrompida com: AIPO_RT_CAPABILITY_DENIED (capability: "env.read")
-let usuario = attempt
-    env.get("USER")
-recover err
-    "convidado" // Fallback seguro e transparente
+# Se o host não tiver concedido a capability "env.read":
+# A execução falha com: AIPO_RT_CAPABILITY_DENIED (capability: "env.read")
+var usuario = "convidado"
+attempt
+    usuario = env.get("USER")
+failed err
+    usuario = "convidado" # Fallback seguro e transparente
 end
 
-print("Executando como: " + usuario)
+io.println(f"Executando como: {usuario}")
 ```
 
 ::: warning Contrato de Segurança
-Quando uma capability é negada, a função **não finge que o recurso não existe** e **não retorna valores vazios silenciosos**. Ela gera uma falha estruturada com o código canônico `AIPO_RT_CAPABILITY_DENIED`, permitindo auditoria clara e tratamento resiliente.
+Quando uma capability é negada, a função **não finge que o recurso não existe** e **não retorna valores vazios silenciosos**. Ela gera uma falha estruturada com o código canônico `AIPO_RT_CAPABILITY_DENIED`, permitindo auditoria clara e tratamento resiliente via `attempt ... failed`.
 :::

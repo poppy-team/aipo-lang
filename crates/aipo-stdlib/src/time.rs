@@ -188,22 +188,20 @@ fn make_date_struct(year: i64, month: i64, day: i64) -> Result<Value, VmFault> {
     use std::rc::Rc;
 
     if !(1..=9999).contains(&year) {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("year {year} out of valid range 1..=9999"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "year {year} out of valid range 1..=9999"
+        )))));
     }
     if !(1..=12).contains(&month) {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("month {month} out of valid range 1..=12"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "month {month} out of valid range 1..=12"
+        )))));
     }
     let max_d = days_in_month(year, month);
     if day < 1 || day > max_d {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!(
-                "day {day} out of valid range 1..={max_d} for month {month} in year {year}"
-            ),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "day {day} out of valid range 1..={max_d} for month {month} in year {year}"
+        )))));
     }
 
     let inst = StructInstance {
@@ -226,24 +224,24 @@ fn make_time_struct(
     millisecond: i64,
 ) -> Result<Value, VmFault> {
     if !(0..=23).contains(&hour) {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("hour {hour} out of range 0..=23"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "hour {hour} out of range 0..=23"
+        )))));
     }
     if !(0..=59).contains(&minute) {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("minute {minute} out of range 0..=59"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "minute {minute} out of range 0..=59"
+        )))));
     }
     if !(0..=59).contains(&second) {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("second {second} out of range 0..=59"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "second {second} out of range 0..=59"
+        )))));
     }
     if !(0..=999).contains(&millisecond) {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("millisecond {millisecond} out of range 0..=999"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "millisecond {millisecond} out of range 0..=999"
+        )))));
     }
 
     let inst = StructInstance {
@@ -281,9 +279,9 @@ fn make_datetime_struct(
     }
 
     if !(-840..=840).contains(&offset_minutes) {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("offset_minutes {offset_minutes} out of range -840..=840"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "offset_minutes {offset_minutes} out of range -840..=840"
+        )))));
     }
 
     let inst = StructInstance {
@@ -473,25 +471,28 @@ pub fn time_parse_date(args: &[Value]) -> Result<Value, VmFault> {
     let text = s.trim();
     let parts: Vec<&str> = text.split('-').collect();
     if parts.len() != 3 {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("invalid date format \"{text}\", expected YYYY-MM-DD"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "invalid date format \"{text}\", expected YYYY-MM-DD"
+        )))));
     }
 
     let Ok(y) = parts[0].parse::<i64>() else {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("invalid year in date: \"{}\"", parts[0]),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "invalid year in date: \"{}\"",
+            parts[0]
+        )))));
     };
     let Ok(m) = parts[1].parse::<i64>() else {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("invalid month in date: \"{}\"", parts[1]),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "invalid month in date: \"{}\"",
+            parts[1]
+        )))));
     };
     let Ok(d) = parts[2].parse::<i64>() else {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("invalid day in date: \"{}\"", parts[2]),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "invalid day in date: \"{}\"",
+            parts[2]
+        )))));
     };
 
     make_date_struct(y, m, d)
@@ -513,29 +514,31 @@ pub fn time_parse_time(args: &[Value]) -> Result<Value, VmFault> {
     let text = s.trim();
     let parts: Vec<&str> = text.split(':').collect();
     if parts.len() < 2 || parts.len() > 3 {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("invalid time format \"{text}\", expected HH:MM[:SS[.sss]]"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "invalid time format \"{text}\", expected HH:MM[:SS[.sss]]"
+        )))));
     }
 
     let Ok(h) = parts[0].parse::<i64>() else {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("invalid hour in time: \"{}\"", parts[0]),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "invalid hour in time: \"{}\"",
+            parts[0]
+        )))));
     };
     let Ok(min) = parts[1].parse::<i64>() else {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("invalid minute in time: \"{}\"", parts[1]),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "invalid minute in time: \"{}\"",
+            parts[1]
+        )))));
     };
 
     let (s, ms) = if parts.len() == 3 {
         let sec_str = parts[2];
         if let Some((sec_p, ms_p)) = sec_str.split_once('.') {
             let Ok(sec) = sec_p.parse::<i64>() else {
-                return Ok(Value::Failure(Rc::new(FailureValue {
-                    message: format!("invalid second: \"{sec_p}\""),
-                })));
+                return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                    "invalid second: \"{sec_p}\""
+                )))));
             };
             let mut ms_text = ms_p.to_string();
             if ms_text.len() > 3 {
@@ -548,9 +551,9 @@ pub fn time_parse_time(args: &[Value]) -> Result<Value, VmFault> {
             (sec, ms)
         } else {
             let Ok(sec) = sec_str.parse::<i64>() else {
-                return Ok(Value::Failure(Rc::new(FailureValue {
-                    message: format!("invalid second: \"{sec_str}\""),
-                })));
+                return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                    "invalid second: \"{sec_str}\""
+                )))));
             };
             (sec, 0)
         }
@@ -582,9 +585,9 @@ pub fn time_parse_iso(args: &[Value]) -> Result<Value, VmFault> {
     } else if let Some((d, t)) = text.split_once(' ') {
         (d, t)
     } else {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("invalid ISO 8601 string \"{text}\": missing 'T' separator"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "invalid ISO 8601 string \"{text}\": missing 'T' separator"
+        )))));
     };
 
     // Parse date

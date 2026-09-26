@@ -10,9 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 fn recoverable(message: impl Into<String>) -> Value {
-    Value::Failure(Rc::new(FailureValue {
-        message: message.into(),
-    }))
+    Value::Failure(Rc::new(FailureValue::new(message.into())))
 }
 
 fn expect_string<'a>(val: &'a Value, op: &str) -> Result<&'a str, VmFault> {

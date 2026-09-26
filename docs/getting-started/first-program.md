@@ -9,8 +9,8 @@ Neste tutorial rápido, vamos criar, verificar, compilar e executar o seu primei
 Crie um arquivo chamado `hello.aipo`:
 
 ```aipo
-// hello.aipo
-print("Olá do Aipo!")
+# hello.aipo
+io.println("Olá do Aipo!")
 ```
 
 Execute diretamente pelo CLI:
@@ -31,54 +31,58 @@ Olá do Aipo!
 Vamos criar um programa que modela uma conta bancária com invariante de saldo positivo. Crie o arquivo `conta.aipo`:
 
 ```aipo
-// conta.aipo
-struct Conta {
-  titular: String,
-  var saldo: Float,
-  fixed numero: Int,
+# conta.aipo
+struct Conta
+    titular
+    saldo = 0.0
+    fixed numero
+end
 
-  // Invariante: executada em todas as criações e mutações
-  invariant() {
-    self.saldo >= 0.0
-  }
-
-  fn depositar(valor: Float) {
-    if valor <= 0.0 then
-      fail "Valor de depósito deve ser positivo"
+impl Conta
+    init(titular, saldo = 0.0, numero = 0)
+        self.titular = titular
+        self.saldo = saldo
+        self.numero = numero
     end
-    self.saldo += valor
-  }
 
-  fn sacar(valor: Float) {
-    if valor <= 0.0 then
-      fail "Valor de saque deve ser positivo"
+    # Invariante: executada em todas as criações e mutações de campos
+    invariant()
+        self.saldo >= 0.0
     end
-    
-    // Tenta aplicar a operação. Se violar self.saldo >= 0.0,
-    // o bloco attempt reverte automaticamente a mutação!
-    attempt
-      self.saldo -= valor
-    recover erro
-      fail "Saque recusado: saldo insuficiente"
+
+    fn depositar(self!, valor: Float)
+        if valor <= 0.0
+            return fail("Valor de depósito deve ser positivo")
+        end
+        self.saldo = self.saldo + valor
     end
-  }
-}
 
-// Instanciando a conta
-let c = Conta {
-  titular: "Maria Silva",
-  saldo: 150.0,
-  numero: 1042
-}
+    fn sacar(self!, valor: Float)
+        if valor <= 0.0
+            return fail("Valor de saque deve ser positivo")
+        end
+        
+        # Tenta aplicar a operação. Se violar self.saldo >= 0.0,
+        # o bloco attempt reverte automaticamente a mutação!
+        attempt
+            self.saldo = self.saldo - valor
+        failed erro
+            return fail("Saque recusado: saldo insuficiente")
+        end
+    end
+end
 
-print("Conta criada para: " + c.titular)
-print("Saldo inicial: " + c.saldo)
+# Instanciando a conta
+let c = Conta{titular = "Maria Silva", saldo = 150.0, numero = 1042}
+
+io.println(f"Conta criada para: {c.titular}")
+io.println(f"Saldo inicial: {c.saldo}")
 
 c.depositar(50.0)
-print("Saldo após depósito: " + c.saldo)
+io.println(f"Saldo após depósito: {c.saldo}")
 
 c.sacar(75.0)
-print("Saldo após saque: " + c.saldo)
+io.println(f"Saldo após saque: {c.saldo}")
 ```
 
 Execute o programa:

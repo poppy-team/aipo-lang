@@ -9,8 +9,8 @@ In this quick walkthrough, you will write, verify, compile, and execute your fir
 Create a file named `hello.aipo`:
 
 ```aipo
-// hello.aipo
-print("Hello from Aipo!")
+# hello.aipo
+io.println("Hello from Aipo!")
 ```
 
 Run it directly with the CLI:
@@ -31,54 +31,58 @@ Hello from Aipo!
 Let's model a bank account with an invariant guaranteeing a non-negative balance. Create `account.aipo`:
 
 ```aipo
-// account.aipo
-struct Account {
-  holder: String,
-  var balance: Float,
-  fixed account_number: Int,
+# account.aipo
+struct Account
+    holder
+    balance = 0.0
+    fixed account_number
+end
 
-  // Invariant: executed upon construction and every field mutation
-  invariant() {
-    self.balance >= 0.0
-  }
-
-  fn deposit(amount: Float) {
-    if amount <= 0.0 then
-      fail "Deposit amount must be positive"
+impl Account
+    init(holder, balance = 0.0, account_number = 0)
+        self.holder = holder
+        self.balance = balance
+        self.account_number = account_number
     end
-    self.balance += amount
-  }
 
-  fn withdraw(amount: Float) {
-    if amount <= 0.0 then
-      fail "Withdrawal amount must be positive"
+    # Invariant: executed upon construction and every field mutation
+    invariant()
+        self.balance >= 0.0
     end
-    
-    // Tries to execute the withdrawal. If self.balance >= 0.0 fails,
-    // the attempt block rolls back the mutation automatically!
-    attempt
-      self.balance -= amount
-    recover err
-      fail "Withdrawal rejected: insufficient balance"
+
+    fn deposit(self!, amount: Float)
+        if amount <= 0.0
+            return fail("Deposit amount must be positive")
+        end
+        self.balance = self.balance + amount
     end
-  }
-}
 
-// Instantiating the account
-let acc = Account {
-  holder: "Alice Johnson",
-  balance: 150.0,
-  account_number: 1042
-}
+    fn withdraw(self!, amount: Float)
+        if amount <= 0.0
+            return fail("Withdrawal amount must be positive")
+        end
+        
+        # Tries to execute the withdrawal. If self.balance >= 0.0 fails,
+        # the attempt block rolls back the mutation automatically!
+        attempt
+            self.balance = self.balance - amount
+        failed err
+            return fail("Withdrawal rejected: insufficient balance")
+        end
+    end
+end
 
-print("Account created for: " + acc.holder)
-print("Initial balance: " + acc.balance)
+# Instantiating the account
+let acc = Account{holder = "Alice Johnson", balance = 150.0, account_number = 1042}
+
+io.println(f"Account created for: {acc.holder}")
+io.println(f"Initial balance: {acc.balance}")
 
 acc.deposit(50.0)
-print("Balance after deposit: " + acc.balance)
+io.println(f"Balance after deposit: {acc.balance}")
 
 acc.withdraw(75.0)
-print("Balance after withdrawal: " + acc.balance)
+io.println(f"Balance after withdrawal: {acc.balance}")
 ```
 
 Run the program:

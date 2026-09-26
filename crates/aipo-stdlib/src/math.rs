@@ -283,9 +283,9 @@ pub fn math_clamp(args: &[Value]) -> Result<Value, VmFault> {
 
     if let (Value::Int(value), Value::Int(low), Value::Int(high)) = (&args[0], &args[1], &args[2]) {
         if low > high {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("math.clamp bounds are inverted: {low} > {high}"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "math.clamp bounds are inverted: {low} > {high}"
+            )))));
         }
         return Ok(Value::Int((*value).clamp(*low, *high)));
     }
@@ -295,9 +295,9 @@ pub fn math_clamp(args: &[Value]) -> Result<Value, VmFault> {
     let high = to_float(&args[2])?;
 
     if low > high {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("math.clamp bounds are inverted: {low} > {high}"),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "math.clamp bounds are inverted: {low} > {high}"
+        )))));
     }
 
     check_finite_float(value.clamp(low, high)).map(Value::Float)
@@ -393,9 +393,9 @@ pub fn math_asin(args: &[Value]) -> Result<Value, VmFault> {
     }
     let x = to_float(&args[0])?;
     if !(-1.0..=1.0).contains(&x) {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: "math.asin domain error: argument must be between -1.0 and 1.0".to_string(),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(
+            "math.asin domain error: argument must be between -1.0 and 1.0".to_string(),
+        ))));
     }
     check_finite_float(x.asin()).map(Value::Float)
 }
@@ -416,9 +416,9 @@ pub fn math_acos(args: &[Value]) -> Result<Value, VmFault> {
     }
     let x = to_float(&args[0])?;
     if !(-1.0..=1.0).contains(&x) {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: "math.acos domain error: argument must be between -1.0 and 1.0".to_string(),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(
+            "math.acos domain error: argument must be between -1.0 and 1.0".to_string(),
+        ))));
     }
     check_finite_float(x.acos()).map(Value::Float)
 }
@@ -501,9 +501,9 @@ pub fn math_log(args: &[Value]) -> Result<Value, VmFault> {
     }
     let x = to_float(&args[0])?;
     if x <= 0.0 {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: "math.log domain error: argument must be positive".to_string(),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(
+            "math.log domain error: argument must be positive".to_string(),
+        ))));
     }
     check_finite_float(x.ln()).map(Value::Float)
 }
@@ -524,9 +524,9 @@ pub fn math_log2(args: &[Value]) -> Result<Value, VmFault> {
     }
     let x = to_float(&args[0])?;
     if x <= 0.0 {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: "math.log2 domain error: argument must be positive".to_string(),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(
+            "math.log2 domain error: argument must be positive".to_string(),
+        ))));
     }
     check_finite_float(x.log2()).map(Value::Float)
 }
@@ -547,9 +547,9 @@ pub fn math_log10(args: &[Value]) -> Result<Value, VmFault> {
     }
     let x = to_float(&args[0])?;
     if x <= 0.0 {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: "math.log10 domain error: argument must be positive".to_string(),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(
+            "math.log10 domain error: argument must be positive".to_string(),
+        ))));
     }
     check_finite_float(x.log10()).map(Value::Float)
 }
@@ -680,9 +680,9 @@ pub fn math_sqrt(args: &[Value]) -> Result<Value, VmFault> {
     };
 
     if val < 0.0 {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: "cannot compute square root of negative number".to_string(),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(
+            "cannot compute square root of negative number".to_string(),
+        ))));
     }
 
     check_finite_float(val.sqrt()).map(Value::Float)

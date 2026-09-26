@@ -1,71 +1,101 @@
 # Controle de Fluxo & Falhas
 
-O Aipo oferece estruturas de controle de fluxo limpas e expressivas, combinadas com um modelo transacional de tratamento de erros.
+O Aipo oferece estruturas de controle de fluxo limpas e expressivas, combinadas com um modelo transacional de tratamento de erros com rollback atômico.
 
 ---
 
 ## Estruturas Condicionais
 
-### Expressões `if ... then ... else`
+### Bloco `if ... elif ... else ... end`
 
-O `if` em Aipo pode ser utilizado como comando em bloco ou como expressão de valor inline:
+Em blocos convencionais, cada ramo é delimitado sem chaves, utilizando `elif` para condições intermediárias e finalizando com a palavra-chave `end`:
 
 ```aipo
-// Como bloco convencional
-if pontuacao >= 90 then
-  status = "Excelente"
-else if pontuacao >= 70 then
-  status = "Aprovado"
+var pontuacao = 85
+var status = ""
+
+if pontuacao >= 90
+    status = "Excelente"
+elif pontuacao >= 70
+    status = "Aprovado"
 else
-  status = "Recuperação"
+    status = "Recuperação"
 end
 
-// Como expressão condicional de valor inline
+io.println(status) # "Aprovado"
+```
+
+### Expressão Inline `if condition then a else b`
+
+O Aipo também suporta expressões condicionais de valor em linha única utilizando `then`:
+
+```aipo
+let ativo = true
 let mensagem = if ativo then "Online" else "Offline"
+io.println(mensagem) # "Online"
+```
+
+---
+
+## Seleção por Padrão (`match ... when`)
+
+O comando `match` permite bifurcar o fluxo comparando uma expressão contra um ou mais padrões por ramo:
+
+```aipo
+let status = "aprovado"
+
+match status
+when "pendente"
+    io.println("Aguardando confirmação...")
+when "aprovado", "concluido"
+    io.println("Operação finalizada com sucesso!")
+else
+    io.println("Status não reconhecido")
+end
 ```
 
 ---
 
 ## Estruturas de Repetição
 
+Todas as estruturas de repetição em Aipo são finalizadas com a palavra-chave `end` e **não utilizam** a palavra `do`.
+
 ### `while`
 
-Executa o corpo enquanto a condição for verdadeira:
+Executa o corpo enquanto a condição booleana for verdadeira:
 
 ```aipo
-let var i = 0
-while i < 10 do
-  print(i)
-  i += 1
+var i = 0
+while i < 3
+    io.println(f"Passo: {i}")
+    i += 1
 end
 ```
 
 ### `loop`
 
-Laço infinito canônico que deve ser encerrado com `break`:
+Laço contínuo canônico, projetado para repetições que dependem de `break` explícito:
 
 ```aipo
-let var tentativas = 0
-loop do
-  tentativas += 1
-  if verificar_conexao() then
-    break
-  end
-  if tentativas >= 5 then
-    fail "Timeout após 5 tentativas"
-  end
+var tentativas = 0
+loop
+    tentativas += 1
+    if tentativas >= 3
+        break
+    end
 end
+io.println(f"Total de tentativas: {tentativas}")
 ```
 
 ### `repeat`
 
-Repetição com verificação de condição ao final do bloco:
+Repete o bloco um número fixo de vezes com um contador opcional (`repeat count as indice`):
 
 ```aipo
-let var contador = 0
-repeat do
-  contador += 1
-until contador >= 5
+# Executa 3 vezes (com índices 0, 1 e 2)
+repeat 3 as idx
+    io.println(f"Iteração número: {idx}")
+end
 ```
 
 ### `each`
@@ -73,42 +103,57 @@ until contador >= 5
 Iteração canônica sobre coleções (`List`, `Dict`, `Set`, `Sequence`):
 
 ```aipo
+# Iteração simples sobre lista
 let frutas = ["Maçã", "Banana", "Laranja"]
-each item in frutas do
-  print(item)
+each fruta in frutas
+    io.println(fruta)
 end
 
-// Iteração sobre dicionários (chaves na ordem de inserção)
-let config = { "host": "127.0.0.1", "port": 5432 }
-each chave in config do
-  print(chave + " => " + config[chave])
+# Iteração com índice e elemento
+each idx, fruta in frutas
+    io.println(f"{idx}: {fruta}")
+end
+
+# Iteração sobre dicionário (chave e valor na ordem de inserção)
+let config = {
+    "host": "127.0.0.1",
+    "port": 5432,
+}
+each chave, valor in config
+    io.println(f"{chave} => {valor}")
 end
 ```
 
 ---
 
-## Modelo de Falhas & Transações (`attempt ... recover`)
+## Modelo de Falhas & Transações (`attempt ... failed`)
 
-Em Aipo, erros não são exceções com propagação desenfreada nem códigos de status opacos. Falhas operacionais são disparadas explicitamente com `fail` e tratadas por blocos transacionais com **journaling e rollback automático**.
+Em Aipo, erros não são exceções globais com saltos de pilha descontrolados, nem códigos de status que podem ser esquecidos. Falhas operacionais são disparadas explicitamente com `fail` (ou retornadas com `return fail(...)`) e tratadas por blocos transacionais com **journaling e rollback automático**.
 
 ```aipo
-struct Cofre {
-  var saldo: Float,
-  invariant() {
-    self.saldo >= 0.0
-  }
-}
-
-let c = Cofre { saldo: 100.0 }
-
-attempt
-  c.saldo -= 200.0 // Quebra a invariante do Cofre!
-recover erro
-  print("Falha capturada: " + erro)
+struct Cofre
+    saldo = 0.0
 end
 
-// Como a operação falhou, o saldo permanece intacto em 100.0!
-print("Saldo recuperado: " + c.saldo) // 100.0
+impl Cofre
+    invariant()
+        self.saldo >= 0.0
+    end
+end
+
+let c = Cofre{saldo = 100.0}
+
+attempt
+    # Esta operação temporariamente reduz o saldo para -100.0
+    c.saldo = c.saldo - 200.0
+failed erro
+    # Como violou a invariante, o rollback restaura self.saldo para 100.0!
+    io.println(f"Falha capturada: {erro.message}")
+end
+
+# O saldo permanece exatamente no valor anterior à tentativa!
+io.println(f"Saldo preservado: {c.saldo}") # 100.0
 ```
 
 Se qualquer operação dentro do bloco `attempt` disparar um `fail` ou violar uma invariante estrutural, todas as mutações ocorridas nos objetos rastreados no journal são revertidas atomicamente para o estado original.
+

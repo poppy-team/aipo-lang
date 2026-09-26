@@ -146,15 +146,15 @@ pub fn json_parse(args: &[Value]) -> Result<Value, VmFault> {
     match AipoJsonSeed.deserialize(&mut de) {
         Ok(val) => {
             if let Err(e) = de.end() {
-                return Ok(Value::Failure(Rc::new(FailureValue {
-                    message: format!("json.parse error: {e}"),
-                })));
+                return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                    "json.parse error: {e}"
+                )))));
             }
             Ok(val)
         }
-        Err(e) => Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("json.parse error: {e}"),
-        }))),
+        Err(e) => Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "json.parse error: {e}"
+        ))))),
     }
 }
 
@@ -356,9 +356,9 @@ pub fn json_stringify(args: &[Value]) -> Result<Value, VmFault> {
     let mut active = HashSet::new();
     match stringify_value(&args[0], pretty, 0, &mut active) {
         Ok(json_str) => Ok(Value::String(Rc::new(json_str))),
-        Err(err) => Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("json.stringify error: {err}"),
-        }))),
+        Err(err) => Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "json.stringify error: {err}"
+        ))))),
     }
 }
 

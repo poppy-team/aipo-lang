@@ -270,9 +270,9 @@ fn fail_native(args: &[Value]) -> Result<Value, VmFault> {
         Some(Value::String(text)) => text.as_str().to_string(),
         other => other.map_or_else(|| "failure".to_string(), Value::to_string),
     };
-    Ok(Value::Failure(std::rc::Rc::new(aipo_vm::FailureValue {
-        message,
-    })))
+    Ok(Value::Failure(std::rc::Rc::new(
+        aipo_vm::FailureValue::new(message),
+    )))
 }
 
 #[test]
@@ -348,6 +348,39 @@ fn test_attempt_failed_block_recovery() {
         result,
         Value::String(std::rc::Rc::new("disk full".to_string()))
     );
+}
+
+#[test]
+fn test_attempt_failed_block_recovery_with_payload() {
+    let mut code = Vec::new();
+    // Offset 0: PushHandler -> target is offset 10 (failed block)
+    code.push(OpCode::PushHandler as u8);
+    let mut buf = [0u8; 2];
+    BigEndian::write_i16(&mut buf, 7); // 0 + 3 + 7 = 10
+    code.extend_from_slice(&buf);
+
+    // Offset 3: Fail(404)
+    code.push(OpCode::Constant as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+    code.push(OpCode::Fail as u8);
+
+    // Offset 7: PopHandler & Jump past failed block (skipped on failure)
+    code.push(OpCode::PopHandler as u8);
+    code.push(OpCode::Jump as u8);
+    BigEndian::write_i16(&mut buf, 6);
+    code.extend_from_slice(&buf);
+
+    // Offset 10: Failed block!
+    // Stack contains the FailureValue!
+    // Extract .payload from failure (name idx 0: "payload")
+    code.push(OpCode::GetField as u8);
+    code.extend_from_slice(&0u16.to_be_bytes());
+
+    let module = make_test_module(code, vec![Constant::Int(404)], vec!["payload".to_string()]);
+
+    let result =
+        execute(&module).expect("attempt/failed should catch failure and retrieve payload");
+    assert_eq!(result, Value::Int(404));
 }
 
 #[test]

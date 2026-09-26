@@ -175,9 +175,9 @@ pub fn bytes_read_i64(receiver: &Value, args: &[Value]) -> Result<Value, VmFault
     let val = i64::from_le_bytes(slice);
     match check_safe_int(val) {
         Ok(safe) => Ok(Value::Int(safe)),
-        Err(_) => Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("integer {val} outside safe range"),
-        }))),
+        Err(_) => Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "integer {val} outside safe range"
+        ))))),
     }
 }
 
@@ -206,9 +206,9 @@ pub fn bytes_read_u64(receiver: &Value, args: &[Value]) -> Result<Value, VmFault
     if val <= 9_007_199_254_740_991 {
         Ok(Value::Int(val as i64))
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("unsigned integer {val} outside safe range"),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "unsigned integer {val} outside safe range"
+        )))))
     }
 }
 
@@ -265,9 +265,9 @@ pub fn bytes_write_i8(receiver: &Value, args: &[Value]) -> Result<Value, VmFault
         Value::Int(n) if (-128..=127).contains(n) => *n as i8 as u8,
         Value::Byte(b) => *b,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for i8 (-128..=127)"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for i8 (-128..=127)"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -294,9 +294,9 @@ pub fn bytes_write_u8(receiver: &Value, args: &[Value]) -> Result<Value, VmFault
         Value::Byte(b) => *b,
         Value::Int(n) if (0..=255).contains(n) => *n as u8,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for u8 (0..=255)"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for u8 (0..=255)"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -322,9 +322,9 @@ pub fn bytes_write_i16(receiver: &Value, args: &[Value]) -> Result<Value, VmFaul
     let val = match &args[1] {
         Value::Int(n) if (i64::from(i16::MIN)..=i64::from(i16::MAX)).contains(n) => *n as i16,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for i16"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for i16"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -351,9 +351,9 @@ pub fn bytes_write_u16(receiver: &Value, args: &[Value]) -> Result<Value, VmFaul
     let val = match &args[1] {
         Value::Int(n) if (0..=i64::from(u16::MAX)).contains(n) => *n as u16,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for u16"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for u16"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -380,9 +380,9 @@ pub fn bytes_write_i32(receiver: &Value, args: &[Value]) -> Result<Value, VmFaul
     let val = match &args[1] {
         Value::Int(n) if (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(n) => *n as i32,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for i32"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for i32"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -409,9 +409,9 @@ pub fn bytes_write_u32(receiver: &Value, args: &[Value]) -> Result<Value, VmFaul
     let val = match &args[1] {
         Value::Int(n) if (0..=i64::from(u32::MAX)).contains(n) => *n as u32,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for u32"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for u32"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -462,9 +462,9 @@ pub fn bytes_write_u64(receiver: &Value, args: &[Value]) -> Result<Value, VmFaul
     let val = match &args[1] {
         Value::Int(n) if *n >= 0 => *n as u64,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} must be >= 0 for u64"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} must be >= 0 for u64"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -601,9 +601,9 @@ pub fn bytes_read_i64_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFa
     let val = i64::from_be_bytes(slice);
     match check_safe_int(val) {
         Ok(safe) => Ok(Value::Int(safe)),
-        Err(_) => Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("integer {val} outside safe range"),
-        }))),
+        Err(_) => Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "integer {val} outside safe range"
+        ))))),
     }
 }
 
@@ -629,9 +629,9 @@ pub fn bytes_read_u64_be(receiver: &Value, args: &[Value]) -> Result<Value, VmFa
     if val <= 9_007_199_254_740_991 {
         Ok(Value::Int(val as i64))
     } else {
-        Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("unsigned integer {val} outside safe range"),
-        })))
+        Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "unsigned integer {val} outside safe range"
+        )))))
     }
 }
 
@@ -678,9 +678,9 @@ pub fn bytes_write_i16_be(receiver: &Value, args: &[Value]) -> Result<Value, VmF
     let val = match &args[1] {
         Value::Int(n) if (i64::from(i16::MIN)..=i64::from(i16::MAX)).contains(n) => *n as i16,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for i16"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for i16"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -703,9 +703,9 @@ pub fn bytes_write_u16_be(receiver: &Value, args: &[Value]) -> Result<Value, VmF
     let val = match &args[1] {
         Value::Int(n) if (0..=i64::from(u16::MAX)).contains(n) => *n as u16,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for u16"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for u16"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -728,9 +728,9 @@ pub fn bytes_write_i32_be(receiver: &Value, args: &[Value]) -> Result<Value, VmF
     let val = match &args[1] {
         Value::Int(n) if (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(n) => *n as i32,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for i32"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for i32"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -753,9 +753,9 @@ pub fn bytes_write_u32_be(receiver: &Value, args: &[Value]) -> Result<Value, VmF
     let val = match &args[1] {
         Value::Int(n) if (0..=4_294_967_295_i64).contains(n) => *n as u32,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} out of range for u32"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} out of range for u32"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -798,9 +798,9 @@ pub fn bytes_write_u64_be(receiver: &Value, args: &[Value]) -> Result<Value, VmF
     let val = match &args[1] {
         Value::Int(n) if *n >= 0 => *n as u64,
         Value::Int(n) => {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: format!("value {n} must be non-negative for u64"),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+                "value {n} must be non-negative for u64"
+            )))));
         }
         other => {
             return Err(VmFault::TypeMismatch {
@@ -895,9 +895,9 @@ pub fn bytes_decode(receiver: &Value, args: &[Value]) -> Result<Value, VmFault> 
     let b = bytes.borrow();
     match std::str::from_utf8(&b) {
         Ok(s) => Ok(Value::String(Rc::new(s.to_string()))),
-        Err(e) => Ok(Value::Failure(Rc::new(FailureValue {
-            message: format!("invalid utf-8: {e}"),
-        }))),
+        Err(e) => Ok(Value::Failure(Rc::new(FailureValue::new(format!(
+            "invalid utf-8: {e}"
+        ))))),
     }
 }
 

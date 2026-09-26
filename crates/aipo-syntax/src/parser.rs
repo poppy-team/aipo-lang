@@ -2004,10 +2004,12 @@ impl<'a> Parser<'a> {
     #[inline(never)]
     fn parse_paren_expr(&mut self) -> Option<Expr> {
         self.advance();
+        self.skip_newlines();
         let old = self.allow_comma_is;
         self.allow_comma_is = true;
         let inner = self.parse_expr()?;
         self.allow_comma_is = old;
+        self.skip_newlines();
         self.expect(
             &TokenKind::RParen,
             "expected ')' after parenthesized expression",
@@ -2158,6 +2160,7 @@ impl<'a> Parser<'a> {
 
             // Call postfix: `callee(...)`
             TokenKind::LParen => {
+                self.skip_newlines();
                 let mut args = Vec::new();
                 while !self.check(&TokenKind::RParen) && !self.is_at_end() {
                     // Check for named argument `name = value`
@@ -2166,6 +2169,7 @@ impl<'a> Parser<'a> {
                     let (arg_name, value) = if is_named {
                         let id = self.parse_ident()?;
                         self.advance(); // consume '='
+                        self.skip_newlines();
                         let old = self.allow_comma_is;
                         self.allow_comma_is = false;
                         let val = self.parse_expr()?;
@@ -2187,10 +2191,13 @@ impl<'a> Parser<'a> {
                         value,
                         span,
                     });
+                    self.skip_newlines();
                     if !self.match_token(&TokenKind::Comma) {
                         break;
                     }
+                    self.skip_newlines();
                 }
+                self.skip_newlines();
                 let end = self
                     .expect(&TokenKind::RParen, "expected ')' after call arguments")?
                     .span;
@@ -2329,6 +2336,7 @@ impl<'a> Parser<'a> {
     fn parse_construct_expr(&mut self, target: Ident) -> Option<Expr> {
         let start = target.span;
         self.expect(&TokenKind::LBrace, "expected '{' in struct construction")?;
+        self.skip_newlines();
 
         let mut fields = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
@@ -2337,6 +2345,7 @@ impl<'a> Parser<'a> {
             let (name, value) = if is_named {
                 let id = self.parse_ident()?;
                 self.advance(); // consume '='
+                self.skip_newlines();
                 let old = self.allow_comma_is;
                 self.allow_comma_is = false;
                 let val = self.parse_expr()?;
@@ -2354,10 +2363,13 @@ impl<'a> Parser<'a> {
                 .map(|n| n.span.merge(value.span()))
                 .unwrap_or_else(|| value.span());
             fields.push(ConstructField { name, value, span });
+            self.skip_newlines();
             if !self.match_token(&TokenKind::Comma) {
                 break;
             }
+            self.skip_newlines();
         }
+        self.skip_newlines();
         let end = self
             .expect(
                 &TokenKind::RBrace,
@@ -2447,6 +2459,7 @@ impl<'a> Parser<'a> {
 
     fn parse_list_expr(&mut self) -> Option<Expr> {
         let start = self.advance().span; // '['
+        self.skip_newlines();
         let mut items = Vec::new();
         while !self.check(&TokenKind::RBracket) && !self.is_at_end() {
             let old = self.allow_comma_is;
@@ -2454,10 +2467,13 @@ impl<'a> Parser<'a> {
             let item = self.parse_expr()?;
             self.allow_comma_is = old;
             items.push(item);
+            self.skip_newlines();
             if !self.match_token(&TokenKind::Comma) {
                 break;
             }
+            self.skip_newlines();
         }
+        self.skip_newlines();
         let end = self
             .expect(&TokenKind::RBracket, "expected ']' after list literal")?
             .span;
@@ -2466,25 +2482,31 @@ impl<'a> Parser<'a> {
 
     fn parse_dict_expr(&mut self) -> Option<Expr> {
         let start = self.advance().span; // '{'
+        self.skip_newlines();
         let mut pairs = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             let old_key = self.allow_comma_is;
             self.allow_comma_is = false;
             let key = self.parse_expr()?;
             self.allow_comma_is = old_key;
+            self.skip_newlines();
             self.expect(
                 &TokenKind::Colon,
                 "expected ':' between dictionary key and value",
             )?;
+            self.skip_newlines();
             let old_val = self.allow_comma_is;
             self.allow_comma_is = false;
             let val = self.parse_expr()?;
             self.allow_comma_is = old_val;
             pairs.push((key, val));
+            self.skip_newlines();
             if !self.match_token(&TokenKind::Comma) {
                 break;
             }
+            self.skip_newlines();
         }
+        self.skip_newlines();
         let end = self
             .expect(&TokenKind::RBrace, "expected '}' after dict literal")?
             .span;

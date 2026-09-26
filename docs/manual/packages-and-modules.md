@@ -22,26 +22,26 @@ graph LR
 Por padrão, todas as funções, estruturas e variáveis declaradas em um arquivo são **estritamente privadas**. Para tornar um símbolo acessível a outros módulos, você deve listá-lo explicitamente na declaração `export`:
 
 ```aipo
-// Arquivo: math_util.aipo
+# Arquivo: math_util.aipo
 
-// 1. Função privada de apoio interno
-fn validar_numero(n: Int) -> Bool {
+# 1. Função privada de apoio interno
+fn validar_numero(n: Int) -> Bool
     return n >= 0
-}
+end
 
-// 2. Funções públicas
-fn somar_positivo(a: Int, b: Int) -> Int {
-    if not validar_numero(a) or not validar_numero(b) then
-        fail "números devem ser positivos"
+# 2. Funções públicas
+fn somar_positivo(a: Int, b: Int) -> Int
+    if not validar_numero(a) or not validar_numero(b)
+        return fail("números devem ser positivos")
     end
     return a + b
-}
+end
 
-fn duplicar(n: Int) -> Int {
+fn duplicar(n: Int) -> Int
     return n * 2
-}
+end
 
-// Exporta explicitamente apenas os símbolos que a API pública oferece:
+# Exporta explicitamente apenas os símbolos que a API pública oferece:
 export somar_positivo, duplicar
 ```
 
@@ -261,15 +261,15 @@ meu_app/
 
 ### Conteúdo de `src/auth/user.aipo`
 ```aipo
-struct Usuario {
-    id: Int,
-    nome: String,
-    ativo: Bool
-}
+struct Usuario
+    id
+    nome
+    ativo = true
+end
 
-fn criar_usuario(id: Int, nome: String) -> Usuario {
-    return Usuario { id: id, nome: nome, ativo: true }
-}
+fn criar_usuario(id: Int, nome: String) -> Usuario
+    return Usuario{id = id, nome = nome, ativo = true}
+end
 
 export Usuario, criar_usuario
 ```
@@ -279,7 +279,7 @@ export Usuario, criar_usuario
 import auth.user: criar_usuario
 
 let dev = criar_usuario(1, "Raillen")
-print("Usuário cadastrado com sucesso: " + dev.nome)
+io.println(f"Usuário cadastrado com sucesso: {dev.nome}")
 ```
 
 Para executar seu projeto completo:

@@ -92,9 +92,9 @@ pub fn create_rng_instance(seed: i64) -> Value {
 
 fn generate_int(word: u64, min: i64, max: i64) -> Result<Value, VmFault> {
     if min > max {
-        return Ok(Value::Failure(Rc::new(FailureValue {
-            message: "random.int: min must be <= max".to_string(),
-        })));
+        return Ok(Value::Failure(Rc::new(FailureValue::new(
+            "random.int: min must be <= max".to_string(),
+        ))));
     }
     if min == max {
         return check_safe_int(min).map(Value::Int);
@@ -119,9 +119,9 @@ fn generate_choice(word: u64, list_val: &Value) -> Result<Value, VmFault> {
     if let Value::List(l) = list_val {
         let items = l.borrow();
         if items.is_empty() {
-            return Ok(Value::Failure(Rc::new(FailureValue {
-                message: "random.choice: cannot choose from empty list".to_string(),
-            })));
+            return Ok(Value::Failure(Rc::new(FailureValue::new(
+                "random.choice: cannot choose from empty list".to_string(),
+            ))));
         }
         let idx = (word % items.len() as u64) as usize;
         Ok(items[idx].clone())

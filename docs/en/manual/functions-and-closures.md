@@ -6,17 +6,18 @@ Functions in Aipo are first-class citizens: they can be passed as arguments, ass
 
 ## Function Declarations
 
-Declared using the `fn` keyword:
+Functions are introduced with the `fn` keyword and closed with `end` (no curly braces):
 
 ```aipo
-fn add(a, b) {
-  return a + b
-}
+fn add(a, b)
+    return a + b
+end
 
-let sum = add(10, 20) // 30
+let total = add(10, 20)
+io.println(total) # 30
 ```
 
-Functions without an explicit `return` evaluate to `none`.
+Functions without an explicit `return` or returning with no value evaluate to `none`.
 
 ---
 
@@ -25,15 +26,15 @@ Functions without an explicit `return` evaluate to `none`.
 Parameters can specify default values:
 
 ```aipo
-fn connect(host, port = 8080, timeout = 5000) {
-  print("Connecting to " + host + ":" + port + " with timeout " + timeout + "ms")
-}
+fn connect(host, port = 8080, timeout = 5000)
+    io.println(f"Connecting to {host}:{port} with timeout {timeout}ms")
+end
 
-connect("localhost") // uses port 8080, timeout 5000
-connect("db.internal", 5432) // uses port 5432, timeout 5000
+connect("localhost")           # uses port 8080, timeout 5000
+connect("db.internal", 5432)   # uses port 5432, timeout 5000
 ```
 
-Calls can also specify named arguments:
+Calls can also specify named arguments for clarity and flexibility:
 
 ```aipo
 connect("api.service", timeout = 1000)
@@ -43,37 +44,43 @@ connect("api.service", timeout = 1000)
 
 ## Anonymous Functions & Closures
 
-Anonymous functions capture variables from enclosing scopes via shared upvalues:
+Anonymous functions (`fn(params) ... end`) capture variables from enclosing scopes via shared, safe upvalues:
 
 ```aipo
-fn make_counter(start = 0) {
-  let var count = start
-  return fn() {
-    count += 1
-    return count
-  }
-}
+fn make_counter(start = 0)
+    var count = start
+    return fn()
+        count += 1
+        return count
+    end
+end
 
 let counter = make_counter(10)
-print(counter()) // 11
-print(counter()) // 12
+io.println(counter()) # 11
+io.println(counter()) # 12
 ```
+
+Aipo's VM implements safe shared upvalues, ensuring that mutations in captured variables reflect correctly across multiple closures.
 
 ---
 
 ## Concise Lambdas (`=>`)
 
-For short single-expression functions:
+For short single-expression functions (especially useful in collection pipelines):
 
 ```aipo
 let numbers = [1, 2, 3, 4, 5]
 
-// Map elements
+# Doubling elements with single-parameter lambda
 let doubled = numbers.map(x => x * 2)
+io.println(doubled) # [2, 4, 6, 8, 10]
 
-// Filter elements
+# Filtering even numbers
 let evens = numbers.filter(x => x % 2 == 0)
+io.println(evens) # [2, 4]
 ```
+
+Multi-parameter lambdas wrap parameters in parentheses: `(a, b) => a + b`.
 
 ---
 
@@ -82,16 +89,17 @@ let evens = numbers.filter(x => x % 2 == 0)
 Functions declared inside other functions support full self-recursion via `FillSelfCapture`:
 
 ```aipo
-fn factorial(n) {
-  fn loop_rec(current, acc) {
-    if current <= 1 then
-      return acc
+fn factorial(n)
+    fn loop_rec(current, acc)
+        if current <= 1
+            return acc
+        end
+        return loop_rec(current - 1, acc * current)
     end
-    return loop_rec(current - 1, acc * current)
-  }
 
-  return loop_rec(n, 1)
-}
+    return loop_rec(n, 1)
+end
 
-print(factorial(5)) // 120
+io.println(factorial(5)) # 120
 ```
+

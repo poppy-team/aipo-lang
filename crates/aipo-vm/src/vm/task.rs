@@ -459,9 +459,9 @@ impl Vm {
         for join_id in expired {
             if let Some(join) = self.joins.get_mut(&join_id) {
                 join.done = true;
-                join.outcome = Some(Value::Failure(Rc::new(FailureValue {
-                    message: "timeout".to_string(),
-                })));
+                join.outcome = Some(Value::Failure(Rc::new(FailureValue::new(
+                    "timeout".to_string(),
+                ))));
             }
             let member = self
                 .joins
@@ -1117,15 +1117,15 @@ impl Vm {
         }
         if members.is_empty() {
             let empty = match kind {
-                JoinKind::Race => Value::Failure(Rc::new(FailureValue {
-                    message: "race of no tasks".to_string(),
-                })),
+                JoinKind::Race => {
+                    Value::Failure(Rc::new(FailureValue::new("race of no tasks".to_string())))
+                }
                 JoinKind::All | JoinKind::GroupWait => {
                     Value::List(Rc::new(RefCell::new(Vec::new())))
                 }
-                JoinKind::Timeout => Value::Failure(Rc::new(FailureValue {
-                    message: "timeout of no task".to_string(),
-                })),
+                JoinKind::Timeout => {
+                    Value::Failure(Rc::new(FailureValue::new("timeout of no task".to_string())))
+                }
             };
             return self.resolve_call(callee_idx, empty);
         }
@@ -1347,18 +1347,18 @@ enum Ticks {
 fn sleep_ticks(arg: &Value, operation: &str) -> Result<Ticks, VmFault> {
     match arg {
         Value::Int(n) if *n >= 0 => Ok(Ticks::Ticks(*n as u64)),
-        Value::Int(_) => Ok(Ticks::Failure(Value::Failure(Rc::new(FailureValue {
-            message: format!("{operation} amount must be >= 0"),
-        })))),
+        Value::Int(_) => Ok(Ticks::Failure(Value::Failure(Rc::new(FailureValue::new(
+            format!("{operation} amount must be >= 0"),
+        ))))),
         Value::Byte(b) => Ok(Ticks::Ticks(u64::from(*b))),
         Value::Duration(seconds) if seconds.is_finite() && *seconds >= 0.0 =>
         {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             Ok(Ticks::Ticks((seconds * 1000.0) as u64))
         }
-        Value::Duration(_) => Ok(Ticks::Failure(Value::Failure(Rc::new(FailureValue {
-            message: format!("{operation} duration must be finite and >= 0"),
-        })))),
+        Value::Duration(_) => Ok(Ticks::Failure(Value::Failure(Rc::new(FailureValue::new(
+            format!("{operation} duration must be finite and >= 0"),
+        ))))),
         other => Err(VmFault::TypeMismatch {
             expected: "Int ticks or Duration".to_string(),
             actual: other.type_name().to_string(),
@@ -1641,6 +1641,7 @@ impl Vm {
             | Value::Closure(_)
             | Value::Native { .. }
             | Value::BoundMethod(_)
+            | Value::StructMethod { .. }
             | Value::Type(_) => Ok(arg.clone()),
             other => Err(VmFault::NotCallable {
                 type_name: format!("{} as {operation} callable", other.type_name()),
@@ -1653,9 +1654,9 @@ impl Vm {
     fn seq_count(arg: &Value, operation: &str) -> Result<SeqCount, VmError> {
         match arg {
             Value::Int(n) if *n >= 0 => Ok(SeqCount::Count(*n)),
-            Value::Int(_) => Ok(SeqCount::Failure(Value::Failure(Rc::new(FailureValue {
-                message: format!("{operation} count must be >= 0"),
-            })))),
+            Value::Int(_) => Ok(SeqCount::Failure(Value::Failure(Rc::new(
+                FailureValue::new(format!("{operation} count must be >= 0")),
+            )))),
             Value::Byte(b) => Ok(SeqCount::Count(i64::from(*b))),
             other => Err(VmFault::TypeMismatch {
                 expected: format!("Int count for {operation}"),
@@ -1670,13 +1671,13 @@ impl Vm {
     fn seq_window(arg: &Value, operation: &str) -> Result<SeqCount, VmError> {
         match arg {
             Value::Int(n) if *n > 0 => Ok(SeqCount::Count(*n)),
-            Value::Int(_) => Ok(SeqCount::Failure(Value::Failure(Rc::new(FailureValue {
-                message: format!("{operation} size must be > 0"),
-            })))),
+            Value::Int(_) => Ok(SeqCount::Failure(Value::Failure(Rc::new(
+                FailureValue::new(format!("{operation} size must be > 0")),
+            )))),
             Value::Byte(b) if *b > 0 => Ok(SeqCount::Count(i64::from(*b))),
-            Value::Byte(_) => Ok(SeqCount::Failure(Value::Failure(Rc::new(FailureValue {
-                message: format!("{operation} size must be > 0"),
-            })))),
+            Value::Byte(_) => Ok(SeqCount::Failure(Value::Failure(Rc::new(
+                FailureValue::new(format!("{operation} size must be > 0")),
+            )))),
             other => Err(VmFault::TypeMismatch {
                 expected: format!("Int size for {operation}"),
                 actual: other.type_name().to_string(),

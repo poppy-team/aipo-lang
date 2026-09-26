@@ -328,9 +328,7 @@ fn read_path(args: &[Value], operation: &str) -> Result<String, VmError> {
 }
 
 fn failure(message: impl Into<String>) -> Value {
-    Value::Failure(Rc::new(FailureValue {
-        message: message.into(),
-    }))
+    Value::Failure(Rc::new(FailureValue::new(message.into())))
 }
 
 fn provider_failure(error: &FilesystemError) -> Value {

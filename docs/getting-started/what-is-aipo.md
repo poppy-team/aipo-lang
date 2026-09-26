@@ -25,19 +25,21 @@ Para concatenar ou converter valores, exige-se intenção explícita ou formata�
 
 ### 2. Contratos Estruturais & Invariantes
 
-Enquanto linguagens tradicionais exigem que você espalhe `assert` ou validações manuais em todos os métodos, o Aipo introduz o bloco `invariant()` diretamente na declaração de `struct`:
+Enquanto linguagens tradicionais exigem que você espalhe asserções ou validações manuais em todos os métodos, o Aipo introduz o hook `invariant()` no bloco `impl` da estrutura:
 
 ```aipo
-struct Temperature {
-  var celsius: Float,
+struct Temperature
+    celsius = 0.0
+end
 
-  invariant() {
-    self.celsius >= -273.15 // Não pode ser inferior ao zero absoluto
-  }
-}
+impl Temperature
+    invariant()
+        self.celsius >= -273.15 # Não pode ser inferior ao zero absoluto
+    end
+end
 ```
 
-Qualquer mutação que viole a invariante é interceptada na fronteira da operação. Dentro de blocos de transação `attempt ... recover`, as alterações são revertidas atomicamente para o estado anterior.
+Qualquer mutação que viole a invariante é interceptada na fronteira da operação. Dentro de blocos de transação `attempt ... failed err`, as alterações sofrem rollback atômico para o estado anterior.
 
 ### 3. Concorrência Determinística
 

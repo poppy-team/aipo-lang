@@ -149,6 +149,7 @@ pub struct Vm {
     /// User methods registered per struct type: (type, method) -> (entry ip, total arity,
     /// is async).
     pub struct_methods: HashMap<(String, String), (usize, usize, bool)>,
+    pub(crate) struct_methods_by_type: HashMap<String, HashMap<String, (usize, usize, bool)>>,
     /// Identities of collections currently under an active `each` iteration (stack order).
     active_iterations: Vec<usize>,
     /// Failure that ended the program because nothing was left to handle it.
@@ -225,6 +226,7 @@ impl Vm {
             method_natives_by_type: HashMap::new(),
             host_natives: HashMap::new(),
             struct_methods: HashMap::new(),
+            struct_methods_by_type: HashMap::new(),
             active_iterations: Vec::new(),
             halted_with: None,
             max_stack_depth: 1024,
@@ -425,6 +427,24 @@ impl Vm {
             (type_name.to_string(), method.to_string()),
             (entry_ip, total_arity, is_async),
         );
+        self.struct_methods_by_type
+            .entry(type_name.to_string())
+            .or_default()
+            .insert(method.to_string(), (entry_ip, total_arity, is_async));
+    }
+
+    /// Looks up a struct method by type name and method name.
+    #[inline]
+    #[must_use]
+    pub fn lookup_struct_method(
+        &self,
+        type_name: &str,
+        method: &str,
+    ) -> Option<(usize, usize, bool)> {
+        self.struct_methods_by_type
+            .get(type_name)?
+            .get(method)
+            .copied()
     }
 
     /// Registers a struct type with its field names and `fixed` flags.
@@ -562,9 +582,19 @@ impl Vm {
         // per run and never needs a second expression evaluator.
         self.struct_invariant_entries.clear();
         for function in &module.functions {
-            if let Some((type_name, "invariant")) = function.name.split_once('.') {
-                self.struct_invariant_entries
-                    .insert(type_name.to_string(), function.entry_ip);
+            if let Some((type_name, method)) = function.name.split_once('.') {
+                if method == "invariant" {
+                    self.struct_invariant_entries
+                        .insert(type_name.to_string(), function.entry_ip);
+                } else {
+                    self.register_struct_method(
+                        type_name,
+                        method,
+                        function.entry_ip,
+                        function.params,
+                        function.is_async,
+                    );
+                }
             }
         }
 

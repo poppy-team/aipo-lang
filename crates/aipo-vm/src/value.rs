@@ -45,6 +45,28 @@ pub fn check_finite_float(f: f64) -> Result<f64, VmFault> {
 pub struct FailureValue {
     /// Human-readable explanation of the failure.
     pub message: String,
+    /// Structured payload associated with the failure, or `Value::None` if plain.
+    pub payload: Value,
+}
+
+impl FailureValue {
+    /// Constructs a plain failure with no structured payload.
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            payload: Value::None,
+        }
+    }
+
+    /// Constructs a structured failure carrying a payload value.
+    #[must_use]
+    pub fn with_payload(message: impl Into<String>, payload: Value) -> Self {
+        Self {
+            message: message.into(),
+            payload,
+        }
+    }
 }
 
 /// Instance of a user-defined struct.
@@ -452,6 +474,17 @@ pub enum Value {
     /// Method already bound to its receiver, produced by field access on a
     /// collection, string or struct instance.
     BoundMethod(Rc<BoundMethodData>),
+    /// Struct method bound directly to an instance without heap allocation.
+    StructMethod {
+        /// Receiver struct instance.
+        receiver: Rc<RefCell<StructInstance>>,
+        /// Entry instruction pointer in the bytecode.
+        entry_ip: usize,
+        /// Total arity including receiver parameter.
+        total_arity: u16,
+        /// Whether the method is async.
+        is_async: bool,
+    },
     /// Recoverable failure (Model B).
     Failure(Rc<FailureValue>),
     /// Insertion-ordered set of unique values (structural equality).
@@ -582,6 +615,18 @@ impl Value {
         }))
     }
 
+    /// Constructs a plain failure value.
+    #[must_use]
+    pub fn failure(message: impl Into<String>) -> Self {
+        Self::Failure(Rc::new(FailureValue::new(message)))
+    }
+
+    /// Constructs a structured failure value carrying a payload.
+    #[must_use]
+    pub fn failure_with_payload(message: impl Into<String>, payload: Value) -> Self {
+        Self::Failure(Rc::new(FailureValue::with_payload(message, payload)))
+    }
+
     /// Returns the language-level type name for diagnostics.
     #[must_use]
     pub fn type_name(&self) -> &'static str {
@@ -597,7 +642,8 @@ impl Value {
             Self::Function { .. }
             | Self::Closure(_)
             | Self::Native { .. }
-            | Self::BoundMethod(_) => "Function",
+            | Self::BoundMethod(_)
+            | Self::StructMethod { .. } => "Function",
             Self::Byte(_) => "Byte",
             Self::Bytes(_) => "Bytes",
             Self::Type(_) => "Type",
@@ -1096,6 +1142,20 @@ impl PartialEq for Value {
             (Self::HostHandle(a), Self::HostHandle(b)) => a == b,
             (Self::Duration(a), Self::Duration(b)) => a == b,
             (Self::BoundMethod(a), Self::BoundMethod(b)) => a == b,
+            (
+                Self::StructMethod {
+                    receiver: r1,
+                    entry_ip: ip1,
+                    total_arity: a1,
+                    is_async: as1,
+                },
+                Self::StructMethod {
+                    receiver: r2,
+                    entry_ip: ip2,
+                    total_arity: a2,
+                    is_async: as2,
+                },
+            ) => Rc::ptr_eq(r1, r2) && ip1 == ip2 && a1 == a2 && as1 == as2,
             (Self::List(a), Self::List(b)) => *a.borrow() == *b.borrow(),
             (Self::Dict(a), Self::Dict(b)) => *a.borrow() == *b.borrow(),
             (Self::Struct(a), Self::Struct(b)) => {
@@ -1158,6 +1218,17 @@ impl fmt::Debug for Value {
             Self::BoundMethod(b) => {
                 write!(f, "<method {} arity={}>", b.name, b.arity)
             }
+            Self::StructMethod {
+                entry_ip,
+                total_arity,
+                ..
+            } => {
+                write!(
+                    f,
+                    "<struct method @{entry_ip} arity={}>",
+                    total_arity.saturating_sub(1)
+                )
+            }
             Self::Failure(err) => write!(f, "failure({:?})", err.message),
             Self::HostHandle(handle) => write!(f, "HostHandle({handle})"),
             Self::Unset => write!(f, "<unset>"),
@@ -1215,6 +1286,7 @@ impl fmt::Display for Value {
             Self::Function { entry_ip, .. } => write!(f, "<fn@{entry_ip}>"),
             Self::Closure(c) => write!(f, "<closure@{}>", c.entry_ip),
             Self::Native { name, .. } => write!(f, "<fn {name}>"),
+            Self::StructMethod { entry_ip, .. } => write!(f, "<method@{entry_ip}>"),
             Self::Byte(b) => write!(f, "{b}"),
             Self::Bytes(_) => write!(f, "<bytes>"),
             Self::Type(tag) => write!(f, "{}", tag.name()),

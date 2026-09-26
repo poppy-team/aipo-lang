@@ -1,6 +1,6 @@
 # Guia do Utilitário de Linha de Comando (`aipo`)
 
-O executável `aipo` é a ferramenta unificada para execução, análise estática, compilação, formatação e gerenciamento de pacotes da linguagem.
+O executável `aipo` é a ferramenta unificada para execução, análise estática, emissão de JavaScript, desmontagem de bytecode, formatação de código e auditoria hermética de pacotes.
 
 ---
 
@@ -8,44 +8,41 @@ O executável `aipo` é a ferramenta unificada para execução, análise estáti
 
 ### `aipo run`
 
-Executa um arquivo de código-fonte (`.aipo`) ou um bytecode binário pré-compilado (`.aibc`):
+Compila e executa um arquivo de código-fonte (`.aipo`) ou um bytecode compilado (`.aibc`):
 
 ```bash
 # Executar código-fonte diretamente
-aipo run main.aipo
+aipo run src/main.aipo
 
-# Executar arquivo de bytecode compilado
-aipo run app.aibc
+# Executar com cache customizado de pacotes
+aipo run src/main.aipo --package-cache .aipo/cache
 
-# Executar com argumentos
-aipo run script.aipo -- --flag valor
+# Saída de diagnósticos em formato JSONL estruturado (ideal para editores e CI)
+aipo run src/main.aipo --message-format=jsonl
 ```
 
 ### `aipo check`
 
-Executa a análise estática completa (Lexer, Parser, HIR e Semântica) sem gerar bytecode nem executar a VM. Ideal para CI e editores:
+Executa a análise estática completa (Lexer, Parser, HIR, Semântica e verificação de bytecode) sem rodar a VM:
 
 ```bash
 aipo check src/main.aipo
 ```
 
-Reporta erros de sintaxe, contratos de interface incompatíveis, referências a variáveis indefinidas ou mutações ilegais de campos `fixed`.
+Reporta com precisão erros de sintaxe, contratos de interface incompatíveis, referências a variáveis indefinidas e tentativas de mutação de campos `fixed`.
 
 ### `aipo build`
 
-Compila arquivos `.aipo` para os alvos suportados:
+Emite o bundle JavaScript completo (`app.js`, `aipo-runtime.js` e mapa de fontes `app.js.map`) pronto para execução em navegadores ou Node.js:
 
 ```bash
-# Compilar para bytecode binário (.aibc)
-aipo build src/main.aipo -o dist/main.aibc
-
-# Compilar para JavaScript moderno (.js)
-aipo build src/main.aipo -t js -o dist/bundle.js
+# Compilar e emitir bundle no diretório de saída
+aipo build src/main.aipo --out dist/
 ```
 
 ### `aipo disasm`
 
-Desassembla arquivos de código ou arquivos binários `.aibc`, exibindo as instruções da VM, offsets, constantes e linhas de código originais:
+Desassembla um arquivo `.aipo` ou `.aibc`, exibindo as instruções da VM, offsets em bytes, pool de constantes e coordenadas de código originais:
 
 ```bash
 aipo disasm src/main.aipo
@@ -53,30 +50,33 @@ aipo disasm src/main.aipo
 
 ### `aipo fmt`
 
-Formata arquivos de código Aipo de acordo com os padrões canônicos da linguagem:
+Formata arquivos de código Aipo de acordo com o padrão canônico da linguagem:
 
 ```bash
-# Formatar um arquivo no local
+# Formatar arquivos no local
 aipo fmt src/main.aipo
 
-# Verificar se os arquivos estão formatados (modo CI)
+# Verificar se há desvios de formatação sem alterar os arquivos (modo CI)
 aipo fmt --check src/
 ```
 
 ### `aipo package`
 
-Gerenciador de pacotes e dependências hermético do Aipo:
+Conjunto de comandos herméticos para gerenciamento, bloqueio e auditoria de pacotes:
 
 ```bash
-# Gerar ou atualizar o lockfile determinístico
-aipo package lock
+# Criar ou atualizar o lockfile determinístico (aipo.lock)
+aipo package lock .
 
-# Baixar dependências remotas do GitHub para o cache local
-aipo package fetch-github
+# Criar lockfile buscando snapshots remotos do GitHub para o cache
+aipo package lock . --fetch-github --cache .aipo/cache
 
-# Auditar a integridade criptográfica de todas as entradas no cache
+# Auditar a integridade e conformidade de um pacote local
+aipo package audit .
+
+# Verificar a integridade criptográfica SHA-256 de todas as entradas no cache
 aipo package cache verify .aipo/cache
 
-# Limpar entradas de cache obsoletas e não referenciadas
+# Limpar entradas de cache obsoletas não referenciadas no lockfile
 aipo package cache prune .aipo/cache --lock aipo.lock --apply
 ```

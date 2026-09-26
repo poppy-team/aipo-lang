@@ -43,9 +43,7 @@ fn test_prelude_len() {
     assert_eq!(len_res, Value::Int(2));
 
     // Failure propagation
-    let fail_val = Value::Failure(Rc::new(FailureValue {
-        message: "bad".to_string(),
-    }));
+    let fail_val = Value::Failure(Rc::new(FailureValue::new("bad".to_string())));
     let len_res = prelude::native_len(std::slice::from_ref(&fail_val)).unwrap();
     assert_eq!(len_res, fail_val);
 
@@ -1872,9 +1870,7 @@ fn test_expect_assertions_operations() {
     ));
 
     // Failure
-    let fail_val = Value::Failure(Rc::new(FailureValue {
-        message: "err".to_string(),
-    }));
+    let fail_val = Value::Failure(Rc::new(FailureValue::new("err".to_string())));
     assert_eq!(testing::expect_failure(&[fail_val]).unwrap(), Value::None);
     assert!(matches!(
         testing::expect_failure(&[Value::Int(42)]).unwrap(),

@@ -22,26 +22,26 @@ graph LR
 By default, all functions, structs, and variables declared within a module are **strictly private**. To expose an identifier to consumers, you must explicitly declare it in an `export` statement:
 
 ```aipo
-// File: math_util.aipo
+# File: math_util.aipo
 
-// 1. Private internal helper function
-fn validate_number(n: Int) -> Bool {
+# 1. Private internal helper function
+fn validate_number(n: Int) -> Bool
     return n >= 0
-}
+end
 
-// 2. Public API functions
-fn add_positive(a: Int, b: Int) -> Int {
-    if not validate_number(a) or not validate_number(b) then
-        fail "numbers must be positive"
+# 2. Public API functions
+fn add_positive(a: Int, b: Int) -> Int
+    if not validate_number(a) or not validate_number(b)
+        return fail("numbers must be positive")
     end
     return a + b
-}
+end
 
-fn double(n: Int) -> Int {
+fn double(n: Int) -> Int
     return n * 2
-}
+end
 
-// Explicitly export only intended public identifiers:
+# Explicitly export only intended public identifiers:
 export add_positive, double
 ```
 
@@ -261,15 +261,15 @@ my_app/
 
 ### `src/auth/user.aipo`
 ```aipo
-struct User {
-    id: Int,
-    name: String,
-    active: Bool
-}
+struct User
+    id
+    name
+    active = true
+end
 
-fn create_user(id: Int, name: String) -> User {
-    return User { id: id, name: name, active: true }
-}
+fn create_user(id: Int, name: String) -> User
+    return User{id = id, name = name, active = true}
+end
 
 export User, create_user
 ```
@@ -279,7 +279,7 @@ export User, create_user
 import auth.user: create_user
 
 let developer = create_user(1, "Raillen")
-print("User registered successfully: " + developer.name)
+io.println(f"User registered successfully: {developer.name}")
 ```
 
 Run your project from terminal:

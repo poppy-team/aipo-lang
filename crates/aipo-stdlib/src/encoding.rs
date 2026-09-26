@@ -19,9 +19,7 @@ const BASE64_URL_TABLE: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 fn recoverable(msg: impl Into<String>) -> Value {
-    Value::Failure(Rc::new(FailureValue {
-        message: msg.into(),
-    }))
+    Value::Failure(Rc::new(FailureValue::new(msg.into())))
 }
 
 fn extract_input_bytes(arg: &Value, op: &str) -> Result<Vec<u8>, VmFault> {

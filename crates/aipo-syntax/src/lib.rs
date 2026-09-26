@@ -520,4 +520,33 @@ mod tests {
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN);
         assert!(diags[0].message.contains("'is not' is not supported"));
     }
+
+    #[test]
+    fn test_multiline_literals_and_calls() {
+        let code = r#"
+            let list = [
+                1,
+                2,
+            ]
+            let dict = {
+                "key": 42,
+            }
+            struct P
+                x = 0
+            end
+            let p = P{
+                x = 10,
+            }
+            let res = io.println(
+                "hello",
+                "world",
+            )
+        "#;
+        let src = Source::new(SourceId::next(), "test.aipo", code);
+        let (_prog, diags) = parse(&src);
+        assert!(
+            diags.is_empty(),
+            "expected zero diagnostics, got: {diags:?}"
+        );
+    }
 }

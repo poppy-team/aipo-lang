@@ -119,7 +119,7 @@ export function vTask(id) { return { t: 'task', id: id !== undefined ? id : fres
 export function vGroup(id) { return { t: 'group', id: id !== undefined ? id : freshId() }; }
 export function vRange(start, end) { return { t: 'range', start, end }; }
 export function vType(name) { return { t: 'type', name }; }
-export function vFail(msg) { return { t: 'fail', msg: String(msg) }; }
+export function vFail(msg, payload) { return { t: 'fail', msg: String(msg), payload: payload !== undefined ? payload : vNone() }; }
 export function vUnset() { return { t: 'unset' }; }
 function vStruct(type, fields, fixed, constructing) {
   return { t: 'struct', type, fields: fields || [], fixed: new Set(fixed || []), constructing: !!constructing, id: freshId() };
@@ -1412,6 +1412,7 @@ function compareValues(a, b) {
 export function structGetField(obj, field) {
   if (isFailure(obj)) {
     if (field === 'message') return vStr(obj.msg);
+    if (field === 'payload') return obj.payload !== undefined ? obj.payload : vNone();
     return obj;
   }
   if (obj.t !== 'struct') return typeMismatch('struct instance', typeName(obj));
@@ -3203,6 +3204,7 @@ function bindMethod(m, recv, name) {
 function doGetField(m, target, field) {
   if (isFailure(target)) {
     if (field === 'message') return vStr(target.msg);
+    if (field === 'payload') return target.payload !== undefined ? target.payload : vNone();
     return target;
   }
   if (target.t === 'struct') {
@@ -4645,7 +4647,13 @@ function stepFn(m) {
     }
     case 'Fail': {
       const v = mPop(m);
-      handleFailure(m, isFailure(v) ? v : vFail(display(v)));
+      if (isFailure(v)) {
+        handleFailure(m, v);
+      } else {
+        const msg = display(v);
+        const payload = v.t === 'str' ? vNone() : v;
+        handleFailure(m, vFail(msg, payload));
+      }
       break;
     }
     case 'MakeFunction': {

@@ -6,57 +6,78 @@ Aipo's concurrency model is **cooperative, deterministic, and virtual-time drive
 
 ## Asynchronous Functions (`async fn`)
 
-Functions executing I/O, timers, or cross-process calls must be declared with `async`:
+Functions executing timers, cooperative I/O, or asynchronous orchestration are declared with `async fn`. Invoking an async function eagerly schedules it on the cooperative scheduler and returns its `Task` handle:
 
 ```aipo
-async fn fetch_resource(id) {
-  let timer = task.sleep(50)
-  await do
-    timer
-  end
-  return "Data for " + id
-}
+async fn fetch_resource(id)
+    # task.sleep is a virtual-time cooperative suspension primitive
+    task.sleep(50)
+    return f"Data for {id}"
+end
+
+# Invocation spawns the task and returns a Task handle
+let task_handle = fetch_resource("users")
+
+# Explicitly awaits completion and unwraps the result
+let data = await task_handle
+io.println(data) # "Data for users"
 ```
 
 ---
 
 ## Sequential Wait Blocks (`await do ... end`)
 
-Rather than allowing arbitrary `await` calls in subexpressions, Aipo mandates explicit `await do ... end` blocks:
+Rather than allowing uncontrolled `await` expressions scattered inside complex subexpressions, Aipo mandates explicit `await do ... end` blocks for clear, predictable sequential sequencing:
 
 ```aipo
-async fn run_pipeline() {
-  let task_a = task.spawn(fn() { step_one() })
-  let task_b = task.spawn(fn() { step_two() })
+async fn fetch_step_1()
+    return 10
+end
 
-  // Explicit sequential wait
-  await do
-    task_a
-    task_b
-  end
+async fn fetch_step_2()
+    return 20
+end
 
-  print("All steps completed!")
-}
+async fn run_pipeline()
+    await do
+        let a = await fetch_step_1()
+        let b = await fetch_step_2()
+        return a + b
+    end
+end
+
+let total = await run_pipeline()
+io.println(f"Total accumulated: {total}") # 30
 ```
 
-This prevents forgotten tasks (`AIPO_SEM_FORGOTTEN_TASK`) and race conditions.
+This engineering discipline prevents unmonitored dangling promises and unobserved tasks (`AIPO_SEM_FORGOTTEN_TASK`).
 
 ---
 
 ## Async Combinators (`task.*`)
 
-The standard library includes primitives:
+The standard library provides high-level primitives:
 
-- **`task.spawn(fn)`**: Spawns a cooperative fiber in the scheduler.
-- **`task.sleep(ms)`**: Suspends the current task using deterministic virtual time.
-- **`task.all(list)`**: Awaits completion of all tasks in the list.
-- **`task.race(list)`**: Resolves when the first task finishes and cancels the rest.
-- **`task.timeout(task, ms)`**: Cancels the task if it exceeds the duration.
-- **`task.cancel(task)`**: Cooperatively cancels an active task.
-- **`task.group()`**: Creates a structured task group for coordinated lifecycles.
+- **`task.spawn(callable, args_list)`**: Spawns a new concurrent task in the scheduler with the provided arguments.
+- **`task.sleep(ms)`**: Suspends the current task for the specified virtual-time clock ticks.
+- **`task.all(tasks_list)`**: Awaits completion of all tasks in the list, returning a list of results.
+- **`task.race(tasks_list)`**: Resolves when the first task finishes, cooperatively cancelling remaining candidates.
+- **`task.timeout(task, ms)`**: Cancels the target task if it exceeds the specified virtual-time duration.
+- **`task.cancel(task)`**: Cooperatively cancels an active task handle.
+- **`task.group()`**: Creates a structured task group for coordinated lifecycles and cascading cancellation.
+
+```aipo
+let t1 = fetch_step_1()
+let t2 = fetch_step_2()
+
+# Awaits both tasks in deterministic concurrency
+let results = task.all([t1, t2])
+io.println(results) # [10, 20]
+```
 
 ---
 
 ## Cycle Detection (`AIPO_RT_AWAIT_CYCLE`)
 
-The runtime tracks dependencies between awaiting tasks. Mutual dependencies trigger `AIPO_RT_AWAIT_CYCLE` deterministically instead of stalling indefinitely.
+The Aipo runtime tracks dependencies between awaiting tasks. Mutual dependencies trigger the deterministic fault `AIPO_RT_AWAIT_CYCLE` with a full trail of involved identifiers instead of stalling the process indefinitely.
+

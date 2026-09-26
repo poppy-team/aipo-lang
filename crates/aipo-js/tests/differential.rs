@@ -1260,3 +1260,23 @@ io.println(String(items.len()))
     assert_eq!(vm_out, js_out);
     assert_eq!(vm_out, "outer: invalid integer text: \"boom\"\n2\n4\n");
 }
+
+#[test]
+fn test_differential_structured_failures() {
+    let code = r#"
+attempt
+    fail { "code": 404, "reason": "resource missing" }
+failed err
+    io.println(err.message)
+    let p = err.payload
+    io.println(String(p["code"]))
+    io.println(String(p["reason"]))
+end
+"#;
+    let compiled = compile_code("structured_fail.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("structured_fail.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert!(vm_out.contains("404"));
+    assert!(vm_out.contains("resource missing"));
+}

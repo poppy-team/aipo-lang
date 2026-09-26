@@ -1,6 +1,6 @@
 # Command-Line Interface Guide (`aipo`)
 
-The `aipo` executable is the unified tool for execution, static checking, compilation, formatting, and package management.
+The `aipo` executable is the unified toolchain utility for execution, static checking, JavaScript code generation, bytecode disassembly, code formatting, and hermetic package auditing.
 
 ---
 
@@ -8,44 +8,41 @@ The `aipo` executable is the unified tool for execution, static checking, compil
 
 ### `aipo run`
 
-Executes source code (`.aipo`) or precompiled bytecode (`.aibc`):
+Compiles and executes an Aipo source file (`.aipo`) or precompiled bytecode (`.aibc`):
 
 ```bash
-# Run source code directly
-aipo run main.aipo
+# Run source file directly
+aipo run src/main.aipo
 
-# Run compiled bytecode module
-aipo run app.aibc
+# Run with custom package cache directory
+aipo run src/main.aipo --package-cache .aipo/cache
 
-# Pass script arguments
-aipo run script.aipo -- --flag value
+# Structured JSONL diagnostic output (ideal for IDEs and CI pipelines)
+aipo run src/main.aipo --message-format=jsonl
 ```
 
 ### `aipo check`
 
-Runs the complete frontend analysis pipeline (Lexer, Parser, HIR, and SEMA) without VM execution:
+Runs the complete static analysis pipeline (Lexer, Parser, HIR, SEMA, and bytecode verification) without running the VM:
 
 ```bash
 aipo check src/main.aipo
 ```
 
-Reports syntax faults, unsatisfied interface contracts, unbound variables, or invalid reassignments to `fixed` fields.
+Accurately reports syntax errors, unsatisfied interface contracts, unbound variable references, and illegal mutations of `fixed` fields.
 
 ### `aipo build`
 
-Compiles `.aipo` files to supported targets:
+Emits the complete JavaScript bundle (`app.js`, `aipo-runtime.js`, and `app.js.map` sourcemap) ready for deployment in modern browsers or Node.js runtimes:
 
 ```bash
-# Compile to binary bytecode (.aibc)
-aipo build src/main.aipo -o dist/main.aibc
-
-# Compile to modern JavaScript (.js)
-aipo build src/main.aipo -t js -o dist/bundle.js
+# Compile and emit bundle into output directory
+aipo build src/main.aipo --out dist/
 ```
 
 ### `aipo disasm`
 
-Disassembles source files or `.aibc` binaries, displaying instruction mnemonics, constants, and mapped source coordinates:
+Disassembles an `.aipo` or `.aibc` file, displaying VM instructions, byte offsets, constant pool entries, and mapped source coordinates:
 
 ```bash
 aipo disasm src/main.aipo
@@ -53,30 +50,33 @@ aipo disasm src/main.aipo
 
 ### `aipo fmt`
 
-Formats Aipo source files according to canonical style conventions:
+Formats Aipo source files according to canonical language style conventions:
 
 ```bash
-# Format file in place
+# Format files in place
 aipo fmt src/main.aipo
 
-# Verify formatting (CI check)
+# Verify formatting without writing changes (CI mode)
 aipo fmt --check src/
 ```
 
 ### `aipo package`
 
-Hermetic package manager commands:
+Hermetic commands for package management, lockfile generation, and security auditing:
 
 ```bash
-# Resolve and write deterministic aipo.lock
-aipo package lock
+# Create or update deterministic lockfile (aipo.lock)
+aipo package lock .
 
-# Download remote GitHub dependencies into local cache
-aipo package fetch-github
+# Create lockfile fetching remote GitHub snapshots into local cache
+aipo package lock . --fetch-github --cache .aipo/cache
 
-# Verify cryptographic SHA-256 integrity of cached packages
+# Audit integrity and manifest compliance of a local package
+aipo package audit .
+
+# Verify cryptographic SHA-256 integrity across all cached entries
 aipo package cache verify .aipo/cache
 
-# Prune unreferenced cache entries safely
+# Prune unreferenced, stale cache entries safely
 aipo package cache prune .aipo/cache --lock aipo.lock --apply
 ```

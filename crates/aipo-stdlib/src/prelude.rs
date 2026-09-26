@@ -7,7 +7,7 @@
 //! - `some`: presence check (is not `none`)
 //! - `fail`: produces a recoverable Failure value
 
-use aipo_vm::{FailureValue, StructInstance, Value, VmFault, check_safe_int};
+use aipo_vm::{StructInstance, Value, VmFault, check_safe_int};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -159,10 +159,11 @@ pub fn native_fail(args: &[Value]) -> Result<Value, VmFault> {
         });
     }
 
-    let message = match &args[0] {
-        Value::String(s) => s.as_str().to_string(),
-        other => other.to_string(),
+    let (message, payload) = match &args[0] {
+        Value::String(s) => (s.as_str().to_string(), Value::None),
+        Value::Failure(f) => (f.message.clone(), f.payload.clone()),
+        other => (other.to_string(), other.clone()),
     };
 
-    Ok(Value::Failure(Rc::new(FailureValue { message })))
+    Ok(Value::failure_with_payload(message, payload))
 }

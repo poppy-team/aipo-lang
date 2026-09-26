@@ -25,19 +25,21 @@ Converting or concatenating values requires clear programmer intent.
 
 ### 2. Structural Invariants & Contracts
 
-While traditional languages require scattering manual `assert` calls across every method, Aipo introduces `invariant()` directly inside struct declarations:
+While traditional languages require scattering manual assertions across every method, Aipo introduces the `invariant()` hook inside the struct's `impl` block:
 
 ```aipo
-struct Temperature {
-  var celsius: Float,
+struct Temperature
+    celsius = 0.0
+end
 
-  invariant() {
-    self.celsius >= -273.15 // Absolute zero boundary
-  }
-}
+impl Temperature
+    invariant()
+        self.celsius >= -273.15 # Cannot be below absolute zero
+    end
+end
 ```
 
-Any mutation that violates an invariant is intercepted at the boundary. Inside `attempt ... recover` transaction blocks, modifications are rolled back atomically to their previous state.
+Any mutation that violates an invariant is intercepted at the boundary. Inside `attempt ... failed err` transaction blocks, modifications undergo atomic rollback to their previous state.
 
 ### 3. Deterministic Concurrency
 
