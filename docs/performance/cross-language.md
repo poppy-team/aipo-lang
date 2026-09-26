@@ -308,13 +308,23 @@ let opcode = match OpCode::try_from(opcode_byte) {
 
 O caminho feliz passa a ser um `match` sobre 2 bytes, sem `Result` largo, sem closure que captura `self` e sem `format!`. O teste `test_unknown_opcode_reports_the_offset_of_the_bad_byte` fixa o erro do ramo frio, e as 56 suítes do workspace passam com contagem de instruções e checksums idênticos.
 
-**A validação de wall-clock ficou inconclusiva e o ganho não está provado.** Durante a medição o host estava com load average de 7,3 em 4 cores e três ou mais processos concorrentes, e o mesmo binário apresentou variação de até 2,5x entre execuções da mesma configuração. Essa dispersão entre execuções é maior do que qualquer efeito plausível, então nenhum número de wall-clock coletado neste host decide esta mudança. O que está demonstrado é apenas a remoção determinística de trabalho, não um ganho de velocidade. Para fechar a medição é preciso um host dedicado ou ocioso, e o comando é:
+**O resultado da medição é nulo.** Com tempo de CPU do processo filho, 24 repetições alternadas por workload `arithmetic`, o resultado foi:
+
+| | min | median |
+|---|---:|---:|
+| antes | 3,019s | 5,474s |
+| depois | 3,014s | 5,359s |
+| delta | -0,16% | -2,09% |
+
+O número que decide é o mínimo, porque é o estado sem disputa: se a mudança removesse trabalho real por opcode, o mínimo cairia de forma mensurável. Não caiu. A explicação provável é que o LLVM já afundava a construção da falha para fora do caminho feliz, mantendo apenas o `match` de 2 bytes em tempo de execução, de modo que o desperdício existia no código-fonte mas nunca chegou a ser executado. As duas distribuições se sobrepõem quase por completo (antes 3,02s–7,53s, depois 3,01s–8,52s).
+
+A alteração foi mantida, não por ganho de velocidade, que não existe, mas por dois motivos que não dependem de benchmark: ela deixa a construção da falha no ramo frio explícita no código, em vez de depender de o otimizador mover o caminho de erro para fora, e o teste novo fixa o contrato de `unknown opcode`, que antes não tinha cobertura. Registrar isso como otimização de desempenho seria errado; é uma mudança de robustez e clareza com resultado medido nulo.
+
+A mesma hipótese do compilador provavelmente se aplica a `push`, `pop` e `read_u16`: o tamanho de `VmFault` é um problema real de hygiene e de ergonomia, e vale a pena reduzir por API, mas é plausível que o caminho de erro frio já seja removido em tempo de execução. Portanto **encolher `VmFault` não deve ser tratado como otimização de desempenho sem medir**. O comando para medir em host ocioso é:
 
 ```sh
-python3 scripts/perf/cpu_ab.py <binario-baseline> <binario-candidato> --workloads arithmetic --rounds 10 --reps 20
+python3 scripts/perf/cpu_ab.py <binario-baseline> <binario-candidato> --workloads arithmetic --rounds 10 --reps 24
 ```
-
-O trabalho restante da mesma família é reduzir `VmFault` de 72 bytes, o que tornaria `push`, `pop` e `read_u16` baratos em todo o interpretador. Isso exige uma decisão de API, porque `VmFault` é público e varias variantes são construídas fora do crate.
 
 ## A/B do cache do frame base
 
