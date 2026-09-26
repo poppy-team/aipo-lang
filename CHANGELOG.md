@@ -52,6 +52,21 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
   - Exportação do global `__aipo_virtual_time` (i64, mutável) para controle de tempo virtual por runtimes externos.
   - Propagação do parâmetro `async_helpers` por toda a cadeia de compilação: `compile_function_body`, `compile_stmts`, `compile_if_stmt`, `compile_while_stmt`, `compile_loop_stmt`, `compile_repeat_stmt` e `compile_expr` com todas as ~50 chamadas recursivas internas atualizadas.
   - Suíte de testes de integração expandida para 50 testes automatizados verdes em `crates/aipo-wasm` (45 de pipeline + 5 de emitter), incluindo 6 testes específicos de async: compilação de função assíncrona, exportação de funções de runtime, retorno de task handle, `await` conduzindo tarefa, funções assíncronas com parâmetros, e múltiplas tarefas independentes.
+- **Marco 6: Ferramental CLI, Host ABI & WASI (Tooling CLI, Host ABI & WASI - ADP-013)**:
+  - Integração completa do backend WebAssembly à interface de linha de comando `aipo`:
+    - `aipo run <file.aipo> --wasm` e `aipo run <file.aipo> -t wasm` / `--target=wasm`: compilação JIT de ponta a ponta e execução direta via Wasmtime com streaming de I/O.
+    - `aipo run <file.wasm>`: execução nativa de módulos binários `.wasm` pré-compilados sem necessidade de código-fonte.
+    - `aipo build <file.aipo> --target wasm` / `--wasm`: compilação de código Aipo e emissão de binário WebAssembly canônico (`dist/app.wasm`).
+    - `aipo disasm <file.wasm>` e `aipo disasm <file.aipo> --wasm`: desassembly de código WebAssembly diretamente para o formato de texto padrão (WAT) via `wasmprinter`.
+    - `aipo check <file.aipo> --wasm` e `aipo check <file.wasm>`: validação estática de pipeline, contratos semânticos e conformidade do binário Wasm sem execução.
+  - Implementação do Host ABI e streaming de I/O em `aipo-wasm`:
+    - Módulo de importação de host `"aipo_host"` com bindings nativos para `print_int`, `print_float`, `print_str`, `print_bool` e `println`.
+    - Suporte a chamadas canônicas da biblioteca padrão `io.print` e `io.println` e funções utilitárias `print` e `println`.
+    - Importações condicionais: o emissor Wasm inclui a seção de imports (Seção 2) apenas se chamadas de I/O forem detectadas no programa, preservando zero overhead para módulos puramente computacionais.
+    - Leitura direta da memória linear Wasm para strings literais com cabeçalho little-endian de comprimento.
+  - Crate `aipo-cli` atualizada com o novo alvo `BuildTarget::Wasm`, documentação de flags e ajuda canônica (`aipo --help`) e `crates/aipo-cli/README.md`.
+  - Suíte de 8 testes de integração exaustivos de ponta a ponta em `crates/aipo-cli/tests/wasm_cli.rs` cobrindo execução, build, desassembly, checagem, validação de saída, erros de sintaxe/semântica e rejeição estrita de flags inválidas.
+  - 100% dos testes e verificações clippy sem advertências (`-D warnings`) em todo o workspace.
 
 ## [0.1.0] - 2026-09-26 (Linha de Base Stack VM)
 

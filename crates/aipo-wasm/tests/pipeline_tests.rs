@@ -5,7 +5,7 @@
 use aipo_hir::lower;
 use aipo_source::{Source, SourceId};
 use aipo_syntax::parse;
-use aipo_wasm::compile_hir;
+use aipo_wasm::{compile_hir, disassemble_wasm, execute_wasm};
 use wasmtime::{Engine, Instance, Module, Store};
 
 /// Helper to compile Aipo source code into a live Wasmtime instance.
@@ -944,7 +944,10 @@ fn run() -> Int {
 
     // The task handle is a pointer (i32 cast to i64), should be > 0
     let result = run_fn.call(&mut store, ()).unwrap();
-    assert!(result > 0, "task handle should be a non-zero pointer, got {result}");
+    assert!(
+        result > 0,
+        "task handle should be a non-zero pointer, got {result}"
+    );
 }
 
 #[test]
@@ -1009,4 +1012,84 @@ fn run() -> Int {
 
     // 3*3 + 4*4 = 9 + 16 = 25
     assert_eq!(run_fn.call(&mut store, ()).unwrap(), 25);
+}
+
+// =========================================================================
+// Marco 6: Host ABI, WASI & I/O Execution Tests
+// =========================================================================
+
+#[test]
+fn test_host_io_print_int_and_println() {
+    let code = r#"
+fn run() {
+  print(42)
+  println()
+}
+"#;
+    let source = Source::new(SourceId::next(), "test.aipo", code);
+    let (ast, diags) = parse(&source);
+    assert!(diags.is_empty(), "diags: {diags:?}");
+    let hir = lower(ast);
+    let wasm_bytes = compile_hir(&hir).expect("compilation succeeds");
+
+    let mut stdout = Vec::new();
+    let res = execute_wasm(&wasm_bytes, &mut stdout).expect("execution succeeds");
+    assert_eq!(res, 0);
+    assert_eq!(String::from_utf8(stdout).unwrap(), "42\n");
+}
+
+#[test]
+fn test_host_io_print_string_and_io_println() {
+    let code = r#"
+fn run() {
+  io.println("Hello, Aipo Wasm!")
+}
+"#;
+    let source = Source::new(SourceId::next(), "test.aipo", code);
+    let (ast, diags) = parse(&source);
+    assert!(diags.is_empty(), "diags: {diags:?}");
+    let hir = lower(ast);
+    let wasm_bytes = compile_hir(&hir).expect("compilation succeeds");
+
+    let mut stdout = Vec::new();
+    let res = execute_wasm(&wasm_bytes, &mut stdout).expect("execution succeeds");
+    assert_eq!(res, 0);
+    assert_eq!(String::from_utf8(stdout).unwrap(), "Hello, Aipo Wasm!\n");
+}
+
+#[test]
+fn test_execute_wasm_entrypoint_return_value() {
+    let code = r#"
+fn run() -> Int {
+  return 1337
+}
+"#;
+    let source = Source::new(SourceId::next(), "test.aipo", code);
+    let (ast, diags) = parse(&source);
+    assert!(diags.is_empty(), "diags: {diags:?}");
+    let hir = lower(ast);
+    let wasm_bytes = compile_hir(&hir).expect("compilation succeeds");
+
+    let mut stdout = Vec::new();
+    let res = execute_wasm(&wasm_bytes, &mut stdout).expect("execution succeeds");
+    assert_eq!(res, 1337);
+}
+
+#[test]
+fn test_disassemble_wasm_produces_wat() {
+    let code = r#"
+fn add(a: Int, b: Int) -> Int {
+  return a + b
+}
+"#;
+    let source = Source::new(SourceId::next(), "test.aipo", code);
+    let (ast, diags) = parse(&source);
+    assert!(diags.is_empty(), "diags: {diags:?}");
+    let hir = lower(ast);
+    let wasm_bytes = compile_hir(&hir).expect("compilation succeeds");
+
+    let wat = disassemble_wasm(&wasm_bytes).expect("disassembly succeeds");
+    assert!(wat.contains("(module"));
+    assert!(wat.contains("add"));
+    assert!(wat.contains("i64.add"));
 }

@@ -2,15 +2,17 @@
 
 use crate::types::WasmFnType;
 use wasm_encoder::{
-    CodeSection, ConstExpr, DataSection, ElementSection, Elements, ExportKind, ExportSection,
-    Function, FunctionSection, GlobalSection, GlobalType, MemorySection, MemoryType, Module,
-    RefType, TableSection, TableType, TypeSection, ValType,
+    CodeSection, ConstExpr, DataSection, ElementSection, Elements, EntityType, ExportKind,
+    ExportSection, Function, FunctionSection, GlobalSection, GlobalType, ImportSection,
+    MemorySection, MemoryType, Module, RefType, TableSection, TableType, TypeSection, ValType,
 };
 
 /// High-level builder and binary emitter for standard WebAssembly modules.
 #[derive(Default)]
 pub struct WasmEmitter {
     types: Vec<WasmFnType>,
+    imports: Vec<(String, String, EntityType)>,
+    num_imported_funcs: u32,
     function_types: Vec<u32>,
     exports: Vec<(String, ExportKind, u32)>,
     code: Vec<Function>,
@@ -38,9 +40,33 @@ impl WasmEmitter {
         idx
     }
 
+    /// Registers an imported function and returns its assigned function index.
+    pub fn add_import_func(&mut self, module: &str, name: &str, type_index: u32) -> u32 {
+        let fn_idx = self.num_imported_funcs;
+        self.num_imported_funcs += 1;
+        self.imports.push((
+            module.to_string(),
+            name.to_string(),
+            EntityType::Function(type_index),
+        ));
+        fn_idx
+    }
+
+    /// Returns the number of imported functions.
+    #[must_use]
+    pub fn num_imported_funcs(&self) -> u32 {
+        self.num_imported_funcs
+    }
+
+    /// Returns the function index that will be assigned to the next function added.
+    #[must_use]
+    pub fn next_func_idx(&self) -> u32 {
+        self.num_imported_funcs + self.function_types.len() as u32
+    }
+
     /// Adds a compiled function with its type index and code body, returning the function index.
     pub fn add_function(&mut self, type_index: u32, body: Function) -> u32 {
-        let fn_idx = self.function_types.len() as u32;
+        let fn_idx = self.num_imported_funcs + self.function_types.len() as u32;
         self.function_types.push(type_index);
         self.code.push(body);
         fn_idx
@@ -117,6 +143,15 @@ impl WasmEmitter {
                 type_section.ty().function(params, results);
             }
             module.section(&type_section);
+        }
+
+        // 1.5. Import Section (2)
+        if !self.imports.is_empty() {
+            let mut import_section = ImportSection::new();
+            for (module_name, name, entity) in &self.imports {
+                import_section.import(module_name, name, *entity);
+            }
+            module.section(&import_section);
         }
 
         // 2. Function Section (3)

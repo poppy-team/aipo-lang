@@ -3,8 +3,8 @@
 - Project: **aipo**
 - Prumo: **0.6.0**
 - Current phase: **P06 — WebAssembly Execution Substrate & Self-Hosting Foundation (ADP-013)**
-- Active goal: **P06-G01 — WebAssembly target setup, aipo-wasm emitter and foundation**
-- Last completed goal: **P05 — `aipo v0.1.0` language release (DONE, frozen on legacy/v0.1.0-stack-vm)**
+- Active goal: **P06-G06 — Ferramental CLI, Host ABI & WASI (CONCLUÍDO)**
+- Last completed goal: **P06-G06 — Ferramental CLI, Host ABI & WASI (Marcos 1 a 6 concluídos)**
 - Completed slices:
   - **S1 (P00-G01)**: Workspace, `aipo-source`, `aipo-diagnostics`
   - **S2 (P00-G02)**: Lexer Core (`aipo-lexer`)
@@ -109,14 +109,28 @@
   - Pré-registro de assinaturas de tipos para chamadas indiretas (`indirect_sigs`) cobrindo aridades de 0 a 8 com deduplicação estrutural de tipos.
   - Pilha de 8 temporários de chamada indireta (`__call_temp_0..7`) para suporte seguro a aninhamento arbitrário de chamadas indiretas (`f(g(h(x)))`).
   - Suíte de testes de integração expandida para 45 testes automatizados verdes em `crates/aipo-wasm` (40 de pipeline + 5 de emitter), executados e validados pelo motor JIT `wasmtime`.
+- **Runtime Async/Await Wasm (Marco 5 / P06-G05)**:
+  - Implementação completa do runtime cooperativo de tarefas assíncronas no módulo WebAssembly sem dependências externas.
+  - Struct `AsyncHelpers` centralizando índices de `__aipo_task_create`, `__aipo_task_drive`, `__aipo_await`, `__aipo_task_sleep` e `__aipo_task_cancel`.
+  - Layout linear de 48 bytes por tarefa com despacho polimórfico via `call_indirect` (aridades 0, 1 e 2).
+  - Compilação de funções `async fn` com divisão automática em corpo (`__async_body_{name}`) e função wrapper de instanciação de tarefa.
+  - Compilação de `HirExpr::Await` invocando `__aipo_await` até conclusão da tarefa (status Ready) retornando `I64`.
+  - Exportação de global `__aipo_virtual_time` (i64, mutável) e threading de `async_helpers` por toda a árvore de compilação.
+  - Suíte de testes de integração expandida para 50 testes automatizados verdes em `crates/aipo-wasm` (45 de pipeline + 5 de emitter).
+
+- **Ferramental CLI, Host ABI & WASI (Marco 6 / P06-G06)**:
+  - Integração nativa e ergonômica de WebAssembly no CLI (`aipo run`, `aipo build`, `aipo check`, `aipo disasm`).
+  - Execução JIT de arquivos `.aipo` via `--wasm` / `-t wasm` / `--target=wasm` e execução direta de binários `.wasm` pré-compilados sem fonte.
+  - Emissão de binários `.wasm` pelo CLI com `aipo build <path> --target wasm` (ou `--wasm`) gerando `dist/app.wasm`.
+  - Desassembly para WAT padrão com `aipo disasm <file.wasm>` e `aipo disasm <file.aipo> --wasm` via `wasmprinter`.
+  - Host ABI `"aipo_host"` em `aipo-wasm::runner` provendo bindings para `print_int`, `print_float`, `print_str`, `print_bool`, `println` e suporte condicional a seções de imports para `io.print` / `io.println`.
+  - Suíte de 8 testes de integração exaustivos em `crates/aipo-cli/tests/wasm_cli.rs` cobrindo 100% dos novos fluxos e tratamento de erros.
 
 ## Next action
 
-Iniciar o **Marco 5: Concorrência e Async Substrate (ADP-013)**:
-1. Projeto do modelo de tarefas assíncronas cooperativas em WebAssembly.
-2. Suporte a `async fn`, `task.spawn`, e `await` cooperativo.
-3. Event loop / scheduler determinístico embutido no runtime Wasm.
-4. Conformance e paridade com o modelo async semântico da Aipo.
+Marco 6 finalizado com sucesso! Próximo passo:
+1. Executar bateria de benchmarks canônicos (`scripts/perf/cpu_ab.py` e `aipo-bench`) comparando a performance do runtime WebAssembly JIT (`aipo run --wasm`) com a Stack VM anterior e demais runtimes.
+2. Certificação e consolidação de evidências da Trilha WebAssembly (Marcos 1 a 6 concluídos).
 
 ## Recovery order
 

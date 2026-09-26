@@ -44,14 +44,31 @@ struct StructLayout {
     fields: HashMap<String, (u32, WasmType)>,
 }
 
-/// Helper containing function indices of built-in async runtime functions.
+/// Helper containing function indices of built-in host I/O functions.
 #[derive(Debug, Clone, Copy)]
+pub struct HostIoHelpers {
+    /// Function index for `aipo_host.print_int`.
+    pub print_int_idx: u32,
+    /// Function index for `aipo_host.print_float`.
+    pub print_float_idx: u32,
+    /// Function index for `aipo_host.print_str`.
+    pub print_str_idx: u32,
+    /// Function index for `aipo_host.print_bool`.
+    pub print_bool_idx: u32,
+    /// Function index for `aipo_host.println`.
+    pub println_idx: u32,
+}
+
+/// Helper containing function indices of built-in async runtime functions and host I/O helpers.
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 struct AsyncHelpers {
     task_create_idx: u32,
     task_drive_idx: u32,
     await_idx: u32,
     task_sleep_idx: u32,
     task_cancel_idx: u32,
+    host_io: Option<HostIoHelpers>,
 }
 
 /// Compiles an `HirProgram` into a standard WebAssembly binary module (`.wasm`).
@@ -146,6 +163,35 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     );
     emitter.export_global("__aipo_virtual_time", virtual_time_idx);
 
+    // Optional Host I/O Imports (Milestone 6 / ADP-013)
+    let has_io = scan_program_for_io(program);
+    let host_io = if has_io {
+        let print_int_ty = emitter.add_type(WasmFnType::new(vec![WasmType::I64], vec![]));
+        let print_int_idx = emitter.add_import_func("aipo_host", "print_int", print_int_ty);
+
+        let print_float_ty = emitter.add_type(WasmFnType::new(vec![WasmType::F64], vec![]));
+        let print_float_idx = emitter.add_import_func("aipo_host", "print_float", print_float_ty);
+
+        let print_str_ty = emitter.add_type(WasmFnType::new(vec![WasmType::I32], vec![]));
+        let print_str_idx = emitter.add_import_func("aipo_host", "print_str", print_str_ty);
+
+        let print_bool_ty = emitter.add_type(WasmFnType::new(vec![WasmType::I32], vec![]));
+        let print_bool_idx = emitter.add_import_func("aipo_host", "print_bool", print_bool_ty);
+
+        let println_ty = emitter.add_type(WasmFnType::new(vec![], vec![]));
+        let println_idx = emitter.add_import_func("aipo_host", "println", println_ty);
+
+        Some(HostIoHelpers {
+            print_int_idx,
+            print_float_idx,
+            print_str_idx,
+            print_bool_idx,
+            println_idx,
+        })
+    } else {
+        None
+    };
+
     // Function 0: Built-in Allocator `__aipo_alloc(size: i32) -> i32`
     let alloc_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I32]);
     let alloc_type_idx = emitter.add_type(alloc_fn_type.clone());
@@ -177,17 +223,18 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     emitter.export_function("__aipo_task_create", task_create_func_idx);
     functions.insert(
         "__aipo_task_create".to_string(),
-        (task_create_func_idx, task_create_type_idx, task_create_fn_type),
+        (
+            task_create_func_idx,
+            task_create_type_idx,
+            task_create_fn_type,
+        ),
     );
 
     // Function 2: `__aipo_task_drive(task_ptr: i32) -> i64`
     let task_drive_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I64]);
     let task_drive_type_idx = emitter.add_type(task_drive_fn_type.clone());
-    let task_drive_fn = build_task_drive_function(
-        indirect_sigs[&0],
-        indirect_sigs[&1],
-        indirect_sigs[&2],
-    );
+    let task_drive_fn =
+        build_task_drive_function(indirect_sigs[&0], indirect_sigs[&1], indirect_sigs[&2]);
     let task_drive_func_idx = emitter.add_function(task_drive_type_idx, task_drive_fn);
     emitter.export_function("__aipo_task_drive", task_drive_func_idx);
     functions.insert(
@@ -225,7 +272,11 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     emitter.export_function("__aipo_task_cancel", task_cancel_func_idx);
     functions.insert(
         "__aipo_task_cancel".to_string(),
-        (task_cancel_func_idx, task_cancel_type_idx, task_cancel_fn_type),
+        (
+            task_cancel_func_idx,
+            task_cancel_type_idx,
+            task_cancel_fn_type,
+        ),
     );
 
     let async_helpers = AsyncHelpers {
@@ -234,9 +285,11 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
         await_idx: await_func_idx,
         task_sleep_idx: task_sleep_func_idx,
         task_cancel_idx: task_cancel_func_idx,
+        host_io,
     };
 
     // Pass 1: Collect signatures of all declared and anonymous functions
+    let mut next_func_idx = emitter.next_func_idx();
     for func in &func_decls {
         let params = func.params.iter().map(param_wasm_type).collect::<Vec<_>>();
         let ret = if func.name.starts_with("__async_body_") {
@@ -252,7 +305,8 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
         };
         let fn_type = WasmFnType::new(params, ret.into_iter().collect());
         let type_idx = emitter.add_type(fn_type.clone());
-        let func_idx = functions.len() as u32;
+        let func_idx = next_func_idx;
+        next_func_idx += 1;
         functions.insert(func.name.clone(), (func_idx, type_idx, fn_type));
     }
 
@@ -262,9 +316,15 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
         let params_wasm = params.iter().map(param_wasm_type).collect::<Vec<_>>();
         let fn_type = WasmFnType::new(params_wasm, vec![WasmType::I32]);
         let type_idx = emitter.add_type(fn_type.clone());
-        let func_idx = functions.len() as u32;
+        let func_idx = next_func_idx;
+        next_func_idx += 1;
         functions.insert(name.clone(), (func_idx, type_idx, fn_type));
-        async_wrapper_infos.push((name.clone(), inner_body_name.clone(), params.len(), type_idx));
+        async_wrapper_infos.push((
+            name.clone(),
+            inner_body_name.clone(),
+            params.len(),
+            type_idx,
+        ));
     }
 
     // Pass 1.5: Setup Table 0 for indirect function calls (call_indirect)
@@ -294,7 +354,7 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
         );
         let fn_type = WasmFnType::new(vec![], ret.into_iter().collect());
         let type_idx = emitter.add_type(fn_type.clone());
-        let func_idx = functions.len() as u32;
+        let func_idx = next_func_idx;
         functions.insert("__top_level__".to_string(), (func_idx, type_idx, fn_type));
         Some((func_idx, type_idx, ret))
     } else {
@@ -589,6 +649,99 @@ fn scan_expr_for_constructs(expr: &HirExpr, structs: &mut HashMap<String, Struct
             scan_expr_for_constructs(receiver, structs);
         }
         _ => {}
+    }
+}
+
+/// Scans the program to determine if any I/O printing calls (`print`, `println`, `io.print`, `io.println`) are present.
+fn scan_program_for_io(program: &HirProgram) -> bool {
+    for item in &program.items {
+        if let HirItem::Fn(func) = item {
+            if scan_stmts_for_io(&func.body) {
+                return true;
+            }
+        }
+    }
+    scan_stmts_for_io(&program.statements)
+}
+
+fn scan_stmts_for_io(stmts: &[HirStmt]) -> bool {
+    for stmt in stmts {
+        match stmt {
+            HirStmt::Let(_, expr, _) | HirStmt::Var(_, expr, _) | HirStmt::Expr(expr) => {
+                if scan_expr_for_io(expr) {
+                    return true;
+                }
+            }
+            HirStmt::Assign(target, expr, _) | HirStmt::CompoundAssign(_, target, expr, _) => {
+                if scan_expr_for_io(target) || scan_expr_for_io(expr) {
+                    return true;
+                }
+            }
+            HirStmt::Return(Some(expr), _) if scan_expr_for_io(expr) => return true,
+            HirStmt::If(s) => {
+                if scan_expr_for_io(&s.condition)
+                    || scan_stmts_for_io(&s.then_branch)
+                    || s.elif_branches
+                        .iter()
+                        .any(|(c, b)| scan_expr_for_io(c) || scan_stmts_for_io(b))
+                    || s.else_branch.as_ref().is_some_and(|b| scan_stmts_for_io(b))
+                {
+                    return true;
+                }
+            }
+            HirStmt::While(cond, body, _) if scan_expr_for_io(cond) || scan_stmts_for_io(body) => {
+                return true;
+            }
+            HirStmt::Loop(body, _) | HirStmt::AwaitDo(body, _) if scan_stmts_for_io(body) => {
+                return true;
+            }
+            HirStmt::Repeat(count, _, body, _)
+                if scan_expr_for_io(count) || scan_stmts_for_io(body) =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+fn scan_expr_for_io(expr: &HirExpr) -> bool {
+    match expr {
+        HirExpr::Call(callee, args, _) => {
+            match &**callee {
+                HirExpr::Identifier(name, _) if name == "print" || name == "println" => {
+                    return true;
+                }
+                HirExpr::Dot(base, member, _) if member == "print" || member == "println" => {
+                    if let HirExpr::Identifier(base_name, _) = &**base {
+                        if base_name == "io" {
+                            return true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            if scan_expr_for_io(callee) {
+                return true;
+            }
+            for arg in args {
+                if scan_expr_for_io(&arg.value) {
+                    return true;
+                }
+            }
+            false
+        }
+        HirExpr::Unary(_, inner, _) | HirExpr::Await(inner, _) => scan_expr_for_io(inner),
+        HirExpr::Binary(_, left, right, _) => scan_expr_for_io(left) || scan_expr_for_io(right),
+        HirExpr::If(cond, then_e, else_e, _) => {
+            scan_expr_for_io(cond) || scan_expr_for_io(then_e) || scan_expr_for_io(else_e)
+        }
+        HirExpr::Construct(_, fields, _) => {
+            fields.iter().any(|(_, f_expr)| scan_expr_for_io(f_expr))
+        }
+        HirExpr::Dot(receiver, _, _) => scan_expr_for_io(receiver),
+        _ => false,
     }
 }
 
@@ -2686,7 +2839,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2703,7 +2856,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2724,7 +2877,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2741,7 +2894,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2762,7 +2915,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2779,7 +2932,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2805,7 +2958,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2822,7 +2975,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2862,7 +3015,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2879,7 +3032,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;
@@ -2981,6 +3134,75 @@ fn compile_expr(
             Ok(res_ty)
         }
         HirExpr::Call(callee, args, span) => {
+            // Case 0: Built-in host I/O call: `print`, `println`, `io.print`, `io.println`
+            let (is_io_call, is_println) = match &**callee {
+                HirExpr::Identifier(name, _) if name == "print" => (true, false),
+                HirExpr::Identifier(name, _) if name == "println" => (true, true),
+                HirExpr::Dot(base, member, _) if member == "print" || member == "println" => {
+                    if let HirExpr::Identifier(base_name, _) = &**base {
+                        if base_name == "io" {
+                            (true, member == "println")
+                        } else {
+                            (false, false)
+                        }
+                    } else {
+                        (false, false)
+                    }
+                }
+                _ => (false, false),
+            };
+
+            if is_io_call {
+                if let Some(io) = async_helpers.host_io {
+                    for arg in args {
+                        let actual_ty = compile_expr(
+                            &arg.value,
+                            func,
+                            locals,
+                            functions,
+                            control_stack,
+                            structs,
+                            static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
+                            alloc_func_idx,
+                            async_helpers,
+                            struct_depth,
+                            call_depth,
+                        )?;
+                        let kind =
+                            infer_expr_kind(&arg.value, locals, functions, table_indices, anon_map);
+                        match kind {
+                            LocalKind::String => {
+                                coerce_type(func, actual_ty, WasmType::I32);
+                                func.instruction(&Instruction::Call(io.print_str_idx));
+                            }
+                            LocalKind::Bool => {
+                                coerce_type(func, actual_ty, WasmType::I32);
+                                func.instruction(&Instruction::Call(io.print_bool_idx));
+                            }
+                            _ => match actual_ty {
+                                WasmType::F64 => {
+                                    func.instruction(&Instruction::Call(io.print_float_idx));
+                                }
+                                WasmType::I32 => {
+                                    func.instruction(&Instruction::Call(io.print_str_idx));
+                                }
+                                _ => {
+                                    func.instruction(&Instruction::Call(io.print_int_idx));
+                                }
+                            },
+                        }
+                    }
+                    if is_println {
+                        func.instruction(&Instruction::Call(io.println_idx));
+                    }
+                    func.instruction(&Instruction::I64Const(0));
+                    return Ok(WasmType::I64);
+                }
+            }
+
             // Case 1: Direct function call
             if let HirExpr::Identifier(func_name, _) = &**callee {
                 if !locals.contains_key(func_name) && functions.contains_key(func_name) {
@@ -3005,7 +3227,7 @@ fn compile_expr(
                             anon_map,
                             indirect_sigs,
                             alloc_func_idx,
-                async_helpers,
+                            async_helpers,
                             struct_depth,
                             call_depth,
                         )?;
@@ -3097,7 +3319,7 @@ fn compile_expr(
                     anon_map,
                     indirect_sigs,
                     alloc_func_idx,
-                async_helpers,
+                    async_helpers,
                     struct_depth,
                     call_depth + 1,
                 )?;
@@ -3226,7 +3448,7 @@ fn compile_expr(
                     anon_map,
                     indirect_sigs,
                     alloc_func_idx,
-                async_helpers,
+                    async_helpers,
                     struct_depth,
                     call_depth,
                 )?;
@@ -3262,7 +3484,7 @@ fn compile_expr(
                         anon_map,
                         indirect_sigs,
                         alloc_func_idx,
-                async_helpers,
+                        async_helpers,
                         struct_depth,
                         call_depth,
                     )?;

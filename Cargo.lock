@@ -97,6 +97,7 @@ dependencies = [
  "aipo-syntax",
  "aipo-testkit",
  "aipo-vm",
+ "aipo-wasm",
 ]
 
 [[package]]
@@ -314,6 +315,7 @@ dependencies = [
  "aipo-source",
  "aipo-syntax",
  "wasm-encoder 0.258.0",
+ "wasmprinter 0.259.0",
  "wasmtime",
 ]
 
@@ -617,7 +619,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -952,7 +954,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1313,6 +1315,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasmparser"
+version = "0.259.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f7c12eac7bb587801590f6a67ff0bc84d0748513864b71108e4b311cc3df694"
+dependencies = [
+ "bitflags",
+ "indexmap",
+ "semver",
+]
+
+[[package]]
 name = "wasmprinter"
 version = "0.233.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1321,6 +1334,17 @@ dependencies = [
  "anyhow",
  "termcolor",
  "wasmparser 0.233.0",
+]
+
+[[package]]
+name = "wasmprinter"
+version = "0.259.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0510ce2ff0ad7c5510ad3dfcb2cedba4cf5d9f7e08d1d06e4d8cf8e5638aef95"
+dependencies = [
+ "anyhow",
+ "termcolor",
+ "wasmparser 0.259.0",
 ]
 
 [[package]]
@@ -1419,7 +1443,7 @@ dependencies = [
  "target-lexicon",
  "wasm-encoder 0.233.0",
  "wasmparser 0.233.0",
- "wasmprinter",
+ "wasmprinter 0.233.0",
 ]
 
 [[package]]
@@ -1491,7 +1515,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

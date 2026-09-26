@@ -2,10 +2,11 @@
 //! `docs/reference/cli.md`:
 //!
 //! ```text
-//! aipo run <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
-//! aipo check <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
-//! aipo build <path> [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
-//! aipo disasm <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+//! aipo run <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
+//! aipo test [path] [--filter <pattern>] [--package-cache <dir>] [--message-format=<human|jsonl>]
+//! aipo check <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
+//! aipo build <path> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
+//! aipo disasm <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
 //! aipo fmt <paths...> [--check]
 //! aipo package lock <package-dir> [--fetch-github --cache <dir>] [--github-token-env <name>]
 //! aipo package audit <package-dir>
@@ -74,11 +75,11 @@ pub const USAGE: &str = "\
 aipo — Aipo language toolchain
 
 USAGE:
-    aipo run <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+    aipo run <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo test [path] [--filter <pattern>] [--package-cache <dir>] [--message-format=<human|jsonl>]
-    aipo check <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
-    aipo build <path> [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
-    aipo disasm <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+    aipo check <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
+    aipo build <path> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
+    aipo disasm <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo fmt <paths...> [--check]
     aipo package lock <package-dir> [--fetch-github --cache <dir>] [--github-token-env <name>]
     aipo package audit <package-dir>
@@ -88,11 +89,11 @@ USAGE:
     aipo --help
 
 COMMANDS:
-    run      Compile and execute an Aipo source file (.aipo) or bytecode file (.aibc)
+    run      Compile and execute an Aipo source file (.aipo), bytecode file (.aibc), or WebAssembly module (.wasm)
     test     Discover and run isolated unit tests
     check    Run the frontend, semantic analysis and bytecode verification
-    build    Emit a JavaScript bundle (app.js + aipo-runtime.js + app.js.map)
-    disasm   Disassemble a source file (.aipo) or bytecode file (.aibc)
+    build    Emit a JavaScript bundle (default) or WebAssembly binary (.wasm)
+    disasm   Disassemble a source file (.aipo), bytecode file (.aibc), or WebAssembly binary (.wasm)
     fmt      Format source files in place; --check reports drift without writing
     package  Create or audit a local package lockfile, or verify the package cache
 
@@ -152,6 +153,7 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             path,
             format,
             package_cache,
+            wasm,
         } => execute(
             &path,
             format,
@@ -159,6 +161,7 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             out,
             err,
             Action::Run,
+            wasm,
         ),
         Command::Test {
             path,
@@ -177,6 +180,7 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             path,
             format,
             package_cache,
+            wasm,
         } => execute(
             &path,
             format,
@@ -184,15 +188,18 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             out,
             err,
             Action::Check,
+            wasm,
         ),
         Command::Build {
             path,
             out_dir,
+            target,
             format,
             package_cache,
         } => build_bundle(
             &path,
             out_dir.as_deref(),
+            target,
             format,
             package_cache.as_deref(),
             out,
@@ -202,7 +209,8 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             path,
             format,
             package_cache,
-        } => disassemble_command(&path, format, package_cache.as_deref(), out, err),
+            wasm,
+        } => disassemble_command(&path, wasm, format, package_cache.as_deref(), out, err),
         Command::Fmt { paths, check } => format_files(&paths, check, out, err),
         Command::Package {
             operation,
@@ -248,6 +256,15 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
     }
 }
 
+/// Target output format for `aipo build`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildTarget {
+    /// Emit a JavaScript bundle (default: app.js, aipo-runtime.js, app.js.map).
+    Js,
+    /// Emit a WebAssembly binary (dist/app.wasm).
+    Wasm,
+}
+
 /// A parsed command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Command {
@@ -257,6 +274,7 @@ enum Command {
         path: PathBuf,
         format: MessageFormat,
         package_cache: Option<PathBuf>,
+        wasm: bool,
     },
     Test {
         path: Option<PathBuf>,
@@ -268,10 +286,12 @@ enum Command {
         path: PathBuf,
         format: MessageFormat,
         package_cache: Option<PathBuf>,
+        wasm: bool,
     },
     Build {
         path: PathBuf,
         out_dir: Option<PathBuf>,
+        target: BuildTarget,
         format: MessageFormat,
         package_cache: Option<PathBuf>,
     },
@@ -279,6 +299,7 @@ enum Command {
         path: PathBuf,
         format: MessageFormat,
         package_cache: Option<PathBuf>,
+        wasm: bool,
     },
     Fmt {
         paths: Vec<PathBuf>,
@@ -340,6 +361,7 @@ impl Command {
                 let mut path = None;
                 let mut format = MessageFormat::Human;
                 let mut package_cache = None;
+                let mut wasm = false;
                 let rest = &args[1..];
                 let mut index = 0;
                 while index < rest.len() {
@@ -352,6 +374,32 @@ impl Command {
                             .get(index)
                             .ok_or_else(|| "--message-format requires a value".to_string())?;
                         format = parse_format(value)?;
+                    } else if arg == "--wasm" {
+                        wasm = true;
+                    } else if let Some(target) = arg.strip_prefix("--target=") {
+                        match target {
+                            "wasm" => wasm = true,
+                            "vm" | "bytecode" => wasm = false,
+                            other => {
+                                return Err(format!(
+                                    "unrecognized target '{other}': expected 'wasm' or 'bytecode'"
+                                ));
+                            }
+                        }
+                    } else if arg == "--target" || arg == "-t" {
+                        index += 1;
+                        let target = rest
+                            .get(index)
+                            .ok_or_else(|| format!("'{arg}' requires a target name"))?;
+                        match target.as_str() {
+                            "wasm" => wasm = true,
+                            "vm" | "bytecode" => wasm = false,
+                            other => {
+                                return Err(format!(
+                                    "unrecognized target '{other}': expected 'wasm' or 'bytecode'"
+                                ));
+                            }
+                        }
                     } else if let Some(value) = arg.strip_prefix("--package-cache=") {
                         if value.is_empty() {
                             return Err(
@@ -392,18 +440,21 @@ impl Command {
                         path,
                         format,
                         package_cache,
+                        wasm,
                     })
                 } else if first == "check" {
                     Ok(Self::Check {
                         path,
                         format,
                         package_cache,
+                        wasm,
                     })
                 } else {
                     Ok(Self::Disasm {
                         path,
                         format,
                         package_cache,
+                        wasm,
                     })
                 }
             }
@@ -481,6 +532,7 @@ impl Command {
             "build" => {
                 let mut path = None;
                 let mut out_dir = None;
+                let mut target = BuildTarget::Js;
                 let mut format = MessageFormat::Human;
                 let mut package_cache = None;
                 let rest = &args[1..];
@@ -495,6 +547,32 @@ impl Command {
                             .get(index)
                             .ok_or_else(|| "--message-format requires a value".to_string())?;
                         format = parse_format(value)?;
+                    } else if arg == "--wasm" {
+                        target = BuildTarget::Wasm;
+                    } else if let Some(t) = arg.strip_prefix("--target=") {
+                        match t {
+                            "wasm" => target = BuildTarget::Wasm,
+                            "js" => target = BuildTarget::Js,
+                            other => {
+                                return Err(format!(
+                                    "unrecognized build target '{other}': expected 'js' or 'wasm'"
+                                ));
+                            }
+                        }
+                    } else if arg == "--target" || arg == "-t" {
+                        index += 1;
+                        let t = rest
+                            .get(index)
+                            .ok_or_else(|| format!("'{arg}' requires a target name"))?;
+                        match t.as_str() {
+                            "wasm" => target = BuildTarget::Wasm,
+                            "js" => target = BuildTarget::Js,
+                            other => {
+                                return Err(format!(
+                                    "unrecognized build target '{other}': expected 'js' or 'wasm'"
+                                ));
+                            }
+                        }
                     } else if arg == "--out" {
                         index += 1;
                         let value = rest
@@ -541,6 +619,7 @@ impl Command {
                 Ok(Self::Build {
                     path,
                     out_dir,
+                    target,
                     format,
                     package_cache,
                 })
@@ -1613,6 +1692,46 @@ fn write_lockfile(package_root: &Path, contents: &str) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Compiles an Aipo source file down to a WebAssembly module binary.
+fn compile_to_wasm(
+    source: &Source,
+    path: &Path,
+    package_paths: Option<&PackagePathMap>,
+) -> (Option<Vec<u8>>, Vec<Diagnostic>) {
+    let (program, mut diagnostics) = aipo_syntax::parse(source);
+    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        return (None, diagnostics);
+    }
+
+    let hir = aipo_hir::lower(program);
+    let resolved = modules::resolve(path, hir, package_paths);
+    diagnostics.extend(resolved.diagnostics);
+    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        return (None, diagnostics);
+    }
+
+    let mut surface = prelude_surface();
+    for name in &resolved.imported_names {
+        surface.add_variable(name);
+    }
+    let (_, sema_diagnostics) = aipo_sema::check_with_prelude(source, &resolved.program, &surface);
+    diagnostics.extend(sema_diagnostics);
+    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        return (None, diagnostics);
+    }
+
+    match aipo_wasm::compile_hir(&resolved.program) {
+        Ok(bytes) => (Some(bytes), diagnostics),
+        Err(err) => {
+            diagnostics.push(Diagnostic::error(
+                DiagnosticCode::AIPO_RT_TYPE_MISMATCH,
+                format!("wasm compilation failed: {err}"),
+            ));
+            (None, diagnostics)
+        }
+    }
+}
+
 fn execute(
     path: &Path,
     format: MessageFormat,
@@ -1620,9 +1739,26 @@ fn execute(
     out: &mut dyn Write,
     err: &mut dyn Write,
     action: Action,
+    wasm: bool,
 ) -> u8 {
+    // Pre-compiled `.wasm` files execute directly or check via disassembly.
+    if path.extension().and_then(|ext| ext.to_str()) == Some("wasm") {
+        if package_cache.is_some() {
+            let _ = writeln!(
+                err,
+                "error: --package-cache is not supported for .wasm files"
+            );
+            return EXIT_USAGE;
+        }
+        return execute_wasm_file(path, action, out, err);
+    }
+
     // Pre-compiled `.aibc` files skip the frontend pipeline entirely.
     if path.extension().and_then(|ext| ext.to_str()) == Some("aibc") {
+        if wasm {
+            let _ = writeln!(err, "error: --wasm is not supported for .aibc files");
+            return EXIT_USAGE;
+        }
         if package_cache.is_some() {
             let _ = writeln!(
                 err,
@@ -1637,35 +1773,100 @@ fn execute(
         return execute_bytecode(path, format, out, err);
     }
 
-    let LoadedSource {
-        source,
-        package_paths,
-    } = match load_source_entry(path, package_cache) {
-        Ok(loaded) => loaded,
-        Err(error) => return report_cli_error(error, format, out, err),
+    if wasm {
+        let LoadedSource {
+            source,
+            package_paths,
+        } = match load_source_entry(path, package_cache) {
+            Ok(loaded) => loaded,
+            Err(error) => return report_cli_error(error, format, out, err),
+        };
+
+        let (wasm_bytes, diagnostics) = compile_to_wasm(&source, path, package_paths.as_ref());
+        let has_errors = diagnostics
+            .iter()
+            .any(|diag| diag.severity == Severity::Error);
+
+        emit_diagnostics(format, &source, &diagnostics, out, err);
+
+        if has_errors {
+            return EXIT_LANGUAGE_FAILURE;
+        }
+        if action == Action::Check {
+            return EXIT_SUCCESS;
+        }
+
+        let Some(bytes) = wasm_bytes else {
+            return EXIT_LANGUAGE_FAILURE;
+        };
+
+        match aipo_wasm::execute_wasm(&bytes, out) {
+            Ok(_) => EXIT_SUCCESS,
+            Err(error) => {
+                let _ = writeln!(err, "error: {error}");
+                EXIT_LANGUAGE_FAILURE
+            }
+        }
+    } else {
+        let LoadedSource {
+            source,
+            package_paths,
+        } = match load_source_entry(path, package_cache) {
+            Ok(loaded) => loaded,
+            Err(error) => return report_cli_error(error, format, out, err),
+        };
+
+        let compiled = analyze(&source, path, package_paths.as_ref());
+        let has_errors = compiled
+            .diagnostics
+            .iter()
+            .any(|diag| diag.severity == Severity::Error);
+
+        emit_diagnostics(format, &source, &compiled.diagnostics, out, err);
+
+        if has_errors {
+            return EXIT_LANGUAGE_FAILURE;
+        }
+        if action == Action::Check {
+            return EXIT_SUCCESS;
+        }
+
+        match execute_module(&compiled.module) {
+            Ok(()) => EXIT_SUCCESS,
+            Err(error) => {
+                let diagnostic = runtime_diagnostic(&source, &error);
+                emit_diagnostics(format, &source, std::slice::from_ref(&diagnostic), out, err);
+                EXIT_LANGUAGE_FAILURE
+            }
+        }
+    }
+}
+
+/// Executes or checks a pre-compiled `.wasm` binary module.
+fn execute_wasm_file(path: &Path, action: Action, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = writeln!(err, "error: {}: {error}", path.display());
+            return EXIT_USAGE;
+        }
     };
 
-    let compiled = analyze(&source, path, package_paths.as_ref());
-    let has_errors = compiled
-        .diagnostics
-        .iter()
-        .any(|diag| diag.severity == Severity::Error);
-
-    emit_diagnostics(format, &source, &compiled.diagnostics, out, err);
-
-    if has_errors {
-        return EXIT_LANGUAGE_FAILURE;
-    }
     if action == Action::Check {
-        return EXIT_SUCCESS;
-    }
-
-    match execute_module(&compiled.module) {
-        Ok(()) => EXIT_SUCCESS,
-        Err(error) => {
-            let diagnostic = runtime_diagnostic(&source, &error);
-            emit_diagnostics(format, &source, std::slice::from_ref(&diagnostic), out, err);
-            EXIT_LANGUAGE_FAILURE
+        match aipo_wasm::disassemble_wasm(&bytes) {
+            Ok(_) => EXIT_SUCCESS,
+            Err(error) => {
+                let _ = writeln!(err, "error: malformed .wasm: {error}");
+                EXIT_LANGUAGE_FAILURE
+            }
+        }
+    } else {
+        match aipo_wasm::execute_wasm(&bytes, out) {
+            Ok(_) => EXIT_SUCCESS,
+            Err(error) => {
+                let _ = writeln!(err, "error: {error}");
+                EXIT_LANGUAGE_FAILURE
+            }
         }
     }
 }
@@ -1714,15 +1915,46 @@ fn execute_bytecode(
     }
 }
 
-/// Disassembles a source file or bytecode file and prints the listing.
+/// Disassembles a source file, bytecode file, or WebAssembly module and prints the listing.
 fn disassemble_command(
     path: &Path,
+    wasm: bool,
     format: MessageFormat,
     package_cache: Option<&Path>,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
-    if path.extension().and_then(|ext| ext.to_str()) == Some("aibc") {
+    if path.extension().and_then(|ext| ext.to_str()) == Some("wasm") {
+        if package_cache.is_some() {
+            let _ = writeln!(
+                err,
+                "error: --package-cache is not supported for .wasm files"
+            );
+            return EXIT_USAGE;
+        }
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let _ = writeln!(err, "error: {}: {error}", path.display());
+                return EXIT_USAGE;
+            }
+        };
+
+        match aipo_wasm::disassemble_wasm(&bytes) {
+            Ok(wat) => {
+                let _ = write!(out, "{wat}");
+                EXIT_SUCCESS
+            }
+            Err(error) => {
+                let _ = writeln!(err, "error: malformed .wasm: {error}");
+                EXIT_LANGUAGE_FAILURE
+            }
+        }
+    } else if path.extension().and_then(|ext| ext.to_str()) == Some("aibc") {
+        if wasm {
+            let _ = writeln!(err, "error: --wasm is not supported for .aibc files");
+            return EXIT_USAGE;
+        }
         if package_cache.is_some() {
             let _ = writeln!(
                 err,
@@ -1752,6 +1984,39 @@ fn disassemble_command(
         let listing = aipo_bytecode::disassemble(&module);
         let _ = write!(out, "{listing}");
         EXIT_SUCCESS
+    } else if wasm {
+        let LoadedSource {
+            source,
+            package_paths,
+        } = match load_source_entry(path, package_cache) {
+            Ok(loaded) => loaded,
+            Err(error) => return report_cli_error(error, format, out, err),
+        };
+        let (wasm_bytes, diagnostics) = compile_to_wasm(&source, path, package_paths.as_ref());
+        let has_errors = diagnostics
+            .iter()
+            .any(|diag| diag.severity == Severity::Error);
+
+        emit_diagnostics(format, &source, &diagnostics, out, err);
+
+        if has_errors {
+            return EXIT_LANGUAGE_FAILURE;
+        }
+
+        let Some(bytes) = wasm_bytes else {
+            return EXIT_LANGUAGE_FAILURE;
+        };
+
+        match aipo_wasm::disassemble_wasm(&bytes) {
+            Ok(wat) => {
+                let _ = write!(out, "{wat}");
+                EXIT_SUCCESS
+            }
+            Err(error) => {
+                let _ = writeln!(err, "error: disassembly failed: {error}");
+                EXIT_LANGUAGE_FAILURE
+            }
+        }
     } else {
         // For .aipo files: compile first, then disassemble with source annotations.
         let LoadedSource {
@@ -1779,7 +2044,7 @@ fn disassemble_command(
     }
 }
 
-/// Emits a JavaScript bundle for an entry file.
+/// Emits a JavaScript bundle or WebAssembly binary for an entry file.
 ///
 /// Diagnostics use the same frontend as `run`/`check`, so a program that fails
 /// `check` fails `build` with the same codes and no files are written.
@@ -1787,6 +2052,7 @@ fn disassemble_command(
 fn build_bundle(
     path: &Path,
     out_dir: Option<&Path>,
+    target: BuildTarget,
     format: MessageFormat,
     package_cache: Option<&Path>,
     out: &mut dyn Write,
@@ -1800,55 +2066,95 @@ fn build_bundle(
         Err(error) => return report_cli_error(error, format, out, err),
     };
 
-    let (program, mut diagnostics) = aipo_syntax::parse(&source);
-    if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
-        let hir = aipo_hir::lower(program);
-        let resolved = modules::resolve(path, hir, package_paths.as_ref());
-        diagnostics.extend(resolved.diagnostics);
-        if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
-            let mut surface = prelude_surface();
-            for name in &resolved.imported_names {
-                surface.add_variable(name);
+    match target {
+        BuildTarget::Wasm => {
+            let (wasm_bytes, diagnostics) = compile_to_wasm(&source, path, package_paths.as_ref());
+            let has_errors = diagnostics
+                .iter()
+                .any(|diag| diag.severity == Severity::Error);
+
+            emit_diagnostics(format, &source, &diagnostics, out, err);
+
+            if has_errors {
+                return EXIT_LANGUAGE_FAILURE;
             }
-            let (_, sema_diagnostics) =
-                aipo_sema::check_with_prelude(&source, &resolved.program, &surface);
-            diagnostics.extend(sema_diagnostics);
+
+            let Some(bytes) = wasm_bytes else {
+                return EXIT_LANGUAGE_FAILURE;
+            };
+
+            let dir: PathBuf = match out_dir {
+                Some(dir) => dir.to_path_buf(),
+                None => path
+                    .parent()
+                    .map_or_else(|| PathBuf::from("dist"), Path::to_path_buf)
+                    .join("dist"),
+            };
+            if let Err(error) = std::fs::create_dir_all(&dir) {
+                let _ = writeln!(err, "error: {}: {error}", dir.display());
+                return EXIT_USAGE;
+            }
+            let out_file = dir.join("app.wasm");
+            if let Err(error) = std::fs::write(&out_file, &bytes) {
+                let _ = writeln!(err, "error: {}: {error}", out_file.display());
+                return EXIT_USAGE;
+            }
+            let _ = writeln!(out, "built 1 file to {}", dir.display());
+            EXIT_SUCCESS
+        }
+        BuildTarget::Js => {
+            let (program, mut diagnostics) = aipo_syntax::parse(&source);
             if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
-                let ir = aipo_ir::lower_to_ir(&resolved.program);
-                let file_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("main.aipo");
-                let bundle = aipo_js::emit_js(file_name, source.text(), &ir);
-                let dir: PathBuf = match out_dir {
-                    Some(dir) => dir.to_path_buf(),
-                    None => path
-                        .parent()
-                        .map_or_else(|| PathBuf::from("dist"), Path::to_path_buf)
-                        .join("dist"),
-                };
-                if let Err(error) = std::fs::create_dir_all(&dir) {
-                    let _ = writeln!(err, "error: {}: {error}", dir.display());
-                    return EXIT_USAGE;
-                }
-                for (name, contents) in [
-                    ("app.js", bundle.app_js.as_str()),
-                    ("aipo-runtime.js", bundle.runtime_js.as_str()),
-                    ("app.js.map", bundle.source_map.as_str()),
-                ] {
-                    if let Err(error) = std::fs::write(dir.join(name), contents) {
-                        let _ = writeln!(err, "error: {}: {error}", dir.join(name).display());
-                        return EXIT_USAGE;
+                let hir = aipo_hir::lower(program);
+                let resolved = modules::resolve(path, hir, package_paths.as_ref());
+                diagnostics.extend(resolved.diagnostics);
+                if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
+                    let mut surface = prelude_surface();
+                    for name in &resolved.imported_names {
+                        surface.add_variable(name);
+                    }
+                    let (_, sema_diagnostics) =
+                        aipo_sema::check_with_prelude(&source, &resolved.program, &surface);
+                    diagnostics.extend(sema_diagnostics);
+                    if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
+                        let ir = aipo_ir::lower_to_ir(&resolved.program);
+                        let file_name = path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("main.aipo");
+                        let bundle = aipo_js::emit_js(file_name, source.text(), &ir);
+                        let dir: PathBuf = match out_dir {
+                            Some(dir) => dir.to_path_buf(),
+                            None => path
+                                .parent()
+                                .map_or_else(|| PathBuf::from("dist"), Path::to_path_buf)
+                                .join("dist"),
+                        };
+                        if let Err(error) = std::fs::create_dir_all(&dir) {
+                            let _ = writeln!(err, "error: {}: {error}", dir.display());
+                            return EXIT_USAGE;
+                        }
+                        for (name, contents) in [
+                            ("app.js", bundle.app_js.as_str()),
+                            ("aipo-runtime.js", bundle.runtime_js.as_str()),
+                            ("app.js.map", bundle.source_map.as_str()),
+                        ] {
+                            if let Err(error) = std::fs::write(dir.join(name), contents) {
+                                let _ =
+                                    writeln!(err, "error: {}: {error}", dir.join(name).display());
+                                return EXIT_USAGE;
+                            }
+                        }
+                        let _ = writeln!(out, "built 3 files to {}", dir.display());
+                        return EXIT_SUCCESS;
                     }
                 }
-                let _ = writeln!(out, "built 3 files to {}", dir.display());
-                return EXIT_SUCCESS;
             }
+
+            emit_diagnostics(format, &source, &diagnostics, out, err);
+            EXIT_LANGUAGE_FAILURE
         }
     }
-
-    emit_diagnostics(format, &source, &diagnostics, out, err);
-    EXIT_LANGUAGE_FAILURE
 }
 
 /// Registers the structs and struct methods declared in a compiled module onto the VM.

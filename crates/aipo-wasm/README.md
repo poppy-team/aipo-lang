@@ -12,8 +12,9 @@
 ## Architecture & Modules
 
 - **`types`**: Primitive WebAssembly value types (`I32`, `I64`, `F64`) and function signatures (`WasmFnType`).
-- **`emitter`**: High-level binary builder wrapping `wasm-encoder` sections (Type, Function, Export, Code).
+- **`emitter`**: High-level binary builder wrapping `wasm-encoder` sections (Type, Import, Function, Table, Memory, Export, Element, Code, Data).
 - **`compiler`**: HIR-to-Wasm compiler lowering Aipo `HirProgram` into executable `.wasm` binaries.
+- **`runner`**: JIT execution engine (`execute_wasm`) via Wasmtime with host I/O streaming and disassembler (`disassemble_wasm`) via wasmprinter.
 - **`error`**: Typed compile errors (`WasmCompileError`) with source spans.
 
 ## Usage Example

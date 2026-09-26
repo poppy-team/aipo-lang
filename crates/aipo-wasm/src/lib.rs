@@ -3,10 +3,12 @@
 pub mod compiler;
 pub mod emitter;
 pub mod error;
+pub mod runner;
 pub mod types;
 
 pub use compiler::compile_hir;
 pub use emitter::WasmEmitter;
 pub use error::WasmCompileError;
+pub use runner::{WasmRuntimeError, disassemble_wasm, execute_wasm};
 pub use types::{WasmFnType, WasmType};
 pub use wasm_encoder::Instruction;
