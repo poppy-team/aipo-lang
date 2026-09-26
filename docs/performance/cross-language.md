@@ -114,7 +114,17 @@ A leitura serve para formar hipóteses. Nenhum código de referência deve ser c
 
 A contagem de alocações ficou explicitamente fora do primeiro resultado porque a Aipo ainda não possui um contrato único de allocator/GC contabilizável; `docs/adp/ADP-003-execution-budgets.md` permanece draft. O próximo spike deve definir escopo, unidade e custo antes de escolher `Rc`, arena ou tracing GC.
 
-Ordem recomendada para os próximos experimentos de fields: (1) cache monomórfico de slot por site, já mantido; (2) cache do frame base, já mantido; (3) cópia de entrada de `SetField` em structs unguarded, já mantida; (4) alocações de `BoundMethod` ainda pendentes, mas sem novo pool de nomes até haver runner dedicado; (5) opcodes `Call0..Call4`/`GetLocal8`. Layout denso de structs, metadata de método cacheada e pool de nomes foram testados e revertidos por ausência de ganho demonstrado. Cada etapa precisa de A/B próprio; não introduzir JIT, NaN-boxing ou GC custom antes de evidência.
+Ordem recomendada para os próximos experimentos de fields: (1) cache monomórfico de slot por site, já mantido; (2) cache do frame base, já mantido; (3) cópia de entrada de `SetField` em structs unguarded, já mantida; (4) alocações de `BoundMethod` ainda pendentes, mas sem novo pool de nomes até haver runner dedicado; (5) opcodes `Call0..Call4`/`GetLocal8`. Layout denso de structs, metadata de método cacheada, pool de nomes e despacho de método sem alocar foram testados e revertidos por ausência de ganho demonstrado. Cada etapa precisa de A/B próprio; não introduzir JIT, NaN-boxing ou GC custom antes de evidência.
+
+### Piso de ruído do runner
+
+Este host entrega um piso de ruído de aproximadamente ±5% nos workloads de `fields` e `arithmetic`, o que foi medido diretamente: a mesma mudança lógica, variando apenas a posição de um campo na struct `Vm`, oscilou entre -5,6% e +4,5% (ver "despacho de método sem alocar"). Consequências práticas:
+
+- Diferença menor que ±5% não é evidência de nada, mesmo com checksums idênticos e MAD pequeno por execução.
+- Um único lote pareado não decide uma mudança. Candidatas precisam de pelo menos dois lotes, idealmente com `arithmetic` como workload de controle, porque ele não toca o caminho alterado e portanto mede deriva do ambiente.
+- `arithmetic` não usa structs nem despacho de método, então serve como controle de deriva para experimentos de fields.
+- Movimentar campos em structs grandes altera offsets e alinhamento de cache o suficiente para virar de +7% a neutro sem qualquer mudança semântica. Posição de campo é parte do resultado experimental e deve ser reportada junto do delta.
+- Um lote com MAD pequeno ainda pode estar contaminado pela deriva acumulada ao longo da sessão; comparar o candidato com o baseline medido no mesmo lote continua obrigatório.
 
 ## O que o relatório contém
 
@@ -242,6 +252,25 @@ O A/B pareado (3 pares, 15 samples, CPU 0) mostrou o candidato mais lento em `fi
 A causa provável é estrutural: separar nomes e valores troca uma alocação por instância de struct por duas, e cada acesso a campo passa a tocar duas regiões de memória em vez de uma. Como o fixture `fields` constroi instâncias repetidamente, a alocação extra domina o ganho esperado do acesso indexado.
 
 O experimento também era API-breaking: `fields` é público e os oito arquivos consumidores (`value.rs`, `vm/dispatch.rs`, `host.rs` e cinco módulos da stdlib) tiveram de mudar. Como não houve ganho, o protótipo foi revertido e a API pública permanece com `Vec<(String, Value)>`. Relatórios: `target/dense-layout-paired/`.
+
+## Experimento rejeitado: despacho de método sem alocar
+
+A inspeção do caminho quente encontrou um custo real que os benchmarks não isolatingam. No fixture `fields` há 200.000 binds de método (`advance` e `score`), e cada um fazia quatro alocações de `String`: um clone do `type_name` do receiver, dois clones para montar a chave do mapa e um `format!("{type_name}.{field_name}")`. O padrão correto já existia no próprio repositório: `method_natives` tem um gêmeo aninhado (`method_natives_by_type`) que faz lookup com `&str` sem alocar, mas `struct_methods`, o mapa de métodos de usuário e o caminho quente do `fields`, nunca recebeu esse tratamento.
+
+O protótipo aplicou o mesmo padrão: `struct_methods_by_type` aninhado por tipo, nome qualificado formatado uma vez no registro em vez de a cada bind, e `lookup_struct_method(&str, &str)` reaproveitando `lookup_method_native`. O nome da instância só era clonado no caminho de erro. Semanticamente a mudança era neutra: 56 suítes passaram, incluindo o differential VM↔JS, e os checksums permaneceram idênticos.
+
+Mesmo assim, o ganho não pôde ser demonstrado. Foram quatro lotes pareados, mudando apenas a posição do novo campo na struct `Vm`:
+
+| Lote | Posição do novo campo | Δ `fields` | Δ `arithmetic` |
+|---|---|---:|---:|
+| 1 (5 pares) | inline, no meio | -5,57% | +1,72% |
+| 2 (3 pares) | inline, no meio | -3,70% | +1,13% |
+| 3 (3 pares) | no fim da struct | +1,05% | -0,02% |
+| 4 (5 pares) | boxed, no meio | +4,54% | +6,80% |
+
+A mesma mudança lógica, com o mesmo mecanismo, oscilou de -5,6% a +4,5% apenas por mover um campo. Isso indica que o piso de ruído do runner é de aproximadamente ±5% neste host e que diferenças dentro dessa faixa não são evidência. O primeiro lote, que sugeria um ganho convincente de -5,57% com 4 de 4 pares limpos favoring o candidato, foi em boa parte sorte de um lote silencioso; lotes posteriores com ruído controlado o refutaram. O `arithmetic` funciona como workload de controle, pois não tem structs nem despacho de método, e por isso mede deriva do ambiente em vez do efeito da mudança.
+
+Pelo exposto, o protótipo foi revertido. Além da ausência de ganho demonstrado, a mudança exigia duplicar o estado de registro: `struct_methods` é `pub`, então qualquer escrita futura fora de `register_struct_method` desincronizaria o mapa sombra e quebraria o despacho de método silenciosamente, sem que haja ganho de velocidade que pague esse risco.
 
 ## A/B do cache do frame base
 
