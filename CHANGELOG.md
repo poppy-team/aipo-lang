@@ -7,6 +7,16 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 - **Recorte da `aipo v0.1.0` (ADP-008)**: a primeira release é da linguagem, com async, CLI mínima, test runner, C ABI síncrona e thin proofs de interoperabilidade Rust/C/JS; engines, editors, registry e web profile completo ficam pós-v1.
 - **Roteiro de Performance Estrutural e Ergonomia de Linguagem (ADP-011)**: formalizada a estratégia de superação do piso de despacho (~100ns/opcode) através de compactação de `Value` (48B -> 16B/24B), invocação fundida `InvokeMethod` (sem alocação de `BoundMethod`), laço de despacho com variáveis hoisted e superinstruções `Call0..Call4`/`GetLocal0..GetLocal3`; além da expansão ergonômica com falhas estruturadas tipadas (Model B+), pattern matching e type narrowing estático em `aipo-sema`.
+- **Performance — Superinstruções `GetLocal0..7` e `Call0..4` (P4)**:
+  - Introduzidos opcodes de byte único `GetLocal0..GetLocal7` (60..67) e `Call0..Call4` (68..72), eliminando decodificação de operandos Big-Endian no caminho quente da VM.
+  - A VM rastreia a largura dinâmica da instrução de chamada (`call_inst_len`), garantindo que suspensões cooperativas e temporizadas (`task.sleep`, `task.timeout`, `task.all`, `race`) retrocedam o IP com exatidão matemática.
+  - Validação empírica A/B via `scripts/perf/cpu_ab.py` com 8 rounds e 8 reps atestou **-8,86% no tempo mínimo de CPU** e **-6,49% na mediana** na suíte completa (`fields, arithmetic, recursion, collections`).
+- **Performance — Despacho Direto de Métodos de Structs (P2)**:
+  - Adicionada a variante leve `Value::StructMethod { receiver, entry_ip, total_arity, is_async }` e registro monomórfico na VM, eliminando a instanciação transitória de `Rc<BoundMethodData>` no heap.
+  - Elimina 200.000 alocações no heap por 100k chamadas no benchmark `fields`, com ganho comprovado de **-7,54% na mediana de CPU**.
+- **Ergonomia — Falhas Estruturadas Tipadas (E1 / Model B+)**:
+  - `FailureValue` agora carrega `payload: Value`, suportando construtores `FailureValue::new` e `with_payload`, e construtores correspondentes em `Value`.
+  - Acesso a `err.payload` suportado nativamente na VM e na função nativa `fail` da stdlib; paridade diferencial de 100% mantida no backend JavaScript (`aipo-js`).
 
 ### Adicionado
 - **Performance — Cross-language benchmark suite**:
