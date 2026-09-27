@@ -1,6 +1,6 @@
 # Exemplos Práticos & Receitas de Código
 
-Esta seção reúne padrões de código idiomáticos, receitas do mundo real e o catálogo completo dos 24 exemplos canônicos que acompanham o repositório oficial da linguagem Aipo.
+Esta seção reúne padrões de código idiomáticos, receitas do mundo real e o catálogo completo dos 25 exemplos canônicos que acompanham o repositório oficial da linguagem Aipo.
 
 ---
 
@@ -142,7 +142,7 @@ io.println(json_gerado)
 
 ---
 
-## 5. Catálogo dos 24 Exemplos do Repositório
+## 5. Catálogo dos 25 Exemplos do Repositório
 
 Todos os exemplos abaixo encontram-se testados e executáveis no diretório `examples/` da raiz do repositório:
 
@@ -172,3 +172,4 @@ Todos os exemplos abaixo encontram-se testados e executáveis no diretório `exa
 | `22_small_budget_application.aipo` | Mini-aplicativo de controle financeiro com structs e transações. |
 | `23_multi_module_application/` | Projeto multi-arquivos com separação em carteira e precificação. |
 | `24_idiomatic_aipo_showcase.aipo` | Vitrine idiomática completa combinando todas as melhores features. |
+| `25_snake_game.aipo` | Simulação completa do jogo da cobrinha (Snake) em terminal com structs, listas, colisões e pontuação. |

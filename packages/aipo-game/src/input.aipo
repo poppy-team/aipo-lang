@@ -1,6 +1,6 @@
-// input.aipo — Friendly input system for `aipo.game`
+# input.aipo — Friendly input system for `aipo.game`
 
-import .ffi as ffi
+import.ffi as ffi
 
 let KEY_CODES = {
     "Space": 32,
@@ -17,7 +17,7 @@ let KEY_CODES = {
     "Y": 89, "Z": 90
 }
 
-fn key_down(key_name: String) -> Bool {
+fn key_down(key_name: String) - > Bool{
     let code = KEY_CODES.get(key_name, 0)
     if code != 0 {
         return ffi.host_key_down(code)
@@ -25,7 +25,7 @@ fn key_down(key_name: String) -> Bool {
     return false
 }
 
-fn key_pressed(key_name: String) -> Bool {
+fn key_pressed(key_name: String) - > Bool{
     let code = KEY_CODES.get(key_name, 0)
     if code != 0 {
         return ffi.host_key_pressed(code)
@@ -33,20 +33,20 @@ fn key_pressed(key_name: String) -> Bool {
     return false
 }
 
-fn mouse_x() -> Float {
+fn mouse_x() - > Float{
     return ffi.host_mouse_x()
 }
 
-fn mouse_y() -> Float {
+fn mouse_y() - > Float{
     return ffi.host_mouse_y()
 }
 
-fn mouse_down(button: String = "left") -> Bool {
+fn mouse_down(button: String = "left") - > Bool{
     let btn_id = if button == "left" { 0 } else if button == "right" { 1 } else { 2 }
     return ffi.host_mouse_btn(btn_id)
 }
 
-fn axis_x() -> Float {
+fn axis_x() - > Float{
     var val = 0.0
     if key_down("ArrowRight") or key_down("D") {
         val += 1.0
@@ -57,7 +57,7 @@ fn axis_x() -> Float {
     return val
 }
 
-fn axis_y() -> Float {
+fn axis_y() - > Float{
     var val = 0.0
     if key_down("ArrowDown") or key_down("S") {
         val += 1.0

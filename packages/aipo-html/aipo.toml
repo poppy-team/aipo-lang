@@ -1,14 +1,10 @@
 [package]
 name = "aipo.html"
 version = "0.1.0"
+entry = "src/lib.aipo"
 authors = ["Aipo Core Team <core@aipo-lang.org>"]
 description = "Declarative HTML & CSS DSL with Fine-Grained MVU reactivity for Aipo Web"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/poppy-team/aipo-lang"
 
-[entry]
-main = "src/lib.aipo"
-
-[targets]
-js = true
-wasm = true
+targets = ["js", "native"]

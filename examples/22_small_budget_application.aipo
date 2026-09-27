@@ -5,12 +5,12 @@ struct Entry {
 }
 
 impl Entry {
-    init(var self, label, amount) {
+    init (var self, label, amount) {
         self.label = label
         self.amount = amount
     }
 
-    invariant() {
+    invariant () {
         self.amount >= 0
     }
 }

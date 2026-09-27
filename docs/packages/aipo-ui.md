@@ -141,7 +141,7 @@ ui.Stack(width: 200, height: 120) {
 Área rolável para listas ou conteúdos extensos com recorte (*clipping*) acelerado:
 ```aipo
 ui.ScrollArea(height: 300, direction: "vertical") {
-    for item in lista_itens {
+    each item in lista_itens {
         ui.Text(item)
     }
 }
@@ -172,12 +172,12 @@ O submódulo `aipo.ui.color` oferece construtores seguros e a paleta padrão do 
 ```aipo
 import aipo.ui.color as color
 
-// Construtores
+# Construtores
 let c1 = color.rgb(30, 41, 59)
 let c2 = color.rgba(255, 255, 255, 0.8)
 let c3 = color.hex("#4f46e5")
 
-// Paleta Integrada
+# Paleta Integrada
 color.white
 color.black
 color.gray_900

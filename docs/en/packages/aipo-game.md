@@ -40,7 +40,7 @@ Add to your project's `aipo.toml`:
 ```aipo
 import aipo.game as g
 
-// 1. Player Actor
+# 1. Player Actor
 let Ship = g.actor("Ship", {
     sprite: "ship.png",
     behaviors: [
@@ -56,7 +56,7 @@ let Ship = g.actor("Ship", {
     on_update: (actor, dt) => {
         actor.cooldown -= dt
         
-        // Fire laser on Spacebar press
+        # Fire laser on Spacebar press
         if g.input.key_down("Space") and actor.cooldown <= 0.0 {
             g.spawn(Laser, x: actor.x, y: actor.y - 18)
             g.audio.play("laser.wav")
@@ -73,7 +73,7 @@ let Ship = g.actor("Ship", {
     }
 })
 
-// 2. Projectile Actor
+# 2. Projectile Actor
 let Laser = g.actor("Laser", {
     sprite: "laser.png",
     behaviors: [
@@ -82,7 +82,7 @@ let Laser = g.actor("Laser", {
     ]
 })
 
-// 3. Enemy Actor
+# 3. Enemy Actor
 let Asteroid = g.actor("Asteroid", {
     sprite: "asteroid.png",
     behaviors: [
@@ -91,7 +91,7 @@ let Asteroid = g.actor("Asteroid", {
     ]
 })
 
-// 4. Main Game Scene
+# 4. Main Game Scene
 let SpaceScene = g.scene("Level1", {
     width: 800,
     height: 600,
@@ -100,7 +100,7 @@ let SpaceScene = g.scene("Level1", {
     on_load: scene => {
         g.spawn(Ship, x: 400, y: 520)
 
-        // Spawn asteroids every 0.8s
+        # Spawn asteroids every 0.8s
         scene.timer(interval: 0.8, repeat: true, _ => {
             let posX = g.random.range(40, 760)
             g.spawn(Asteroid, x: posX, y: -20)
@@ -108,7 +108,7 @@ let SpaceScene = g.scene("Level1", {
     }
 })
 
-// 5. Entrypoint
+# 5. Entrypoint
 fn main() {
     g.start({
         title: "Space Defender — Aipo Game",
@@ -139,15 +139,15 @@ fn main() {
 
 ### Keyboard & Mouse
 ```aipo
-// Continuous or single-press checks
+# Continuous or single-press checks
 if g.input.key_down("Space") { ... }
 if g.input.key_pressed("Enter") { ... }
 
-// Normalized directional axes (-1.0 to +1.0)
-let ax = g.input.axis_x() // A/D or Left/Right
-let ay = g.input.axis_y() // W/S or Up/Down
+# Normalized directional axes (-1.0 to +1.0)
+let ax = g.input.axis_x() # A/D or Left/Right
+let ay = g.input.axis_y() # W/S or Up/Down
 
-// Pointer coordinates
+# Pointer coordinates
 let mx = g.input.mouse_x()
 let my = g.input.mouse_y()
 let clicked = g.input.mouse_down("left")
@@ -155,17 +155,17 @@ let clicked = g.input.mouse_down("left")
 
 ### Sound Effects & Music
 ```aipo
-// External audio file playback
+# External audio file playback
 g.audio.play("laser.wav")
 g.audio.play_sound("laser.wav", volume: 0.8, pitch: 1.2)
 g.audio.play_music("bgm_stage1.ogg", volume: 0.5, loop: true)
 
-// Procedural Chiptune SFX (SFXR style) — Zero external audio files required!
-g.audio.sfx("coin")       // Coin / Pickup chime
-g.audio.sfx("jump")       // Rising pitch jump sound
-g.audio.sfx("laser")      // Blaster laser sound
-g.audio.sfx("explosion")  // White noise explosion rumble
-g.audio.sfx("powerup")    // Ascending arpeggio powerup
+# Procedural Chiptune SFX (SFXR style) — Zero external audio files required!
+g.audio.sfx("coin")       # Coin / Pickup chime
+g.audio.sfx("jump")       # Rising pitch jump sound
+g.audio.sfx("laser")      # Blaster laser sound
+g.audio.sfx("explosion")  # White noise explosion rumble
+g.audio.sfx("powerup")    # Ascending arpeggio powerup
 ```
 
 ---
@@ -175,10 +175,10 @@ g.audio.sfx("powerup")    // Ascending arpeggio powerup
 The tweening module (`aipo.game.tween`) infuses games with springy, elastic animations using customizable easing curves:
 
 ```aipo
-// Squash & Stretch on landing or jumping
+# Squash & Stretch on landing or jumping
 g.animate(player, prop: "scale_x", to_val: 1.3, duration: 0.1, ease_fn: g.ease_out)
 g.animate(player, prop: "scale_y", to_val: 0.7, duration: 0.1, ease_fn: g.ease_out, on_complete: _ => {
-    // Return to normal dimensions with a bouncy settle
+    # Return to normal dimensions with a bouncy settle
     g.animate(player, prop: "scale_x", to_val: 1.0, duration: 0.2, ease_fn: g.bounce_out)
     g.animate(player, prop: "scale_y", to_val: 1.0, duration: 0.2, ease_fn: g.bounce_out)
 })
@@ -211,10 +211,10 @@ let collision_rule = n.rule(
     filters: [ n.filter("actor.vy", ">", "0") ],
     actions: [
         n.action("destroy", { "target": "other" }),
-        n.action("play_sound", { "file": "hit.wav")
+        n.action("play_sound", { "file": "hit.wav" })
     ]
 )
 
-// The node compiler outputs clean, formatted Aipo source:
+# The node compiler outputs clean, formatted Aipo source:
 let source_code = n.transpile_to_aipo_code(collision_rule)
 ```

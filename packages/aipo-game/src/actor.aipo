@@ -1,9 +1,9 @@
-// actor.aipo — Entity structure, lifecycle and collision bounds
-// Part of `aipo.game`
+# actor.aipo — Entity structure, lifecycle and collision bounds
+# Part of `aipo.game`
 
 var _actor_id_seq = 0
 
-fn next_actor_id() -> Int {
+fn next_actor_id() - > Int{
     _actor_id_seq += 1
     return _actor_id_seq
 }
@@ -37,16 +37,16 @@ struct Actor {
     custom: Dict
 }
 
-// Actor Type Factory (Blueprint)
-fn actor(name: String, config: Dict) -> ActorType {
+# Actor Type Factory (Blueprint)
+fn actor(name: String, config: Dict) - > ActorType{
     return ActorType{
         name: name,
         config: config
     }
 }
 
-// Instantiate an Actor instance from blueprint
-fn create_instance(blueprint: ActorType, x: Float, y: Float) -> Actor {
+# Instantiate an Actor instance from blueprint
+fn create_instance(blueprint: ActorType, x: Float, y: Float) - > Actor{
     let cfg = blueprint.config
     let inst = Actor{
         id: next_actor_id(),
@@ -65,23 +65,23 @@ fn create_instance(blueprint: ActorType, x: Float, y: Float) -> Actor {
         is_on_ground: false,
         tags: cfg.get("tags", []),
         behaviors: cfg.get("behaviors", []),
-        on_create_fn: cfg.get("on_create", null),
-        on_update_fn: cfg.get("on_update", null),
-        on_collision_fn: cfg.get("on_collision", null),
-        on_destroy_fn: cfg.get("on_destroy", null),
+        on_create_fn: cfg.get("on_create", none),
+        on_update_fn: cfg.get("on_update", none),
+        on_collision_fn: cfg.get("on_collision", none),
+        on_destroy_fn: cfg.get("on_destroy", none),
         custom: {}
     }
 
-    if inst.on_create_fn != null {
+    if inst.on_create_fn != none {
         (inst.on_create_fn)(inst)
     }
 
     return inst
 }
 
-// AABB Collision Detection
-fn check_overlap(a: Actor, b: Actor) -> Bool {
-    if !a.is_alive or !b.is_alive or a.id == b.id {
+# AABB Collision Detection
+fn check_overlap(a: Actor, b: Actor) - > Bool{
+    if! a.is_alive or! b.is_alive or a.id == b.id {
         return false
     }
 

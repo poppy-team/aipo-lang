@@ -1,12 +1,12 @@
-// layout.aipo — Node collector and Taffy layout bridge descriptors
-// Part of `aipo.ui`
+# layout.aipo — Node collector and Taffy layout bridge descriptors
+# Part of `aipo.ui`
 
-import .types as types
+import.types as types
 
 var _node_id_counter = 0
 var _parent_stack = []
 
-fn next_node_id() -> Int {
+fn next_node_id() - > Int{
     _node_id_counter += 1
     return _node_id_counter
 }
@@ -22,7 +22,7 @@ fn push_parent(node: types.UINode) {
     _parent_stack.add(node)
 }
 
-fn pop_parent() -> types.UINode {
+fn pop_parent() - > types.UINode{
     return _parent_stack.pop()
 }
 
@@ -31,8 +31,8 @@ fn reset_collector() {
     _parent_stack = []
 }
 
-// Convert UINode hierarchy into Taffy-compatible layout specification
-fn serialize_to_taffy_descriptor(node: types.UINode) -> Dict {
+# Convert UINode hierarchy into Taffy-compatible layout specification
+fn serialize_to_taffy_descriptor(node: types.UINode) - > Dict{
     let style = {
         "display": node.props.get("display", "flex"),
         "flex_direction": node.props.get("flex_direction", "column"),
@@ -48,7 +48,7 @@ fn serialize_to_taffy_descriptor(node: types.UINode) -> Dict {
     }
 
     var serialized_children = []
-    for child in node.children {
+    each child in node.children {
         serialized_children.add(serialize_to_taffy_descriptor(child))
     }
 

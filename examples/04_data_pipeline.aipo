@@ -7,7 +7,7 @@ struct Order {
 }
 
 impl Order {
-    fn summary(self) -> String {
+    fn summary(self) - > String{
         return f"#{self.id} {self.customer} {self.total}"
     }
 }
@@ -38,12 +38,12 @@ fn with_prefix(prefix, block) {
     return block() + prefix
 }
 io.println(with_prefix("!") do {
-    return "hello"
-})
+        return "hello"
+    })
 
 # Falhas são valores: `or_else` para fallback local, `attempt` para o bloco.
 fn parse_total(text) {
-    let value = Int(text) or_else fail(f"invalid total: {text}")
+    let value = Int(text) or_else fail (f"invalid total: {text}")
     return value
 }
 

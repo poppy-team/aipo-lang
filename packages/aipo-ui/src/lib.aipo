@@ -1,21 +1,21 @@
-// lib.aipo — Entrypoint for `aipo.ui`
-// Universal Declarative Multiplatform UI Framework
+# lib.aipo — Entrypoint for `aipo.ui`
+# Universal Declarative Multiplatform UI Framework
 
-import .types as types
-import .color as color
-import .primitives as prim
-import .app as app
+import.types as types
+import.color as color
+import.primitives as prim
+import.app as app
 
-// Re-export Layout and Widget Primitives
+# Re-export Layout and Widget Primitives
 export prim.Box, prim.Row, prim.Column, prim.Stack, prim.ScrollArea, prim.Spacer
 export prim.Text, prim.Button, prim.TextInput, prim.Slider, prim.Checkbox, prim.ProgressBar
 
-// Re-export Enums & Structures
+# Re-export Enums & Structures
 export types.Align, types.Justify, types.Direction, types.Overflow
 export types.Rect, types.Color, types.UINode, types.UIEvent
 
-// Re-export Submodules
+# Re-export Submodules
 export color
 
-// Re-export Lifecycle & Mount Runners
+# Re-export Lifecycle & Mount Runners
 export app.mount_desktop, app.mount_canvas, app.mount_tui, app.dispatch

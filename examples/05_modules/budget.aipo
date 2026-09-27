@@ -3,12 +3,12 @@ export to_cents, format_cents, reset_stats, stats
 
 var conversions_applied = 0
 
-fn to_cents(amount: Float) -> Int {
+fn to_cents(amount: Float) - > Int{
     conversions_applied += 1
     return Int(amount * 100)
 }
 
-fn format_cents(cents: Int) -> String {
+fn format_cents(cents: Int) - > String{
     var sign = ""
     var rest = cents
     if rest < 0 {
@@ -27,6 +27,6 @@ fn reset_stats() {
     conversions_applied = 0
 }
 
-fn stats() -> String {
+fn stats() - > String{
     return f"conversions: {conversions_applied}"
 }

@@ -40,7 +40,7 @@ Adicione ao seu `aipo.toml`:
 ```aipo
 import aipo.game as g
 
-// 1. Definição do Jogador
+# 1. Definição do Jogador
 let Nave = g.actor("Nave", {
     sprite: "nave.png",
     behaviors: [
@@ -56,7 +56,7 @@ let Nave = g.actor("Nave", {
     on_update: (actor, dt) => {
         actor.cooldown -= dt
         
-        // Atirar ao pressionar Barra de Espaço
+        # Atirar ao pressionar Barra de Espaço
         if g.input.key_down("Space") and actor.cooldown <= 0.0 {
             g.spawn(Laser, x: actor.x, y: actor.y - 18)
             g.audio.play("laser.wav")
@@ -73,7 +73,7 @@ let Nave = g.actor("Nave", {
     }
 })
 
-// 2. Definição do Projétil
+# 2. Definição do Projétil
 let Laser = g.actor("Laser", {
     sprite: "laser.png",
     behaviors: [
@@ -82,7 +82,7 @@ let Laser = g.actor("Laser", {
     ]
 })
 
-// 3. Definição do Inimigo
+# 3. Definição do Inimigo
 let Asteroide = g.actor("Asteroide", {
     sprite: "asteroide.png",
     behaviors: [
@@ -91,7 +91,7 @@ let Asteroide = g.actor("Asteroide", {
     ]
 })
 
-// 4. Montagem da Cena do Jogo
+# 4. Montagem da Cena do Jogo
 let FaseEspacial = g.scene("Fase1", {
     width: 800,
     height: 600,
@@ -100,7 +100,7 @@ let FaseEspacial = g.scene("Fase1", {
     on_load: scene => {
         g.spawn(Nave, x: 400, y: 520)
 
-        // Gerador de asteroides a cada 0.8s
+        # Gerador de asteroides a cada 0.8s
         scene.timer(interval: 0.8, repeat: true, _ => {
             let posX = g.random.range(40, 760)
             g.spawn(Asteroide, x: posX, y: -20)
@@ -108,7 +108,7 @@ let FaseEspacial = g.scene("Fase1", {
     }
 })
 
-// 5. Ponto de Entrada
+# 5. Ponto de Entrada
 fn main() {
     g.start({
         title: "Space Defender — Aipo Game",
@@ -139,15 +139,15 @@ fn main() {
 
 ### Teclado e Mouse
 ```aipo
-// Checagens contínuas ou de clique único
+# Checagens contínuas ou de clique único
 if g.input.key_down("Space") { ... }
 if g.input.key_pressed("Enter") { ... }
 
-// Eixos analógicos normalizados (-1.0 a +1.0)
-let ax = g.input.axis_x() // A/D ou Setas Esquerda/Direita
-let ay = g.input.axis_y() // W/S ou Setas Cima/Baixo
+# Eixos analógicos normalizados (-1.0 a +1.0)
+let ax = g.input.axis_x() # A/D ou Setas Esquerda/Direita
+let ay = g.input.axis_y() # W/S ou Setas Cima/Baixo
 
-// Coordenadas do mouse
+# Coordenadas do mouse
 let mx = g.input.mouse_x()
 let my = g.input.mouse_y()
 let clicou = g.input.mouse_down("left")
@@ -155,17 +155,17 @@ let clicou = g.input.mouse_down("left")
 
 ### Efeitos Sonoros e Trilha Sonora
 ```aipo
-// Reprodução de arquivos de áudio externos
+# Reprodução de arquivos de áudio externos
 g.audio.play("tiro.wav")
 g.audio.play_sound("tiro.wav", volume: 0.8, pitch: 1.2)
 g.audio.play_music("trilha_fase1.ogg", volume: 0.5, loop: true)
 
-// Síntese Procedural Chiptune (Estilo SFXR) — Zero arquivos externos necessários!
-g.audio.sfx("coin")       // Moeda / Coleta
-g.audio.sfx("jump")       // Pulo com curva ascendente
-g.audio.sfx("laser")      // Disparo de projétil
-g.audio.sfx("explosion")  // Explosão em ruído branco
-g.audio.sfx("powerup")    // Upgrade sonoro
+# Síntese Procedural Chiptune (Estilo SFXR) — Zero arquivos externos necessários!
+g.audio.sfx("coin")       # Moeda / Coleta
+g.audio.sfx("jump")       # Pulo com curva ascendente
+g.audio.sfx("laser")      # Disparo de projétil
+g.audio.sfx("explosion")  # Explosão em ruído branco
+g.audio.sfx("powerup")    # Upgrade sonoro
 ```
 
 ---
@@ -175,10 +175,10 @@ g.audio.sfx("powerup")    // Upgrade sonoro
 O módulo de tweening (`aipo.game.tween`) confere elasticidade e vida ao jogo com interpolações suaves e curvas de aceleração:
 
 ```aipo
-// Squash & Stretch ao aterrissar ou pular
+# Squash & Stretch ao aterrissar ou pular
 g.animate(heroi, prop: "scale_x", to_val: 1.3, duration: 0.1, ease_fn: g.ease_out)
 g.animate(heroi, prop: "scale_y", to_val: 0.7, duration: 0.1, ease_fn: g.ease_out, on_complete: _ => {
-    // Retorna ao tamanho normal com efeito elástico
+    # Retorna ao tamanho normal com efeito elástico
     g.animate(heroi, prop: "scale_x", to_val: 1.0, duration: 0.2, ease_fn: g.bounce_out)
     g.animate(heroi, prop: "scale_y", to_val: 1.0, duration: 0.2, ease_fn: g.bounce_out)
 })
@@ -215,6 +215,6 @@ let regra_colisao = n.rule(
     ]
 )
 
-// O compilador de nós gera código limpo para estudo ou edição manual:
+# O compilador de nós gera código limpo para estudo ou edição manual:
 let codigo_gerado = n.transpile_to_aipo_code(regra_colisao)
 ```

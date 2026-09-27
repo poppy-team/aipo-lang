@@ -1,83 +1,83 @@
-// ffi.aipo — Host FFI contract bridge for `aipo.game`
-// Pluggable across Native Rust Host, Raylib C ABI, or Wasm Canvas
+# ffi.aipo — Host FFI contract bridge for `aipo.game`
+# Pluggable across Native Rust Host, Raylib C ABI, or Wasm Canvas
 
-// Window & Lifecycle Host Hooks
-fn host_init(width: Int, height: Int, title: String, target_fps: Int) -> Bool {
-    // In production, mapped to native FFI symbol `__aipo_game_init`
+# Window & Lifecycle Host Hooks
+fn host_init(width: Int, height: Int, title: String, target_fps: Int) - > Bool{
+    # In production, mapped to native FFI symbol `__aipo_game_init`
     return true
 }
 
-fn host_should_close() -> Bool {
+fn host_should_close() - > Bool{
     return false
 }
 
 fn host_close() {
-    // mapped to `__aipo_game_close`
+    # mapped to `__aipo_game_close`
 }
 
-// Input Host Hooks
-fn host_key_down(key_code: Int) -> Bool {
+# Input Host Hooks
+fn host_key_down(key_code: Int) - > Bool{
     return false
 }
 
-fn host_key_pressed(key_code: Int) -> Bool {
+fn host_key_pressed(key_code: Int) - > Bool{
     return false
 }
 
-fn host_mouse_x() -> Float {
+fn host_mouse_x() - > Float{
     return 0.0
 }
 
-fn host_mouse_y() -> Float {
+fn host_mouse_y() - > Float{
     return 0.0
 }
 
-fn host_mouse_btn(button: Int) -> Bool {
+fn host_mouse_btn(button: Int) - > Bool{
     return false
 }
 
-fn host_gamepad_axis(gamepad_id: Int, axis_id: Int) -> Float {
+fn host_gamepad_axis(gamepad_id: Int, axis_id: Int) - > Float{
     return 0.0
 }
 
-// Rendering Host Hooks
+# Rendering Host Hooks
 fn host_begin_frame(r: Float, g: Float, b: Float) {
-    // mapped to `__aipo_game_begin_frame`
+    # mapped to `__aipo_game_begin_frame`
 }
 
 fn host_draw_sprite(tex_id: Int, x: Float, y: Float, w: Float, h: Float, rot: Float, flip_x: Bool) {
-    // mapped to `__aipo_game_draw_sprite`
+    # mapped to `__aipo_game_draw_sprite`
 }
 
 fn host_draw_rect(x: Float, y: Float, w: Float, h: Float, r: Float, g: Float, b: Float, a: Float) {
-    // mapped to `__aipo_game_draw_rect`
+    # mapped to `__aipo_game_draw_rect`
 }
 
 fn host_draw_circle(cx: Float, cy: Float, radius: Float, r: Float, g: Float, b: Float, a: Float) {
-    // mapped to `__aipo_game_draw_circle`
+    # mapped to `__aipo_game_draw_circle`
 }
 
 fn host_draw_text(text: String, x: Float, y: Float, font_size: Float, r: Float, g: Float, b: Float) {
-    // mapped to `__aipo_game_draw_text`
+    # mapped to `__aipo_game_draw_text`
 }
 
 fn host_end_frame() {
-    // mapped to `__aipo_game_end_frame`
+    # mapped to `__aipo_game_end_frame`
 }
 
-// Audio Host Hooks
-fn host_load_texture(path: String) -> Int {
+# Audio Host Hooks
+fn host_load_texture(path: String) - > Int{
     return 1
 }
 
-fn host_load_sound(path: String) -> Int {
+fn host_load_sound(path: String) - > Int{
     return 1
 }
 
 fn host_play_sound(sound_id: Int, volume: Float, pitch: Float) {
-    // mapped to `__aipo_game_play_sound`
+    # mapped to `__aipo_game_play_sound`
 }
 
 fn host_play_music(sound_id: Int, volume: Float, loop: Bool) {
-    // mapped to `__aipo_game_play_music`
+    # mapped to `__aipo_game_play_music`
 }

@@ -141,7 +141,7 @@ ui.Stack(width: 200, height: 120) {
 Scrollable container with accelerated clipping for lists or oversized content:
 ```aipo
 ui.ScrollArea(height: 300, direction: "vertical") {
-    for item in item_list {
+    each item in item_list {
         ui.Text(item)
     }
 }
@@ -172,12 +172,12 @@ The `aipo.ui.color` submodule provides type-safe constructors and standard desig
 ```aipo
 import aipo.ui.color as color
 
-// Constructors
+# Constructors
 let c1 = color.rgb(30, 41, 59)
 let c2 = color.rgba(255, 255, 255, 0.8)
 let c3 = color.hex("#4f46e5")
 
-// Canonical Palette
+# Canonical Palette
 color.white
 color.black
 color.gray_900

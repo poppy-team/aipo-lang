@@ -34,37 +34,37 @@ import aipo.http as web
 
 let app = web.create()
 
-// Middleware de Logger
+# Middleware de Logger
 app.use(async (ctx, next) => {
     let inicio = time.now()
     await next()
     let duracao = time.elapsed_ms(inicio)
-    print(f"[{ctx.method}] {ctx.path} — {ctx.status} ({duracao}ms)")
+    io.println(f"[{ctx.method}] {ctx.path} — {ctx.status} ({duracao}ms)")
 })
 
-// Rota Simples
+# Rota Simples
 app.get("/", ctx => {
     return ctx.json({ "mensagem": "Servidor Aipo HTTP ativo!" })
 })
 
-// Rota com Parâmetros de URL
+# Rota com Parâmetros de URL
 app.get("/usuarios/:id", async ctx => {
     let user_id = ctx.param("id")
     let usuario = await buscar_usuario_no_banco(user_id)
     
-    if usuario == null {
+    if usuario == none {
         return ctx.status(404).json({ "erro": "Usuário não encontrado" })
     }
     
     return ctx.json(usuario)
 })
 
-// Rota POST com Body JSON
+# Rota POST com Body JSON
 app.post("/usuarios", async ctx => {
     let body = await ctx.req.json()
     
-    // Validação de dados
-    if !body.contains("nome") or !body.contains("email") {
+    # Validação de dados
+    if not body.contains("nome") or not body.contains("email") {
         return ctx.status(400).json({ "erro": "Campos 'nome' e 'email' são obrigatórios" })
     }
     
@@ -72,9 +72,9 @@ app.post("/usuarios", async ctx => {
     return ctx.status(201).json(novo_usuario)
 })
 
-// Iniciar servidor na porta 3000
+# Iniciar servidor na porta 3000
 app.listen(port: 3000, host: "0.0.0.0", _ => {
-    print("🚀 Servidor rodando em http://localhost:3000")
+    io.println("🚀 Servidor rodando em http://localhost:3000")
 })
 ```
 
@@ -93,12 +93,12 @@ app.ws("/ws/sala/:sala_id", {
     },
 
     on_message: (socket, mensagem) => {
-        // Enviar mensagem para todos na sala
+        # Enviar mensagem para todos na sala
         socket.broadcast_to(socket.current_room, mensagem)
     },
 
     on_disconnect: (socket, motivo) => {
-        print(f"Desconectado: {motivo}")
+        io.println(f"Desconectado: {motivo}")
     }
 })
 ```

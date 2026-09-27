@@ -1,7 +1,7 @@
-// types.aipo — Core Data Types and Layout Enums
-// Part of `aipo.ui`
+# types.aipo — Core Data Types and Layout Enums
+# Part of `aipo.ui`
 
-enum Align {
+enum Align{
     Start,
     Center,
     End,
@@ -9,7 +9,7 @@ enum Align {
     Baseline
 }
 
-enum Justify {
+enum Justify{
     Start,
     Center,
     End,
@@ -18,14 +18,14 @@ enum Justify {
     SpaceEvenly
 }
 
-enum Direction {
+enum Direction{
     Row,
     Column,
     RowReverse,
     ColumnReverse
 }
 
-enum Overflow {
+enum Overflow{
     Visible,
     Hidden,
     Scroll

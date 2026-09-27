@@ -139,7 +139,7 @@ let card_style = h.css {
     }
 }
 
-// O style injeta a classe hash única no documento e anexa ao nó
+# O style injeta a classe hash única no documento e anexa ao nó
 h.div(style: card_style) {
     h.p("Card com estilo isolado e seguro!")
 }

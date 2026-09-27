@@ -33,7 +33,7 @@ fn find(title) {
             return task
         }
     }
-    return fail(f"unknown task: {title}")
+    return fail (f"unknown task: {title}")
 }
 
 attempt {

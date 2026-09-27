@@ -8,7 +8,7 @@ io.println(xs[1..99])
 xs.add(7)
 io.println(xs.len())
 io.println(xs.contains(3))
-let user = {"name": "ana", "level": 3}
+let user = { "name": "ana", "level": 3 }
 io.println(user["name"])
 io.println(user.keys())
 io.println(user.get("missing"))

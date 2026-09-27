@@ -1,7 +1,7 @@
-// mvu.aipo — Fine-Grained Model-View-Update Application Runtime
-// Part of `aipo.html`
+# mvu.aipo — Fine-Grained Model-View-Update Application Runtime
+# Part of `aipo.html`
 
-import .tags as tags
+import.tags as tags
 
 struct ReactiveApp {
     selector: String
@@ -11,36 +11,36 @@ struct ReactiveApp {
     root_node: tags.VNode
 }
 
-var _active_app = null
+var _active_app = none
 
 fn dispatch(msg: Any) {
-    if _active_app == null { return }
+    if _active_app == none { return }
     let app = _active_app
     let old_model = app.current_model
     let new_model = app.update_fn(old_model, msg)
     app.current_model = new_model
 
-    // Re-evaluates view with updated model
-    // In browser target, Fine-Grained bindings update modified elements directly.
+    # Re-evaluates view with updated model
+    # In browser target, Fine-Grained bindings update modified elements directly.
     let updated_tree = app.view_fn(new_model, dispatch)
     app.root_node = updated_tree
 }
 
-// Mounts an MVU application into a target DOM selector
-fn mount(selector: String, init: Any, update: Fn, view: Fn) -> ReactiveApp {
+# Mounts an MVU application into a target DOM selector
+fn mount(selector: String, init: Any, update: Fn, view: Fn) - > ReactiveApp{
     let app = ReactiveApp{
         selector: selector,
         current_model: init,
-        update_fn: update,
-        view_fn: view,
-        root_node: null
-    }
+            update_fn: update,
+            view_fn: view,
+            root_node: none
+        }
 
-    _active_app = app
-    let initial_tree = view(init, dispatch)
-    app.root_node = initial_tree
+        _active_app = app
+        let initial_tree = view(init, dispatch)
+            app.root_node = initial_tree
 
-    return app
-}
+            return app
+        }
 
-export ReactiveApp, dispatch, mount
+        export ReactiveApp, dispatch, mount

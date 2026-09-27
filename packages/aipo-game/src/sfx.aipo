@@ -1,8 +1,8 @@
-// sfx.aipo — Procedural Chiptune Sound Synthesizer
-// Inspired by SFXR, BFXR and ChipTone
-// Generates procedural audio effects mathematically on the fly with zero external asset files
+# sfx.aipo — Procedural Chiptune Sound Synthesizer
+# Inspired by SFXR, BFXR and ChipTone
+# Generates procedural audio effects mathematically on the fly with zero external asset files
 
-import .ffi as ffi
+import.ffi as ffi
 
 struct SynthParams {
     wave_type: String // "square", "sawtooth", "sine", "noise"
@@ -12,38 +12,38 @@ struct SynthParams {
     duty_cycle: Float
 }
 
-// Preset library
-fn preset_coin() -> SynthParams {
+# Preset library
+fn preset_coin() - > SynthParams{
     return SynthParams{
         wave_type: "square",
         start_freq: 987.77, // B5 note
-        freq_slide: 0.3,    // slides rapidly up to E6 (1318.51)
+        freq_slide: 0.3, # slides rapidly up to E6 (1318.51)
         duration: 0.25,
         duty_cycle: 0.5
     }
 }
 
-fn preset_laser() -> SynthParams {
+fn preset_laser() - > SynthParams{
     return SynthParams{
         wave_type: "sawtooth",
-        start_freq: 880.0,  // high pitch
-        freq_slide: -0.8,   // rapid drop down
+        start_freq: 880.0, # high pitch
+        freq_slide: -0.8, # rapid drop down
         duration: 0.18,
         duty_cycle: 0.5
     }
 }
 
-fn preset_jump() -> SynthParams {
+fn preset_jump() - > SynthParams{
     return SynthParams{
         wave_type: "square",
         start_freq: 220.0,
-        freq_slide: 0.6,    // rising pitch
+        freq_slide: 0.6, # rising pitch
         duration: 0.22,
         duty_cycle: 0.3
     }
 }
 
-fn preset_explosion() -> SynthParams {
+fn preset_explosion() - > SynthParams{
     return SynthParams{
         wave_type: "noise",
         start_freq: 110.0,
@@ -53,7 +53,7 @@ fn preset_explosion() -> SynthParams {
     }
 }
 
-fn preset_hit() -> SynthParams {
+fn preset_hit() - > SynthParams{
     return SynthParams{
         wave_type: "noise",
         start_freq: 330.0,
@@ -63,7 +63,7 @@ fn preset_hit() -> SynthParams {
     }
 }
 
-fn preset_powerup() -> SynthParams {
+fn preset_powerup() - > SynthParams{
     return SynthParams{
         wave_type: "sawtooth",
         start_freq: 440.0,
@@ -73,9 +73,9 @@ fn preset_powerup() -> SynthParams {
     }
 }
 
-// Play procedural SFX by preset name
+# Play procedural SFX by preset name
 fn play_preset(name: String, pitch: Float = 1.0) {
-    var params = null
+    var params = none
     if name == "coin" {
         params = preset_coin()
     } else if name == "laser" {
@@ -92,6 +92,6 @@ fn play_preset(name: String, pitch: Float = 1.0) {
         params = preset_laser()
     }
 
-    // In native runtime, dispatches to host audio synthesizer buffer generator
+    # In native runtime, dispatches to host audio synthesizer buffer generator
     ffi.host_play_sound(1, 1.0, pitch)
 }

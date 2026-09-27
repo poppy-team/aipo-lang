@@ -7,12 +7,12 @@ struct Span {
 }
 
 impl Span {
-    init(var self, lo, hi) {
+    init (var self, lo, hi) {
         self.lo = lo
         self.hi = hi
     }
 
-    invariant() {
+    invariant () {
         self.lo < self.hi
     }
 

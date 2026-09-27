@@ -14,7 +14,7 @@ fn make_counter(label) {
         return f"{label}: {count}"
     }
 
-    return {"bump": bump, "describe": describe}
+    return { "bump": bump, "describe": describe }
 }
 
 let counter = make_counter("hits")

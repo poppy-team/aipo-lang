@@ -2,22 +2,22 @@
 # operations, and `satisfy` states the promise explicitly.
 interface Greeter {
     fn greet(self)
-}
-
-struct Robot {
-    name
-}
-
-impl Robot {
-    fn greet(self) {
-        return "beep " + self.name
     }
-}
 
-satisfy Robot: Greeter
+    struct Robot {
+        name
+    }
 
-fn welcome(item: Greeter) {
-    return item.greet()
-}
+    impl Robot {
+        fn greet(self) {
+            return "beep " + self.name
+        }
+    }
 
-io.println(welcome(Robot{ name: "r2" }))
+    satisfy Robot: Greeter
+
+        fn welcome(item: Greeter) {
+            return item.greet()
+        }
+
+        io.println(welcome(Robot{ name: "r2" }))

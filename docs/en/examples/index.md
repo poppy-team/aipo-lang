@@ -1,6 +1,6 @@
 # Practical Examples & Code Recipes
 
-This section brings together idiomatic code patterns, real-world recipes, and the complete catalog of the 24 canonical examples that accompany the official Aipo repository.
+This section brings together idiomatic code patterns, real-world recipes, and the complete catalog of the 25 canonical examples that accompany the official Aipo repository.
 
 ---
 
@@ -142,7 +142,7 @@ io.println(generated_json)
 
 ---
 
-## 5. Repository Example Catalog (24 Programs)
+## 5. Repository Example Catalog (25 Programs)
 
 All examples below are tested and directly runnable under the `examples/` directory in the repository:
 
@@ -172,3 +172,4 @@ All examples below are tested and directly runnable under the `examples/` direct
 | `22_small_budget_application.aipo` | Small budget application with transactional struct instances. |
 | `23_multi_module_application/` | Multi-file application with wallet and pricing submodules. |
 | `24_idiomatic_aipo_showcase.aipo` | Comprehensive showcase of idiomatic Aipo features and best practices. |
+| `25_snake_game.aipo` | Complete terminal-rendered Snake game simulation featuring structs, lists, collision math, and score tracking. |

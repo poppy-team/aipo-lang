@@ -1,5 +1,5 @@
-// nodes.aipo — Visual Scripting Node System (Trigger-Filter-Action)
-// Precludes visual wire spaghetti and serializes directly to canonical Aipo code
+# nodes.aipo — Visual Scripting Node System (Trigger-Filter-Action)
+# Precludes visual wire spaghetti and serializes directly to canonical Aipo code
 
 struct TriggerNode {
     id: String
@@ -28,20 +28,20 @@ struct VisualRule {
     actions: List
 }
 
-// Visual Node Constructors
-fn trigger(event: String, params: Dict = {}) -> TriggerNode {
+# Visual Node Constructors
+fn trigger(event: String, params: Dict = {}) - > TriggerNode{
     return TriggerNode{ id: event, event: event, params: params }
 }
 
-fn filter(left: String, op: String, right: String) -> FilterNode {
+fn filter(left: String, op: String, right: String) - > FilterNode{
     return FilterNode{ id: "filter", left: left, op: op, right: right }
 }
 
-fn action(action_type: String, params: Dict = {}) -> ActionNode {
+fn action(action_type: String, params: Dict = {}) - > ActionNode{
     return ActionNode{ id: action_type, action_type: action_type, params: params }
 }
 
-fn rule(name: String, trigger: TriggerNode, filters: List = [], actions: List = []) -> VisualRule {
+fn rule(name: String, trigger: TriggerNode, filters: List = [], actions: List = []) - > VisualRule{
     return VisualRule{
         id: name,
         name: name,
@@ -51,8 +51,8 @@ fn rule(name: String, trigger: TriggerNode, filters: List = [], actions: List = 
     }
 }
 
-// Transpiles a Visual Rule directly into clean, human-readable Aipo code
-fn transpile_to_aipo_code(rule: VisualRule) -> String {
+# Transpiles a Visual Rule directly into clean, human-readable Aipo code
+fn transpile_to_aipo_code(rule: VisualRule) - > String{
     var code = f"// Regra Visual: {rule.name}\n"
 
     if rule.trigger.event == "on_collision" {
@@ -60,13 +60,13 @@ fn transpile_to_aipo_code(rule: VisualRule) -> String {
         code += f"on_collision: (actor, other) => {{\n"
         code += f"    if other.is_a({target}) {{\n"
 
-        // Inject filters
-        for f in rule.filters {
-            code += f"        if !({f.left} {f.op} {f.right}) {{ return }}\n"
+        # Inject filters
+        each f in rule.filters {
+            code += f"        if not ({f.left} {f.op} {f.right}) {{ return }}\n"
         }
 
-        // Inject actions
-        for act in rule.actions {
+        # Inject actions
+        each act in rule.actions {
             if act.action_type == "destroy" {
                 let who = act.params.get("target", "other")
                 code += f"        {who}.destroy()\n"

@@ -139,7 +139,7 @@ let card_style = h.css {
     }
 }
 
-// Injects the unique hash rule into the document head and attaches the class
+# Injects the unique hash rule into the document head and attaches the class
 h.div(style: card_style) {
     h.p("Card with isolated, type-safe styling!")
 }

@@ -1,7 +1,7 @@
-// renderer.aipo — Pluggable Renderer interface and Draw Command Batching
-// Part of `aipo.ui`
+# renderer.aipo — Pluggable Renderer interface and Draw Command Batching
+# Part of `aipo.ui`
 
-import .types as types
+import.types as types
 
 struct DrawCommand {
     kind: String
@@ -15,64 +15,64 @@ struct DrawCommand {
     font_weight: String
 }
 
-// Generate draw commands from computed layout tree
+# Generate draw commands from computed layout tree
 fn generate_draw_commands(node: types.UINode, commands: List) {
     let r = node.layout_rect
 
     if node.kind == "Box" or node.kind == "Row" or node.kind == "Column" {
-        let bg = node.props.get("background", null)
-        if bg != null {
+        let bg = node.props.get("background", none)
+        if bg != none {
             commands.add(DrawCommand{
+                    kind: "Rect",
+                    rect: r,
+                    color: bg,
+                    border_radius: node.props.get("border_radius", 0.0),
+                    border_width: node.props.get("border_width", 0.0),
+                    border_color: node.props.get("border_color", none),
+                    text: "",
+                    font_size: 0.0,
+                    font_weight: ""
+                })
+        }
+    } else if node.kind == "Text" {
+        commands.add(DrawCommand{
+                kind: "Text",
+                rect: r,
+                color: node.props.get("color", none),
+                border_radius: 0.0,
+                border_width: 0.0,
+                border_color: none,
+                text: node.props.get("content", ""),
+                font_size: node.props.get("font_size", 14.0),
+                font_weight: node.props.get("font_weight", "normal")
+            })
+    } else if node.kind == "Button" {
+        # Default button rendering: background rectangle + centered label
+        commands.add(DrawCommand{
                 kind: "Rect",
                 rect: r,
-                color: bg,
-                border_radius: node.props.get("border_radius", 0.0),
-                border_width: node.props.get("border_width", 0.0),
-                border_color: node.props.get("border_color", null),
+                color: node.props.get("background", none),
+                border_radius: 6.0,
+                border_width: 1.0,
+                border_color: none,
                 text: "",
                 font_size: 0.0,
                 font_weight: ""
             })
-        }
-    } else if node.kind == "Text" {
         commands.add(DrawCommand{
-            kind: "Text",
-            rect: r,
-            color: node.props.get("color", null),
-            border_radius: 0.0,
-            border_width: 0.0,
-            border_color: null,
-            text: node.props.get("content", ""),
-            font_size: node.props.get("font_size", 14.0),
-            font_weight: node.props.get("font_weight", "normal")
-        })
-    } else if node.kind == "Button" {
-        // Default button rendering: background rectangle + centered label
-        commands.add(DrawCommand{
-            kind: "Rect",
-            rect: r,
-            color: node.props.get("background", null),
-            border_radius: 6.0,
-            border_width: 1.0,
-            border_color: null,
-            text: "",
-            font_size: 0.0,
-            font_weight: ""
-        })
-        commands.add(DrawCommand{
-            kind: "Text",
-            rect: r,
-            color: null,
-            border_radius: 0.0,
-            border_width: 0.0,
-            border_color: null,
-            text: node.props.get("label", ""),
-            font_size: 14.0,
-            font_weight: "medium"
-        })
+                kind: "Text",
+                rect: r,
+                color: none,
+                border_radius: 0.0,
+                border_width: 0.0,
+                border_color: none,
+                text: node.props.get("label", ""),
+                font_size: 14.0,
+                font_weight: "medium"
+            })
     }
 
-    for child in node.children {
+    each child in node.children {
         generate_draw_commands(child, commands)
     }
 }

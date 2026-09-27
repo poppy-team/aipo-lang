@@ -7,13 +7,13 @@ struct Player {
 }
 
 impl Player {
-    init(id, name, health = 100) {
+    init (id, name, health = 100) {
         self.id = id
         self.name = name
         self.health = health
     }
 
-    invariant() {
+    invariant () {
         self.name != ""
         self.health >= 0
         self.health <= 100

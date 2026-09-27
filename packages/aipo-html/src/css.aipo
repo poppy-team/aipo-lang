@@ -1,5 +1,5 @@
-// css.aipo — Scoped and Typed CSS-in-Aipo DSL
-// Part of `aipo.html`
+# css.aipo — Scoped and Typed CSS-in-Aipo DSL
+# Part of `aipo.html`
 
 struct StyleRule {
     class_name: String
@@ -8,12 +8,12 @@ struct StyleRule {
 
 var _style_id_counter = 0
 
-fn hash_style_dict(properties: Dict) -> String {
+fn hash_style_dict(properties: Dict) - > String{
     _style_id_counter += 1
     return f"aipo-s{_style_id_counter}"
 }
 
-fn dict_to_css_text(class_name: String, props: Dict) -> String {
+fn dict_to_css_text(class_name: String, props: Dict) - > String{
     var body = f".{class_name} {{\n"
     var pseudo_blocks = ""
 
@@ -28,22 +28,21 @@ fn dict_to_css_text(class_name: String, props: Dict) -> String {
         } else {
             let css_prop = key.replace("_", "-")
             let formatted_val = if val is Int then f"{val}px" else f"{val}"
-            body = body + f"  {css_prop}: {formatted_val};\n"
+                    body = body + f"  {css_prop}: {formatted_val};\n"
+                }
+            }
+
+            body = body + "}\n" + pseudo_blocks
+            return body
         }
-    }
 
-    body = body + "}\n" + pseudo_blocks
-    return body
-}
+        # Declares a typed, scoped CSS style and returns its generated class name
+        fn css(properties: Dict) - > String{
+            let class_name = hash_style_dict(properties)
+            let css_text = dict_to_css_text(class_name, properties)
+            # Injected in host DOM if running under browser environment
+            # __aipo_dom.injectStyle(class_name, css_text)
+            return class_name
+        }
 
-// Declares a typed, scoped CSS style and returns its generated class name
-fn css(properties: Dict) -> String {
-    let class_name = hash_style_dict(properties)
-    let css_text = dict_to_css_text(class_name, properties)
-    
-    // Injected in host DOM if running under browser environment
-    // __aipo_dom.injectStyle(class_name, css_text)
-    return class_name
-}
-
-export StyleRule, css
+        export StyleRule, css
