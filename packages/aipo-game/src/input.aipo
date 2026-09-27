@@ -1,7 +1,5 @@
 # input.aipo — Friendly input system for `aipo.game`
 
-import ffi as ffi
-
 let KEY_CODES = {
     "Space": 32,
     "Enter": 257,
@@ -20,7 +18,7 @@ let KEY_CODES = {
 fn key_down(key_name: String) -> Bool {
     if KEY_CODES.has(key_name) {
         let code = KEY_CODES[key_name]
-        return ffi.host_key_down(code)
+        return host_key_down(code)
     }
     return false
 }
@@ -28,26 +26,26 @@ fn key_down(key_name: String) -> Bool {
 fn key_pressed(key_name: String) -> Bool {
     if KEY_CODES.has(key_name) {
         let code = KEY_CODES[key_name]
-        return ffi.host_key_pressed(code)
+        return host_key_pressed(code)
     }
     return false
 }
 
 fn mouse_x() -> Float {
-    return ffi.host_mouse_x()
+    return host_mouse_x()
 }
 
 fn mouse_y() -> Float {
-    return ffi.host_mouse_y()
+    return host_mouse_y()
 }
 
 fn mouse_down(button: String) -> Bool {
     let btn_id = if button == "left" then 0 else if button == "right" then 1 else 2
-    return ffi.host_mouse_btn(btn_id)
+    return host_mouse_btn(btn_id)
 }
 
 fn mouse_btn(button: Int) -> Bool {
-    return ffi.host_mouse_btn(button)
+    return host_mouse_btn(button)
 }
 
 fn axis_x() -> Float {

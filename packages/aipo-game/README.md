@@ -109,16 +109,41 @@ fn main() {
 
 ---
 
+## Subsistemas Avançados
+
+### 1. In-Game UI / HUD em Modo Imediato (`g.ui`)
+Interface imediata de altíssimo desempenho integrada diretamente no laço de renderização do jogo:
+- `g.ui.button(x, y, w, h, text) -> Bool`: botões responsivos com estados normal, hover e pressionado.
+- `g.ui.health_bar(x, y, w, h, current, max)`: barra de vida dinâmica com transição visual automática de cores (verde $\to$ amarelo $\to$ vermelho).
+- `g.ui.progress_bar(x, y, w, h, current, max, r, g, b)`: barra genérica para recursos (estamina, mana, escudo, progresso).
+- `g.ui.panel(x, y, w, h, title)`: janelas e molduras decorativas para inventários, diálogos e painéis de pause.
+- `g.ui.label(x, y, text, size, r, g, b)`: renderização tipográfica com sombra de alto contraste.
+- `g.ui.badge(x, y, text, r, g, b)`: tags e contadores em formato de pílula arredondada.
+
+### 2. Grid Tilemap 2D e Colisão Contínua (`g.tilemap`)
+Gerenciamento de mundos baseados em malhas de blocos e colisão de alta velocidade:
+- `g.tilemap.create_tilemap(cols, rows, tile_size, tex_id, tileset_cols)`: criação e alocação de mapas tabulares.
+- `g.tilemap.set_solid(map, col, row, is_solid)` / `is_solid_cell(map, col, row)`: marcação e consulta $O(1)$ de solidez.
+- `g.tilemap.resolve_box_collision(map, x, y, w, h, vx, vy, dt)`: resolvedor de colisão contínua (*swept AABB*) com separação de eixos $X$ e $Y$, evitando atravessamento de paredes (*tunneling*) mesmo em velocidades extremas.
+- `g.tilemap.draw_tilemap(map, cam_x, cam_y, zoom, screen_w, screen_h)`: renderização com descarte automático de blocos fora da visão da câmera (*viewport frustum culling*).
+- `g.tilemap.raycast(map, x1, y1, x2, y2) -> Dict`: algoritmo DDA de traçado de raios em grade discreta para linhas de visada, tiros e sensores de IA.
+
+---
+
 ## Execução Nativa a 60 FPS (`aipo-game-host`)
 
 O runtime nativo em `crates/aipo-game-host` permite compilar e executar qualquer jogo `.aipo` diretamente na GPU:
 
 ```bash
-# Executa exemplos interativos em tempo real
+# Executa a demonstração de Tilemap 2D, Câmera e HUD Imediato
+cargo run -p aipo-game-host -- packages/aipo-game/examples/tilemap_and_hud.aipo
+
+# Executa exemplos interativos adicionais em tempo real
 cargo run -p aipo-game-host -- examples/26_interactive_game.aipo
 cargo run -p aipo-game-host -- examples/27_camera_and_sprites.aipo
 
 # Executa o Snake Game nativo embutido
 cargo run -p aipo-game-host
 ```
+
 

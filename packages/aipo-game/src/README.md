@@ -2,8 +2,9 @@
 
 Este diretório contém a implementação pura em Aipo dos módulos que estruturam o framework `aipo.game`:
 
-- **[`lib.aipo`](./lib.aipo)**: Ponto de entrada do pacote e re-exportação unificada da API pública (`actor`, `scene`, `behaviors`, `input`, `audio`, `spawn`, `nodes`).
-- **[`ffi.aipo`](./ffi.aipo)**: Contrato de ponte FFI de baixo nível (`__aipo_game_*`) para comunicação desacoplada com o runtime host (Desktop via Rust/Miniquad/Raylib ou Navegador via Wasm).
+- **[`lib.aipo`](./lib.aipo)**: Ponto de entrada do pacote e re-exportação unificada da API pública (`actor`, `scene`, `behaviors`, `input`, `audio`, `spawn`, `nodes`, `ui`, `tilemap`).
+- **[`ui.aipo`](./ui.aipo)**: Subsistema de HUD e UI imediata para jogos 2D a 60 FPS (`button`, `progress_bar`, `health_bar`, `panel`, `label`, `badge`, `is_mouse_over`).
+- **[`tilemap.aipo`](./tilemap.aipo)**: Sistema de mapas de blocos 2D com resolução contínua de colisão AABB (*swept AABB* anti-tunelamento), *frustum culling* em viewport e *raycasting* rápido via DDA.
 - **[`input.aipo`](./input.aipo)**: Gerenciador de entradas com mapeamento amigável de teclado, botões de mouse e eixos de gamepads.
 - **[`audio.aipo`](./audio.aipo)**: Subsistema de efeitos sonoros, música de fundo em loop e controle de volume/pitch.
 - **[`behaviors.aipo`](./behaviors.aipo)**: Catálogo de comportamentos pré-fabricados reutilizáveis (`TopDown`, `Platformer`, `Bullet`, `Solid`, `WrapScreen`, `DestroyOutsideScreen`).

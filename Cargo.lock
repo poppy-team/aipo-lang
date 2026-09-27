@@ -180,6 +180,7 @@ dependencies = [
  "aipo-bytecode",
  "aipo-cli",
  "aipo-diagnostics",
+ "aipo-egui",
  "aipo-hir",
  "aipo-ir",
  "aipo-lexer",
@@ -189,6 +190,7 @@ dependencies = [
  "aipo-stdlib",
  "aipo-syntax",
  "aipo-vm",
+ "egui",
  "macroquad",
 ]
 

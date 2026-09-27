@@ -422,6 +422,29 @@ pub fn host_draw_circle(args: &[Value]) -> Result<Value, VmFault> {
     Ok(Value::None)
 }
 
+/// host_draw_line(x1, y1, x2, y2, thickness, r, g, b, a)
+pub fn host_draw_line(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 9 {
+        return Err(VmFault::TypeMismatch {
+            expected: "9 arguments (x1, y1, x2, y2, thickness, r, g, b, a)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let x1 = to_f32(&args[0])?;
+    let y1 = to_f32(&args[1])?;
+    let x2 = to_f32(&args[2])?;
+    let y2 = to_f32(&args[3])?;
+    let th = to_f32(&args[4])?;
+    let r = to_f32(&args[5])?;
+    let g = to_f32(&args[6])?;
+    let b = to_f32(&args[7])?;
+    let a = to_f32(&args[8])?;
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        draw_line(x1, y1, x2, y2, th, Color::new(r, g, b, a));
+    }));
+    Ok(Value::None)
+}
+
 /// host_draw_text(text, x, y, font_size, r, g, b)
 pub fn host_draw_text(args: &[Value]) -> Result<Value, VmFault> {
     if args.len() < 7 {
@@ -713,6 +736,7 @@ const NATIVES: &[NativeEntry] = &[
     ("host_draw_rect", 8, host_draw_rect),
     ("host_draw_rect_lines", 9, host_draw_rect_lines),
     ("host_draw_circle", 7, host_draw_circle),
+    ("host_draw_line", 9, host_draw_line),
     ("host_draw_text", 7, host_draw_text),
     ("host_load_texture", 1, host_load_texture),
     ("host_draw_sprite", 7, host_draw_sprite),
@@ -737,6 +761,7 @@ pub fn register_surface_symbols(surface: &mut PreludeSurface) {
         surface.add_function(&canonical_alias, *arity, *arity);
     }
     surface.add_variable("game");
+    surface.add_variable("egui");
 }
 
 /// Registers the game host native functions into the Aipo VM instance.
@@ -759,4 +784,153 @@ pub fn register_vm_natives(vm: &mut Vm) {
 
     let dict_map = aipo_vm::DictMap::from_entries(game_dict_entries);
     vm.define_global("game", Value::Dict(Rc::new(RefCell::new(dict_map))));
+
+    // Install and register agnostic egui host profile
+    aipo_egui::install_egui(aipo_egui::EguiService::new());
+    aipo_egui::register_egui(vm);
+}
+
+fn render_epaint_shape(shape: &egui::epaint::Shape) {
+    match shape {
+        egui::epaint::Shape::Vec(children) => {
+            for child in children {
+                render_epaint_shape(child);
+            }
+        }
+        egui::epaint::Shape::Rect(rect_shape) => {
+            let r = rect_shape.rect;
+            let c = rect_shape.fill;
+            if c.a() > 0 {
+                let col = Color::new(
+                    f32::from(c.r()) / 255.0,
+                    f32::from(c.g()) / 255.0,
+                    f32::from(c.b()) / 255.0,
+                    f32::from(c.a()) / 255.0,
+                );
+                safe_draw_rect(r.min.x, r.min.y, r.width(), r.height(), col);
+            }
+            if rect_shape.stroke.width > 0.0 && rect_shape.stroke.color.a() > 0 {
+                let sc = rect_shape.stroke.color;
+                let stroke_col = Color::new(
+                    f32::from(sc.r()) / 255.0,
+                    f32::from(sc.g()) / 255.0,
+                    f32::from(sc.b()) / 255.0,
+                    f32::from(sc.a()) / 255.0,
+                );
+                safe_draw_rect_lines(
+                    r.min.x,
+                    r.min.y,
+                    r.width(),
+                    r.height(),
+                    rect_shape.stroke.width,
+                    stroke_col,
+                );
+            }
+        }
+        egui::epaint::Shape::Text(text_shape) => {
+            let pos = text_shape.pos;
+            let text = text_shape.galley.text();
+            let mut c = text_shape.fallback_color;
+            if c.a() == 0 {
+                c = egui::Color32::from_rgb(220, 225, 235);
+            }
+            let font_size = (text_shape.galley.size().y * 0.95).clamp(14.0, 36.0);
+            let text_col = Color::new(
+                f32::from(c.r()) / 255.0,
+                f32::from(c.g()) / 255.0,
+                f32::from(c.b()) / 255.0,
+                f32::from(c.a()) / 255.0,
+            );
+            safe_draw_text(text, pos.x, pos.y + font_size * 0.85, font_size, text_col);
+        }
+        egui::epaint::Shape::LineSegment { points, stroke } => {
+            let c = stroke.color;
+            let col = Color::new(
+                f32::from(c.r()) / 255.0,
+                f32::from(c.g()) / 255.0,
+                f32::from(c.b()) / 255.0,
+                f32::from(c.a()) / 255.0,
+            );
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                draw_line(
+                    points[0].x,
+                    points[0].y,
+                    points[1].x,
+                    points[1].y,
+                    stroke.width,
+                    col,
+                );
+            }));
+        }
+        egui::epaint::Shape::Path(path) => {
+            if path.points.len() >= 2 {
+                let c = match &path.stroke.color {
+                    egui::epaint::ColorMode::Solid(c) => *c,
+                    egui::epaint::ColorMode::UV(_) => egui::Color32::WHITE,
+                };
+                let col = Color::new(
+                    f32::from(c.r()) / 255.0,
+                    f32::from(c.g()) / 255.0,
+                    f32::from(c.b()) / 255.0,
+                    f32::from(c.a()) / 255.0,
+                );
+                for i in 0..(path.points.len() - 1) {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        draw_line(
+                            path.points[i].x,
+                            path.points[i].y,
+                            path.points[i + 1].x,
+                            path.points[i + 1].y,
+                            path.stroke.width,
+                            col,
+                        );
+                    }));
+                }
+                if path.closed && path.points.len() > 2 {
+                    let last = path.points.len() - 1;
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        draw_line(
+                            path.points[last].x,
+                            path.points[last].y,
+                            path.points[0].x,
+                            path.points[0].y,
+                            path.stroke.width,
+                            col,
+                        );
+                    }));
+                }
+            }
+        }
+        egui::epaint::Shape::Circle(circle) => {
+            let c = circle.fill;
+            let col = Color::new(
+                f32::from(c.r()) / 255.0,
+                f32::from(c.g()) / 255.0,
+                f32::from(c.b()) / 255.0,
+                f32::from(c.a()) / 255.0,
+            );
+            safe_draw_circle(circle.center.x, circle.center.y, circle.radius, col);
+        }
+        _ => {}
+    }
+}
+
+/// Renders the shapes generated by the active egui session on top of the screen.
+pub fn render_egui_overlay() {
+    let _ = aipo_egui::with_egui("egui", "render_egui_overlay", |service| {
+        let Some(handle) = service.last_active_handle.or(service.active_handle) else {
+            return Ok(());
+        };
+        let Some(session) = service.sessions.get(handle) else {
+            return Ok(());
+        };
+        let Some(ref output) = session.last_output else {
+            return Ok(());
+        };
+
+        for clipped in &output.shapes {
+            render_epaint_shape(&clipped.shape);
+        }
+        Ok(())
+    });
 }

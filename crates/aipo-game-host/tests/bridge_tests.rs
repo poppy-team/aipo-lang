@@ -400,3 +400,210 @@ fn test_audio_host_calls() {
     let res = vm.invoke(&empty_mod, stop_music.clone(), &[]);
     assert!(res.is_ok(), "host_stop_music should succeed");
 }
+
+#[test]
+fn test_freya_ui_dashboard_compilation_and_execution() {
+    let path_buf = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/aipo-freya/examples/dashboard.aipo");
+    let path = path_buf.as_path();
+    assert!(
+        path.exists(),
+        "packages/aipo-freya/examples/dashboard.aipo must exist at {}",
+        path.display()
+    );
+
+    let mut host_surface = aipo_cli::prelude_surface();
+    host_bridge::register_surface_symbols(&mut host_surface);
+
+    // 1. Compile Freya dashboard script with host prelude surface
+    let (_source, module) = match aipo_cli::compile_file(path, Some(&host_surface)) {
+        Ok(res) => res,
+        Err((_src, diags)) => {
+            panic!("Compilation failed with diagnostics: {:?}", diags);
+        }
+    };
+
+    assert!(
+        !module.code.is_empty(),
+        "Bytecode module should not be empty"
+    );
+
+    // 2. Initialize VM and register host natives
+    let (mut vm, _) = aipo_cli::standard_environment();
+    aipo_cli::register_module_symbols(&mut vm, &module);
+    host_bridge::register_vm_natives(&mut vm);
+
+    // 3. Execute top-level script statements
+    let run_res = vm.run(&module);
+    assert!(
+        run_res.is_ok(),
+        "Top-level execution should succeed: {:?}",
+        run_res.err()
+    );
+
+    // 4. Verify setup() mounts the Freya component tree
+    let setup_fn = vm
+        .globals
+        .get("setup")
+        .cloned()
+        .expect("setup function should exist in globals");
+    let setup_res = vm.invoke(&module, setup_fn, &[]);
+    assert!(
+        setup_res.is_ok(),
+        "setup() should mount the Freya app: {:?}",
+        setup_res.err()
+    );
+
+    // 5. Verify update(dt) processes layout and events
+    let update_fn = vm
+        .globals
+        .get("update")
+        .cloned()
+        .expect("update function should exist in globals");
+    let update_res = vm.invoke(&module, update_fn.clone(), &[Value::Float(0.016)]);
+    assert!(
+        update_res.is_ok(),
+        "update(dt) should succeed: {:?}",
+        update_res.err()
+    );
+
+    // 6. Verify draw() renders the declarative tree headlessly
+    let draw_fn = vm
+        .globals
+        .get("draw")
+        .cloned()
+        .expect("draw function should exist in globals");
+    let draw_res = vm.invoke(&module, draw_fn.clone(), &[]);
+    assert!(
+        draw_res.is_ok(),
+        "draw() should succeed headlessly without panic: {:?}",
+        draw_res.err()
+    );
+
+    // 7. Verify multi-frame execution stability
+    for _ in 0..5 {
+        assert!(
+            vm.invoke(&module, update_fn.clone(), &[Value::Float(0.016)])
+                .is_ok()
+        );
+        assert!(vm.invoke(&module, draw_fn.clone(), &[]).is_ok());
+    }
+}
+
+#[test]
+fn test_freya_ui_unit_test_suite() {
+    let path_buf = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/aipo-freya/tests/freya_test.aipo");
+    let path = path_buf.as_path();
+    assert!(
+        path.exists(),
+        "packages/aipo-freya/tests/freya_test.aipo must exist at {}",
+        path.display()
+    );
+
+    let mut host_surface = aipo_cli::prelude_surface();
+    host_bridge::register_surface_symbols(&mut host_surface);
+
+    let (_source, module) = match aipo_cli::compile_file(path, Some(&host_surface)) {
+        Ok(res) => res,
+        Err((_src, diags)) => {
+            panic!("Compilation failed with diagnostics: {:?}", diags);
+        }
+    };
+
+    // 1. Discover all tests
+    let (mut vm, _) = aipo_cli::standard_environment();
+    aipo_cli::register_module_symbols(&mut vm, &module);
+    host_bridge::register_vm_natives(&mut vm);
+
+    let discovered = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    vm.set_test_mode(aipo_vm::TestMode::Discover(discovered.clone()));
+    let run_res = vm.run(&module);
+    assert!(
+        run_res.is_ok(),
+        "Discovery run should succeed: {:?}",
+        run_res.err()
+    );
+
+    let all_tests = discovered.borrow().clone();
+    assert!(!all_tests.is_empty(), "Should discover Freya unit tests");
+
+    // 2. Execute each discovered test in isolated VM with host natives
+    for test_name in &all_tests {
+        let (mut test_vm, _) = aipo_cli::standard_environment();
+        aipo_cli::register_module_symbols(&mut test_vm, &module);
+        host_bridge::register_vm_natives(&mut test_vm);
+
+        let ran = std::rc::Rc::new(std::cell::Cell::new(false));
+        test_vm.set_test_mode(aipo_vm::TestMode::Execute {
+            target: test_name.clone(),
+            ran: ran.clone(),
+        });
+
+        let test_res = test_vm.run(&module);
+        assert!(
+            test_res.is_ok(),
+            "Freya unit test '{}' should pass, got: {:?}",
+            test_name,
+            test_res.err()
+        );
+        assert!(
+            ran.get(),
+            "Freya unit test '{}' should have executed",
+            test_name
+        );
+    }
+}
+
+#[test]
+fn test_tilemap_and_game_hud_compilation_and_execution() {
+    let path_buf = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/aipo-game/examples/tilemap_and_hud.aipo");
+    let path = path_buf.as_path();
+    assert!(
+        path.exists(),
+        "packages/aipo-game/examples/tilemap_and_hud.aipo must exist at {}",
+        path.display()
+    );
+
+    let mut host_surface = aipo_cli::prelude_surface();
+    host_bridge::register_surface_symbols(&mut host_surface);
+
+    let (_source, module) = match aipo_cli::compile_file(path, Some(&host_surface)) {
+        Ok(res) => res,
+        Err((_src, diags)) => {
+            panic!("Compilation failed with diagnostics: {:?}", diags);
+        }
+    };
+
+    assert!(
+        !module.code.is_empty(),
+        "Bytecode module should not be empty"
+    );
+
+    let (mut vm, _) = aipo_cli::standard_environment();
+    aipo_cli::register_module_symbols(&mut vm, &module);
+    host_bridge::register_vm_natives(&mut vm);
+
+    let run_res = vm.run(&module);
+    assert!(
+        run_res.is_ok(),
+        "Top-level execution should succeed: {:?}",
+        run_res.err()
+    );
+
+    let setup_fn = vm.globals.get("setup").cloned().expect("setup exists");
+    let setup_res = vm.invoke(&module, setup_fn, &[]);
+    assert!(setup_res.is_ok(), "setup() failed: {:?}", setup_res.err());
+
+    let update_fn = vm.globals.get("update").cloned().expect("update exists");
+    let update_res = vm.invoke(&module, update_fn, &[Value::Float(0.016)]);
+    assert!(
+        update_res.is_ok(),
+        "update(dt) failed: {:?}",
+        update_res.err()
+    );
+
+    let draw_fn = vm.globals.get("draw").cloned().expect("draw exists");
+    assert!(vm.invoke(&module, draw_fn, &[]).is_ok());
+}

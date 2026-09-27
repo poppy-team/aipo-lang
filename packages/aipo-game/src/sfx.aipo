@@ -2,8 +2,6 @@
 # Inspired by SFXR, BFXR and ChipTone
 # Generates procedural audio effects mathematically on the fly with zero external asset files
 
-import ffi as ffi
-
 struct SynthParams {
     wave_type
     start_freq
@@ -75,12 +73,12 @@ fn preset_powerup() -> SynthParams {
 
 # Play procedural SFX by preset name
 fn play_preset(name: String, pitch: Float) {
-    ffi.host_play_preset(name, 1.0, pitch)
+    host_play_preset(name, 1.0, pitch)
 }
 
 # Synthesizes custom waveform directly into a sound handle ID
 fn synth_sound(wave_type: String, start_freq: Float, freq_slide: Float, duration: Float, volume: Float) -> Int {
-    return ffi.host_synth_sound(wave_type, start_freq, freq_slide, duration, volume)
+    return host_synth_sound(wave_type, start_freq, freq_slide, duration, volume)
 }
 
 export SynthParams, preset_coin, preset_laser, preset_jump, preset_explosion, preset_hit, preset_powerup, play_preset, synth_sound

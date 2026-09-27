@@ -1,5 +1,5 @@
 # lib.aipo — Entrypoint for `aipo.game`
-# 2D Game Engine with Actor-Scene lifecycle, pluggable Behaviors and Visual Scripting Nodes
+# 2D Game Engine with Actor-Scene lifecycle, pluggable Behaviors, Game HUD and 2D Tilemap
 
 import actor as act_mod
 import scene as scene_mod
@@ -9,6 +9,8 @@ import audio as audio_mod
 import nodes as nodes_mod
 import sfx as sfx_mod
 import tween as tween_mod
+import ui as ui_mod
+import tilemap as tilemap_mod
 
 # Core Factory Functions & LifeCycle
 fn actor(name: String, config: Dict) {
@@ -35,4 +37,80 @@ fn render(sc) {
     scene_mod.render_scene(sc)
 }
 
+let behaviors = {
+    "TopDown": behaviors_mod.TopDown,
+    "Platformer": behaviors_mod.Platformer,
+    "Bullet": behaviors_mod.Bullet,
+    "Solid": behaviors_mod.Solid,
+    "WrapScreen": behaviors_mod.WrapScreen,
+    "KeepInScreen": behaviors_mod.KeepInScreen,
+    "DestroyOutsideScreen": behaviors_mod.DestroyOutsideScreen
+}
+
+let input = {
+    "key_down": input_mod.key_down,
+    "key_pressed": input_mod.key_pressed,
+    "mouse_x": input_mod.mouse_x,
+    "mouse_y": input_mod.mouse_y,
+    "mouse_down": input_mod.mouse_down,
+    "mouse_btn": input_mod.mouse_btn,
+    "axis_x": input_mod.axis_x,
+    "axis_y": input_mod.axis_y
+}
+
+let audio = {
+    "load_sound": audio_mod.load_sound,
+    "play_sound": audio_mod.play_sound,
+    "play": audio_mod.play,
+    "play_music": audio_mod.play_music,
+    "stop_music": audio_mod.stop_music,
+    "stop_sound": audio_mod.stop_sound,
+    "play_sfx": audio_mod.play_sfx
+}
+
+let sfx = {
+    "preset_coin": sfx_mod.preset_coin,
+    "preset_laser": sfx_mod.preset_laser,
+    "preset_jump": sfx_mod.preset_jump,
+    "preset_explosion": sfx_mod.preset_explosion,
+    "preset_hit": sfx_mod.preset_hit,
+    "preset_powerup": sfx_mod.preset_powerup,
+    "play_preset": sfx_mod.play_preset,
+    "synth_sound": sfx_mod.synth_sound
+}
+
+let tween = {
+    "linear": tween_mod.linear,
+    "ease_in": tween_mod.ease_in,
+    "ease_out": tween_mod.ease_out,
+    "ease_in_out": tween_mod.ease_in_out,
+    "bounce_out": tween_mod.bounce_out,
+    "create": tween_mod.create_tween,
+    "update": tween_mod.update_tweens
+}
+
+let ui = {
+    "button": ui_mod.button,
+    "progress_bar": ui_mod.progress_bar,
+    "health_bar": ui_mod.health_bar,
+    "panel": ui_mod.panel,
+    "label": ui_mod.label,
+    "badge": ui_mod.badge,
+    "is_mouse_over": ui_mod.is_mouse_over
+}
+
+let tilemap = {
+    "create_tilemap": tilemap_mod.create_tilemap,
+    "set_tile": tilemap_mod.set_tile,
+    "get_tile": tilemap_mod.get_tile,
+    "set_solid": tilemap_mod.set_solid,
+    "is_solid_cell": tilemap_mod.is_solid_cell,
+    "is_solid_at": tilemap_mod.is_solid_at,
+    "check_box": tilemap_mod.check_box,
+    "resolve_box_collision": tilemap_mod.resolve_box_collision,
+    "draw_tilemap": tilemap_mod.draw_tilemap,
+    "raycast": tilemap_mod.raycast
+}
+
 export actor, scene, spawn, start, step, render
+export behaviors, input, audio, sfx, tween, ui, tilemap

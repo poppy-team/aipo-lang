@@ -5,6 +5,44 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [0.11.0] - Em desenvolvimento (Trilha WebAssembly & Self-Hosting)
 
+- **In-Game UI / HUD Imediato e Sistema de Tilemaps 2D com Colisão Contínua (`packages/aipo-game` & `aipo-game-host`)**:
+  - Implementação do subsistema de HUD imediato (`packages/aipo-game/src/ui.aipo`):
+    - `button(x, y, w, h, text) -> Bool`: botões imediatos com hit-testing de ponteiro e estados normal, hover e pressionado.
+    - `health_bar(x, y, w, h, current, max)`: barra de vida reativa com gradação dinâmica de cores (verde $\to$ amarelo $\to$ vermelho) e texto numérico.
+    - `progress_bar(x, y, w, h, current, max, r, g, b)`: barra genérica para estamina, mana e recursos.
+    - `panel(x, y, w, h, title)`: janelas com barra de cabeçalho e molduras visuais.
+    - `label(x, y, text, size, r, g, b)`: tipografia com drop shadow de alto contraste.
+    - `badge(x, y, text, r, g, b)`: tags e contadores compactos em pílula.
+  - Implementação do subsistema de Tilemap 2D (`packages/aipo-game/src/tilemap.aipo`):
+    - `create_tilemap(cols, rows, tile_size, tex_id, tileset_cols)`: criação e alocação de malhas 2D.
+    - `set_solid`, `is_solid_cell`, `is_solid_at`, `check_box`: consultas espaciais $O(1)$ em grid discreto.
+    - `resolve_box_collision(map, x, y, w, h, vx, vy, dt)`: resolvedor de colisão contínua (*swept AABB*) com separação de eixos $X$ e $Y$, eliminando o problema de tunelamento (*wall tunneling*) em altas velocidades e permitindo deslizamento suave nas quinas.
+    - `draw_tilemap(map, cam_x, cam_y, zoom, screen_w, screen_h)`: renderização otimizada com descarte de tiles fora da visão (*frustum culling*).
+    - `raycast(map, x1, y1, x2, y2) -> Dict`: algoritmo DDA para traçado rápido de raios na grade.
+  - Função nativa `host_draw_line(x1, y1, x2, y2, thickness, r, g, b, a)` adicionada a `crates/aipo-game-host/src/host_bridge.rs` com fallbacks headless.
+  - Exemplo executável `packages/aipo-game/examples/tilemap_and_hud.aipo` demonstrando todos os subsistemas em ação com movimentação fluida, colisão suave, zoom de câmera e mira laser via raycasting.
+  - Teste de integração automatizado `test_tilemap_and_game_hud_compilation_and_execution` em `crates/aipo-game-host/tests/bridge_tests.rs`.
+
+- **Framework Declarativo de GUI Freya UI e Engine Torin (`packages/aipo-freya`)**:
+  - Implementação completa do pacote `packages/aipo-freya` (`aipo.freya`), portando a arquitetura declarativa de GUI do Freya UI para Aipo com aceleração por GPU via `aipo-game-host`.
+  - **Engine de Layout Torin (`torin.aipo`)**: Algoritmo hierárquico resolvendo dimensões absolutas em pixels (`Float`/`Int`), percentuais (`"100%"`, `"50%"`), intrínsecas e espalhamento flexível (`"flex"`, `"auto"`), com alinhamento (`align_items`), distribuição (`justify_content`), espaçamento interno (`padding`) e vão entre filhos (`gap`).
+  - **Reatividade com Hooks (`hooks.aipo`)**: Runtime reativo (`use_state`, `set_state`) com rastreamento automático de quadros alterados (*dirty frames*), disparando reconstrução e re-layout eficientes apenas em caso de mutação.
+  - **Catálogo de Componentes e Elementos (`elements.aipo`, `components.aipo`)**: Primitivas fundamentais (`rect`, `label`, `container`) e componentes de alto nível (`button`, `switch`, `slider`, `progress_bar`, `card`, `badge`).
+  - **Paleta Catppuccin Mocha Embutida (`color.aipo`)**: Suporte a `rgb`, `rgba`, `hex` e constantes de tema modernas (`crust`, `mantle`, `base`, `surface_0..2`, `blue`, `lavender`, `green`, `red`, etc.).
+  - **Ciclo de Vida e Renderizador GPU (`app.aipo`, `renderer.aipo`)**: Despacho de desenho recursivo, hit-testing de eventos de ponteiro/clique e renderização a 60 FPS com integração de lifecycle (`setup`, `update`, `draw`).
+  - **Resolução de Escopo de Módulos no Compilador (`crates/aipo-cli/src/modules.rs`)**: Correção no compilador onde itens de topo (`FnDecl`, `StructDecl`, `ImplBlock`) do arquivo de entrada não eram reescritos com `entry_scope`, garantindo resolução correta de acessos a membros importados (`alias.method(...)`) dentro de funções de usuário.
+  - **Demonstração e Testes Automatizados**: Exemplo `packages/aipo-freya/examples/dashboard.aipo` e testes automatizados em `crates/aipo-game-host/tests/bridge_tests.rs` (`test_freya_ui_dashboard_compilation_and_execution`, `test_freya_ui_unit_test_suite`) validando 100% das asserções.
+
+- **Adaptador Host Agnóstico e Bindings Immediate-Mode GUI (`aipo-egui` & `packages/aipo-egui`)**:
+  - Implementação completa da crate `crates/aipo-egui` concretizando o *thin proof* de interoperabilidade Rust do ADP-010.
+  - Arquitetura 100% agnóstica de game engines: opera sobre a máquina de estados pura do `egui::Context`, sem dependências de janelas de SO (zero `winit`) ou bibliotecas de jogos.
+  - Segurança estrita Safe Rust (`#![forbid(unsafe_code)]`), conformidade total com o modelo de capabilities (`deny-by-default` com capability `"egui"`) e handles geracionais (`aipo-host::HandleTable`) prevenindo *use-after-free*.
+  - Extração universal de primitivas geométricas (`shapes`): converte a saída do `egui::FullOutput` em uma lista de dicionários (`rect`, `text`, `circle`, `line`, `bezier`, `path`) consumível por qualquer renderizador externo (GPU, Wasm Canvas, TUI ou simulação headless).
+  - API completa de widgets imediatos exposta ao VM: `create_context`, `destroy_context`, `begin_frame`, `end_frame`, `begin_window`, `end_window`, `label`, `heading`, `separator`, `button`, `checkbox`, `slider`, `text_edit`, `progress_bar`, `wants_pointer_input`, `wants_keyboard_input`.
+  - Pacote canônico `packages/aipo-egui` com manifesto `aipo.toml` e ponte `ffi.aipo` validada pelo `aipo check`.
+  - Exemplo executável `examples/28_egui_immediate_gui.aipo` e respectivo snapshot de saída `examples/28_egui_immediate_gui.stdout`.
+  - Suíte de 7 testes de integração automatizados em `crates/aipo-egui/tests/egui_integration_tests.rs` cobrindo o ciclo de vida, negação padrão de permissões, handles obsoletos, interações sintetizadas de ponteiro e execução de script de ponta a ponta.
+
 - **Pipeline de Áudio Nativo e Sintetizador Chiptune Procedural (`aipo-game-host` & `packages/aipo-game`)**:
   - Integração do backend de áudio nativo acelerado via Macroquad / QuadSnd com suporte a carregamento e reprodução de arquivos de áudio WAV e OGG.
   - Implementação de sintetizador de ondas procedural em memória (`crates/aipo-game-host/src/audio_system.rs`) no estilo SFXR/ChipTone gerando buffers RIFF/WAV 16-bit PCM (44.1 kHz, mono) sem necessidade de arquivos externos de áudio.

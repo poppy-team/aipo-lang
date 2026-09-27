@@ -1,0 +1,237 @@
+# tilemap_and_hud.aipo — 2D Tilemap Grid Collision & Game HUD
+# Run with: cargo run -p aipo-game-host -- packages/aipo-game/examples/tilemap_and_hud.aipo
+#
+# Demonstrates:
+# 1. 2D Tilemap with AABB grid collision resolution (no wall clipping).
+# 2. Camera tracking player in tilemap world.
+# 3. In-Game Immediate-Mode HUD: Health bar, stamina bar, clickable buttons.
+# 4. Real-time DDA raycasting from player to mouse with wall hit detection.
+
+import aipo.game as g
+
+var player_x = 120.0
+var player_y = 120.0
+var player_vx = 0.0
+var player_vy = 0.0
+var player_w = 24.0
+var player_h = 24.0
+
+var player_hp = 100.0
+var player_max_hp = 100.0
+var player_stamina = 80.0
+var player_max_stamina = 100.0
+
+var cam_x = 120.0
+var cam_y = 120.0
+var cam_zoom = 1.0
+
+var map = none
+var show_debug_grid = false
+var score = 0
+
+fn setup() {
+    io.println("Initializing 2D Tilemap & Game HUD demo...")
+
+    # Create 24x18 Tilemap with 32x32 tiles (768x576 world)
+    map = g.tilemap.create_tilemap(24, 18, 32.0, 0, 1)
+
+    # 1. Build outer boundary walls
+    var c = 0
+    while c < map.cols {
+        g.tilemap.set_solid(map, c, 0, true)
+        g.tilemap.set_solid(map, c, map.rows - 1, true)
+        c = c + 1
+    }
+    var r = 0
+    while r < map.rows {
+        g.tilemap.set_solid(map, 0, r, true)
+        g.tilemap.set_solid(map, map.cols - 1, r, true)
+        r = r + 1
+    }
+
+    # 2. Build interior maze-like obstacles
+    var i = 4
+    while i < 12 {
+        g.tilemap.set_solid(map, i, 5, true)
+        g.tilemap.set_solid(map, 14, i, true)
+        i = i + 1
+    }
+    var j = 8
+    while j < 18 {
+        g.tilemap.set_solid(map, j, 11, true)
+        j = j + 1
+    }
+    g.tilemap.set_solid(map, 7, 7, true)
+    g.tilemap.set_solid(map, 8, 7, true)
+    g.tilemap.set_solid(map, 7, 8, true)
+    g.tilemap.set_solid(map, 8, 8, true)
+}
+
+fn update(dt) {
+    let speed = 280.0
+
+    # 1. Input: Arrow Keys or WASD
+    var move_x = 0.0
+    var move_y = 0.0
+
+    if host_key_down(262) or host_key_down(68) { move_x = move_x + 1.0 } # D
+    if host_key_down(263) or host_key_down(65) { move_x = move_x - 1.0 } # A
+    if host_key_down(265) or host_key_down(87) { move_y = move_y - 1.0 } # W
+    if host_key_down(264) or host_key_down(83) { move_y = move_y + 1.0 } # S
+
+    # Normalize diagonal
+    if move_x != 0.0 and move_y != 0.0 {
+        move_x = move_x * 0.7071
+        move_y = move_y * 0.7071
+    }
+
+    player_vx = move_x * speed
+    player_vy = move_y * speed
+
+    # 2. Swept AABB Tilemap Grid Collision Resolution
+    let res = g.tilemap.resolve_box_collision(
+        map,
+        player_x, player_y,
+        player_w, player_h,
+        player_vx, player_vy,
+        dt
+    )
+
+    player_x = res[0]
+    player_y = res[1]
+    player_vx = res[2]
+    player_vy = res[3]
+    let col_x = res[4]
+    let col_y = res[5]
+
+    if col_x or col_y {
+        if math.abs(move_x) > 0.0 or math.abs(move_y) > 0.0 {
+            # Light bump sound on collision
+            host_play_preset("click", 0.15, 0.8)
+        }
+    }
+
+    # 3. Smooth Camera Follow
+    cam_x = cam_x + (player_x - cam_x) * dt * 8.0
+    cam_y = cam_y + (player_y - cam_y) * dt * 8.0
+
+    # Camera Zoom with Z / X
+    if host_key_down(90) { cam_zoom = (cam_zoom + 0.5 * dt) }
+    if host_key_down(88) { cam_zoom = (cam_zoom - 0.5 * dt) }
+    if cam_zoom < 0.6 { cam_zoom = 0.6 }
+    if cam_zoom > 1.8 { cam_zoom = 1.8 }
+
+    # Stamina auto-regeneration
+    if player_stamina < player_max_stamina {
+        player_stamina = player_stamina + dt * 15.0
+        if player_stamina > player_max_stamina {
+            player_stamina = player_max_stamina
+        }
+    }
+}
+
+fn draw() {
+    let sw = host_screen_width()
+    let sh = host_screen_height()
+
+    # --- 1. World Space Rendering ---
+    host_clear_background(0.05, 0.06, 0.09)
+    host_set_camera(cam_x, cam_y, cam_zoom)
+
+    # Render Tilemap
+    g.tilemap.draw_tilemap(map, cam_x, cam_y, cam_zoom, sw, sh)
+
+    # Debug grid lines if toggled
+    if show_debug_grid {
+        var c = 0
+        while c <= map.cols {
+            let gx = Float(c) * map.tile_size
+            host_draw_line(gx, 0.0, gx, Float(map.rows) * map.tile_size, 1.0, 0.15, 0.20, 0.28, 0.5)
+            c = c + 1
+        }
+        var r = 0
+        while r <= map.rows {
+            let gy = Float(r) * map.tile_size
+            host_draw_line(0.0, gy, Float(map.cols) * map.tile_size, gy, 1.0, 0.15, 0.20, 0.28, 0.5)
+            r = r + 1
+        }
+    }
+
+    # Draw Player Avatar
+    host_draw_rect(player_x, player_y, player_w, player_h, 0.20, 0.85, 0.50, 1.0)
+    host_draw_rect_lines(player_x, player_y, player_w, player_h, 1.5, 0.50, 1.0, 0.70, 1.0)
+
+    # Draw Player Eye / Direction Indicator
+    let pcx = player_x + player_w * 0.5
+    let pcy = player_y + player_h * 0.5
+    host_draw_circle(pcx, pcy, 3.5, 0.05, 0.15, 0.08, 1.0)
+
+    # --- 2. DDA Raycast: Player to World Mouse ---
+    # Convert screen mouse to world coordinates
+    let smx = host_mouse_x()
+    let smy = host_mouse_y()
+    let world_mx = cam_x + (smx - sw * 0.5) / cam_zoom
+    let world_my = cam_y + (smy - sh * 0.5) / cam_zoom
+
+    let hit_res = g.tilemap.raycast(map, pcx, pcy, world_mx, world_my)
+    let hit = hit_res["hit"]
+    let hx = hit_res["x"]
+    let hy = hit_res["y"]
+
+    if hit {
+        # Sight line blocked: red ray
+        host_draw_line(pcx, pcy, hx, hy, 1.5, 0.95, 0.30, 0.35, 0.8)
+        host_draw_circle(hx, hy, 5.0, 0.95, 0.20, 0.20, 1.0)
+    } else {
+        # Sight line clear: cyan ray
+        host_draw_line(pcx, pcy, world_mx, world_my, 1.5, 0.30, 0.85, 1.0, 0.6)
+        host_draw_circle(world_mx, world_my, 4.0, 0.30, 0.85, 1.0, 0.8)
+    }
+
+    # --- 3. Screen Space HUD (UI Overlay) ---
+    host_reset_camera()
+
+    # Top Status Bar Panel
+    g.ui.panel(16.0, 16.0, 360.0, 110.0, "STATUS DO JOGADOR")
+
+    # Health Bar
+    g.ui.label(28.0, 56.0, "HP:", 13.0, 0.85, 0.90, 1.0)
+    g.ui.health_bar(60.0, 48.0, 180.0, 14.0, player_hp, player_max_hp)
+
+    # Stamina Bar
+    g.ui.label(28.0, 78.0, "SP:", 13.0, 0.85, 0.90, 1.0)
+    g.ui.progress_bar(60.0, 70.0, 180.0, 12.0, player_stamina, player_max_stamina, 0.30, 0.75, 1.0)
+
+    # Badges
+    g.ui.badge(28.0, 92.0, "Nivel 1", 0.4, 0.8, 1.0)
+    g.ui.badge(100.0, 92.0, "Dungeon 2D", 0.5, 0.9, 0.5)
+
+    # Right Action Buttons Panel
+    g.ui.panel(sw - 210.0, 16.0, 194.0, 160.0, "AÇÕES DE HUD")
+
+    # Interactive Buttons
+    if g.ui.button(sw - 198.0, 54.0, 170.0, 28.0, "Curar (+25 HP)") {
+        if player_hp < player_max_hp {
+            player_hp = player_hp + 25.0
+            if player_hp > player_max_hp { player_hp = player_max_hp }
+            host_play_preset("powerup", 0.8, 1.2)
+        }
+    }
+
+    if g.ui.button(sw - 198.0, 88.0, 170.0, 28.0, "Dano (-20 HP)") {
+        if player_hp > 0.0 {
+            player_hp = player_hp - 20.0
+            if player_hp < 0.0 { player_hp = 0.0 }
+            host_play_preset("hit", 0.8, 1.0)
+        }
+    }
+
+    if g.ui.button(sw - 198.0, 122.0, 170.0, 28.0, "Toggle Grid") {
+        show_debug_grid = not show_debug_grid
+        host_play_preset("click", 0.5, 1.0)
+    }
+
+    # Footer Help
+    let help_txt = "WASD/Setas: Mover | Z/X: Zoom | Mouse: Raycast de Visao | Clique nos Botoes de HUD"
+    g.ui.label(20.0, sh - 20.0, help_txt, 14.0, 0.65, 0.70, 0.80)
+}

@@ -29,4 +29,6 @@ aipo-vm = { path = "../aipo-vm" }
 aipo-runtime = { path = "../aipo-runtime" }
 aipo-stdlib = { path = "../aipo-stdlib" }
 aipo-cli = { path = "../aipo-cli" }
+aipo-egui = { path = "../aipo-egui" }
+egui = { version = "0.32", default-features = false, features = ["default_fonts"] }
 macroquad = { version = "0.4.16", features = ["audio"] }

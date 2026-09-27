@@ -668,6 +668,9 @@ async fn run_script_game(script_path: &Path) {
                     );
                 }
 
+                // Render egui shapes overlay if any were generated this frame
+                host_bridge::render_egui_overlay();
+
                 // Display runtime error banner if one occurred
                 if let Some(ref err_msg) = runtime.last_error {
                     draw_rectangle(

@@ -2,7 +2,6 @@
 # Part of `aipo.game`
 
 import actor as act
-import ffi as ffi
 import tween as tween_mod
 
 struct SceneType {
@@ -134,11 +133,11 @@ fn step_simulation(sc: Scene, dt: Float) {
 }
 
 fn render_scene(sc: Scene) {
-    ffi.host_begin_frame(0.05, 0.05, 0.08)
+    host_begin_frame(0.05, 0.05, 0.08)
 
     each a in sc.actors {
         if a.is_alive {
-            ffi.host_draw_rect(
+            host_draw_rect(
                 a.x - (a.width / 2.0),
                 a.y - (a.height / 2.0),
                 a.width,
@@ -148,7 +147,7 @@ fn render_scene(sc: Scene) {
         }
     }
 
-    ffi.host_end_frame()
+    host_end_frame()
 }
 
 # Engine start entrypoint
@@ -157,7 +156,7 @@ fn start_loop(options: Dict) {
     let width = if options.has("width") then options["width"] else 800
     let height = if options.has("height") then options["height"] else 600
 
-    ffi.host_init(width, height, title, 60)
+    host_init(width, height, title, 60)
 
     if options.has("initial_scene") {
         let initial_scene = options["initial_scene"]
