@@ -1,8 +1,8 @@
 # dashboard.aipo — Interactive Declarative Zoe UI Dashboard in Aipo
 # Run with: cargo run -p aipo-game-host -- packages/aipo-zoe/examples/dashboard.aipo
 #
-# Demonstrates Torin Layout, Reactive State Hooks, Interactive Buttons,
-# Switches, Sliders, and Modern GPU Theme Rendering in Zoe UI.
+# Demonstrates Leona Layout Engine, Reactive State Hooks, Ergonomic Containers (row, column, spacer, divider),
+# Interactive Buttons, Switches, Sliders, and Modern GPU Theme Rendering in Zoe UI.
 
 import aipo.zoe as zoe
 
@@ -12,74 +12,75 @@ fn view() {
     let turbo_mode = zoe.use_state(true)
     let volume = zoe.use_state(70.0)
 
-    # 2. Declarative UI tree with Torin Layout
-    return zoe.rect(
+    # 2. Declarative UI tree with Leona Layout Engine
+    return zoe.column(
         {
-            "tag": "root",
-            "direction": "column",
             "width": "100%",
             "height": "100%",
-            "background": zoe.rgb(17, 17, 27), # Catppuccin Crust
+            "background": zoe.color.crust,
             "padding": 32.0,
-            "gap": 20.0
+            "gap": 18.0
         },
         [
-            # Header Row
-            zoe.rect(
+            # Header Row with Spacer
+            zoe.row(
                 {
-                    "direction": "row",
                     "align_items": "center",
                     "width": "100%",
                     "gap": 16.0
                 },
                 [
-                    zoe.label("Zoe UI para Aipo", {
+                    zoe.label("Zoe UI & Leona Engine", {
                         "font_size": 28.0,
-                        "color": zoe.rgb(205, 214, 244), # Catppuccin Text
+                        "color": zoe.color.text,
                         "font_weight": "bold"
                     }),
-                    zoe.badge("Nativo 60 FPS", {
-                        "background": zoe.rgb(49, 50, 68),
-                        "color": zoe.rgb(137, 180, 250)
+                    zoe.badge("Leona 60 FPS", {
+                        "background": zoe.color.surface_0,
+                        "color": zoe.color.blue
+                    }),
+                    zoe.spacer(),
+                    zoe.badge("Aipo Native", {
+                        "background": zoe.color.surface_1,
+                        "color": zoe.color.green
                     })
                 ]
             ),
+
+            zoe.divider({ "color": zoe.color.surface_0 }),
 
             # Card 1: Reatividade e Contador
             zoe.card(
                 {
                     "width": "100%",
-                    "background": zoe.rgb(30, 30, 46), # Base
-                    "border_color": zoe.rgb(49, 50, 68),
+                    "background": zoe.color.base,
+                    "border_color": zoe.color.surface_0,
                     "padding": 20.0,
                     "gap": 16.0
                 },
                 [
                     zoe.label("Contador Reativo (use_state):", {
                         "font_size": 18.0,
-                        "color": zoe.rgb(186, 194, 222)
+                        "color": zoe.color.lavender
                     }),
                     zoe.label(f"Valor atual: {counter.get()}", {
                         "font_size": 24.0,
-                        "color": zoe.rgb(137, 180, 250)
+                        "color": zoe.color.blue
                     }),
-                    zoe.rect(
-                        {
-                            "direction": "row",
-                            "gap": 12.0
-                        },
+                    zoe.row(
+                        { "gap": 12.0 },
                         [
                             zoe.button("+1 Incrementar", _ => zoe.set_state(counter, counter.get() + 1), {
                                 "variant": "primary",
-                                "background": zoe.rgb(137, 180, 250)
+                                "background": zoe.color.blue
                             }),
                             zoe.button("-1 Decrementar", _ => zoe.set_state(counter, counter.get() - 1), {
                                 "variant": "secondary",
-                                "background": zoe.rgb(69, 71, 90)
+                                "background": zoe.color.surface_1
                             }),
                             zoe.button("Zerar", _ => zoe.set_state(counter, 0), {
                                 "variant": "danger",
-                                "background": zoe.rgb(243, 139, 168)
+                                "background": zoe.color.red
                             })
                         ]
                     )
@@ -90,54 +91,47 @@ fn view() {
             zoe.card(
                 {
                     "width": "100%",
-                    "background": zoe.rgb(30, 30, 46),
-                    "border_color": zoe.rgb(49, 50, 68),
+                    "background": zoe.color.base,
+                    "border_color": zoe.color.surface_0,
                     "padding": 20.0,
                     "gap": 16.0
                 },
                 [
                     zoe.label("Controles de Sistema:", {
                         "font_size": 18.0,
-                        "color": zoe.rgb(186, 194, 222)
+                        "color": zoe.color.lavender
                     }),
                     
                     # Linha do Switch
-                    zoe.rect(
+                    zoe.row(
                         {
-                            "direction": "row",
                             "align_items": "center",
                             "gap": 16.0
                         },
                         [
                             zoe.label(f"Modo Turbo GPU ({turbo_mode.get()}):", {
                                 "font_size": 15.0,
-                                "color": zoe.rgb(205, 214, 244)
+                                "color": zoe.color.text
                             }),
-                            zoe.switch(turbo_mode.get(), _ => zoe.set_state(turbo_mode, not turbo_mode.get()), {})
+                            zoe.switch(turbo_mode.get(), _ => zoe.set_state(turbo_mode, not turbo_mode.get()))
                         ]
                     ),
 
                     # Linha do Slider & Barra de Progresso
-                    zoe.rect(
-                        {
-                            "direction": "column",
-                            "gap": 8.0
-                        },
+                    zoe.column(
+                        { "gap": 8.0 },
                         [
                             zoe.label(f"Volume de Saída ({volume.get()}%):", {
                                 "font_size": 15.0,
-                                "color": zoe.rgb(205, 214, 244)
+                                "color": zoe.color.text
                             }),
                             zoe.progress_bar(volume.get() / 100.0, {
                                 "width": 320.0,
                                 "height": 8.0,
-                                "color": zoe.rgb(166, 227, 161)
+                                "color": zoe.color.green
                             }),
-                            zoe.rect(
-                                {
-                                    "direction": "row",
-                                    "gap": 8.0
-                                },
+                            zoe.row(
+                                { "gap": 8.0 },
                                 [
                                     zoe.button("25%", _ => zoe.set_state(volume, 25.0), { "variant": "ghost" }),
                                     zoe.button("50%", _ => zoe.set_state(volume, 50.0), { "variant": "ghost" }),

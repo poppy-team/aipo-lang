@@ -1,53 +1,159 @@
 # lib.aipo — Entrypoint for `aipo.zoe`
-# Zoe UI: Declarative GUI Framework for Aipo inspired by Torin Layout Engine
+# Zoe UI: Declarative, reactive GUI Framework for Aipo with the Leona Layout Engine
 
 import types as types_mod
 import color as color_mod
-import torin as torin_mod
+import leona as leona_mod
 import hooks as hooks_mod
 import elements as elements_mod
 import components as components_mod
 import app as app_mod
 
-# --- Core Elements ---
-fn rect(props: Dict, children: List) {
+# --- Ergonomic Layout Containers (Leona) ---
+
+fn column(arg1, arg2 = none) {
+    if arg2 == none {
+        if (arg1 is List) {
+            return elements_mod.make_rect({ "direction": "column" }, arg1)
+        } else {
+            return elements_mod.make_rect(arg1, [])
+        }
+    }
+    var p = arg1
+    if not p.has("direction") {
+        p["direction"] = "column"
+    }
+    return elements_mod.make_rect(p, arg2)
+}
+
+fn row(arg1, arg2 = none) {
+    if arg2 == none {
+        if (arg1 is List) {
+            return elements_mod.make_rect({ "direction": "row" }, arg1)
+        } else {
+            return elements_mod.make_rect(arg1, [])
+        }
+    }
+    var p = arg1
+    if not p.has("direction") {
+        p["direction"] = "row"
+    }
+    return elements_mod.make_rect(p, arg2)
+}
+
+fn stack(arg1, arg2 = none) {
+    if arg2 == none {
+        if (arg1 is List) {
+            return elements_mod.make_rect({ "direction": "stack" }, arg1)
+        } else {
+            return elements_mod.make_rect(arg1, [])
+        }
+    }
+    var p = arg1
+    if not p.has("direction") {
+        p["direction"] = "stack"
+    }
+    return elements_mod.make_rect(p, arg2)
+}
+
+fn center(arg1, arg2 = none) {
+    if arg2 == none {
+        if (arg1 is List) {
+            return elements_mod.make_rect({
+                "direction": "column",
+                "align_items": "center",
+                "justify_content": "center",
+                "width": "100%",
+                "height": "100%"
+            }, arg1)
+        } else {
+            return elements_mod.make_rect(arg1, [])
+        }
+    }
+    var p = arg1
+    p["align_items"] = "center"
+    p["justify_content"] = "center"
+    return elements_mod.make_rect(p, arg2)
+}
+
+fn spacer(flex: Float = 1.0) {
+    return elements_mod.make_rect({
+        "tag": "spacer",
+        "width": "flex",
+        "height": "flex"
+    }, [])
+}
+
+fn divider(props: Dict = {}) {
+    let dir = if props.has("direction") then props["direction"] else "horizontal"
+    let thickness = if props.has("thickness") then props["thickness"] else 1.0
+    let bg_color = if props.has("color") then props["color"] else color_mod.surface_1
+    if dir == "vertical" {
+        return elements_mod.make_rect({
+            "tag": "divider",
+            "width": thickness,
+            "height": "100%",
+            "background": bg_color
+        }, [])
+    } else {
+        return elements_mod.make_rect({
+            "tag": "divider",
+            "width": "100%",
+            "height": thickness,
+            "background": bg_color
+        }, [])
+    }
+}
+
+# --- Core Primitives ---
+
+fn rect(props: Dict = {}, children: List = []) {
     return elements_mod.make_rect(props, children)
 }
 
-fn label(text: String, props: Dict) {
+fn label(text: String, props: Dict = {}) {
     return elements_mod.make_label(text, props)
 }
 
-fn container(props: Dict, children: List) {
+fn container(props: Dict = {}, children: List = []) {
     return elements_mod.make_container(props, children)
 }
 
-# --- Built-in Freya Components ---
-fn button(label_text: String, on_click, props: Dict) {
+# --- Declarative Zoe Components ---
+
+fn button(label_text: String, on_click = none, props: Dict = {}) {
     return components_mod.make_button(label_text, on_click, props)
 }
 
-fn switch(is_on: Bool, on_toggle, props: Dict) {
+fn switch(is_on: Bool, on_toggle = none, props: Dict = {}) {
     return components_mod.make_switch(is_on, on_toggle, props)
 }
 
-fn slider(value: Float, min_val: Float, max_val: Float, on_change, props: Dict) {
+fn slider(value: Float, min_val: Float, max_val: Float, on_change = none, props: Dict = {}) {
     return components_mod.make_slider(value, min_val, max_val, on_change, props)
 }
 
-fn progress_bar(progress: Float, props: Dict) {
+fn progress_bar(progress: Float, props: Dict = {}) {
     return components_mod.make_progress_bar(progress, props)
 }
 
-fn card(props: Dict, children: List) {
-    return components_mod.make_card(props, children)
+fn card(arg1, arg2 = none) {
+    if arg2 == none {
+        if (arg1 is List) {
+            return components_mod.make_card({}, arg1)
+        } else {
+            return components_mod.make_card(arg1, [])
+        }
+    }
+    return components_mod.make_card(arg1, arg2)
 }
 
-fn badge(text: String, props: Dict) {
+fn badge(text: String, props: Dict = {}) {
     return components_mod.make_badge(text, props)
 }
 
 # --- Reactive Hooks ---
+
 fn use_state(initial_value) {
     return hooks_mod.signal_use_state(initial_value)
 }
@@ -56,7 +162,8 @@ fn set_state(sig, new_value) {
     hooks_mod.signal_set_value(sig, new_value)
 }
 
-# --- Color Utilities ---
+# --- Color Utilities & Palette ---
+
 fn rgb(r, g, b) {
     return color_mod.to_rgb(r, g, b)
 }
@@ -69,7 +176,30 @@ fn hex(code: String) {
     return color_mod.parse_hex(code)
 }
 
+let color = {
+    "rgb": color_mod.to_rgb,
+    "rgba": color_mod.to_rgba,
+    "hex": color_mod.parse_hex,
+    "white": color_mod.white,
+    "black": color_mod.black,
+    "crust": color_mod.crust,
+    "mantle": color_mod.mantle,
+    "base": color_mod.base,
+    "surface_0": color_mod.surface_0,
+    "surface_1": color_mod.surface_1,
+    "surface_2": color_mod.surface_2,
+    "overlay_0": color_mod.overlay_0,
+    "text": color_mod.text,
+    "blue": color_mod.blue,
+    "lavender": color_mod.lavender,
+    "green": color_mod.green,
+    "red": color_mod.red,
+    "yellow": color_mod.yellow,
+    "peach": color_mod.peach
+}
+
 # --- Application Lifecycle ---
+
 fn mount(component_fn) {
     app_mod.app_mount(component_fn)
 }
@@ -87,7 +217,7 @@ fn get_root_element() {
 }
 
 fn compute_layout(root, screen_w, screen_h) {
-    torin_mod.torin_compute_layout(root, screen_w, screen_h)
+    leona_mod.leona_compute_layout(root, screen_w, screen_h)
 }
 
 fn create_rect(x, y, w, h) {
@@ -98,9 +228,10 @@ fn create_color(r, g, b, a) {
     return types_mod.types_make_color(r, g, b, a)
 }
 
+export column, row, stack, center, spacer, divider
 export rect, label, container
 export button, switch, slider, progress_bar, card, badge
 export use_state, set_state
-export rgb, rgba, hex
+export rgb, rgba, hex, color
 export mount, step, draw_ui, get_root_element, compute_layout
 export create_rect, create_color

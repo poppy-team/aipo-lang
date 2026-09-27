@@ -1,4 +1,4 @@
-# zoe_test.aipo — Comprehensive unit tests for Zoe UI framework in Aipo
+# zoe_test.aipo — Comprehensive unit tests for Zoe UI and Leona layout engine in Aipo
 
 import aipo.zoe as zoe
 
@@ -19,6 +19,11 @@ test("color palette and hex parsing") do
     expect.equal(hex_c.r, 1.0)
     expect.equal(hex_c.g, 1.0)
     expect.equal(hex_c.b, 1.0)
+
+    # Catppuccin palette dictionary access
+    expect.equal(zoe.color.white.r, 1.0)
+    expect.true(zoe.color.blue.b > 0.9)
+    expect.true(zoe.color.green.g > 0.8)
 end
 
 test("reactive hooks use_state and set_state") do
@@ -32,31 +37,79 @@ test("reactive hooks use_state and set_state") do
     expect.equal(sig.get(), 300)
 end
 
-test("element and component trees creation") do
+test("element and component trees creation with optional props") do
     let btn_clicked = zoe.use_state(false)
+    # Button with default props
+    let btn_simple = zoe.button("OK")
+    expect.equal(btn_simple.tag, "button")
+    expect.equal(btn_simple.children.len(), 1)
+
+    # Button with full props
     let btn = zoe.button("Clique Aqui", _ => zoe.set_state(btn_clicked, true), { "variant": "primary" })
     expect.equal(btn.tag, "button")
     expect.true(btn.props.has("on_click"))
     expect.equal(btn.children.len(), 1)
 
-    let sw = zoe.switch(true, _ => none, {})
+    # Switch with default props
+    let sw = zoe.switch(true)
     expect.equal(sw.tag, "switch")
 
-    let sl = zoe.slider(50.0, 0.0, 100.0, _ => none, {})
+    # Slider with default props
+    let sl = zoe.slider(50.0, 0.0, 100.0)
     expect.equal(sl.tag, "slider")
 
-    let pb = zoe.progress_bar(0.75, {})
+    # Progress bar with default props
+    let pb = zoe.progress_bar(0.75)
     expect.equal(pb.tag, "progress_bar")
 
-    let bdg = zoe.badge("Ativo", {})
+    # Badge with default props
+    let bdg = zoe.badge("Ativo")
     expect.equal(bdg.tag, "badge")
 
-    let crd = zoe.card({}, [btn, sw])
+    # Card with ergonomic child list
+    let crd = zoe.card([btn, sw])
     expect.equal(crd.tag, "card")
     expect.equal(crd.children.len(), 2)
 end
 
-test("torin layout engine coordinates calculation") do
+test("ergonomic layout containers column row stack center spacer divider") do
+    let b1 = zoe.button("A")
+    let b2 = zoe.button("B")
+
+    # Column without props
+    let col = zoe.column([b1, b2])
+    expect.equal(col.props["direction"], "column")
+    expect.equal(col.children.len(), 2)
+
+    # Row with props
+    let r = zoe.row({ "gap": 10.0 }, [b1, b2])
+    expect.equal(r.props["direction"], "row")
+    expect.equal(r.props["gap"], 10.0)
+
+    # Stack
+    let stk = zoe.stack([b1, b2])
+    expect.equal(stk.props["direction"], "stack")
+
+    # Center
+    let cnt = zoe.center([b1])
+    expect.equal(cnt.props["align_items"], "center")
+    expect.equal(cnt.props["justify_content"], "center")
+
+    # Spacer
+    let sp = zoe.spacer()
+    expect.equal(sp.tag, "spacer")
+    expect.equal(sp.props["width"], "flex")
+
+    # Divider
+    let div_h = zoe.divider()
+    expect.equal(div_h.tag, "divider")
+    expect.equal(div_h.props["width"], "100%")
+
+    let div_v = zoe.divider({ "direction": "vertical" })
+    expect.equal(div_v.props["height"], "100%")
+end
+
+test("leona layout engine coordinates calculation") do
     let child1 = zoe.rect({ "width": 100.0, "height": 40.0 }, [])
     let child2 = zoe.rect({ "width": 150.0, "height": 60.0 }, [])
     let container = zoe.rect(
@@ -92,7 +145,7 @@ test("torin layout engine coordinates calculation") do
     expect.equal(c2_bounds.height, 60.0)
 end
 
-test("torin layout percentage sizing") do
+test("leona layout percentage sizing") do
     let child = zoe.rect({ "width": "50%", "height": "25%" }, [])
     let root = zoe.rect({ "width": 800.0, "height": 400.0 }, [child])
 

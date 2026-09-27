@@ -1,6 +1,6 @@
 # Zoe UI (`aipo.zoe`)
 
-Framework declarativo de interface de usuário (GUI) para a linguagem **Aipo**, baseado no algoritmo de layout **Torin**, sistema reativo de hooks (`use_state`) e componentes visuais estilizados na paleta **Catppuccin Mocha**.
+Framework declarativo de interface de usuário (GUI) para a linguagem **Aipo**, baseado no algoritmo de layout **Leona**, sistema reativo de hooks (`use_state`) e componentes visuais estilizados na paleta **Catppuccin Mocha**.
 
 O **Zoe UI** foi concebido para o ecossistema Aipo com arquitetura pura, declarativa e leve: o código roda diretamente na máquina virtual Aipo e renderiza em GPU nativa (60+ FPS) via [`aipo-game-host`](file:///home/raillen/Documentos/Projetos/aipo-lang/crates/aipo-game-host), com compatibilidade pronta para futuros alvos WebAssembly e JavaScript.
 
@@ -8,10 +8,10 @@ O **Zoe UI** foi concebido para o ecossistema Aipo com arquitetura pura, declara
 
 ## Características Principais
 
-1. **Árvore Declarativa de Componentes:**
-   Construção de interfaces limpas e aninhadas utilizando funções puras de alto nível (`rect`, `label`, `container`, `button`, `switch`, `slider`, `card`, `badge`).
+1. **Árvore Declarativa e Containers Ergonômicos:**
+   Construção de interfaces limpas e expressivas com containers sem cerimônia (`column`, `row`, `stack`, `center`, `spacer`, `divider`) e catálogo completo de componentes (`button`, `switch`, `slider`, `card`, `badge`, `label`, `rect`).
 
-2. **Engine de Layout Torin:**
+2. **Engine de Layout Leona:**
    Algoritmo hierárquico de medição e posicionamento que resolve:
    - Dimensões absolutas em pixels (`Float` / `Int`).
    - Dimensões relativas em porcentagem (`"100%"`, `"50%"`).
@@ -24,7 +24,7 @@ O **Zoe UI** foi concebido para o ecossistema Aipo com arquitetura pura, declara
    Runtime de sinais reativos (`use_state`, `set_state`) com rastreamento automático de quadros sujos (*dirty flags*), disparando reconstrução e re-layout apenas quando o estado sofre mutação.
 
 4. **Catppuccin Mocha Embutido:**
-   Paleta completa de cores modernas acessíveis via utilitários `rgb`, `rgba`, `hex` e constantes temáticas (`crust`, `mantle`, `base`, `surface_0..2`, `blue`, `lavender`, `green`, `red`, etc.).
+   Paleta completa de cores modernas acessíveis via `zoe.color` (`zoe.color.base`, `zoe.color.blue`, `zoe.color.mantle`, etc.) e utilitários `rgb`, `rgba`, `hex`.
 
 5. **Aceleração por GPU Nativa:**
    Renderização com 60+ FPS no desktop nativo conectada diretamente ao host Miniquad através do `aipo-game-host`.
@@ -49,7 +49,7 @@ aipo package audit .
 
 ---
 
-## Exemplo Rápido: Contador Reativo
+## Exemplo Rápido: Contador Reativo Ergonômico
 
 ```aipo
 import aipo.zoe as zoe
@@ -57,27 +57,16 @@ import aipo.zoe as zoe
 fn view() {
     let count = zoe.use_state(0)
 
-    return zoe.rect(
-        {
-            "direction": "column",
-            "align_items": "center",
-            "justify_content": "center",
-            "width": "100%",
-            "height": "100%",
-            "background": zoe.rgb(30, 30, 46), # Catppuccin Base
-            "gap": 16.0
-        },
-        [
-            zoe.label(f"Contador: {count.get()}", {
-                "font_size": 24.0,
-                "color": zoe.rgb(205, 214, 244)
-            }),
-            zoe.button("Incrementar +1", _ => zoe.set_state(count, count.get() + 1), {
-                "variant": "primary",
-                "background": zoe.rgb(137, 180, 250)
-            })
-        ]
-    )
+    return zoe.center({ "background": zoe.color.base, "gap": 16.0 }, [
+        zoe.label(f"Contador: {count.get()}", {
+            "font_size": 24.0,
+            "color": zoe.color.text
+        }),
+        zoe.button("Incrementar +1", _ => zoe.set_state(count, count.get() + 1), {
+            "variant": "primary",
+            "background": zoe.color.blue
+        })
+    ])
 }
 
 fn setup() {

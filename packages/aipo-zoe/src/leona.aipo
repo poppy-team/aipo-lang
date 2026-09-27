@@ -1,4 +1,4 @@
-# torin.aipo — Torin Layout Engine for aipo.freya
+# leona.aipo — Leona Layout Engine for Zoe UI (aipo.zoe)
 # Computes bounding boxes, flex distribution, alignment, and hierarchical constraints
 
 import types as types_mod
@@ -257,11 +257,11 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
 }
 
 # Entrypoint for root layout computation
-fn torin_compute_layout(root, screen_w: Float, screen_h: Float) {
+fn leona_compute_layout(root, screen_w: Float, screen_h: Float) {
     if root == none {
         return
     }
     layout_node(root, 0.0, 0.0, screen_w, screen_h)
 }
 
-export get_prop, parse_pct, is_pct, is_flex, measure_leaf_node, torin_compute_layout, layout_node
+export get_prop, parse_pct, is_pct, is_flex, measure_leaf_node, leona_compute_layout, layout_node

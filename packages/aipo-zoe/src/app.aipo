@@ -1,8 +1,8 @@
-# app.aipo — Application Lifecycle, Hit Testing, and Event Loop for aipo.freya
+# app.aipo — Application Lifecycle, Hit Testing, and Event Loop for aipo.zoe
 # Manages component mount, reactive re-rendering, mouse dispatch, and frame steps
 
 import types as types_mod
-import torin as torin_mod
+import leona as leona_mod
 import hooks as hooks_mod
 import renderer as renderer_mod
 
@@ -15,7 +15,7 @@ fn app_get_root_element() {
     return _root_element
 }
 
-# Re-evaluates component tree and triggers Torin layout computation
+# Re-evaluates component tree and triggers Leona layout computation
 fn rebuild_tree() {
     if _root_component == none {
         return
@@ -26,7 +26,7 @@ fn rebuild_tree() {
 
     let sw = host_screen_width()
     let sh = host_screen_height()
-    torin_mod.torin_compute_layout(_root_element, sw, sh)
+    leona_mod.leona_compute_layout(_root_element, sw, sh)
     hooks_mod.clear_dirty()
 }
 
