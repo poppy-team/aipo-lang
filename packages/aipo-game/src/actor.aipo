@@ -3,72 +3,82 @@
 
 var _actor_id_seq = 0
 
-fn next_actor_id() - > Int{
+fn next_actor_id() -> Int {
     _actor_id_seq += 1
     return _actor_id_seq
 }
 
 struct ActorType {
-    name: String
-    config: Dict
+    name
+    config
 }
 
 struct Actor {
-    id: Int
-    type_name: String
-    x: Float
-    y: Float
-    vx: Float
-    vy: Float
-    width: Float
-    height: Float
-    rotation: Float
-    scale_x: Float
-    scale_y: Float
-    sprite: String
-    is_alive: Bool
-    is_on_ground: Bool
-    tags: List
-    behaviors: List
-    on_create_fn: Fn
-    on_update_fn: Fn
-    on_collision_fn: Fn
-    on_destroy_fn: Fn
-    custom: Dict
+    id
+    type_name
+    var x
+    var y
+    var vx
+    var vy
+    var width
+    var height
+    var rotation
+    var scale_x
+    var scale_y
+    var sprite
+    var is_alive
+    var is_on_ground
+    var tags
+    var behaviors
+    var on_create_fn
+    var on_update_fn
+    var on_collision_fn
+    var on_destroy_fn
+    var custom
 }
 
 # Actor Type Factory (Blueprint)
-fn actor(name: String, config: Dict) - > ActorType{
-    return ActorType{
+fn make_actor(name: String, config: Dict) -> ActorType {
+    return ActorType {
         name: name,
         config: config
     }
 }
 
 # Instantiate an Actor instance from blueprint
-fn create_instance(blueprint: ActorType, x: Float, y: Float) - > Actor{
+fn create_instance(blueprint: ActorType, x: Float, y: Float) -> Actor {
     let cfg = blueprint.config
-    let inst = Actor{
+    let w = if cfg.has("width") then cfg["width"] else 32.0
+    let h = if cfg.has("height") then cfg["height"] else 32.0
+    let sp = if cfg.has("sprite") then cfg["sprite"] else ""
+    let tg = if cfg.has("tags") then cfg["tags"] else []
+    let bh = if cfg.has("behaviors") then cfg["behaviors"] else []
+    let oc = if cfg.has("on_create") then cfg["on_create"] else none
+    let ou = if cfg.has("on_update") then cfg["on_update"] else none
+    let col = if cfg.has("on_collision") then cfg["on_collision"] else none
+    let od = if cfg.has("on_destroy") then cfg["on_destroy"] else none
+
+    let inst = Actor {
         id: next_actor_id(),
         type_name: blueprint.name,
         x: x,
         y: y,
         vx: 0.0,
         vy: 0.0,
-        width: cfg.get("width", 32.0),
-        height: cfg.get("height", 32.0),
+        width: w,
+        height: h,
         rotation: 0.0,
         scale_x: 1.0,
         scale_y: 1.0,
-        sprite: cfg.get("sprite", ""),
+        sprite: sp,
         is_alive: true,
         is_on_ground: false,
-        tags: cfg.get("tags", []),
-        behaviors: cfg.get("behaviors", []),
-        on_create_fn: cfg.get("on_create", none),
-        on_update_fn: cfg.get("on_update", none),
-        on_collision_fn: cfg.get("on_collision", none),
-        on_destroy_fn: cfg.get("on_destroy", none),
+        tags: tg,
+        behaviors: bh,
+        on_create_fn: oc,
+        on_update_fn: ou,
+        on_collision_fn: col,
+        on_destroy_fn: od,
         custom: {}
     }
 
@@ -80,8 +90,8 @@ fn create_instance(blueprint: ActorType, x: Float, y: Float) - > Actor{
 }
 
 # AABB Collision Detection
-fn check_overlap(a: Actor, b: Actor) - > Bool{
-    if! a.is_alive or! b.is_alive or a.id == b.id {
+fn check_overlap(a: Actor, b: Actor) -> Bool {
+    if not a.is_alive or not b.is_alive or a.id == b.id {
         return false
     }
 
@@ -97,3 +107,5 @@ fn check_overlap(a: Actor, b: Actor) - > Bool{
 
     return (a_left < b_right) and (a_right > b_left) and (a_top < b_bottom) and (a_bottom > b_top)
 }
+
+export ActorType, Actor, make_actor, create_instance, check_overlap, next_actor_id

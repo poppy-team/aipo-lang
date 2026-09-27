@@ -2,79 +2,79 @@
 # Precludes visual wire spaghetti and serializes directly to canonical Aipo code
 
 struct TriggerNode {
-    id: String
-    event: String
-    params: Dict
+    id
+    event
+    params
 }
 
 struct FilterNode {
-    id: String
-    left: String
-    op: String
-    right: String
+    id
+    left
+    op
+    right
 }
 
 struct ActionNode {
-    id: String
-    action_type: String
-    params: Dict
+    id
+    action_type
+    params
 }
 
 struct VisualRule {
-    id: String
-    name: String
-    trigger: TriggerNode
-    filters: List
-    actions: List
+    id
+    name
+    trigger
+    filters
+    actions
 }
 
 # Visual Node Constructors
-fn trigger(event: String, params: Dict = {}) - > TriggerNode{
-    return TriggerNode{ id: event, event: event, params: params }
+fn trigger(event: String, params: Dict) -> TriggerNode {
+    return TriggerNode { id: event, event: event, params: params }
 }
 
-fn filter(left: String, op: String, right: String) - > FilterNode{
-    return FilterNode{ id: "filter", left: left, op: op, right: right }
+fn filter(left: String, op: String, right: String) -> FilterNode {
+    return FilterNode { id: "filter", left: left, op: op, right: right }
 }
 
-fn action(action_type: String, params: Dict = {}) - > ActionNode{
-    return ActionNode{ id: action_type, action_type: action_type, params: params }
+fn action(action_type: String, params: Dict) -> ActionNode {
+    return ActionNode { id: action_type, action_type: action_type, params: params }
 }
 
-fn rule(name: String, trigger: TriggerNode, filters: List = [], actions: List = []) - > VisualRule{
-    return VisualRule{
+fn rule(name: String, trig: TriggerNode, filters: List, actions: List) -> VisualRule {
+    return VisualRule {
         id: name,
         name: name,
-        trigger: trigger,
+        trigger: trig,
         filters: filters,
         actions: actions
     }
 }
 
 # Transpiles a Visual Rule directly into clean, human-readable Aipo code
-fn transpile_to_aipo_code(rule: VisualRule) - > String{
-    var code = f"// Regra Visual: {rule.name}\n"
+fn transpile_to_aipo_code(rule_def: VisualRule) -> String {
+    var code = f"# Regra Visual: {rule_def.name}\n"
 
-    if rule.trigger.event == "on_collision" {
-        let target = rule.trigger.params.get("with", "Outro")
-        code += f"on_collision: (actor, other) => {{\n"
+    if rule_def.trigger.event == "on_collision" {
+        let target = if rule_def.trigger.params.has("with") then rule_def.trigger.params["with"] else "Outro"
+        code += "on_collision: (actor, other) => {\n"
         code += f"    if other.is_a({target}) {{\n"
 
         # Inject filters
-        each f in rule.filters {
+        each f in rule_def.filters {
             code += f"        if not ({f.left} {f.op} {f.right}) {{ return }}\n"
         }
 
         # Inject actions
-        each act in rule.actions {
+        each act in rule_def.actions {
             if act.action_type == "destroy" {
-                let who = act.params.get("target", "other")
+                let who = if act.params.has("target") then act.params["target"] else "other"
                 code += f"        {who}.destroy()\n"
             } else if act.action_type == "play_sound" {
-                let snd = act.params.get("file", "som.wav")
+                let snd = if act.params.has("file") then act.params["file"] else "som.wav"
                 code += f"        g.audio.play(\"{snd}\")\n"
             } else if act.action_type == "add_score" {
-                let pts = act.params.get("points", 10)
+                let pts = if act.params.has("points") then act.params["points"] else 10
                 code += f"        actor.score += {pts}\n"
             }
         }
@@ -85,3 +85,5 @@ fn transpile_to_aipo_code(rule: VisualRule) - > String{
 
     return code
 }
+
+export TriggerNode, FilterNode, ActionNode, VisualRule, trigger, filter, action, rule, transpile_to_aipo_code

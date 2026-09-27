@@ -53,7 +53,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-mod modules;
+pub mod modules;
 
 static NEXT_LOCK_TEMP: AtomicU64 = AtomicU64::new(0);
 
@@ -960,16 +960,20 @@ struct LoadedSource {
 }
 
 /// Result of compiling a source file down to verified bytecode.
-struct Compiled {
-    module: aipo_bytecode::BytecodeModule,
-    diagnostics: Vec<Diagnostic>,
+pub struct Compiled {
+    /// The compiled bytecode module.
+    pub module: aipo_bytecode::BytecodeModule,
+    /// Diagnostics accumulated during compilation.
+    pub diagnostics: Vec<Diagnostic>,
 }
 
-/// Runs the frontend pipeline and reports diagnostics.
-///
-/// `analyze` never executes the program: `check` stops here, while `run` continues with
-/// [`execute_module`].
-fn analyze(source: &Source, path: &Path, package_paths: Option<&PackagePathMap>) -> Compiled {
+/// Runs the frontend pipeline with an optional custom prelude surface and reports diagnostics.
+pub fn analyze_with_surface(
+    source: &Source,
+    path: &Path,
+    package_paths: Option<&PackagePathMap>,
+    extra_surface: Option<&PreludeSurface>,
+) -> Compiled {
     let (program, mut diagnostics) = aipo_syntax::parse(source);
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Compiled {
@@ -992,6 +996,18 @@ fn analyze(source: &Source, path: &Path, package_paths: Option<&PackagePathMap>)
     let hir = resolved.program;
 
     let mut surface = prelude_surface();
+    if let Some(extra) = extra_surface {
+        for (name, kind) in extra.iter() {
+            match kind {
+                aipo_sema::SymbolKind::Function { min_args, max_args } => {
+                    surface.add_function(name, *min_args, *max_args);
+                }
+                _ => {
+                    surface.add_variable(name);
+                }
+            }
+        }
+    }
     // Imported module names and aliases are ordinary globals to the checker.
     for name in &resolved.imported_names {
         surface.add_variable(name);
@@ -1021,6 +1037,14 @@ fn analyze(source: &Source, path: &Path, package_paths: Option<&PackagePathMap>)
             }
         }
     }
+}
+
+/// Runs the frontend pipeline and reports diagnostics.
+///
+/// `analyze` never executes the program: `check` stops here, while `run` continues with
+/// [`execute_module`].
+pub fn analyze(source: &Source, path: &Path, package_paths: Option<&PackagePathMap>) -> Compiled {
+    analyze_with_surface(source, path, package_paths, None)
 }
 
 fn verification_diagnostic(reason: &str) -> Diagnostic {
@@ -2158,7 +2182,7 @@ fn build_bundle(
 }
 
 /// Registers the structs and struct methods declared in a compiled module onto the VM.
-fn register_module_symbols(vm: &mut Vm, module: &aipo_bytecode::BytecodeModule) {
+pub fn register_module_symbols(vm: &mut Vm, module: &aipo_bytecode::BytecodeModule) {
     for decl in &module.structs {
         let fields: Vec<(&str, bool)> = decl
             .fields
@@ -2432,7 +2456,7 @@ fn test_command(
 }
 
 /// Builds a VM with the standard library registered, plus the registry of its metadata.
-fn standard_environment() -> (Vm, NativeRegistry) {
+pub fn standard_environment() -> (Vm, NativeRegistry) {
     install_host_services();
     let mut vm = Vm::new();
     let mut registry = NativeRegistry::new();
@@ -2457,7 +2481,7 @@ fn install_host_services() {
 /// the VM that will execute the program can resolve it. Module names (`math`, `string`,
 /// `io`) become globals, and Prelude natives carry their cataloged arity so member calls
 /// can be arity-checked.
-fn prelude_surface() -> PreludeSurface {
+pub fn prelude_surface() -> PreludeSurface {
     let (vm, registry) = standard_environment();
     let mut surface = PreludeSurface::fundamental();
 
@@ -2480,7 +2504,7 @@ fn runtime_diagnostic(source: &Source, error: &VmError) -> Diagnostic {
 ///
 /// Human diagnostics go to standard error, matching compiler convention; JSONL keeps the
 /// schema documented in `docs/reference/cli.md`.
-fn emit_diagnostics(
+pub fn emit_diagnostics(
     format: MessageFormat,
     source: &Source,
     diagnostics: &[Diagnostic],
@@ -2496,6 +2520,43 @@ fn emit_diagnostics(
     let emitter = DiagnosticEmitter::new(format, Some(&map));
     let _ = emitter.emit_all(err, diagnostics);
     let _ = out.flush();
+}
+
+/// Compiles an Aipo source file down to verified bytecode, resolving local packages and imports.
+///
+/// # Errors
+/// Returns the source and diagnostics if resolution, parsing, semantic analysis, or bytecode verification fails.
+pub fn compile_file(
+    path: &Path,
+    extra_surface: Option<&PreludeSurface>,
+) -> Result<(Source, aipo_bytecode::BytecodeModule), (Source, Vec<Diagnostic>)> {
+    let loaded = match load_source_entry(path, None) {
+        Ok(l) => l,
+        Err(err) => {
+            let src = Source::new(SourceId::next(), path.display().to_string(), "");
+            let diag = match err {
+                CliError::Usage(msg) => Diagnostic::error(DiagnosticCode::AIPO_PKG_RESOLUTION, msg),
+                CliError::Diagnostic(d) => *d,
+            };
+            return Err((src, vec![diag]));
+        }
+    };
+
+    let compiled = analyze_with_surface(
+        &loaded.source,
+        path,
+        loaded.package_paths.as_ref(),
+        extra_surface,
+    );
+    if compiled
+        .diagnostics
+        .iter()
+        .any(|d| d.severity == Severity::Error)
+    {
+        Err((loaded.source, compiled.diagnostics))
+    } else {
+        Ok((loaded.source, compiled.module))
+    }
 }
 
 /// Formats files in place, or verifies that they are already canonical.

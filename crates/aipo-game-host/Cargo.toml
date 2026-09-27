@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "aipo_game_host"
+path = "src/lib.rs"
+
 [[bin]]
 name = "aipo-game-host"
 path = "src/main.rs"
@@ -24,4 +28,5 @@ aipo-bytecode = { path = "../aipo-bytecode" }
 aipo-vm = { path = "../aipo-vm" }
 aipo-runtime = { path = "../aipo-runtime" }
 aipo-stdlib = { path = "../aipo-stdlib" }
+aipo-cli = { path = "../aipo-cli" }
 macroquad = "0.4.16"

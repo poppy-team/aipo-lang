@@ -1,16 +1,16 @@
 # behaviors.aipo — Reusable pre-fabricated actor behaviors for `aipo.game`
 
-import.input as input
+import input as input
 
 struct Behavior {
-    name: String
-    props: Dict
-    update_fn: Fn
+    name
+    props
+    update_fn
 }
 
 # TopDown Movement Behavior (WASD / Arrows)
-fn TopDown(speed: Float = 200.0, diagonal: Bool = true) - > Behavior{
-    let update = (actor, dt) => {
+fn TopDown(speed: Float, diagonal: Bool) -> Behavior {
+    let update = fn(actor, dt) {
         let ax = input.axis_x()
         let ay = input.axis_y()
 
@@ -21,7 +21,7 @@ fn TopDown(speed: Float = 200.0, diagonal: Bool = true) - > Behavior{
         actor.y += actor.vy * dt
     }
 
-    return Behavior{
+    return Behavior {
         name: "TopDown",
         props: { "speed": speed },
         update_fn: update
@@ -29,8 +29,8 @@ fn TopDown(speed: Float = 200.0, diagonal: Bool = true) - > Behavior{
 }
 
 # Platformer 2D Physics Behavior
-fn Platformer(speed: Float = 200.0, jump_force: Float = 400.0, gravity: Float = 980.0) - > Behavior{
-    let update = (actor, dt) => {
+fn Platformer(speed: Float, jump_force: Float, gravity: Float) -> Behavior {
+    let update = fn(actor, dt) {
         let ax = input.axis_x()
         actor.vx = ax * speed
 
@@ -49,7 +49,7 @@ fn Platformer(speed: Float = 200.0, jump_force: Float = 400.0, gravity: Float = 
         actor.y += actor.vy * dt
     }
 
-    return Behavior{
+    return Behavior {
         name: "Platformer",
         props: {
             "speed": speed,
@@ -61,8 +61,8 @@ fn Platformer(speed: Float = 200.0, jump_force: Float = 400.0, gravity: Float = 
 }
 
 # Linear Directional Bullet Behavior
-fn Bullet(speed: Float = 400.0, angle: Float = 0.0) - > Behavior{
-    let update = (actor, dt) => {
+fn Bullet(speed: Float, angle: Float) -> Behavior {
+    let update = fn(actor, dt) {
         # angle in degrees, -90 is up, 90 is down, 0 is right, 180 is left
         if angle == -90.0 {
             actor.y -= speed * dt
@@ -75,7 +75,7 @@ fn Bullet(speed: Float = 400.0, angle: Float = 0.0) - > Behavior{
         }
     }
 
-    return Behavior{
+    return Behavior {
         name: "Bullet",
         props: { "speed": speed, "angle": angle },
         update_fn: update
@@ -83,12 +83,12 @@ fn Bullet(speed: Float = 400.0, angle: Float = 0.0) - > Behavior{
 }
 
 # Solid Collider Behavior (Obstacle for Platformer/TopDown)
-fn Solid() - > Behavior{
-    let update = (actor, dt) => {
+fn Solid() -> Behavior {
+    let update = fn(actor, dt) {
         # Marker behavior for spatial collision solver
     }
 
-    return Behavior{
+    return Behavior {
         name: "Solid",
         props: { "is_solid": true },
         update_fn: update
@@ -96,8 +96,8 @@ fn Solid() - > Behavior{
 }
 
 # Wrap Around Screen Edges
-fn WrapScreen(margin: Float = 16.0) - > Behavior{
-    let update = (actor, dt) => {
+fn WrapScreen(margin: Float) -> Behavior {
+    let update = fn(actor, dt) {
         # Screen bounds wrap
         if actor.x < -margin {
             actor.x = 800.0 + margin
@@ -112,7 +112,7 @@ fn WrapScreen(margin: Float = 16.0) - > Behavior{
         }
     }
 
-    return Behavior{
+    return Behavior {
         name: "WrapScreen",
         props: { "margin": margin },
         update_fn: update
@@ -120,8 +120,8 @@ fn WrapScreen(margin: Float = 16.0) - > Behavior{
 }
 
 # Keep Within Screen Bounds
-fn KeepInScreen(margin: Float = 0.0) - > Behavior{
-    let update = (actor, dt) => {
+fn KeepInScreen(margin: Float) -> Behavior {
+    let update = fn(actor, dt) {
         if actor.x < margin {
             actor.x = margin
         } else if actor.x > 800.0 - margin {
@@ -135,7 +135,7 @@ fn KeepInScreen(margin: Float = 0.0) - > Behavior{
         }
     }
 
-    return Behavior{
+    return Behavior {
         name: "KeepInScreen",
         props: { "margin": margin },
         update_fn: update
@@ -143,16 +143,18 @@ fn KeepInScreen(margin: Float = 0.0) - > Behavior{
 }
 
 # Auto Destroy Outside Screen
-fn DestroyOutsideScreen(margin: Float = 50.0) - > Behavior{
-    let update = (actor, dt) => {
+fn DestroyOutsideScreen(margin: Float) -> Behavior {
+    let update = fn(actor, dt) {
         if actor.x < -margin or actor.x > 800.0 + margin or actor.y < -margin or actor.y > 600.0 + margin {
-            actor.destroy()
+            actor.is_alive = false
         }
     }
 
-    return Behavior{
+    return Behavior {
         name: "DestroyOutsideScreen",
         props: { "margin": margin },
         update_fn: update
     }
 }
+
+export Behavior, TopDown, Platformer, Bullet, Solid, WrapScreen, KeepInScreen, DestroyOutsideScreen

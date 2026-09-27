@@ -5,6 +5,22 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [0.11.0] - Em desenvolvimento (Trilha WebAssembly & Self-Hosting)
 
+- **Engine 2D Nativa e Host Desktop Miniquad (`aipo-game-host` & `packages/aipo-game`)**:
+  - Implementação da crate `crates/aipo-game-host` fornecendo runtime nativo em GPU a 60 FPS com backend Miniquad / Macroquad.
+  - Execução direta de scripts `.aipo` com descoberta de hooks de ciclo de vida (`setup()`, `update(dt)`, `draw()`).
+  - Suporte a live hot-reload de scripts em tempo real via `F5` ou `Ctrl+R` com overlay gráfico de diagnósticos e números de linha em caso de erro.
+  - Ponte FFI (`host_bridge.rs`) expondo 23 funções nativas registradas como globais, sob aliases canônicos `__aipo_game_*` e dentro do dicionário `game`:
+    - Renderização 2D acelerada: `host_clear_background`, `host_draw_rect`, `host_draw_rect_lines`, `host_draw_circle`, `host_draw_text`.
+    - Texturas e Spritesheets: `host_load_texture`, `host_draw_sprite`, `host_draw_sprite_subrect` com cache de texturas e textura de fallback segura.
+    - Câmera 2D: `host_set_camera(tx, ty, zoom)` para rastreamento de alvo e zoom, e `host_reset_camera()` para renderização de HUD em coordenadas de tela.
+    - Entrada e Tempo: `host_key_down`, `host_key_pressed` (mapeamento GLFW completo: WASD, Setas, Espaço, Enter, Esc), `host_mouse_x`, `host_mouse_y`, `host_mouse_btn`, `host_screen_width`, `host_screen_height`, `host_frame_time`.
+  - Resiliência headless total: wrappers com `catch_unwind(AssertUnwindSafe)` permitindo execução de 100% dos testes sem servidores X11 ou janelas ativas.
+  - Exposição de superfícies de compilação pública em `aipo-cli` (`compile_file`, `analyze_with_surface`, `prelude_surface`, `register_module_symbols`, `emit_diagnostics`).
+  - Refatoração completa dos módulos de `packages/aipo-game/src/` (`actor`, `audio`, `behaviors`, `ffi`, `input`, `lib`, `nodes`, `scene`, `sfx`, `tween`) alinhando sintaxe de import, structs, laços e closures à gramática canônica da linguagem com validação total via `aipo check`.
+  - Exemplos interativos: `examples/26_interactive_game.aipo` (física 2D, aceleração, amortecimento e coleta de moeda) e `examples/27_camera_and_sprites.aipo` (câmera com zoom e seguimento do jogador, mundo 1000x1000, 8 gemas colecionáveis e HUD).
+  - Suíte de 5 testes de integração automatizados em `crates/aipo-game-host/tests/bridge_tests.rs`.
+  - Documentação bilíngue completa atualizada em `docs/packages/aipo-game.md` e `docs/en/packages/aipo-game.md`.
+
 - **Transição Arquitetural para WebAssembly e Roteiro de Self-Hosting (ADP-013)**:
   - Congelamento formal da versão inicial v0.1.0 (Stack VM) na branch `legacy/v0.1.0-stack-vm` e tag `v0.1.0-stack-vm-final`.
   - Adoção do WebAssembly (Wasm 2.0 / WASI) como substrato padrão de execução de alta performance, superando o piso de ~100ns do despacho em pilha para ~1-3ns com JIT nativo via Cranelift/Wasmtime.

@@ -37,79 +37,88 @@ Adicione ao seu `aipo.toml`:
 ```aipo
 import aipo.game as g
 
-// Ator Jogador
+# Ator Jogador
 let Nave = g.actor("Nave", {
     sprite: "nave.png",
     behaviors: [
-        g.behaviors.TopDown(speed: 240.0),
-        g.behaviors.KeepInScreen()
+        g.behaviors.TopDown(240.0, true),
+        g.behaviors.KeepInScreen(0.0)
     ],
 
-    on_create: actor => {
-        actor.vida = 100
-        actor.cooldown = 0.0
+    on_create: fn(actor) {
+        actor.custom["vida"] = 100
+        actor.custom["cooldown"] = 0.0
     },
 
-    on_update: (actor, dt) => {
-        actor.cooldown -= dt
-        if g.input.key_down("Space") and actor.cooldown <= 0.0 {
-            g.spawn(Laser, x: actor.x, y: actor.y - 20)
+    on_update: fn(actor, dt) {
+        actor.custom["cooldown"] -= dt
+        if g.input.key_down("Space") and actor.custom["cooldown"] <= 0.0 {
+            g.spawn(Laser, actor.x, actor.y - 20.0)
             g.audio.play("laser.wav")
-            actor.cooldown = 0.15
+            actor.custom["cooldown"] = 0.15
         }
     },
 
-    on_collision: (actor, other) => {
-        if other.is_a(Asteroide) {
-            actor.vida -= 25
-            other.destroy()
-            g.fx.screen_shake(intensity: 8.0, duration: 0.3)
+    on_collision: fn(actor, other) {
+        if other.type_name == "Asteroide" {
+            actor.custom["vida"] -= 25
+            other.is_alive = false
         }
     }
 })
 
-// Ator Laser
+# Ator Laser
 let Laser = g.actor("Laser", {
     sprite: "laser.png",
     behaviors: [
-        g.behaviors.Bullet(speed: 600.0, angle: -90.0),
-        g.behaviors.DestroyOutsideScreen()
+        g.behaviors.Bullet(600.0, -90.0),
+        g.behaviors.DestroyOutsideScreen(50.0)
     ]
 })
 
-// Ator Asteroide
+# Ator Asteroide
 let Asteroide = g.actor("Asteroide", {
     sprite: "asteroide.png",
     behaviors: [
-        g.behaviors.Bullet(speed: 120.0, angle: 90.0),
-        g.behaviors.DestroyOutsideScreen()
+        g.behaviors.Bullet(120.0, 90.0),
+        g.behaviors.DestroyOutsideScreen(50.0)
     ]
 })
 
-// Cena Principal
+# Cena Principal
 let Jogo = g.scene("Espaco", {
-    width: 800,
-    height: 600,
+    width: 800.0,
+    height: 600.0,
     background: "#0a0a12",
 
-    on_load: scene => {
-        g.spawn(Nave, x: 400, y: 520)
-
-        // Gerar asteroides periodicamente
-        scene.timer(interval: 0.8, repeat: true, _ => {
-            let spawn_x = g.random.range(40, 760)
-            g.spawn(Asteroide, x: spawn_x, y: -30)
-        })
+    on_load: fn(scene) {
+        g.spawn(Nave, 400.0, 520.0)
     }
 })
 
-// Inicialização
+# Inicialização
 fn main() {
     g.start({
-        title: "Space Defender — Aipo Game",
-        width: 800,
-        height: 600,
-        initial_scene: Jogo
+        "title": "Space Defender — Aipo Game",
+        "width": 800,
+        "height": 600,
+        "initial_scene": Jogo
     })
 }
 ```
+
+---
+
+## Execução Nativa a 60 FPS (`aipo-game-host`)
+
+O runtime nativo em `crates/aipo-game-host` permite compilar e executar qualquer jogo `.aipo` diretamente na GPU:
+
+```bash
+# Executa exemplos interativos em tempo real
+cargo run -p aipo-game-host -- examples/26_interactive_game.aipo
+cargo run -p aipo-game-host -- examples/27_camera_and_sprites.aipo
+
+# Executa o Snake Game nativo embutido
+cargo run -p aipo-game-host
+```
+

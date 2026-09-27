@@ -1,31 +1,38 @@
 # lib.aipo — Entrypoint for `aipo.game`
 # 2D Game Engine with Actor-Scene lifecycle, pluggable Behaviors and Visual Scripting Nodes
 
-import.actor as act_mod
-import.scene as scene_mod
-import.behaviors as behaviors_mod
-import.input as input_mod
-import.audio as audio_mod
-import.nodes as nodes_mod
-import.sfx as sfx_mod
-import.tween as tween_mod
+import actor as act_mod
+import scene as scene_mod
+import behaviors as behaviors_mod
+import input as input_mod
+import audio as audio_mod
+import nodes as nodes_mod
+import sfx as sfx_mod
+import tween as tween_mod
 
-# Core Factory Functions
-export act_mod.actor
-export scene_mod.scene, scene_mod.spawn, scene_mod.start
+# Core Factory Functions & LifeCycle
+fn actor(name: String, config: Dict) {
+    return act_mod.make_actor(name, config)
+}
 
-# Subsystems
-export behaviors_mod as behaviors
-export input_mod as input
-export audio_mod as audio
-export nodes_mod as nodes
-export sfx_mod as sfx
-export tween_mod as tween
+fn scene(name: String, config: Dict) {
+    return scene_mod.make_scene(name, config)
+}
 
-# Tween & Easing Shorthands
-export tween_mod.create_tween as animate
-export tween_mod.linear, tween_mod.ease_in, tween_mod.ease_out, tween_mod.ease_in_out, tween_mod.bounce_out
+fn spawn(blueprint, x: Float, y: Float) {
+    return scene_mod.spawn_actor(blueprint, x, y)
+}
 
-# Types
-export act_mod.Actor, act_mod.ActorType
-export scene_mod.Scene, scene_mod.SceneType
+fn start(options: Dict) {
+    scene_mod.start_loop(options)
+}
+
+fn step(sc, dt: Float) {
+    scene_mod.step_simulation(sc, dt)
+}
+
+fn render(sc) {
+    scene_mod.render_scene(sc)
+}
+
+export actor, scene, spawn, start, step, render

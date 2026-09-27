@@ -218,3 +218,55 @@ let regra_colisao = n.rule(
 # O compilador de nós gera código limpo para estudo ou edição manual:
 let codigo_gerado = n.transpile_to_aipo_code(regra_colisao)
 ```
+
+---
+
+## 8. Host Nativo Desktop (`aipo-game-host`)
+
+O crate `crates/aipo-game-host` é o executor desktop oficial alimentado pelo backend gráfico ultrarrápido **Miniquad / Macroquad**. Ele compila e executa qualquer script `.aipo` diretamente na GPU a 60 FPS com suporte a janelas redimensionáveis, entrada em tempo real e hot-reload dinâmico.
+
+### Como Executar
+
+```bash
+# Executa um script de jogo Aipo diretamente no host nativo a 60 FPS
+cargo run -p aipo-game-host -- examples/26_interactive_game.aipo
+
+# Executa o exemplo com câmera 2D e coleta de gemas
+cargo run -p aipo-game-host -- examples/27_camera_and_sprites.aipo
+
+# Executa o Snake Game nativo embutido (quando chamado sem parâmetros)
+cargo run -p aipo-game-host
+```
+
+### Hot-Reload em Tempo Real
+Durante a execução de qualquer script `.aipo`:
+- Pressione **F5** ou **Ctrl+R** para recompilar o script e recarregar os dados na hora sem reiniciar a janela.
+- Caso ocorra um erro de sintaxe ou tipo durante o recarregamento, um overlay de diagnóstico é renderizado diretamente sobre a tela do jogo com as mensagens e números de linha.
+
+### Ciclo de Vida do Script (.aipo)
+O host detecta automaticamente ganchos de ciclo de vida definidos no script:
+1. `setup()` ou `on_init()`: Executado uma única vez na inicialização.
+2. `update(dt)`: Executado a cada quadro com o delta de tempo em segundos (`dt`).
+3. `draw()`: Executado a cada quadro para emissão de comandos de renderização na GPU.
+
+### Catálogo de Funções FFI do Host
+
+| Função Host | Parâmetros | Descrição |
+|---|---|---|
+| `host_clear_background(r, g, b)` | `r, g, b: Float` | Limpa o framebuffer com a cor especificada (0.0 a 1.0). |
+| `host_draw_rect(x, y, w, h, r, g, b, a)` | `Float` | Desenha um retângulo preenchido na tela ou no espaço do mundo. |
+| `host_draw_rect_lines(x, y, w, h, th, r, g, b, a)` | `Float` | Desenha as bordas de um retângulo com espessura `th`. |
+| `host_draw_circle(cx, cy, radius, r, g, b, a)` | `Float` | Desenha um círculo preenchido. |
+| `host_draw_text(text, x, y, size, r, g, b)` | `String, Float...` | Renderiza texto com tamanho de fonte especificado. |
+| `host_load_texture(path)` | `String -> Int` | Carrega uma imagem PNG/JPEG na memória da GPU e retorna seu ID numérico. |
+| `host_draw_sprite(tex_id, x, y, w, h, rot, flip_x)` | `Int, Float..., Bool` | Renderiza uma textura ou sprite com escala, rotação e espelhamento horizontal. |
+| `host_draw_sprite_subrect(tex_id, sx, sy, sw, sh, dx, dy, dw, dh, flip_x)` | `Int, Float..., Bool` | Renderiza uma fatia de spritesheet (atlas de textura). |
+| `host_set_camera(target_x, target_y, zoom)` | `Float, Float, Float` | Ativa a câmera 2D focada em `(target_x, target_y)` com fator de zoom. |
+| `host_reset_camera()` | *(nenhum)* | Restaura o sistema de coordenadas para a tela (HUD e interface de usuário). |
+| `host_key_down(code)` | `Int -> Bool` | Retorna `true` se a tecla especificada (código GLFW) estiver pressionada. |
+| `host_key_pressed(code)` | `Int -> Bool` | Retorna `true` no frame exato em que a tecla foi acionada. |
+| `host_mouse_x()`, `host_mouse_y()` | `() -> Float` | Retorna a posição do cursor do mouse em coordenadas da tela. |
+| `host_mouse_btn(btn)` | `Int -> Bool` | Retorna se o botão do mouse (0=Esquerdo, 1=Direito, 2=Meio) está pressionado. |
+| `host_screen_width()`, `host_screen_height()` | `() -> Float` | Dimensões atuais da janela em pixels. |
+| `host_frame_time()` | `() -> Float` | Delta time real do frame anterior em segundos. |
+

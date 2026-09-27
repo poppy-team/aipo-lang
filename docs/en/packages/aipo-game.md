@@ -218,3 +218,55 @@ let collision_rule = n.rule(
 # The node compiler outputs clean, formatted Aipo source:
 let source_code = n.transpile_to_aipo_code(collision_rule)
 ```
+
+---
+
+## 8. Native Desktop Host (`aipo-game-host`)
+
+The `crates/aipo-game-host` crate is the official native desktop runner powered by the high-performance **Miniquad / Macroquad** graphics backend. It compiles and drives any `.aipo` game script directly on the GPU at 60 FPS with resizable windows, real-time input, and live hot-reloading.
+
+### Running Games
+
+```bash
+# Run an Aipo game script directly on the native GPU host at 60 FPS
+cargo run -p aipo-game-host -- examples/26_interactive_game.aipo
+
+# Run the 2D camera tracking and gem pickup demo
+cargo run -p aipo-game-host -- examples/27_camera_and_sprites.aipo
+
+# Run the built-in native Snake game demo (when called with no arguments)
+cargo run -p aipo-game-host
+```
+
+### Live Hot-Reloading
+While any `.aipo` script is running:
+- Press **F5** or **Ctrl+R** to recompile and reload the script on the fly without closing the window.
+- If a syntax or type error occurs during reload, an in-window diagnostics overlay renders the exact error messages and line numbers over the frozen previous state.
+
+### Script Lifecycle Hooks (.aipo)
+The host automatically detects lifecycle hooks declared in the script:
+1. `setup()` or `on_init()`: Invoked once when the game initializes.
+2. `update(dt)`: Invoked every frame with the delta time in seconds (`dt`).
+3. `draw()`: Invoked every frame for GPU render commands.
+
+### Host FFI API Catalog
+
+| Host Function | Parameters | Description |
+|---|---|---|
+| `host_clear_background(r, g, b)` | `r, g, b: Float` | Clears the framebuffer with the given RGB color (0.0 to 1.0). |
+| `host_draw_rect(x, y, w, h, r, g, b, a)` | `Float` | Draws a filled rectangle in screen space or world space. |
+| `host_draw_rect_lines(x, y, w, h, th, r, g, b, a)` | `Float` | Draws a hollow rectangle outline with thickness `th`. |
+| `host_draw_circle(cx, cy, radius, r, g, b, a)` | `Float` | Draws a filled circle. |
+| `host_draw_text(text, x, y, size, r, g, b)` | `String, Float...` | Renders text with the specified font size and color. |
+| `host_load_texture(path)` | `String -> Int` | Loads a PNG/JPEG image into GPU texture memory and returns its handle ID. |
+| `host_draw_sprite(tex_id, x, y, w, h, rot, flip_x)` | `Int, Float..., Bool` | Draws a textured sprite with scale, rotation (degrees), and flip. |
+| `host_draw_sprite_subrect(tex_id, sx, sy, sw, sh, dx, dy, dw, dh, flip_x)` | `Int, Float..., Bool` | Draws a slice of a texture atlas or spritesheet. |
+| `host_set_camera(target_x, target_y, zoom)` | `Float, Float, Float` | Activates a 2D camera centered on `(target_x, target_y)` with zoom factor. |
+| `host_reset_camera()` | *(none)* | Resets transform to screen space (for HUD overlays and GUI). |
+| `host_key_down(code)` | `Int -> Bool` | Returns `true` while the key (GLFW keycode) is held down. |
+| `host_key_pressed(code)` | `Int -> Bool` | Returns `true` only on the frame the key was initially pressed. |
+| `host_mouse_x()`, `host_mouse_y()` | `() -> Float` | Returns cursor coordinates in screen space. |
+| `host_mouse_btn(btn)` | `Int -> Bool` | Returns `true` if mouse button (0=Left, 1=Right, 2=Middle) is pressed. |
+| `host_screen_width()`, `host_screen_height()` | `() -> Float` | Current window viewport dimensions in pixels. |
+| `host_frame_time()` | `() -> Float` | Exact delta time of the previous frame in seconds. |
+

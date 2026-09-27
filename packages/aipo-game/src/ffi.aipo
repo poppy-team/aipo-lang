@@ -78,6 +78,12 @@ fn host_play_sound(sound_id: Int, volume: Float, pitch: Float) {
     # mapped to `__aipo_game_play_sound`
 }
 
-fn host_play_music(sound_id: Int, volume: Float, loop: Bool) {
+fn host_play_music(sound_id: Int, volume: Float, is_loop: Bool) {
     # mapped to `__aipo_game_play_music`
 }
+
+export host_init, host_should_close, host_close
+export host_key_down, host_key_pressed, host_mouse_x, host_mouse_y, host_mouse_btn, host_gamepad_axis
+export host_begin_frame, host_draw_sprite, host_draw_rect, host_draw_circle, host_draw_text, host_end_frame
+export host_load_texture, host_load_sound, host_play_sound, host_play_music
+

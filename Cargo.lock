@@ -131,6 +131,7 @@ version = "0.1.0"
 dependencies = [
  "aipo-ast",
  "aipo-bytecode",
+ "aipo-cli",
  "aipo-diagnostics",
  "aipo-hir",
  "aipo-ir",

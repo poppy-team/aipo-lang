@@ -1,165 +1,178 @@
 # scene.aipo — Scene container, entity registry, collision solver and main game loop
 # Part of `aipo.game`
 
-import.actor as act
-import.ffi as ffi
-import.tween as tween_mod
+import actor as act
+import ffi as ffi
+import tween as tween_mod
 
 struct SceneType {
-    name: String
-    config: Dict
+    name
+    config
 }
 
 struct GameTimer {
-    interval: Float
-    repeat: Bool
-        elapsed: Float
-        callback: Fn
+    interval
+    should_repeat
+    var elapsed = 0.0
+    callback
+}
+
+struct Scene {
+    name
+    width
+    height
+    background
+    var actors = []
+    var timers = []
+    var camera_x = 0.0
+    var camera_y = 0.0
+}
+
+var _active_scene = none
+
+fn make_scene(name: String, config: Dict) -> SceneType {
+    return SceneType {
+        name: name,
+        config: config
+    }
+}
+
+fn load_scene(blueprint: SceneType) -> Scene {
+    let cfg = blueprint.config
+    let w = if cfg.has("width") then cfg["width"] else 800.0
+    let h = if cfg.has("height") then cfg["height"] else 600.0
+    let bg = if cfg.has("background") then cfg["background"] else "#11111b"
+
+    let sc = Scene {
+        name: blueprint.name,
+        width: w,
+        height: h,
+        background: bg,
+        actors: [],
+        timers: [],
+        camera_x: 0.0,
+        camera_y: 0.0
     }
 
-    struct Scene {
-        name: String
-        width: Float
-        height: Float
-        background: String
-        actors: List
-        timers: List
-        camera_x: Float
-        camera_y: Float
-    }
+    _active_scene = sc
 
-    var _active_scene: Scene = none
-
-    fn scene(name: String, config: Dict) - > SceneType{
-        return SceneType{
-            name: name,
-            config: config
-        }
-    }
-
-    fn load_scene(blueprint: SceneType) - > Scene{
-        let cfg = blueprint.config
-        let sc = Scene{
-            name: blueprint.name,
-            width: cfg.get("width", 800.0),
-            height: cfg.get("height", 600.0),
-            background: cfg.get("background", "#11111b"),
-            actors: [],
-            timers: [],
-            camera_x: 0.0,
-            camera_y: 0.0
-        }
-
-        _active_scene = sc
-
-        let on_load = cfg.get("on_load", none)
+    if cfg.has("on_load") {
+        let on_load = cfg["on_load"]
         if on_load != none {
             on_load(sc)
         }
-
-        return sc
     }
 
-    fn spawn(blueprint: act.ActorType, x: Float, y: Float) - > act.Actor{
-        let instance = act.create_instance(blueprint, x, y)
-        if _active_scene != none {
-            _active_scene.actors.add(instance)
+    return sc
+}
+
+fn spawn_actor(blueprint, x: Float, y: Float) {
+    let instance = act.create_instance(blueprint, x, y)
+    if _active_scene != none {
+        _active_scene.actors.add(instance)
+    }
+    return instance
+}
+
+fn step_simulation(sc: Scene, dt: Float) {
+    # 1. Update timers
+    each timer in sc.timers {
+        timer.elapsed += dt
+        if timer.elapsed >= timer.interval {
+            (timer.callback)()
+            if timer.should_repeat {
+                timer.elapsed = 0.0
+            }
         }
-        return instance
     }
 
-    fn step_simulation(sc: Scene, dt: Float) {
-        # 1. Update timers
-        each timer in sc.timers {
-            timer.elapsed += dt
-            if timer.elapsed >= timer.interval {
-                (timer.callback)()
-                if timer.repeat {
-                    timer.elapsed = 0.0
-                }
+    # 2. Update active easing animations (tweens)
+    tween_mod.update_tweens(dt)
+
+    # 3. Update behaviors and actor scripts
+    each a in sc.actors {
+        if a.is_alive {
+            each b in a.behaviors {
+                (b.update_fn)(a, dt)
+            }
+            if a.on_update_fn != none {
+                (a.on_update_fn)(a, dt)
             }
         }
+    }
 
-        # 2. Update active easing animations (tweens)
-        tween_mod.update_tweens(dt)
-
-        # 3. Update behaviors and actor scripts
-        each actor in sc.actors {
-            if actor.is_alive {
-                each b in actor.behaviors {
-                    (b.update_fn)(actor, dt)
-                }
-                if actor.on_update_fn != none {
-                    (actor.on_update_fn)(actor, dt)
-                }
-            }
-        }
-
-        # 4. Collision resolution
-        let count = sc.actors.len()
-        each i in 0..count {
-            let a = sc.actors[i]
-            if a.is_alive and a.on_collision_fn != none {
-                each j in 0..count {
-                    if i != j {
-                        let b = sc.actors[j]
-                        if act.check_overlap(a, b) {
-                            (a.on_collision_fn)(a, b)
-                        }
+    # 4. Collision resolution
+    let count = sc.actors.len()
+    var i = 0
+    while i < count {
+        let a = sc.actors[i]
+        if a.is_alive and a.on_collision_fn != none {
+            var j = 0
+            while j < count {
+                if i != j {
+                    let b = sc.actors[j]
+                    if act.check_overlap(a, b) {
+                        (a.on_collision_fn)(a, b)
                     }
                 }
+                j += 1
             }
         }
-
-        # 5. Prune dead actors
-        var alive_actors = []
-        each a in sc.actors {
-            if a.is_alive {
-                alive_actors.add(a)
-            } else if a.on_destroy_fn != none {
-                (a.on_destroy_fn)(a)
-            }
-        }
-        sc.actors = alive_actors
+        i += 1
     }
 
-    fn render_scene(sc: Scene) {
-        ffi.host_begin_frame(0.05, 0.05, 0.08)
-
-        each actor in sc.actors {
-            if actor.is_alive {
-                ffi.host_draw_rect(
-                    actor.x - (actor.width / 2.0),
-                    actor.y - (actor.height / 2.0),
-                    actor.width,
-                    actor.height,
-                    0.2, 0.6, 1.0, 1.0
-                )
-            }
+    # 5. Prune dead actors
+    var alive_actors = []
+    each a in sc.actors {
+        if a.is_alive {
+            alive_actors.add(a)
+        } else if a.on_destroy_fn != none {
+            (a.on_destroy_fn)(a)
         }
+    }
+    sc.actors = alive_actors
+}
 
-        ffi.host_end_frame()
+fn render_scene(sc: Scene) {
+    ffi.host_begin_frame(0.05, 0.05, 0.08)
+
+    each a in sc.actors {
+        if a.is_alive {
+            ffi.host_draw_rect(
+                a.x - (a.width / 2.0),
+                a.y - (a.height / 2.0),
+                a.width,
+                a.height,
+                0.2, 0.6, 1.0, 1.0
+            )
+        }
     }
 
-    # Engine start entrypoint
-    fn start(options: Dict) {
-        let title = options.get("title", "Aipo Game")
-        let width = options.get("width", 800)
-        let height = options.get("height", 600)
-        let initial_scene = options.get("initial_scene", none)
+    ffi.host_end_frame()
+}
 
-        ffi.host_init(width, height, title, 60)
+# Engine start entrypoint
+fn start_loop(options: Dict) {
+    let title = if options.has("title") then options["title"] else "Aipo Game"
+    let width = if options.has("width") then options["width"] else 800
+    let height = if options.has("height") then options["height"] else 600
 
+    ffi.host_init(width, height, title, 60)
+
+    if options.has("initial_scene") {
+        let initial_scene = options["initial_scene"]
         if initial_scene != none {
             load_scene(initial_scene)
         }
-
-        # Fixed timestep loop (60 FPS = 16.66ms per tick)
-        let dt = 1.0 / 60.0
-
-        # In native runtime, driven by host loop
-        if _active_scene != none {
-            step_simulation(_active_scene, dt)
-            render_scene(_active_scene)
-        }
     }
+
+    let dt = 1.0 / 60.0
+
+    if _active_scene != none {
+        step_simulation(_active_scene, dt)
+        render_scene(_active_scene)
+    }
+}
+
+export SceneType, GameTimer, Scene, make_scene, load_scene, spawn_actor, step_simulation, render_scene, start_loop
+
