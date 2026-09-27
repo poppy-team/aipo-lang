@@ -29,9 +29,17 @@ fn play_music(path: String, volume: Float, is_loop: Bool) {
     ffi.host_play_music(id, volume, is_loop)
 }
 
+fn stop_music() {
+    ffi.host_stop_music()
+}
+
+fn stop_sound(id: Int) {
+    ffi.host_stop_sound(id)
+}
+
 # Procedural Chiptune SFX with zero external audio assets
 fn sfx(preset_name: String, pitch: Float) {
     sfx_mod.play_preset(preset_name, pitch)
 }
 
-export load_sound, play_sound, play, play_music, sfx
+export load_sound, play_sound, play, play_music, stop_music, stop_sound, sfx

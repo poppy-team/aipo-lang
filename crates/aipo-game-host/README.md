@@ -49,5 +49,12 @@ Os scripts `.aipo` têm acesso nativo e sem atrito a:
 | `host_frame_time()` | Nenhum | Retorna o delta time `dt` em segundos (~0.016s a 60 FPS) |
 | `host_set_camera(tx, ty, zoom)` | `Float, Float, Float` | Move e aplica zoom na câmera 2D |
 | `host_reset_camera()` | Nenhum | Retorna a câmera para a projeção padrão |
+| `host_load_sound(path)` | `String -> Int` | Carrega arquivo de áudio WAV/OGG em memória e retorna ID |
+| `host_play_sound(id, volume, pitch)` | `Int, Float, Float` | Reproduz som por ID com volume (0.0 a 1.0) e pitch |
+| `host_play_preset(name, volume, pitch)` | `String, Float, Float` | Toca SFX chiptune procedural instantâneo ("coin", "laser", "jump", "explosion", "hit", "powerup", "click") |
+| `host_synth_sound(wave, freq, slide, dur, vol)` | `String, Float... -> Int` | Sintetiza forma de onda procedural em tempo real gerando WAV 16-bit |
+| `host_stop_sound(id)` | `Int` | Interrompe o som especificado por ID |
+| `host_play_music(id, volume, loop)` | `Int, Float, Bool` | Toca trilha musical em loop |
+| `host_stop_music()` | Nenhum | Interrompe a música de fundo ativa |
 
-Todas as funções também estão disponíveis através do módulo global `game` (ex: `game.draw_rect(...)`) e pelos aliases canônicos `__aipo_game_*`.
+Todas as funções também estão disponíveis através do módulo global `game` (ex: `game.draw_rect(...)`, `game.play_preset(...)`) e pelos aliases canônicos `__aipo_game_*`.

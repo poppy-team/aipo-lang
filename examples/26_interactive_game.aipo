@@ -58,18 +58,30 @@ fn update(dt) {
 
     if player_x < player_size {
         player_x = player_size
+        if player_vx < -150.0 {
+            host_play_preset("hit", 0.6, 1.2)
+        }
         player_vx = 0.0
     }
     if player_x > sw - player_size {
         player_x = sw - player_size
+        if player_vx > 150.0 {
+            host_play_preset("hit", 0.6, 1.2)
+        }
         player_vx = 0.0
     }
     if player_y < player_size + 40.0 {
         player_y = player_size + 40.0
+        if player_vy < -150.0 {
+            host_play_preset("hit", 0.6, 1.2)
+        }
         player_vy = 0.0
     }
     if player_y > sh - player_size - 40.0 {
         player_y = sh - player_size - 40.0
+        if player_vy > 150.0 {
+            host_play_preset("hit", 0.6, 1.2)
+        }
         player_vy = 0.0
     }
 
@@ -80,6 +92,7 @@ fn update(dt) {
 
     if dist_sq < 32.0 * 32.0 {
         score = score + 100
+        host_play_preset("coin", 0.9, 1.0)
         # Relocate coin procedurally
         coin_x = 100.0 + (Float(score * 37 % 600))
         coin_y = 100.0 + (Float(score * 53 % 450))

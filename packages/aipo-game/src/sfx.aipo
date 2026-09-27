@@ -75,25 +75,12 @@ fn preset_powerup() -> SynthParams {
 
 # Play procedural SFX by preset name
 fn play_preset(name: String, pitch: Float) {
-    var params = none
-    if name == "coin" {
-        params = preset_coin()
-    } else if name == "laser" {
-        params = preset_laser()
-    } else if name == "jump" {
-        params = preset_jump()
-    } else if name == "explosion" {
-        params = preset_explosion()
-    } else if name == "hit" {
-        params = preset_hit()
-    } else if name == "powerup" {
-        params = preset_powerup()
-    } else {
-        params = preset_laser()
-    }
-
-    # In native runtime, dispatches to host audio synthesizer buffer generator
-    ffi.host_play_sound(1, 1.0, pitch)
+    ffi.host_play_preset(name, 1.0, pitch)
 }
 
-export SynthParams, preset_coin, preset_laser, preset_jump, preset_explosion, preset_hit, preset_powerup, play_preset
+# Synthesizes custom waveform directly into a sound handle ID
+fn synth_sound(wave_type: String, start_freq: Float, freq_slide: Float, duration: Float, volume: Float) -> Int {
+    return ffi.host_synth_sound(wave_type, start_freq, freq_slide, duration, volume)
+}
+
+export SynthParams, preset_coin, preset_laser, preset_jump, preset_explosion, preset_hit, preset_powerup, play_preset, synth_sound

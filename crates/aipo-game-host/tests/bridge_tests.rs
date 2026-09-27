@@ -20,11 +20,19 @@ fn test_host_surface_registration() {
     assert!(surface.contains("host_load_texture"));
     assert!(surface.contains("host_draw_sprite"));
     assert!(surface.contains("host_set_camera"));
+    assert!(surface.contains("host_load_sound"));
+    assert!(surface.contains("host_play_sound"));
+    assert!(surface.contains("host_play_preset"));
+    assert!(surface.contains("host_synth_sound"));
+    assert!(surface.contains("host_play_music"));
+    assert!(surface.contains("host_stop_music"));
 
     // Verify canonical __aipo_game_* aliases
     assert!(surface.contains("__aipo_game_draw_rect"));
     assert!(surface.contains("__aipo_game_key_down"));
     assert!(surface.contains("__aipo_game_load_texture"));
+    assert!(surface.contains("__aipo_game_play_preset"));
+    assert!(surface.contains("__aipo_game_synth_sound"));
 
     // Verify game module symbol
     assert!(surface.contains("game"));
@@ -39,6 +47,8 @@ fn test_host_vm_natives_registration() {
     assert!(vm.globals.contains_key("host_draw_rect"));
     assert!(vm.globals.contains_key("__aipo_game_draw_rect"));
     assert!(vm.globals.contains_key("host_key_down"));
+    assert!(vm.globals.contains_key("host_play_preset"));
+    assert!(vm.globals.contains_key("__aipo_game_play_preset"));
     assert!(vm.globals.contains_key("game"));
 
     // Verify `game` is a dictionary with methods
@@ -59,6 +69,16 @@ fn test_host_vm_natives_registration() {
             assert!(
                 borrowed
                     .get(&Value::String(std::rc::Rc::new("load_texture".to_string())))
+                    .is_some()
+            );
+            assert!(
+                borrowed
+                    .get(&Value::String(std::rc::Rc::new("play_preset".to_string())))
+                    .is_some()
+            );
+            assert!(
+                borrowed
+                    .get(&Value::String(std::rc::Rc::new("synth_sound".to_string())))
                     .is_some()
             );
         }
@@ -277,4 +297,106 @@ fn test_camera_and_sprites_script_compilation_and_execution() {
 
     let draw_fn = vm.globals.get("draw").cloned().expect("draw exists");
     assert!(vm.invoke(&module, draw_fn, &[]).is_ok());
+}
+
+#[test]
+fn test_audio_host_calls() {
+    let (mut vm, _) = aipo_cli::standard_environment();
+    host_bridge::register_vm_natives(&mut vm);
+
+    let empty_mod = aipo_bytecode::BytecodeModule::new();
+
+    // 1. Call host_load_sound with nonexistent file (returns 0 safely)
+    let load_snd = vm
+        .globals
+        .get("host_load_sound")
+        .expect("host_load_sound exists");
+    let res = vm.invoke(
+        &empty_mod,
+        load_snd.clone(),
+        &[Value::String(std::rc::Rc::new(
+            "nonexistent_audio.wav".to_string(),
+        ))],
+    );
+    assert_eq!(res.unwrap(), Value::Int(0));
+
+    // 2. Call host_play_preset ("coin", volume 0.8, pitch 1.0)
+    let play_preset = vm
+        .globals
+        .get("host_play_preset")
+        .expect("host_play_preset exists");
+    let res = vm.invoke(
+        &empty_mod,
+        play_preset.clone(),
+        &[
+            Value::String(std::rc::Rc::new("coin".to_string())),
+            Value::Float(0.8),
+            Value::Float(1.0),
+        ],
+    );
+    assert!(res.is_ok(), "host_play_preset should succeed headlessly");
+
+    // 3. Call host_synth_sound to dynamically synthesize a sound
+    let synth_snd = vm
+        .globals
+        .get("host_synth_sound")
+        .expect("host_synth_sound exists");
+    let res = vm.invoke(
+        &empty_mod,
+        synth_snd.clone(),
+        &[
+            Value::String(std::rc::Rc::new("square".to_string())),
+            Value::Float(440.0),
+            Value::Float(0.2),
+            Value::Float(0.1),
+            Value::Float(0.8),
+        ],
+    );
+    assert!(res.is_ok(), "host_synth_sound should succeed");
+    let snd_id = match res.unwrap() {
+        Value::Int(id) => {
+            assert!(id > 0);
+            id
+        }
+        other => panic!("expected Int sound id, got {:?}", other),
+    };
+
+    // 4. Call host_play_sound with synthesized sound handle
+    let play_snd = vm
+        .globals
+        .get("host_play_sound")
+        .expect("host_play_sound exists");
+    let res = vm.invoke(
+        &empty_mod,
+        play_snd.clone(),
+        &[Value::Int(snd_id), Value::Float(0.9), Value::Float(1.0)],
+    );
+    assert!(res.is_ok(), "host_play_sound should succeed");
+
+    // 5. Call host_stop_sound
+    let stop_snd = vm
+        .globals
+        .get("host_stop_sound")
+        .expect("host_stop_sound exists");
+    let res = vm.invoke(&empty_mod, stop_snd.clone(), &[Value::Int(snd_id)]);
+    assert!(res.is_ok(), "host_stop_sound should succeed");
+
+    // 6. Call host_play_music and host_stop_music
+    let play_music = vm
+        .globals
+        .get("host_play_music")
+        .expect("host_play_music exists");
+    let res = vm.invoke(
+        &empty_mod,
+        play_music.clone(),
+        &[Value::Int(snd_id), Value::Float(0.5), Value::Bool(true)],
+    );
+    assert!(res.is_ok(), "host_play_music should succeed");
+
+    let stop_music = vm
+        .globals
+        .get("host_stop_music")
+        .expect("host_stop_music exists");
+    let res = vm.invoke(&empty_mod, stop_music.clone(), &[]);
+    assert!(res.is_ok(), "host_stop_music should succeed");
 }

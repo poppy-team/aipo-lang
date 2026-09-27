@@ -66,11 +66,11 @@ fn host_end_frame() {
 }
 
 # Audio Host Hooks
-fn host_load_texture(path: String) - > Int{
+fn host_load_texture(path: String) -> Int {
     return 1
 }
 
-fn host_load_sound(path: String) - > Int{
+fn host_load_sound(path: String) -> Int {
     return 1
 }
 
@@ -78,12 +78,29 @@ fn host_play_sound(sound_id: Int, volume: Float, pitch: Float) {
     # mapped to `__aipo_game_play_sound`
 }
 
+fn host_play_preset(name: String, volume: Float, pitch: Float) {
+    # mapped to `__aipo_game_play_preset`
+}
+
+fn host_synth_sound(wave_type: String, start_freq: Float, freq_slide: Float, duration: Float, volume: Float) -> Int {
+    # mapped to `__aipo_game_synth_sound`
+    return 1
+}
+
+fn host_stop_sound(sound_id: Int) {
+    # mapped to `__aipo_game_stop_sound`
+}
+
 fn host_play_music(sound_id: Int, volume: Float, is_loop: Bool) {
     # mapped to `__aipo_game_play_music`
+}
+
+fn host_stop_music() {
+    # mapped to `__aipo_game_stop_music`
 }
 
 export host_init, host_should_close, host_close
 export host_key_down, host_key_pressed, host_mouse_x, host_mouse_y, host_mouse_btn, host_gamepad_axis
 export host_begin_frame, host_draw_sprite, host_draw_rect, host_draw_circle, host_draw_text, host_end_frame
-export host_load_texture, host_load_sound, host_play_sound, host_play_music
+export host_load_texture, host_load_sound, host_play_sound, host_play_preset, host_synth_sound, host_stop_sound, host_play_music, host_stop_music
 

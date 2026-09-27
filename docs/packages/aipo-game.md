@@ -263,6 +263,13 @@ O host detecta automaticamente ganchos de ciclo de vida definidos no script:
 | `host_draw_sprite_subrect(tex_id, sx, sy, sw, sh, dx, dy, dw, dh, flip_x)` | `Int, Float..., Bool` | Renderiza uma fatia de spritesheet (atlas de textura). |
 | `host_set_camera(target_x, target_y, zoom)` | `Float, Float, Float` | Ativa a câmera 2D focada em `(target_x, target_y)` com fator de zoom. |
 | `host_reset_camera()` | *(nenhum)* | Restaura o sistema de coordenadas para a tela (HUD e interface de usuário). |
+| `host_load_sound(path)` | `String -> Int` | Carrega arquivo de áudio WAV/OGG em memória e retorna ID numérico de handle. |
+| `host_play_sound(id, volume, pitch)` | `Int, Float, Float` | Reproduz som por ID com controle de volume e pitch. |
+| `host_play_preset(name, volume, pitch)` | `String, Float, Float` | Reproduz som procedural chiptune ("coin", "jump", "laser", "explosion", "hit", "powerup", "click"). |
+| `host_synth_sound(wave, freq, slide, dur, vol)` | `String, Float... -> Int` | Sintetiza onda sonora em memória gerando WAV 16-bit e retorna handle. |
+| `host_stop_sound(id)` | `Int` | Interrompe o som correspondente ao ID. |
+| `host_play_music(id, volume, loop)` | `Int, Float, Bool` | Toca trilha musical em loop contínuo. |
+| `host_stop_music()` | *(nenhum)* | Para imediatamente a música de fundo. |
 | `host_key_down(code)` | `Int -> Bool` | Retorna `true` se a tecla especificada (código GLFW) estiver pressionada. |
 | `host_key_pressed(code)` | `Int -> Bool` | Retorna `true` no frame exato em que a tecla foi acionada. |
 | `host_mouse_x()`, `host_mouse_y()` | `() -> Float` | Retorna a posição do cursor do mouse em coordenadas da tela. |

@@ -5,6 +5,26 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [0.11.0] - Em desenvolvimento (Trilha WebAssembly & Self-Hosting)
 
+- **Pipeline de Áudio Nativo e Sintetizador Chiptune Procedural (`aipo-game-host` & `packages/aipo-game`)**:
+  - Integração do backend de áudio nativo acelerado via Macroquad / QuadSnd com suporte a carregamento e reprodução de arquivos de áudio WAV e OGG.
+  - Implementação de sintetizador de ondas procedural em memória (`crates/aipo-game-host/src/audio_system.rs`) no estilo SFXR/ChipTone gerando buffers RIFF/WAV 16-bit PCM (44.1 kHz, mono) sem necessidade de arquivos externos de áudio.
+  - Suporte a múltiplas formas de onda: Quadrada (Square com duty cycle ajustável), Dente-de-serra (Sawtooth), Senoidal (Sine), Triangular (Triangle) e Ruído Branco (Noise gerado por PRNG Xorshift32 rápido).
+  - Envelopamento sonoro anti-click com ataque suave de 5ms, curva de decaimento exponencial e deslizamento dinâmico de frequência (`freq_slide`).
+  - Presets retro configurados: `"coin"`, `"laser"` / `"shoot"`, `"jump"`, `"explosion"`, `"hit"` / `"hurt"`, `"powerup"`, `"click"` / `"beep"`.
+  - Ponte FFI (`host_bridge.rs`) expandida com 7 novas funções nativas de áudio (totalizando 30 funções nativas):
+    - `host_load_sound(path)`: carrega áudio do disco e retorna handle ID numérico.
+    - `host_play_sound(sound_id, volume, pitch)`: reproduz som por ID.
+    - `host_play_preset(name, volume, pitch)`: dispara preset procedural em tempo real com pitch ajustável.
+    - `host_synth_sound(wave_type, start_freq, freq_slide, duration, volume)`: sintetiza onda customizada e retorna handle ID.
+    - `host_stop_sound(sound_id)`: para reprodução de som.
+    - `host_play_music(sound_id, volume, is_loop)`: gerencia música de fundo em loop contínuo.
+    - `host_stop_music()`: para imediatamente a música de fundo.
+  - Resolução de futuros assíncronos em Safe Rust estrito (`#![forbid(unsafe_code)]`) via `std::task::Waker::noop()` e `std::pin::pin!`.
+  - Proteção total contra falhas em ambientes sem dispositivo de som / CI headless via `std::panic::catch_unwind(AssertUnwindSafe(...))`.
+  - Módulos `packages/aipo-game/src/` (`ffi.aipo`, `audio.aipo`, `sfx.aipo`) atualizados com paridade total e validação pelo `aipo check`.
+  - Efeitos sonoros procedurais integrados aos exemplos `examples/26_interactive_game.aipo`, `examples/27_camera_and_sprites.aipo` e ao jogo Snake embutido em `main.rs`.
+  - Suíte de 9 testes automatizados verdes em `crates/aipo-game-host`.
+
 - **Engine 2D Nativa e Host Desktop Miniquad (`aipo-game-host` & `packages/aipo-game`)**:
   - Implementação da crate `crates/aipo-game-host` fornecendo runtime nativo em GPU a 60 FPS com backend Miniquad / Macroquad.
   - Execução direta de scripts `.aipo` com descoberta de hooks de ciclo de vida (`setup()`, `update(dt)`, `draw()`).

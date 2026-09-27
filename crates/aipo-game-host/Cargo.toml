@@ -29,4 +29,4 @@ aipo-vm = { path = "../aipo-vm" }
 aipo-runtime = { path = "../aipo-runtime" }
 aipo-stdlib = { path = "../aipo-stdlib" }
 aipo-cli = { path = "../aipo-cli" }
-macroquad = "0.4.16"
+macroquad = { version = "0.4.16", features = ["audio"] }

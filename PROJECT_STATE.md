@@ -143,15 +143,24 @@
   - Publicação de superfícies de compilação em `aipo-cli` (`compile_file`, `analyze_with_surface`, `prelude_surface`, `register_module_symbols`, `emit_diagnostics`).
   - Refatoração e validação canônica de 100% dos módulos do pacote `packages/aipo-game/src/` (`actor`, `audio`, `behaviors`, `ffi`, `input`, `lib`, `nodes`, `scene`, `sfx`, `tween`) aprovados pelo `aipo check`.
   - Exemplos interativos canônicos `examples/26_interactive_game.aipo` e `examples/27_camera_and_sprites.aipo` validados em suíte automatizada de testes.
+- **Pipeline de Áudio Nativo e Sintetizador Chiptune Procedural (`aipo-game-host` & `packages/aipo-game`)**:
+  - Backend de áudio acelerado integrado via Macroquad / QuadSnd com carregamento WAV/OGG e reprodução de trilha sonora em loop contínuo.
+  - Sintetizador procedural em memória (`audio_system.rs`) estilo SFXR/ChipTone gerando streams RIFF/WAV 16-bit PCM (44.1 kHz, mono) sem arquivos de assets externos.
+  - Formas de onda suportadas: Square (com duty cycle ajustável), Sawtooth, Sine, Triangle e Noise (via PRNG Xorshift32 rápido).
+  - Envelopamento anti-click de 5ms, decaimento exponencial e deslizamento dinâmico de frequência (`freq_slide`).
+  - Biblioteca de presets retro: `"coin"`, `"laser"`, `"jump"`, `"explosion"`, `"hit"`, `"powerup"`, `"click"`.
+  - Ponte FFI (`host_bridge.rs`) expandida para 30 funções nativas com 7 novas funções de áudio (`host_load_sound`, `host_play_sound`, `host_play_preset`, `host_synth_sound`, `host_stop_sound`, `host_play_music`, `host_stop_music`).
+  - Resolução assíncrona em 100% Safe Rust (`std::task::Waker::noop()`, `std::pin::pin!`) cumprindo `#![forbid(unsafe_code)]`.
+  - Resiliência total para CI e ambientes headless sem placa de som através de `std::panic::catch_unwind(AssertUnwindSafe(...))`.
+  - Módulos `packages/aipo-game/src/` (`ffi.aipo`, `audio.aipo`, `sfx.aipo`) e exemplos (`26_interactive_game.aipo`, `27_camera_and_sprites.aipo` e Snake embutido) integrados e validados por 9 testes automatizados verdes.
 
 ## Next action
 
-Engine 2D Nativa (Caminho 1 - Fase Inicial) concluída com sucesso!
+Pipeline de Áudio Nativo concluído com sucesso!
 Próximos passos disponíveis para expansão da Game Engine:
-1. Pipeline de Áudio Nativo (som procedural e reprodução WAV/OGG em tempo real via `macroquad::audio`).
-2. Sistema de UI / HUD embutido para jogos (botões clicáveis, barras de progresso/vida, textos alinhados).
-3. Sistema de Tilemap e Colisão 2D com Grid.
-4. Exportação/Suporte WebAssembly (Wasm/WebGL Canvas) para rodar os mesmos jogos `.aipo` no navegador.
+1. Sistema de UI / HUD embutido para jogos (botões clicáveis, barras de progresso/vida, textos alinhados).
+2. Sistema de Tilemap e Colisão 2D com Grid.
+3. Exportação/Suporte WebAssembly (Wasm/WebGL Canvas) para rodar os mesmos jogos `.aipo` no navegador.
 
 ## Recovery order
 

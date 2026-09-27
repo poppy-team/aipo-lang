@@ -98,6 +98,11 @@ fn update(dt) {
             if dist_sq < 1400.0 {
                 gem[2] = 1
                 score = score + 100
+                if score >= 800 {
+                    host_play_preset("powerup", 1.0, 1.0)
+                } else {
+                    host_play_preset("coin", 0.9, 1.0)
+                }
             }
         }
         i = i + 1

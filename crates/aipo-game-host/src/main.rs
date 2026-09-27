@@ -5,7 +5,7 @@
 
 #![forbid(unsafe_code)]
 
-use aipo_game_host::host_bridge;
+use aipo_game_host::{audio_system::AUDIO, host_bridge};
 
 use aipo_vm::Value;
 use macroquad::prelude::*;
@@ -158,6 +158,9 @@ impl SnakeGameState {
         self.step_interval = 0.11;
         self.head_scale = 1.0;
         self.particles.clear();
+        if let Ok(mut audio) = AUDIO.lock() {
+            audio.play_preset("powerup", 0.6, 1.2);
+        }
     }
 
     /// Handles keyboard input with immediate 180-degree turn rejection.
@@ -176,6 +179,7 @@ impl SnakeGameState {
             return;
         }
 
+        let prev_dir = self.next_dir;
         if (is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W))
             && self.dir != Direction::Down
         {
@@ -192,6 +196,12 @@ impl SnakeGameState {
             && self.dir != Direction::Left
         {
             self.next_dir = Direction::Right;
+        }
+
+        if self.next_dir != prev_dir {
+            if let Ok(mut audio) = AUDIO.lock() {
+                audio.play_preset("click", 0.35, 1.2);
+            }
         }
     }
 
@@ -248,12 +258,18 @@ impl SnakeGameState {
             || next_pos.y >= self.grid_h
         {
             self.game_over = true;
+            if let Ok(mut audio) = AUDIO.lock() {
+                audio.play_preset("explosion", 0.9, 1.0);
+            }
             return;
         }
 
         // Self body collision check
         if self.body.contains(&next_pos) {
             self.game_over = true;
+            if let Ok(mut audio) = AUDIO.lock() {
+                audio.play_preset("explosion", 0.9, 1.0);
+            }
             return;
         }
 
@@ -263,6 +279,9 @@ impl SnakeGameState {
         if next_pos == self.apple {
             self.score += 10;
             self.head_scale = 1.4; // Squash & stretch juice
+            if let Ok(mut audio) = AUDIO.lock() {
+                audio.play_preset("coin", 0.85, 1.0);
+            }
 
             // Spawn particles
             let px = (next_pos.x as f32 + 0.5) * self.cell_size;

@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+use crate::audio_system::{AUDIO, SynthConfig};
 use aipo_sema::PreludeSurface;
 use aipo_vm::{Value, Vm, VmFault};
 use macroquad::prelude::*;
@@ -560,6 +561,133 @@ pub fn host_reset_camera(_args: &[Value]) -> Result<Value, VmFault> {
     Ok(Value::None)
 }
 
+/// host_load_sound(path: String) -> Int
+pub fn host_load_sound(args: &[Value]) -> Result<Value, VmFault> {
+    if args.is_empty() {
+        return Ok(Value::Int(0));
+    }
+    let path = to_string(&args[0])?;
+    let mut audio = AUDIO.lock().map_err(|_| VmFault::CapabilityDenied {
+        capability: "host.audio".to_string(),
+        operation: "audio_lock".to_string(),
+    })?;
+    let id = audio.load_file(&path);
+    Ok(Value::Int(id))
+}
+
+/// host_play_sound(sound_id: Int, volume: Float, pitch: Float) -> None
+pub fn host_play_sound(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 3 {
+        return Err(VmFault::TypeMismatch {
+            expected: "3 arguments (sound_id, volume, pitch)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let id = to_i64(&args[0])?;
+    let volume = to_f32(&args[1])?;
+    let _pitch = to_f32(&args[2])?;
+    let audio = AUDIO.lock().map_err(|_| VmFault::CapabilityDenied {
+        capability: "host.audio".to_string(),
+        operation: "audio_lock".to_string(),
+    })?;
+    audio.play(id, volume);
+    Ok(Value::None)
+}
+
+/// host_play_preset(name: String, volume: Float, pitch: Float) -> None
+pub fn host_play_preset(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 3 {
+        return Err(VmFault::TypeMismatch {
+            expected: "3 arguments (name, volume, pitch)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let name = to_string(&args[0])?;
+    let volume = to_f32(&args[1])?;
+    let pitch = to_f32(&args[2])?;
+    let mut audio = AUDIO.lock().map_err(|_| VmFault::CapabilityDenied {
+        capability: "host.audio".to_string(),
+        operation: "audio_lock".to_string(),
+    })?;
+    audio.play_preset(&name, volume, pitch);
+    Ok(Value::None)
+}
+
+/// host_synth_sound(wave_type: String, start_freq: Float, freq_slide: Float, duration: Float, volume: Float) -> Int
+pub fn host_synth_sound(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 5 {
+        return Err(VmFault::TypeMismatch {
+            expected: "5 arguments (wave_type, start_freq, freq_slide, duration, volume)"
+                .to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let wave_type = to_string(&args[0])?;
+    let start_freq = to_f32(&args[1])?;
+    let freq_slide = to_f32(&args[2])?;
+    let duration = to_f32(&args[3])?;
+    let volume = to_f32(&args[4])?;
+
+    let config = SynthConfig {
+        wave_type,
+        start_freq,
+        freq_slide,
+        duration,
+        duty_cycle: 0.5,
+        volume,
+    };
+
+    let mut audio = AUDIO.lock().map_err(|_| VmFault::CapabilityDenied {
+        capability: "host.audio".to_string(),
+        operation: "audio_lock".to_string(),
+    })?;
+    let id = audio.synth_sound(&config);
+    Ok(Value::Int(id))
+}
+
+/// host_stop_sound(sound_id: Int) -> None
+pub fn host_stop_sound(args: &[Value]) -> Result<Value, VmFault> {
+    if args.is_empty() {
+        return Ok(Value::None);
+    }
+    let id = to_i64(&args[0])?;
+    let audio = AUDIO.lock().map_err(|_| VmFault::CapabilityDenied {
+        capability: "host.audio".to_string(),
+        operation: "audio_lock".to_string(),
+    })?;
+    audio.stop(id);
+    Ok(Value::None)
+}
+
+/// host_play_music(sound_id: Int, volume: Float, is_loop: Bool) -> None
+pub fn host_play_music(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 3 {
+        return Err(VmFault::TypeMismatch {
+            expected: "3 arguments (sound_id, volume, is_loop)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let id = to_i64(&args[0])?;
+    let volume = to_f32(&args[1])?;
+    let is_loop = to_bool(&args[2])?;
+    let mut audio = AUDIO.lock().map_err(|_| VmFault::CapabilityDenied {
+        capability: "host.audio".to_string(),
+        operation: "audio_lock".to_string(),
+    })?;
+    audio.play_music(id, volume, is_loop);
+    Ok(Value::None)
+}
+
+/// host_stop_music() -> None
+pub fn host_stop_music(_args: &[Value]) -> Result<Value, VmFault> {
+    let mut audio = AUDIO.lock().map_err(|_| VmFault::CapabilityDenied {
+        capability: "host.audio".to_string(),
+        operation: "audio_lock".to_string(),
+    })?;
+    audio.stop_music();
+    Ok(Value::None)
+}
+
 /// Type signature of a host native function callback.
 type NativeFn = fn(&[Value]) -> Result<Value, VmFault>;
 
@@ -591,6 +719,13 @@ const NATIVES: &[NativeEntry] = &[
     ("host_draw_sprite_subrect", 10, host_draw_sprite_subrect),
     ("host_set_camera", 3, host_set_camera),
     ("host_reset_camera", 0, host_reset_camera),
+    ("host_load_sound", 1, host_load_sound),
+    ("host_play_sound", 3, host_play_sound),
+    ("host_play_preset", 3, host_play_preset),
+    ("host_synth_sound", 5, host_synth_sound),
+    ("host_stop_sound", 1, host_stop_sound),
+    ("host_play_music", 3, host_play_music),
+    ("host_stop_music", 0, host_stop_music),
 ];
 
 /// Registers the game host native functions into the semantic analyzer's Prelude surface.

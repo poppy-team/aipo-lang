@@ -263,6 +263,13 @@ The host automatically detects lifecycle hooks declared in the script:
 | `host_draw_sprite_subrect(tex_id, sx, sy, sw, sh, dx, dy, dw, dh, flip_x)` | `Int, Float..., Bool` | Draws a slice of a texture atlas or spritesheet. |
 | `host_set_camera(target_x, target_y, zoom)` | `Float, Float, Float` | Activates a 2D camera centered on `(target_x, target_y)` with zoom factor. |
 | `host_reset_camera()` | *(none)* | Resets transform to screen space (for HUD overlays and GUI). |
+| `host_load_sound(path)` | `String -> Int` | Loads a WAV/OGG audio file into memory and returns its handle ID. |
+| `host_play_sound(id, volume, pitch)` | `Int, Float, Float` | Plays sound by handle ID with volume and pitch control. |
+| `host_play_preset(name, volume, pitch)` | `String, Float, Float` | Plays procedural chiptune preset ("coin", "jump", "laser", "explosion", "hit", "powerup", "click"). |
+| `host_synth_sound(wave, freq, slide, dur, vol)` | `String, Float... -> Int` | Synthesizes custom procedural waveform generating 16-bit WAV bytes in memory. |
+| `host_stop_sound(id)` | `Int` | Stops playback of specified sound handle ID. |
+| `host_play_music(id, volume, loop)` | `Int, Float, Bool` | Plays looping background music track. |
+| `host_stop_music()` | *(none)* | Immediately stops active background music. |
 | `host_key_down(code)` | `Int -> Bool` | Returns `true` while the key (GLFW keycode) is held down. |
 | `host_key_pressed(code)` | `Int -> Bool` | Returns `true` only on the frame the key was initially pressed. |
 | `host_mouse_x()`, `host_mouse_y()` | `() -> Float` | Returns cursor coordinates in screen space. |
