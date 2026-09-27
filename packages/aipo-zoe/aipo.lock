@@ -1,7 +1,7 @@
 [[packages]]
-coordinate = "aipo.freya"
+coordinate = "aipo.zoe"
 version = "0.1.0"
-digest = "0f368690cf667be159c646fdef5216494dd9996402c5040a5052987ff317226b"
+digest = "04313d88340866c804692413c11467f819b964be1fcbb6010a4645a1e4c1aa8f"
 dependencies = []
 capabilities = []
 targets = [

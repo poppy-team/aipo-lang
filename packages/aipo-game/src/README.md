@@ -2,7 +2,9 @@
 
 Este diretório contém a implementação pura em Aipo dos módulos que estruturam o framework `aipo.game`:
 
-- **[`lib.aipo`](./lib.aipo)**: Ponto de entrada do pacote e re-exportação unificada da API pública (`actor`, `scene`, `behaviors`, `input`, `audio`, `spawn`, `nodes`, `ui`, `tilemap`).
+- **[`lib.aipo`](./lib.aipo)**: Ponto de entrada do pacote e re-exportação unificada da API pública (`actor`, `scene`, `behaviors`, `input`, `audio`, `spawn`, `nodes`, `ui`, `tilemap`, `animation`, `particles`).
+- **[`animation.aipo`](./animation.aipo)**: Máquina de estados e animação quadro-a-quadro para spritesheets com recorte UV automático, flip horizontal em $X$ e transições suaves de clipes.
+- **[`particles.aipo`](./particles.aipo)**: Sistema de partículas 2D de alta densidade com simulação de gravidade, arrasto/resistência do ar, atenuação de transparência e presets de efeitos sonoro-visuais.
 - **[`ui.aipo`](./ui.aipo)**: Subsistema de HUD e UI imediata para jogos 2D a 60 FPS (`button`, `progress_bar`, `health_bar`, `panel`, `label`, `badge`, `is_mouse_over`).
 - **[`tilemap.aipo`](./tilemap.aipo)**: Sistema de mapas de blocos 2D com resolução contínua de colisão AABB (*swept AABB* anti-tunelamento), *frustum culling* em viewport e *raycasting* rápido via DDA.
 - **[`input.aipo`](./input.aipo)**: Gerenciador de entradas com mapeamento amigável de teclado, botões de mouse e eixos de gamepads.

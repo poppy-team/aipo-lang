@@ -1,5 +1,5 @@
-# color.aipo — Color utilities and Catppuccin Mocha palette for aipo.freya
-# Part of `aipo.freya`
+# color.aipo — Color utilities and Catppuccin Mocha palette for aipo.zoe
+# Part of `aipo.zoe` (Zoe UI)
 
 import types as types_mod
 

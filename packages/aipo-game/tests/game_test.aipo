@@ -1,0 +1,137 @@
+# game_test.aipo — Exhaustive unit test suite for aipo.game subsystems
+# Covers Animation Clips, State Machine, 2D Particle Emitters, Physics, and Presets.
+
+import aipo.game as g
+
+test("animation clip creation and defaults") do
+    let clip = g.animation.create_clip(
+        "walk",
+        [0, 1, 2, 3],
+        10.0,
+        true,
+        32.0,
+        32.0,
+        4
+    )
+
+    expect.equal(clip.name, "walk")
+    expect.equal(clip.frame_indices.len(), 4)
+    expect.equal(clip.fps, 10.0)
+    expect.true(clip.is_looping)
+    expect.equal(clip.tile_w, 32.0)
+    expect.equal(clip.tile_h, 32.0)
+    expect.equal(clip.tileset_cols, 4)
+end
+
+test("animator clips registration and playback") do
+    let anim = g.animation.create_animator(1)
+    let clip_idle = g.animation.create_clip("idle", [0, 1], 5.0, true, 32.0, 32.0, 2)
+    let clip_jump = g.animation.create_clip("jump", [2, 3], 10.0, false, 32.0, 32.0, 2)
+
+    g.animation.add_clip(anim, clip_idle)
+    g.animation.add_clip(anim, clip_jump)
+
+    expect.equal(g.animation.current_clip(anim), "idle")
+    expect.equal(g.animation.get_current_frame(anim), 0)
+    expect.false(g.animation.is_finished(anim))
+
+    g.animation.play(anim, "jump", false)
+    expect.equal(g.animation.current_clip(anim), "jump")
+    expect.equal(g.animation.get_current_frame(anim), 0)
+end
+
+test("animator frame advance and non-looping finish") do
+    let anim = g.animation.create_animator(1)
+    let clip_attack = g.animation.create_clip("attack", [0, 1], 10.0, false, 32.0, 32.0, 2)
+    g.animation.add_clip(anim, clip_attack)
+    g.animation.play(anim, "attack", true)
+
+    # At 10 fps, each frame lasts 0.1s
+    g.animation.update(anim, 0.05)
+    expect.equal(g.animation.get_current_frame(anim), 0)
+    expect.false(g.animation.is_finished(anim))
+
+    # Advance past first frame
+    g.animation.update(anim, 0.06)
+    expect.equal(g.animation.get_current_frame(anim), 1)
+    expect.false(g.animation.is_finished(anim))
+
+    # Advance past final frame (non-looping should finish and stay on last frame)
+    g.animation.update(anim, 0.10)
+    expect.equal(g.animation.get_current_frame(anim), 1)
+    expect.true(g.animation.is_finished(anim))
+end
+
+test("particle emitter creation, capacity, and clear") do
+    let emitter = g.particles.create_emitter(100.0, 150.0, 64)
+    expect.equal(emitter.x, 100.0)
+    expect.equal(emitter.y, 150.0)
+    expect.equal(emitter.max_particles, 64)
+    expect.equal(g.particles.count(emitter), 0)
+
+    g.particles.set_position(emitter, 200.0, 250.0)
+    expect.equal(emitter.x, 200.0)
+    expect.equal(emitter.y, 250.0)
+
+    g.particles.emit_preset(emitter, "sparks", 200.0, 250.0, 10)
+    expect.equal(g.particles.count(emitter), 10)
+
+    g.particles.clear(emitter)
+    expect.equal(g.particles.count(emitter), 0)
+end
+
+test("particle physics, lifetime decay, and culling") do
+    let emitter = g.particles.create_emitter(0.0, 0.0, 32)
+    let cfg = {
+        "x": 0.0,
+        "y": 0.0,
+        "speed_min": 100.0,
+        "speed_max": 100.0,
+        "angle_min": 0.0,
+        "angle_max": 0.0, # purely moving right (+x)
+        "life_min": 0.1,
+        "life_max": 0.1,
+        "gravity_y": 50.0,
+        "drag": 0.0
+    }
+
+    g.particles.emit(emitter, 1, cfg)
+    expect.equal(g.particles.count(emitter), 1)
+
+    let p = emitter.particles[0]
+    expect.equal(p.x, 0.0)
+    expect.equal(p.y, 0.0)
+
+    # Step simulation by 0.05s (particle should still be alive and moved)
+    g.particles.update(emitter, 0.05)
+    expect.equal(g.particles.count(emitter), 1)
+    let p_after = emitter.particles[0]
+    expect.true(p_after.x > 0.0)
+    expect.true(p_after.life <= 0.055)
+
+    # Step simulation past lifetime (0.06s additional => total 0.11s > 0.10s)
+    g.particles.update(emitter, 0.06)
+    expect.equal(g.particles.count(emitter), 0)
+end
+
+test("particle preset emitters dispatching") do
+    let emitter = g.particles.create_emitter(50.0, 50.0, 100)
+
+    g.particles.emit_preset(emitter, "sparks", 50.0, 50.0, 5)
+    expect.equal(g.particles.count(emitter), 5)
+
+    g.particles.emit_preset(emitter, "explosion", 50.0, 50.0, 8)
+    expect.equal(g.particles.count(emitter), 13)
+
+    g.particles.emit_preset(emitter, "smoke", 50.0, 50.0, 4)
+    expect.equal(g.particles.count(emitter), 17)
+
+    g.particles.emit_preset(emitter, "dust", 50.0, 50.0, 3)
+    expect.equal(g.particles.count(emitter), 20)
+
+    g.particles.emit_preset(emitter, "coins", 50.0, 50.0, 6)
+    expect.equal(g.particles.count(emitter), 26)
+
+    g.particles.clear(emitter)
+    expect.equal(g.particles.count(emitter), 0)
+end

@@ -128,6 +128,23 @@ Gerenciamento de mundos baseados em malhas de blocos e colisão de alta velocida
 - `g.tilemap.draw_tilemap(map, cam_x, cam_y, zoom, screen_w, screen_h)`: renderização com descarte automático de blocos fora da visão da câmera (*viewport frustum culling*).
 - `g.tilemap.raycast(map, x1, y1, x2, y2) -> Dict`: algoritmo DDA de traçado de raios em grade discreta para linhas de visada, tiros e sensores de IA.
 
+### 3. Máquina de Estados e Animação de Sprites (`g.animation`)
+Controle quadro-a-quadro de spritesheets com suporte a transições e espelhamento horizontal:
+- `g.animation.create_clip(name, frames, fps, is_looping, tile_w, tile_h, tileset_cols)`: definição de clipe de animação com recortes automáticos de spritesheet.
+- `g.animation.create_animator(texture_id)`: instanciação do animador para um ator ou entidade gráfica.
+- `g.animation.add_clip(anim, clip)` / `g.animation.play(anim, clip_name, reset_if_playing)`: registro de clipes e despacho de estados (ex: "idle", "run", "attack").
+- `g.animation.update(anim, dt)`: avanço temporal exato por taxa de quadros (*FPS*), com transição suave e travamento em último quadro para clipes não-contínuos (*one-shot*).
+- `g.animation.draw(anim, x, y, width, height, rotation, flip_x)`: renderização na GPU com recorte UV preciso e espelhamento em $X$ instantâneo.
+- `g.animation.get_current_frame(anim)` / `is_finished(anim)` / `current_clip(anim)`: introspecção de estado para lógica de jogo.
+
+### 4. Sistema de Partículas 2D e Efeitos Físicos (`g.particles`)
+Gerador de partículas de alta densidade com simulação física, arrasto e atenuação de opacidade:
+- `g.particles.create_emitter(x, y, max_particles)`: emissor com limite configurável de saturação e alocação dinâmica protegida.
+- `g.particles.emit_preset(emitter, preset_name, x, y, count)`: presets de efeitos de jogo pré-configurados (`"sparks"`, `"explosion"`, `"smoke"`, `"dust"`, `"coins"`, `"trail"`).
+- `g.particles.emit(emitter, count, config)`: emissão sob medida customizando velocidade, ângulo, vida útil, curvas de tamanho, cor RGBA, gravidade e arrasto.
+- `g.particles.update(emitter, dt)`: atualização integrada de cinemática e descarte determinístico de partículas expiradas.
+- `g.particles.draw(emitter)`: desenho na GPU com cálculo contínuo de escala e atenuação linear de alpha.
+
 ---
 
 ## Execução Nativa a 60 FPS (`aipo-game-host`)
@@ -135,6 +152,9 @@ Gerenciamento de mundos baseados em malhas de blocos e colisão de alta velocida
 O runtime nativo em `crates/aipo-game-host` permite compilar e executar qualquer jogo `.aipo` diretamente na GPU:
 
 ```bash
+# Executa a demonstração de Animação de Sprites e Partículas 2D
+cargo run -p aipo-game-host -- packages/aipo-game/examples/animation_and_particles.aipo
+
 # Executa a demonstração de Tilemap 2D, Câmera e HUD Imediato
 cargo run -p aipo-game-host -- packages/aipo-game/examples/tilemap_and_hud.aipo
 
@@ -145,5 +165,6 @@ cargo run -p aipo-game-host -- examples/27_camera_and_sprites.aipo
 # Executa o Snake Game nativo embutido
 cargo run -p aipo-game-host
 ```
+
 
 

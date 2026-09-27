@@ -1,0 +1,201 @@
+# animation_and_particles.aipo — Demonstration of Sprite Animation & 2D Particle Systems
+# Demonstrates frame-by-frame animation, state machine transitions, directional flipping,
+# and multiple particle emitters with physics, presets, and alpha fading.
+
+import aipo.game as g
+
+# Simulation State
+var player_x = 240.0
+var player_y = 200.0
+var player_vx = 0.0
+var player_vy = 0.0
+var player_flip_x = false
+var is_attacking = false
+
+var dust_timer = 0.0
+var click_cooldown = 0.0
+
+var player_anim = none
+var dust_emitter = none
+var fx_emitter = none
+
+fn setup() {
+    # 1. Setup Player Sprite Animator (mock texture ID = 1)
+    player_anim = g.animation.create_animator(1)
+
+    let idle_clip = g.animation.create_clip(
+        "idle",
+        [0, 1, 2, 3],
+        6.0,
+        true,
+        32.0,
+        32.0,
+        4
+    )
+
+    let run_clip = g.animation.create_clip(
+        "run",
+        [4, 5, 6, 7],
+        12.0,
+        true,
+        32.0,
+        32.0,
+        4
+    )
+
+    let attack_clip = g.animation.create_clip(
+        "attack",
+        [8, 9, 10],
+        14.0,
+        false,
+        32.0,
+        32.0,
+        4
+    )
+
+    g.animation.add_clip(player_anim, idle_clip)
+    g.animation.add_clip(player_anim, run_clip)
+    g.animation.add_clip(player_anim, attack_clip)
+    g.animation.play(player_anim, "idle", false)
+
+    # 2. Setup Particle Emitters
+    dust_emitter = g.particles.create_emitter(player_x, player_y, 128)
+    fx_emitter = g.particles.create_emitter(player_x, player_y, 256)
+
+    # Seed an opening spark celebration
+    g.particles.emit_preset(fx_emitter, "sparks", player_x, player_y, 24)
+}
+
+fn update(dt) {
+    if click_cooldown > 0.0 {
+        click_cooldown = click_cooldown - dt
+    }
+
+    # 1. Read Movement Input
+    var move_x = 0.0
+    var move_y = 0.0
+
+    if g.input.key_down("Right") or g.input.key_down("D") {
+        move_x = move_x + 1.0
+        player_flip_x = false
+    }
+    if g.input.key_down("Left") or g.input.key_down("A") {
+        move_x = move_x - 1.0
+        player_flip_x = true
+    }
+    if g.input.key_down("Up") or g.input.key_down("W") {
+        move_y = move_y - 1.0
+    }
+    if g.input.key_down("Down") or g.input.key_down("S") {
+        move_y = move_y + 1.0
+    }
+
+    let speed = 140.0
+    player_x = player_x + (move_x * speed * dt)
+    player_y = player_y + (move_y * speed * dt)
+
+    # Constrain to screen bounds
+    if player_x < 32.0 {
+        player_x = 32.0
+    }
+    if player_x > 608.0 {
+        player_x = 608.0
+    }
+    if player_y < 32.0 {
+        player_y = 32.0
+    }
+    if player_y > 448.0 {
+        player_y = 448.0
+    }
+
+    # 2. Action Input: Trigger Attack or Particle Presets
+    if (g.input.key_pressed("Space") or g.input.mouse_down("left")) and click_cooldown <= 0.0 {
+        is_attacking = true
+        click_cooldown = 0.3
+        g.animation.play(player_anim, "attack", true)
+        g.particles.emit_preset(fx_emitter, "sparks", player_x, player_y, 20)
+        g.particles.emit_preset(fx_emitter, "explosion", player_x, player_y, 16)
+    }
+
+    if g.input.key_pressed("E") and click_cooldown <= 0.0 {
+        click_cooldown = 0.25
+        g.particles.emit_preset(fx_emitter, "coins", player_x, player_y, 14)
+    }
+
+    if g.input.key_pressed("Q") and click_cooldown <= 0.0 {
+        click_cooldown = 0.25
+        g.particles.emit_preset(fx_emitter, "smoke", player_x, player_y, 10)
+    }
+
+    # 3. Handle Animation State Transitions
+    if is_attacking {
+        if g.animation.is_finished(player_anim) {
+            is_attacking = false
+            if math.abs(move_x) > 0.0 or math.abs(move_y) > 0.0 {
+                g.animation.play(player_anim, "run", false)
+            } else {
+                g.animation.play(player_anim, "idle", false)
+            }
+        }
+    } else {
+        if math.abs(move_x) > 0.0 or math.abs(move_y) > 0.0 {
+            g.animation.play(player_anim, "run", false)
+
+            # Emit footsteps dust trail while running
+            dust_timer = dust_timer + dt
+            if dust_timer >= 0.08 {
+                dust_timer = 0.0
+                g.particles.emit_preset(dust_emitter, "dust", player_x, player_y + 24.0, 3)
+            }
+        } else {
+            g.animation.play(player_anim, "idle", false)
+        }
+    }
+
+    # 4. Update Animator & Emitters
+    g.animation.update(player_anim, dt)
+    g.particles.update(dust_emitter, dt)
+    g.particles.update(fx_emitter, dt)
+}
+
+fn draw() {
+    # 1. Background Grid / Floor
+    host_draw_rect(0.0, 0.0, 640.0, 480.0, 0.12, 0.13, 0.18, 1.0)
+
+    var gx = 0.0
+    while gx <= 640.0 {
+        host_draw_line(gx, 0.0, gx, 480.0, 1.0, 0.18, 0.2, 0.26, 0.4)
+        gx = gx + 40.0
+    }
+    var gy = 0.0
+    while gy <= 480.0 {
+        host_draw_line(0.0, gy, 640.0, gy, 1.0, 0.18, 0.2, 0.26, 0.4)
+        gy = gy + 40.0
+    }
+
+    # 2. Draw Dust Particles (behind player)
+    g.particles.draw(dust_emitter)
+
+    # 3. Draw Player Animated Sprite
+    let sprite_size = 54.0
+    g.animation.draw(
+        player_anim,
+        player_x - (sprite_size / 2.0),
+        player_y - (sprite_size / 2.0),
+        sprite_size,
+        sprite_size,
+        0.0,
+        player_flip_x
+    )
+
+    # 4. Draw Effects Particles (in front of player)
+    g.particles.draw(fx_emitter)
+
+    # 5. Diagnostic HUD & In-Game UI
+    g.ui.panel(16.0, 16.0, 310.0, 140.0, "Animation & Particle Studio")
+    g.ui.label(28.0, 46.0, "Clip: " + g.animation.current_clip(player_anim) + " (Frame " + String(g.animation.get_current_frame(player_anim)) + ")", 12.0, 0.85, 0.90, 1.0)
+    g.ui.label(28.0, 66.0, "Active Particles: " + String(g.particles.count(dust_emitter) + g.particles.count(fx_emitter)), 12.0, 0.85, 0.90, 1.0)
+    g.ui.label(28.0, 88.0, "Move: WASD / Arrows | Flip: Auto", 12.0, 0.75, 0.85, 0.95)
+    g.ui.label(28.0, 108.0, "Space/Click: Attack & Sparks", 12.0, 0.75, 0.85, 0.95)
+    g.ui.label(28.0, 126.0, "E: Coin Sparkles | Q: Smoke Plume", 12.0, 0.75, 0.85, 0.95)
+}

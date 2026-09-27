@@ -1,4 +1,4 @@
-# components.aipo — Standard Freya UI component library for aipo.freya
+# components.aipo — Standard Zoe UI component library for aipo.zoe
 # Includes Button, Switch, Slider, ProgressBar, Card, and Badge
 
 import types as types_mod

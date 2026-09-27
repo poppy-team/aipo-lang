@@ -402,20 +402,20 @@ fn test_audio_host_calls() {
 }
 
 #[test]
-fn test_freya_ui_dashboard_compilation_and_execution() {
+fn test_zoe_ui_dashboard_compilation_and_execution() {
     let path_buf = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../packages/aipo-freya/examples/dashboard.aipo");
+        .join("../../packages/aipo-zoe/examples/dashboard.aipo");
     let path = path_buf.as_path();
     assert!(
         path.exists(),
-        "packages/aipo-freya/examples/dashboard.aipo must exist at {}",
+        "packages/aipo-zoe/examples/dashboard.aipo must exist at {}",
         path.display()
     );
 
     let mut host_surface = aipo_cli::prelude_surface();
     host_bridge::register_surface_symbols(&mut host_surface);
 
-    // 1. Compile Freya dashboard script with host prelude surface
+    // 1. Compile Zoe dashboard script with host prelude surface
     let (_source, module) = match aipo_cli::compile_file(path, Some(&host_surface)) {
         Ok(res) => res,
         Err((_src, diags)) => {
@@ -441,7 +441,7 @@ fn test_freya_ui_dashboard_compilation_and_execution() {
         run_res.err()
     );
 
-    // 4. Verify setup() mounts the Freya component tree
+    // 4. Verify setup() mounts the Zoe component tree
     let setup_fn = vm
         .globals
         .get("setup")
@@ -450,7 +450,7 @@ fn test_freya_ui_dashboard_compilation_and_execution() {
     let setup_res = vm.invoke(&module, setup_fn, &[]);
     assert!(
         setup_res.is_ok(),
-        "setup() should mount the Freya app: {:?}",
+        "setup() should mount the Zoe app: {:?}",
         setup_res.err()
     );
 
@@ -491,13 +491,13 @@ fn test_freya_ui_dashboard_compilation_and_execution() {
 }
 
 #[test]
-fn test_freya_ui_unit_test_suite() {
-    let path_buf = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../packages/aipo-freya/tests/freya_test.aipo");
+fn test_zoe_ui_unit_test_suite() {
+    let path_buf =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/aipo-zoe/tests/zoe_test.aipo");
     let path = path_buf.as_path();
     assert!(
         path.exists(),
-        "packages/aipo-freya/tests/freya_test.aipo must exist at {}",
+        "packages/aipo-zoe/tests/zoe_test.aipo must exist at {}",
         path.display()
     );
 
@@ -526,7 +526,7 @@ fn test_freya_ui_unit_test_suite() {
     );
 
     let all_tests = discovered.borrow().clone();
-    assert!(!all_tests.is_empty(), "Should discover Freya unit tests");
+    assert!(!all_tests.is_empty(), "Should discover Zoe unit tests");
 
     // 2. Execute each discovered test in isolated VM with host natives
     for test_name in &all_tests {
@@ -543,13 +543,13 @@ fn test_freya_ui_unit_test_suite() {
         let test_res = test_vm.run(&module);
         assert!(
             test_res.is_ok(),
-            "Freya unit test '{}' should pass, got: {:?}",
+            "Zoe unit test '{}' should pass, got: {:?}",
             test_name,
             test_res.err()
         );
         assert!(
             ran.get(),
-            "Freya unit test '{}' should have executed",
+            "Zoe unit test '{}' should have executed",
             test_name
         );
     }
@@ -606,4 +606,134 @@ fn test_tilemap_and_game_hud_compilation_and_execution() {
 
     let draw_fn = vm.globals.get("draw").cloned().expect("draw exists");
     assert!(vm.invoke(&module, draw_fn, &[]).is_ok());
+}
+
+#[test]
+fn test_animation_and_particles_compilation_and_execution() {
+    let path_buf = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/aipo-game/examples/animation_and_particles.aipo");
+    let path = path_buf.as_path();
+    assert!(
+        path.exists(),
+        "packages/aipo-game/examples/animation_and_particles.aipo must exist at {}",
+        path.display()
+    );
+
+    let mut host_surface = aipo_cli::prelude_surface();
+    host_bridge::register_surface_symbols(&mut host_surface);
+
+    let (_source, module) = match aipo_cli::compile_file(path, Some(&host_surface)) {
+        Ok(res) => res,
+        Err((_src, diags)) => {
+            panic!("Compilation failed with diagnostics: {:?}", diags);
+        }
+    };
+
+    assert!(
+        !module.code.is_empty(),
+        "Bytecode module should not be empty"
+    );
+
+    let (mut vm, _) = aipo_cli::standard_environment();
+    aipo_cli::register_module_symbols(&mut vm, &module);
+    host_bridge::register_vm_natives(&mut vm);
+
+    let run_res = vm.run(&module);
+    assert!(
+        run_res.is_ok(),
+        "Top-level execution should succeed: {:?}",
+        run_res.err()
+    );
+
+    let setup_fn = vm.globals.get("setup").cloned().expect("setup exists");
+    let setup_res = vm.invoke(&module, setup_fn, &[]);
+    assert!(setup_res.is_ok(), "setup() failed: {:?}", setup_res.err());
+
+    let update_fn = vm.globals.get("update").cloned().expect("update exists");
+    let update_res = vm.invoke(&module, update_fn.clone(), &[Value::Float(0.016)]);
+    assert!(
+        update_res.is_ok(),
+        "update(dt) failed: {:?}",
+        update_res.err()
+    );
+
+    // Multi-frame simulation verification
+    for _ in 0..10 {
+        assert!(
+            vm.invoke(&module, update_fn.clone(), &[Value::Float(0.016)])
+                .is_ok()
+        );
+    }
+
+    let draw_fn = vm.globals.get("draw").cloned().expect("draw exists");
+    let draw_res = vm.invoke(&module, draw_fn, &[]);
+    assert!(draw_res.is_ok(), "draw() failed: {:?}", draw_res.err());
+}
+
+#[test]
+fn test_game_subsystems_unit_test_suite() {
+    let path_buf =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/aipo-game/tests/game_test.aipo");
+    let path = path_buf.as_path();
+    assert!(
+        path.exists(),
+        "packages/aipo-game/tests/game_test.aipo must exist at {}",
+        path.display()
+    );
+
+    let mut host_surface = aipo_cli::prelude_surface();
+    host_bridge::register_surface_symbols(&mut host_surface);
+
+    let (_source, module) = match aipo_cli::compile_file(path, Some(&host_surface)) {
+        Ok(res) => res,
+        Err((_src, diags)) => {
+            panic!("Compilation failed with diagnostics: {:?}", diags);
+        }
+    };
+
+    // 1. Discover all tests
+    let (mut vm, _) = aipo_cli::standard_environment();
+    aipo_cli::register_module_symbols(&mut vm, &module);
+    host_bridge::register_vm_natives(&mut vm);
+
+    let discovered = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    vm.set_test_mode(aipo_vm::TestMode::Discover(discovered.clone()));
+    let run_res = vm.run(&module);
+    assert!(
+        run_res.is_ok(),
+        "Discovery run should succeed: {:?}",
+        run_res.err()
+    );
+
+    let all_tests = discovered.borrow().clone();
+    assert!(
+        !all_tests.is_empty(),
+        "Should discover aipo.game unit tests"
+    );
+
+    // 2. Execute each discovered test in isolated VM with host natives
+    for test_name in &all_tests {
+        let (mut test_vm, _) = aipo_cli::standard_environment();
+        aipo_cli::register_module_symbols(&mut test_vm, &module);
+        host_bridge::register_vm_natives(&mut test_vm);
+
+        let ran = std::rc::Rc::new(std::cell::Cell::new(false));
+        test_vm.set_test_mode(aipo_vm::TestMode::Execute {
+            target: test_name.clone(),
+            ran: ran.clone(),
+        });
+
+        let test_res = test_vm.run(&module);
+        assert!(
+            test_res.is_ok(),
+            "Game unit test '{}' should pass, got: {:?}",
+            test_name,
+            test_res.err()
+        );
+        assert!(
+            ran.get(),
+            "Game unit test '{}' should have executed",
+            test_name
+        );
+    }
 }

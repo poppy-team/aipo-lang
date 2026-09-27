@@ -1,5 +1,5 @@
-# lib.aipo — Entrypoint for `aipo.freya`
-# Declarative GUI Framework for Aipo inspired by Freya UI and Torin Layout Engine
+# lib.aipo — Entrypoint for `aipo.zoe`
+# Zoe UI: Declarative GUI Framework for Aipo inspired by Torin Layout Engine
 
 import types as types_mod
 import color as color_mod

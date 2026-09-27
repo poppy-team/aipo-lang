@@ -1,5 +1,5 @@
-# types.aipo — Core Data Structures and Factory Functions for aipo.freya
-# Inspired by Freya UI and Torin Layout Engine
+# types.aipo — Core Data Structures and Factory Functions for aipo.zoe
+# Zoe UI: Core types and factory functions
 
 var _element_id_counter = 0
 

@@ -1,6 +1,6 @@
-# Arquitetura Interna do aipo.freya (`src/`)
+# Arquitetura Interna do aipo.zoe (`src/`)
 
-Este diretório contém a implementação modular do framework Freya UI para a linguagem Aipo.
+Este diretório contém a implementação modular do framework Zoe UI para a linguagem Aipo.
 
 ---
 

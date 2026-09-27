@@ -1,4 +1,4 @@
-# elements.aipo — Core Freya element primitives
+# elements.aipo — Core Zoe UI element primitives
 # Provides make_rect, make_label, and make_container
 
 import types as types_mod

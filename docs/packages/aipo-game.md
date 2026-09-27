@@ -221,15 +221,71 @@ let codigo_gerado = n.transpile_to_aipo_code(regra_colisao)
 
 ---
 
-## 8. Host Nativo Desktop (`aipo-game-host`)
+## 8. Máquina de Estados e Animação de Sprites (`g.animation`)
+
+O subsistema `g.animation` gerencia sequências de quadros a partir de spritesheets tabulares, permitindo transições fluidas de estado e espelhamento horizontal instantâneo:
+
+```aipo
+import aipo.game as g
+
+# Criação do animador para textura de ID 1
+let anim = g.animation.create_animator(1)
+
+# Definição dos clipes da entidade
+let idle = g.animation.create_clip("idle", [0, 1, 2, 3], 6.0, true, 32.0, 32.0, 4)
+let run = g.animation.create_clip("run", [4, 5, 6, 7], 12.0, true, 32.0, 32.0, 4)
+let attack = g.animation.create_clip("attack", [8, 9, 10], 14.0, false, 32.0, 32.0, 4)
+
+g.animation.add_clip(anim, idle)
+g.animation.add_clip(anim, run)
+g.animation.add_clip(anim, attack)
+
+# Reprodução e controle de quadro
+g.animation.play(anim, "run", false)
+g.animation.update(anim, dt)
+
+# Desenho com recorte UV automático e espelhamento horizontal
+g.animation.draw(anim, x, y, 64.0, 64.0, 0.0, flip_x)
+```
+
+---
+
+## 9. Sistema de Partículas 2D com Física (`g.particles`)
+
+O módulo `g.particles` implementa emissores leves para efeitos visuais com arrasto dinâmico, aceleração gravitacional, atenuação contínua de opacidade (*alpha fading*) e presets prontos para jogos:
+
+```aipo
+import aipo.game as g
+
+# Criação de emissor de partículas com teto máximo de 256 partículas ativas
+let fx = g.particles.create_emitter(400.0, 300.0, 256)
+
+# Disparo de presets visuais integrados
+g.particles.emit_preset(fx, "sparks", 400.0, 300.0, 20)    # Faíscas pirotécnicas
+g.particles.emit_preset(fx, "explosion", 400.0, 300.0, 30) # Onda de choque e fogo
+g.particles.emit_preset(fx, "dust", 400.0, 324.0, 4)       # Poeira de passos
+g.particles.emit_preset(fx, "coins", 400.0, 300.0, 12)     # Moedas douradas
+g.particles.emit_preset(fx, "smoke", 400.0, 300.0, 8)      # Fumaça ascendente
+
+# Atualização física (gravidade e atrito aerodinâmico) e renderização GPU
+g.particles.update(fx, dt)
+g.particles.draw(fx)
+```
+
+---
+
+## 10. Host Nativo Desktop (`aipo-game-host`)
 
 O crate `crates/aipo-game-host` é o executor desktop oficial alimentado pelo backend gráfico ultrarrápido **Miniquad / Macroquad**. Ele compila e executa qualquer script `.aipo` diretamente na GPU a 60 FPS com suporte a janelas redimensionáveis, entrada em tempo real e hot-reload dinâmico.
 
 ### Como Executar
 
 ```bash
-# Executa um script de jogo Aipo diretamente no host nativo a 60 FPS
-cargo run -p aipo-game-host -- examples/26_interactive_game.aipo
+# Executa a demonstração de Animação de Sprites e Partículas 2D
+cargo run -p aipo-game-host -- packages/aipo-game/examples/animation_and_particles.aipo
+
+# Executa a demonstração com Tilemap 2D e HUD Imediato
+cargo run -p aipo-game-host -- packages/aipo-game/examples/tilemap_and_hud.aipo
 
 # Executa o exemplo com câmera 2D e coleta de gemas
 cargo run -p aipo-game-host -- examples/27_camera_and_sprites.aipo
@@ -256,6 +312,7 @@ O host detecta automaticamente ganchos de ciclo de vida definidos no script:
 | `host_clear_background(r, g, b)` | `r, g, b: Float` | Limpa o framebuffer com a cor especificada (0.0 a 1.0). |
 | `host_draw_rect(x, y, w, h, r, g, b, a)` | `Float` | Desenha um retângulo preenchido na tela ou no espaço do mundo. |
 | `host_draw_rect_lines(x, y, w, h, th, r, g, b, a)` | `Float` | Desenha as bordas de um retângulo com espessura `th`. |
+| `host_draw_line(x1, y1, x2, y2, th, r, g, b, a)` | `Float` | Desenha uma linha de espessura `th` entre dois pontos. |
 | `host_draw_circle(cx, cy, radius, r, g, b, a)` | `Float` | Desenha um círculo preenchido. |
 | `host_draw_text(text, x, y, size, r, g, b)` | `String, Float...` | Renderiza texto com tamanho de fonte especificado. |
 | `host_load_texture(path)` | `String -> Int` | Carrega uma imagem PNG/JPEG na memória da GPU e retorna seu ID numérico. |

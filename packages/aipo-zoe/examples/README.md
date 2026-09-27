@@ -1,6 +1,6 @@
-# Exemplos do aipo.freya (`examples/`)
+# Exemplos do aipo.zoe (`examples/`)
 
-Este diretório contém aplicações de demonstração e vitrines do framework declarativo `aipo.freya`.
+Este diretório contém aplicações de demonstração e vitrines do framework declarativo `aipo.zoe` (Zoe UI).
 
 ---
 
@@ -16,5 +16,5 @@ Dashboard interativo com estilo Catppuccin Mocha apresentando:
 ### Como Executar
 
 ```bash
-cargo run -p aipo-game-host -- packages/aipo-freya/examples/dashboard.aipo
+cargo run -p aipo-game-host -- packages/aipo-zoe/examples/dashboard.aipo
 ```

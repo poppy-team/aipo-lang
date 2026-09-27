@@ -1,12 +1,12 @@
-# Suíte de Testes do aipo.freya (`tests/`)
+# Suíte de Testes do aipo.zoe (`tests/`)
 
-Este diretório contém os testes de unidade automatizados do framework `aipo.freya`.
+Este diretório contém os testes de unidade automatizados do framework `aipo.zoe` (Zoe UI).
 
 ---
 
 ## Arquivos de Teste
 
-### `freya_test.aipo`
+### `zoe_test.aipo`
 Suíte de testes de unidade cobrindo:
 1. **Paleta de Cores e Parsing Hexadecimal:** Verificação de normalização RGB/RGBA para float de GPU e conversão de valores hexadecimais.
 2. **Hooks Reativos (`use_state` / `set_state`):** Integridade de leitura, escrita e mutação encadeada de sinais de estado.
@@ -18,5 +18,5 @@ Suíte de testes de unidade cobrindo:
 ### Como Executar os Testes
 
 ```bash
-cargo test -p aipo-game-host --test bridge_tests test_freya_ui_unit_test_suite
+cargo test -p aipo-game-host --test bridge_tests test_zoe_ui_unit_test_suite
 ```

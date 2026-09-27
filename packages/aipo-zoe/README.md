@@ -1,8 +1,8 @@
-# aipo.freya
+# Zoe UI (`aipo.zoe`)
 
-Framework declarativo de interface de usuário (GUI) para a linguagem **Aipo**, diretamente inspirado no [Freya UI](https://github.com/marc2332/freya) do ecossistema Rust e em sua engine de layout **Torin**.
+Framework declarativo de interface de usuário (GUI) para a linguagem **Aipo**, baseado no algoritmo de layout **Torin**, sistema reativo de hooks (`use_state`) e componentes visuais estilizados na paleta **Catppuccin Mocha**.
 
-O `aipo.freya` oferece uma arquitetura moderna para construção de aplicativos desktop e interfaces interativas através de uma árvore declarativa de elementos, gerenciamento de estado reativo com hooks (`use_state`), componentes estilizados na paleta **Catppuccin Mocha** e renderização acelerada por GPU sobre o `aipo-game-host` (Miniquad/Macroquad).
+O **Zoe UI** foi concebido para o ecossistema Aipo com arquitetura pura, declarativa e leve: o código roda diretamente na máquina virtual Aipo e renderiza em GPU nativa (60+ FPS) via [`aipo-game-host`](file:///home/raillen/Documentos/Projetos/aipo-lang/crates/aipo-game-host), com compatibilidade pronta para futuros alvos WebAssembly e JavaScript.
 
 ---
 
@@ -37,7 +37,7 @@ Adicione a dependência ao seu `aipo.toml`:
 
 ```toml
 [dependencies]
-"aipo.freya" = { path = "packages/aipo-freya" }
+"aipo.zoe" = { path = "packages/aipo-zoe" }
 ```
 
 Gere ou audite o lockfile do seu projeto:
@@ -52,44 +52,44 @@ aipo package audit .
 ## Exemplo Rápido: Contador Reativo
 
 ```aipo
-import aipo.freya as freya
+import aipo.zoe as zoe
 
 fn view() {
-    let count = freya.use_state(0)
+    let count = zoe.use_state(0)
 
-    return freya.rect(
+    return zoe.rect(
         {
             "direction": "column",
             "align_items": "center",
             "justify_content": "center",
             "width": "100%",
             "height": "100%",
-            "background": freya.rgb(30, 30, 46), # Catppuccin Base
+            "background": zoe.rgb(30, 30, 46), # Catppuccin Base
             "gap": 16.0
         },
         [
-            freya.label(f"Contador: {count.get()}", {
+            zoe.label(f"Contador: {count.get()}", {
                 "font_size": 24.0,
-                "color": freya.rgb(205, 214, 244)
+                "color": zoe.rgb(205, 214, 244)
             }),
-            freya.button("Incrementar +1", _ => freya.set_state(count, count.get() + 1), {
+            zoe.button("Incrementar +1", _ => zoe.set_state(count, count.get() + 1), {
                 "variant": "primary",
-                "background": freya.rgb(137, 180, 250)
+                "background": zoe.rgb(137, 180, 250)
             })
         ]
     )
 }
 
 fn setup() {
-    freya.mount(view)
+    zoe.mount(view)
 }
 
 fn update(dt) {
-    freya.step(dt)
+    zoe.step(dt)
 }
 
 fn draw() {
-    freya.draw_ui()
+    zoe.draw_ui()
 }
 ```
 
@@ -100,7 +100,7 @@ fn draw() {
 Um dashboard completo e interativo com contador, switches, sliders e barra de progresso está disponível em `examples/dashboard.aipo`:
 
 ```bash
-cargo run -p aipo-game-host -- packages/aipo-freya/examples/dashboard.aipo
+cargo run -p aipo-game-host -- packages/aipo-zoe/examples/dashboard.aipo
 ```
 
 ---
@@ -110,9 +110,9 @@ cargo run -p aipo-game-host -- packages/aipo-freya/examples/dashboard.aipo
 O pacote conta com uma suíte de testes de unidade e integração:
 
 ```bash
-# Executa a suíte de testes do framework Freya UI
-cargo test -p aipo-game-host --test bridge_tests test_freya_ui_unit_test_suite
+# Executa a suíte de testes do framework Zoe UI
+cargo test -p aipo-game-host --test bridge_tests test_zoe_ui_unit_test_suite
 
 # Executa o teste de compilação e execução estável multi-frame do Dashboard
-cargo test -p aipo-game-host --test bridge_tests test_freya_ui_dashboard_compilation_and_execution
+cargo test -p aipo-game-host --test bridge_tests test_zoe_ui_dashboard_compilation_and_execution
 ```

@@ -26,3 +26,31 @@ cargo run -p aipo-game-host -- packages/aipo-game/examples/tilemap_and_hud.aipo
 - **Z / X**: Zoom in / Zoom out da câmera virtual.
 - **Mouse**: Mira laser com raycasting DDA e clique em botões do HUD.
 - **Botão "Toggle Grid"**: Alterna exibição das linhas da grade de colisão do tilemap.
+
+---
+
+### 2. `animation_and_particles.aipo`
+Demonstra a máquina de estados para **Animação de Sprites 2D** e o **Sistema de Partículas 2D com Física**:
+- **Máquina de Estados de Animação**:
+  - Clipes `idle`, `run` e `attack` com taxas de quadros (FPS) dedicadas e controle de looping.
+  - Espelhamento horizontal automático (`flip_x`) conforme a direção de movimento do jogador.
+  - Transição de retorno a `idle`/`run` após o término de ações não-contínuas (*one-shot*).
+- **Sistema de Partículas com Física e Presets**:
+  - Efeito de poeira nos pés (`dust`) gerado dinamicamente durante a corrida.
+  - Explosões pirotécnicas (`explosion`) e faíscas brilhantes (`sparks`) disparadas no ataque.
+  - Efeitos interativos adicionais com chuva de moedas douradas (`coins`) e pluma de fumaça (`smoke`).
+  - Dinâmica com gravidade, arrasto/resistência e atenuação suave de transparência (*alpha fading*).
+- **HUD Diagnóstico Integrado**:
+  - Painel imediato exibindo clipe ativo, índice do quadro atual e contagem total de partículas ativas a 60 FPS.
+
+#### Como Executar
+```bash
+cargo run -p aipo-game-host -- packages/aipo-game/examples/animation_and_particles.aipo
+```
+
+#### Controles
+- **WASD / Setas**: Movimentação do ator com troca automática de animação para `run` e flip direcional.
+- **Espaço / Botão Esquerdo do Mouse**: Ataque com espada, acionando animação `attack`, faíscas e explosão.
+- **E**: Disparo de chuva de partículas de moedas douradas (`coins`).
+- **Q**: Disparo de pluma de fumaça ascendente com expansão de raio (`smoke`).
+

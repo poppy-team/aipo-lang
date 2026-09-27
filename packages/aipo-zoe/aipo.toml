@@ -1,9 +1,9 @@
 [package]
-name = "aipo.freya"
+name = "aipo.zoe"
 version = "0.1.0"
 entry = "src/lib.aipo"
 authors = ["Aipo Core Team <core@aipo-lang.org>"]
-description = "Declarative GUI framework for Aipo inspired by Freya UI with Torin layout engine, reactive hooks, and native GPU acceleration"
+description = "Zoe UI: Declarative component-based GUI framework with Torin layout engine, reactive hooks, and native GPU acceleration for Aipo"
 license = "MIT"
 repository = "https://github.com/poppy-team/aipo-lang"
 

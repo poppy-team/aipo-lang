@@ -5,7 +5,23 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [0.11.0] - Em desenvolvimento (Trilha WebAssembly & Self-Hosting)
 
-- **In-Game UI / HUD Imediato e Sistema de Tilemaps 2D com Colisão Contínua (`packages/aipo-game` & `aipo-game-host`)**:
+- **Máquina de Estados de Animação 2D e Sistema de Partículas com Física (`packages/aipo-game` & `aipo-game-host`)**:
+  - **Máquina de Estados e Animação de Spritesheets (`packages/aipo-game/src/animation.aipo`)**:
+    - Estruturas de dados canônicas `AnimationClip` e `SpriteAnimator` para controle quadro-a-quadro de spritesheets 2D.
+    - Suporte a clipes cíclicos (`is_looping == true`) e de disparo único (*one-shot* com travamento no último quadro e sinalizador `is_finished`).
+    - Recorte UV automatizado de células de spritesheet com mapeamento bidimensional de linha/coluna e renderização acelerada por GPU (`draw_animator`).
+    - Suporte a espelhamento horizontal instantâneo (`flip_x`) conforme a direção do ator.
+    - Introspecção de estado da animação (`current_clip`, `get_current_frame`, `is_finished`).
+  - **Sistema de Partículas 2D com Física e Presets (`packages/aipo-game/src/particles.aipo`)**:
+    - Emissor de partículas de alta densidade (`ParticleEmitter`) com alocação protegida e teto configurável `max_particles`.
+    - Simulação física completa com vetores de velocidade ($v_x, v_y$), aceleração gravitacional contínua (`gravity_y`) e amortecimento por arrasto aerodinâmico (`drag`).
+    - Desvanecimento linear de opacidade (*alpha fading*) e interpolação de tamanho com suporte a partículas circulares e retangulares.
+    - Catálogo de presets visuais prontos para uso em jogos: `"sparks"`, `"explosion"`, `"smoke"`, `"dust"`, `"coins"` e `"trail"`.
+  - **Exemplo Executável Completo (`packages/aipo-game/examples/animation_and_particles.aipo`)**:
+    - Demonstração a 60 FPS com ator animado (ciclos `idle`, `run` e `attack`), detecção de colisão com bordas da tela, emissão de poeira nos pés durante a corrida, faíscas e explosões pirotécnicas com drop de moedas e fumaça.
+  - **Bateria de Testes Automatizados**:
+    - Suíte de unidade em Aipo puro (`packages/aipo-game/tests/game_test.aipo`) e teste de integração `test_game_subsystems_unit_test_suite` em `crates/aipo-game-host/tests/bridge_tests.rs`.
+    - Teste de integração de ponta a ponta `test_animation_and_particles_compilation_and_execution` validando múltiplos quadros de simulação sem vazamento ou panics.
   - Implementação do subsistema de HUD imediato (`packages/aipo-game/src/ui.aipo`):
     - `button(x, y, w, h, text) -> Bool`: botões imediatos com hit-testing de ponteiro e estados normal, hover e pressionado.
     - `health_bar(x, y, w, h, current, max)`: barra de vida reativa com gradação dinâmica de cores (verde $\to$ amarelo $\to$ vermelho) e texto numérico.
@@ -23,15 +39,15 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
   - Exemplo executável `packages/aipo-game/examples/tilemap_and_hud.aipo` demonstrando todos os subsistemas em ação com movimentação fluida, colisão suave, zoom de câmera e mira laser via raycasting.
   - Teste de integração automatizado `test_tilemap_and_game_hud_compilation_and_execution` em `crates/aipo-game-host/tests/bridge_tests.rs`.
 
-- **Framework Declarativo de GUI Freya UI e Engine Torin (`packages/aipo-freya`)**:
-  - Implementação completa do pacote `packages/aipo-freya` (`aipo.freya`), portando a arquitetura declarativa de GUI do Freya UI para Aipo com aceleração por GPU via `aipo-game-host`.
+- **Framework Declarativo de GUI Zoe UI e Engine Torin (`packages/aipo-zoe`)**:
+  - Implementação completa do pacote `packages/aipo-zoe` (`aipo.zoe`), disponibilizando a arquitetura declarativa de GUI do Zoe UI para Aipo com aceleração por GPU via `aipo-game-host`.
   - **Engine de Layout Torin (`torin.aipo`)**: Algoritmo hierárquico resolvendo dimensões absolutas em pixels (`Float`/`Int`), percentuais (`"100%"`, `"50%"`), intrínsecas e espalhamento flexível (`"flex"`, `"auto"`), com alinhamento (`align_items`), distribuição (`justify_content`), espaçamento interno (`padding`) e vão entre filhos (`gap`).
   - **Reatividade com Hooks (`hooks.aipo`)**: Runtime reativo (`use_state`, `set_state`) com rastreamento automático de quadros alterados (*dirty frames*), disparando reconstrução e re-layout eficientes apenas em caso de mutação.
   - **Catálogo de Componentes e Elementos (`elements.aipo`, `components.aipo`)**: Primitivas fundamentais (`rect`, `label`, `container`) e componentes de alto nível (`button`, `switch`, `slider`, `progress_bar`, `card`, `badge`).
   - **Paleta Catppuccin Mocha Embutida (`color.aipo`)**: Suporte a `rgb`, `rgba`, `hex` e constantes de tema modernas (`crust`, `mantle`, `base`, `surface_0..2`, `blue`, `lavender`, `green`, `red`, etc.).
   - **Ciclo de Vida e Renderizador GPU (`app.aipo`, `renderer.aipo`)**: Despacho de desenho recursivo, hit-testing de eventos de ponteiro/clique e renderização a 60 FPS com integração de lifecycle (`setup`, `update`, `draw`).
   - **Resolução de Escopo de Módulos no Compilador (`crates/aipo-cli/src/modules.rs`)**: Correção no compilador onde itens de topo (`FnDecl`, `StructDecl`, `ImplBlock`) do arquivo de entrada não eram reescritos com `entry_scope`, garantindo resolução correta de acessos a membros importados (`alias.method(...)`) dentro de funções de usuário.
-  - **Demonstração e Testes Automatizados**: Exemplo `packages/aipo-freya/examples/dashboard.aipo` e testes automatizados em `crates/aipo-game-host/tests/bridge_tests.rs` (`test_freya_ui_dashboard_compilation_and_execution`, `test_freya_ui_unit_test_suite`) validando 100% das asserções.
+  - **Demonstração e Testes Automatizados**: Exemplo `packages/aipo-zoe/examples/dashboard.aipo` e testes automatizados em `crates/aipo-game-host/tests/bridge_tests.rs` (`test_zoe_ui_dashboard_compilation_and_execution`, `test_zoe_ui_unit_test_suite`) validando 100% das asserções.
 
 - **Adaptador Host Agnóstico e Bindings Immediate-Mode GUI (`aipo-egui` & `packages/aipo-egui`)**:
   - Implementação completa da crate `crates/aipo-egui` concretizando o *thin proof* de interoperabilidade Rust do ADP-010.

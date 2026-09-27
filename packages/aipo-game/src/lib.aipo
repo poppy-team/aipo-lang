@@ -11,6 +11,8 @@ import sfx as sfx_mod
 import tween as tween_mod
 import ui as ui_mod
 import tilemap as tilemap_mod
+import animation as anim_mod
+import particles as particles_mod
 
 # Core Factory Functions & LifeCycle
 fn actor(name: String, config: Dict) {
@@ -112,5 +114,30 @@ let tilemap = {
     "raycast": tilemap_mod.raycast
 }
 
+let animation = {
+    "create_clip": anim_mod.create_clip,
+    "create_animator": anim_mod.create_animator,
+    "add_clip": anim_mod.add_clip,
+    "play": anim_mod.play_animation,
+    "update": anim_mod.update_animator,
+    "draw": anim_mod.draw_animator,
+    "get_current_frame": anim_mod.get_current_frame,
+    "is_finished": anim_mod.is_finished,
+    "current_clip": anim_mod.current_clip
+}
+
+let particles = {
+    "create_emitter": particles_mod.create_emitter,
+    "clear": particles_mod.clear_particles,
+    "count": particles_mod.count_particles,
+    "set_position": particles_mod.set_position,
+    "emit_one": particles_mod.emit_one,
+    "emit": particles_mod.emit_particles,
+    "emit_preset": particles_mod.emit_preset,
+    "update": particles_mod.update_particles,
+    "draw": particles_mod.draw_particles,
+    "rand_range": particles_mod.rand_range
+}
+
 export actor, scene, spawn, start, step, render
-export behaviors, input, audio, sfx, tween, ui, tilemap
+export behaviors, input, audio, sfx, tween, ui, tilemap, animation, particles
