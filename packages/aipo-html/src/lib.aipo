@@ -1,0 +1,19 @@
+// lib.aipo — Entrypoint for `aipo.html`
+// Declarative HTML & CSS DSL with Fine-Grained MVU reactivity.
+
+import .tags as tags
+import .css as css_mod
+import .mvu as mvu_mod
+
+// Re-export tags
+export tags.div, tags.section, tags.article, tags.header, tags.footer, tags.nav, tags.main, tags.aside
+export tags.h1, tags.h2, tags.h3, tags.h4, tags.h5, tags.h6, tags.p, tags.span, tags.strong, tags.em, tags.code, tags.pre, tags.a
+export tags.ul, tags.ol, tags.li, tags.form, tags.label, tags.button, tags.input, tags.textarea, tags.select, tags.option
+export tags.img, tags.hr, tags.br, tags.table, tags.thead, tags.tbody, tags.tr, tags.th, tags.td
+export tags.VNode
+
+// Re-export CSS
+export css_mod.css, css_mod.StyleRule
+
+// Re-export MVU
+export mvu_mod.mount, mvu_mod.dispatch, mvu_mod.ReactiveApp

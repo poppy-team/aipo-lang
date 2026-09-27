@@ -1,0 +1,15 @@
+[package]
+name = "aipo.ui"
+version = "0.1.0"
+authors = ["Aipo Core Team <core@aipo-lang.org>"]
+description = "Universal Declarative Multiplatform UI Framework with Taffy Layout and Pluggable Renderers (Skia, WebGL, TUI)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/poppy-team/aipo-lang"
+
+[entry]
+main = "src/lib.aipo"
+
+[targets]
+native = true
+wasm = true
+js = true

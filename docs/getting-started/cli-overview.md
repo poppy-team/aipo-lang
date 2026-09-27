@@ -21,6 +21,21 @@ aipo run src/main.aipo --package-cache .aipo/cache
 aipo run src/main.aipo --message-format=jsonl
 ```
 
+### `aipo test`
+
+Descobre e executa testes unitários automaticamente em arquivos `*_test.aipo` e `test_*.aipo`, garantindo isolamento total por VM limpa, semente PRNG zerada e relógio congelado:
+
+```bash
+# Executar todos os testes do projeto
+aipo test
+
+# Filtrar testes por padrão de nome ou caminho
+aipo test --filter math
+
+# Saída em streaming JSONL para CI/CD
+aipo test --message-format=jsonl
+```
+
 ### `aipo check`
 
 Executa a análise estática completa (Lexer, Parser, HIR, Semântica e verificação de bytecode) sem rodar a VM:
@@ -80,3 +95,7 @@ aipo package cache verify .aipo/cache
 # Limpar entradas de cache obsoletas não referenciadas no lockfile
 aipo package cache prune .aipo/cache --lock aipo.lock --apply
 ```
+
+::: tip 📖 Guia Aprofundado de Ferramentas
+Para mais detalhes sobre flags de compilação, WebAssembly, integração contínua e exemplos práticos, consulte o [Guia Completo de Ferramentas do Desenvolvedor](/tools/).
+:::

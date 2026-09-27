@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: Aipo
-  text: Dynamic, Strong & Concurrent Language with Optional Contracts
-  tagline: Pure Rust-first pipeline with dedicated compiler, deterministic bytecode VM, cooperative async scheduler, JavaScript backend with differential parity, and Prumo CLI governance.
+  text: Simple, Fast & Concurrent with Optional Contracts
+  tagline: A modern programming language with clean syntax inspired by Gleam and Swift, dynamic strong typing, transactional contracts with automatic rollback, and a complete built-in developer toolchain.
   image:
     src: /assets/logo.svg
     alt: Aipo Language Logo
@@ -13,116 +13,172 @@ hero:
       text: Get Started (5 min)
       link: /en/getting-started/first-program
     - theme: alt
-      text: Engineering Trajectory
-      link: /en/trajectory/
-    - theme: alt
       text: Language Manual
       link: /en/manual/
     - theme: alt
-      text: GitHub Repository
-      link: https://github.com/poppy-team/aipo-lang
+      text: Tooling (CLI)
+      link: /en/tools/
+    - theme: alt
+      text: Examples & Recipes
+      link: /en/examples/
 
 features:
-  - icon: ⚡
-    title: Native Rust Pipeline
-    details: Written from scratch in modern Rust. UTF-8 boundary-safe lexer, resilient recovery parser, HIR, strict SEMA with contract inference, and compact .aibc bytecode.
-    link: /en/architecture/compiler-frontend
+  - icon: 🎯
+    title: Cognitive Clarity & Clean Syntax
+    details: Inspired by Gleam and Swift. Symmetrical brace blocks, parenthesis-free conditions, immutable-by-default fields, and zero visual clutter for maximum reading ergonomics.
+    link: /en/manual/syntax-and-types
+  - icon: 🛠️
+    title: Complete Built-in Toolchain
+    details: Compiler, automated isolated test runner, static verification linter, opinionated canonical formatter, and hermetic package manager in a single fast binary (aipo).
+    link: /en/tools/
   - icon: 🛡️
-    title: Contracts & Transactional Invariants
-    details: Static and runtime verification. Structural invariant() hooks with atomic rollback on failure inside attempt blocks, signature assertion, and interface conformance.
+    title: Contracts & Atomic Rollback
+    details: Structural invariants that protect your domain models. If any mutation breaks a business rule, Aipo rolls back the previous state automatically without corrupted data.
     link: /en/manual/interfaces-and-contracts
-  - icon: 🔄
-    title: Async Concurrency & Virtual Time
-    details: Native async fn and await do syntax, deterministic async combinators (task.spawn, task.all, task.race), cooperative scheduler, and await cycle detection.
+  - icon: ⚡
+    title: Cooperative & Deterministic Concurrency
+    details: Native async fn and await do syntax with cooperative scheduler and virtual time. Zero unpredictable race conditions and total test reproducibility.
     link: /en/manual/async-and-concurrency
   - icon: 🌐
     title: VM ↔ JavaScript Differential Parity
-    details: aipo-js emitter with versioned modular runtime shim, producing clean ES2022 code for Node.js and browsers with bit-for-bit identical outputs and diagnostics.
+    details: Emit high-performance WebAssembly or clean ES2022 JavaScript bundles with identical outputs, checksums, and diagnostics matching the native Virtual Machine.
     link: /en/architecture/js-emitter
-  - icon: 🔒
-    title: Secure Host ABI & Poppy Simulation
-    details: Sandboxing with deny-by-default capabilities, generational handles immune to use-after-free, strict scope escape prevention, and deterministic headless ECS simulation.
-    link: /en/architecture/host-abi
   - icon: 📦
-    title: Hermetic & Offline Package Manager
-    details: aipo.toml manifest, deterministic lockfiles, remote GitHub dependencies pinned by full commit SHA with SHA-256 digest validation, atomic local cache, and pruning.
+    title: Hermetic Dependency Management
+    details: aipo.toml manifest, reproducible lockfiles, remote GitHub dependencies pinned by commit SHA with verified SHA-256 digests, and local offline caching.
     link: /en/manual/packages-and-modules
 ---
 
 <div class="vp-doc">
 
-## A Modern Language Built on Engineering Discipline
+## A Frictionless Developer Experience
 
-**Aipo** was engineered to offer clean, expressive syntax without sacrificing technical rigor and predictability. Instead of dangerous implicit coercions (such as `"1" + 2 == "12"`), Aipo pairs dynamic, strong typing with **optional structural contracts**, **transactional failure recovery**, and a **deterministic async system**.
+**Aipo** is designed for engineers who prize reasoning clarity, predictability, and speed. Rather than dangerous implicit type coercions (like `"1" + 2 == "12"`), Aipo pairs dynamic, strong typing with **optional structural contracts**, **transactional failure recovery with automatic rollback**, and a **self-contained toolchain without external dependencies**.
 
 ```aipo
-# Canonical Aipo example: structs, invariants, and async
+# Interface with automatic structural subtyping
+interface Notifiable {
+    fn summary(self) -> String
+}
+
+# Struct with fields immutable by default and explicit var mutability
 struct Account {
-    id
-    var balance = 0.0
-    created_at
+    id: Int
+    holder: String
+    var balance: Int
 }
 
 impl Account {
-    fn init(id, balance = 0.0, created_at = 0) {
-        self.id = id
-        self.balance = balance
-        self.created_at = created_at
+    # Transactional integrity invariant
+    invariant() {
+        self.balance >= 0
     }
 
-    invariant {
-        self.balance >= 0.0
-    }
-
-    fn transfer(var self, target: Account, amount: Float) {
-        if amount <= 0.0 {
-            return fail("Amount must be positive")
+    # Explicit receiver mutation with `var self`
+    fn transfer(var self, target: Account, amount: Int) {
+        if amount <= 0 {
+            fail("transfer amount must be positive")
         }
 
-        # If any invariant fails, all mutations suffer atomic rollback
+        # If any rule is broken, both accounts undergo an atomic rollback
         attempt {
             self.balance -= amount
             target.balance += amount
         } failed err {
-            return fail(f"Transfer cancelled: {err.message}")
+            fail(f"transfer safely aborted: {err.message}")
         }
     }
-}
 
-# Automatic structural subtyping: Account satisfies Payable directly
-interface Payable {
-    fn transfer(var self, target: Account, amount: Float)
-}
-
-async fn process_payment(acc: Payable, amount: Float) {
-    let timer = task.sleep(100)
-    await do {
-        timer
-        io.println("Payment processed successfully")
+    fn summary(self) -> String {
+        return f"Account #{self.id} ({self.holder}): ${self.balance // 100}"
     }
 }
+
+# Symmetrical colon instantiation
+var a1 = Account{ id: 101, holder: "Alex", balance: 25000 }
+var a2 = Account{ id: 102, holder: "Beatrice", balance: 5000 }
+
+a1.transfer(a2, 5000)
+io.println(a1.summary())
+io.println(a2.summary())
 ```
 
-::: tip 💡 Getting started in 3 simple steps
-1. **Compile or install the CLI**: `cargo build --release -p aipo-cli` (or install the `aipo` binary)
-2. **Run your first program**: Follow the 5-minute tutorial in [Your First Program](/en/getting-started/first-program)
-3. **Explore the journey**: Discover all implementation waves in the [Engineering Trajectory](/en/trajectory/)
+---
+
+## All the Tools You Need in a Single Binary
+
+Never waste time setting up third-party formatters, test runners, or linters. With the `aipo` CLI, everything is built-in:
+
+<div class="tool-grid">
+
+<div class="tool-card">
+  <div>
+    <h3>▶️ Run</h3>
+    <p>Execute <code>.aipo</code> source or compiled <code>.aibc</code> bytecode instantly.</p>
+  </div>
+  <div class="tool-cmd">aipo run app.aipo</div>
+</div>
+
+<div class="tool-card">
+  <div>
+    <h3>🧪 Test</h3>
+    <p>Isolated tests with frozen virtual clock and deterministic PRNG seeds.</p>
+  </div>
+  <div class="tool-cmd">aipo test</div>
+</div>
+
+<div class="tool-card">
+  <div>
+    <h3>🔍 Check</h3>
+    <p>Static verification of contracts, scope, and mutability in milliseconds.</p>
+  </div>
+  <div class="tool-cmd">aipo check app.aipo</div>
+</div>
+
+<div class="tool-card">
+  <div>
+    <h3>✨ Format</h3>
+    <p>Opinionated canonical formatting that ends pull request style debates.</p>
+  </div>
+  <div class="tool-cmd">aipo fmt src/</div>
+</div>
+
+<div class="tool-card">
+  <div>
+    <h3>📦 Build</h3>
+    <p>Bundle to ES2022 JavaScript or WebAssembly with full source maps.</p>
+  </div>
+  <div class="tool-cmd">aipo build app.aipo</div>
+</div>
+
+<div class="tool-card">
+  <div>
+    <h3>🔒 Package</h3>
+    <p>Hermetic lockfiles and strict SHA-256 dependency auditing.</p>
+  </div>
+  <div class="tool-cmd">aipo package audit .</div>
+</div>
+
+</div>
+
+---
+
+## Getting Started
+
+::: tip 💡 Start in under 5 minutes
+1. **Install or compile the CLI**: `cargo build --release -p aipo-cli` (or grab the release binary).
+2. **Write your first program**: Follow our quickstart guide at [Your First Program](/en/getting-started/first-program).
+3. **Explore the Manual and Tooling**: Learn language fundamentals in the [Language Manual](/en/manual/) and dive into the [Tooling Guide](/en/tools/).
 :::
 
 ---
 
-## The Engineering Trajectory
+## Open and Transparent Engineering
 
-Unlike experimental languages developed without traceability, Aipo was built under the **Evidence-Based Engineering** protocol governed by the **Prumo CLI**. Every compiler phase, runtime feature, and ecosystem tool is certified by automated test suites, comparative benchmarks, and canonical specs:
-
-| Wave / Phase | Core Focus | Deliverables & Status |
-| :--- | :--- | :--- |
-| **Wave 0 (MVP)** | Slices S1 to S11 | Lexer, Parser, HIR, Sema, IR, Bytecode, VM, CLI, Conformance *(100% Completed)* |
-| **Wave 1** | Contracts & Integrity | Structural invariants, rollback with `attempt`, interfaces & local functions *(100% Completed)* |
-| **Wave 2 (P01)** | JS Backend & Fuzzing | `aipo-js` emitter, differential parity, property suites & `cargo deny` *(100% Completed)* |
-| **Wave 3 (P02)** | Rich Types & Async | `Set`, `Sequence`, `Bytes`, `async fn`, `await do`, deterministic scheduler *(100% Completed)* |
-| **Wave 4 (P03)** | Host ABI & Poppy | Deny-by-default capabilities, generational handles, and seeded simulation *(100% Completed)* |
-| **Wave 5 (P04)** | Package Manager | Commit-SHA pinned GitHub dependencies, SHA-256 digest validation & offline cache *(100% Completed)* |
-| **Wave 6 (P05)** | Release v0.1.0 | Language-first product boundary (ADP-008), synchronous C ABI (ADP-009) & thin proofs *(In Progress)* |
+Aipo's development is 100% public, rigorous, and evidence-driven:
+- **[System Architecture](/en/architecture/)**: Detailed breakdown of the compiler frontend, IR, and virtual machine.
+- **[Architectural Decisions (ADPs)](/en/decisions/)**: Formal technical design records and justifications.
+- **[Engineering Trajectory](/en/trajectory/)**: The language's structured evolution through disciplined Waves.
+- **[Comparative Benchmarks](/en/evidence/cross-language)**: Reproducible performance measurements against industrial language runtimes.
 
 </div>

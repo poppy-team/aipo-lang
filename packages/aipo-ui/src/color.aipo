@@ -1,0 +1,58 @@
+// color.aipo — Color utilities and standard palette
+// Part of `aipo.ui`
+
+import .types as types
+
+fn rgb(r: Int, g: Int, b: Int) -> types.Color {
+    return types.Color{ r: r, g: g, b: b, a: 1.0 }
+}
+
+fn rgba(r: Int, g: Int, b: Int, a: Float) -> types.Color {
+    return types.Color{ r: r, g: g, b: b, a: a }
+}
+
+fn hex(hex_code: String) -> types.Color {
+    var s = hex_code
+    if s.starts_with("#") {
+        s = s.slice(1, s.len())
+    }
+
+    if s.len() == 6 {
+        let r = 255 // placeholder parser or host delegate
+        let g = 255
+        let b = 255
+        return rgb(r, g, b)
+    }
+
+    return rgb(0, 0, 0)
+}
+
+// Canonical semantic palette
+let transparent = rgba(0, 0, 0, 0.0)
+let white = rgb(255, 255, 255)
+let black = rgb(0, 0, 0)
+
+// Slate / Zinc Grays
+let gray_50  = rgb(249, 250, 251)
+let gray_100 = rgb(243, 244, 246)
+let gray_200 = rgb(229, 231, 235)
+let gray_300 = rgb(209, 213, 219)
+let gray_400 = rgb(156, 163, 175)
+let gray_500 = rgb(107, 114, 128)
+let gray_600 = rgb(75, 85, 99)
+let gray_700 = rgb(55, 65, 81)
+let gray_800 = rgb(31, 41, 55)
+let gray_900 = rgb(17, 24, 39)
+let gray_950 = rgb(3, 7, 18)
+
+// Accent Colors
+let blue_500    = rgb(59, 130, 246)
+let blue_600    = rgb(37, 99, 235)
+let emerald_500 = rgb(16, 185, 129)
+let emerald_600 = rgb(5, 150, 105)
+let red_500     = rgb(239, 68, 68)
+let red_600     = rgb(220, 38, 38)
+let amber_500   = rgb(245, 158, 11)
+let amber_600   = rgb(217, 119, 6)
+let purple_500  = rgb(168, 85, 247)
+let purple_600  = rgb(147, 51, 234)

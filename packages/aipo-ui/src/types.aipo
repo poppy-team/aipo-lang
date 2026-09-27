@@ -1,0 +1,63 @@
+// types.aipo — Core Data Types and Layout Enums
+// Part of `aipo.ui`
+
+enum Align {
+    Start,
+    Center,
+    End,
+    Stretch,
+    Baseline
+}
+
+enum Justify {
+    Start,
+    Center,
+    End,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly
+}
+
+enum Direction {
+    Row,
+    Column,
+    RowReverse,
+    ColumnReverse
+}
+
+enum Overflow {
+    Visible,
+    Hidden,
+    Scroll
+}
+
+struct Rect {
+    x: Float
+    y: Float
+    width: Float
+    height: Float
+}
+
+struct Color {
+    r: Int
+    g: Int
+    b: Int
+    a: Float
+}
+
+struct UIEvent {
+    kind: String
+    target_id: Int
+    x: Float
+    y: Float
+    key: String
+    modifiers: Dict
+}
+
+struct UINode {
+    id: Int
+    kind: String
+    props: Dict
+    children: List
+    layout_rect: Rect
+}

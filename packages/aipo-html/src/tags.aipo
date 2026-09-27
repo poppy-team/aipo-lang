@@ -1,0 +1,154 @@
+// tags.aipo — Core HTML5 tag builder functions and Node Collector
+// Part of `aipo.html`
+
+struct VNode {
+    id: Int
+    tag: String
+    attrs: Dict
+    children: List
+    is_text: Bool
+    text_content: String
+}
+
+var _node_id_counter = 0
+var _parent_stack = []
+
+fn next_node_id() -> Int {
+    _node_id_counter += 1
+    return _node_id_counter
+}
+
+fn register_child(child: VNode) {
+    if _parent_stack.len() > 0 {
+        let parent = _parent_stack.last()
+        parent.children.add(child)
+    }
+}
+
+// Container tag constructor helper
+fn container_tag(tag_name: String, attrs: Dict = {}, body: Fn = null) -> VNode {
+    let node = VNode{
+        id: next_node_id(),
+        tag: tag_name,
+        attrs: attrs,
+        children: [],
+        is_text: false,
+        text_content: ""
+    }
+
+    register_child(node)
+
+    if body != null {
+        _parent_stack.add(node)
+        body()
+        _parent_stack.pop()
+    }
+
+    return node
+}
+
+// Leaf or text tag constructor helper
+fn text_or_leaf_tag(tag_name: String, content: String = "", attrs: Dict = {}, body: Fn = null) -> VNode {
+    let node = VNode{
+        id: next_node_id(),
+        tag: tag_name,
+        attrs: attrs,
+        children: [],
+        is_text: false,
+        text_content: content
+    }
+
+    register_child(node)
+
+    if content != "" {
+        let text_child = VNode{
+            id: next_node_id(),
+            tag: "#text",
+            attrs: {},
+            children: [],
+            is_text: true,
+            text_content: content
+        }
+        node.children.add(text_child)
+    }
+
+    if body != null {
+        _parent_stack.add(node)
+        body()
+        _parent_stack.pop()
+    }
+
+    return node
+}
+
+// HTML5 Standard Tags
+
+// Layout & Containers
+fn div(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("div", attrs, body) }
+fn section(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("section", attrs, body) }
+fn article(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("article", attrs, body) }
+fn header(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("header", attrs, body) }
+fn footer(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("footer", attrs, body) }
+fn nav(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("nav", attrs, body) }
+fn main(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("main", attrs, body) }
+fn aside(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("aside", attrs, body) }
+
+// Typography
+fn h1(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("h1", text, attrs, body) }
+fn h2(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("h2", text, attrs, body) }
+fn h3(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("h3", text, attrs, body) }
+fn h4(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("h4", text, attrs, body) }
+fn h5(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("h5", text, attrs, body) }
+fn h6(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("h6", text, attrs, body) }
+fn p(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("p", text, attrs, body) }
+fn span(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("span", text, attrs, body) }
+fn strong(text: String = "", attrs: Dict = {}) -> VNode { return text_or_leaf_tag("strong", text, attrs) }
+fn em(text: String = "", attrs: Dict = {}) -> VNode { return text_or_leaf_tag("em", text, attrs) }
+fn code(text: String = "", attrs: Dict = {}) -> VNode { return text_or_leaf_tag("code", text, attrs) }
+fn pre(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("pre", text, attrs, body) }
+fn a(text: String = "", href: String = "#", attrs: Dict = {}, body: Fn = null) -> VNode {
+    let combined = attrs.clone()
+    combined["href"] = href
+    return text_or_leaf_tag("a", text, combined, body)
+}
+
+// Lists
+fn ul(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("ul", attrs, body) }
+fn ol(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("ol", attrs, body) }
+fn li(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("li", text, attrs, body) }
+
+// Forms & Inputs
+fn form(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("form", attrs, body) }
+fn label(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("label", text, attrs, body) }
+fn button(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("button", text, attrs, body) }
+fn input(attrs: Dict = {}) -> VNode { return container_tag("input", attrs) }
+fn textarea(text: String = "", attrs: Dict = {}) -> VNode { return text_or_leaf_tag("textarea", text, attrs) }
+fn select(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("select", attrs, body) }
+fn option(text: String = "", value: String = "", attrs: Dict = {}) -> VNode {
+    let combined = attrs.clone()
+    combined["value"] = value
+    return text_or_leaf_tag("option", text, combined)
+}
+
+// Media & Void Elements
+fn img(src: String = "", alt: String = "", attrs: Dict = {}) -> VNode {
+    let combined = attrs.clone()
+    combined["src"] = src
+    combined["alt"] = alt
+    return container_tag("img", combined)
+}
+fn hr(attrs: Dict = {}) -> VNode { return container_tag("hr", attrs) }
+fn br() -> VNode { return container_tag("br", {}) }
+
+// Tables
+fn table(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("table", attrs, body) }
+fn thead(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("thead", attrs, body) }
+fn tbody(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("tbody", attrs, body) }
+fn tr(attrs: Dict = {}, body: Fn = null) -> VNode { return container_tag("tr", attrs, body) }
+fn th(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("th", text, attrs, body) }
+fn td(text: String = "", attrs: Dict = {}, body: Fn = null) -> VNode { return text_or_leaf_tag("td", text, attrs, body) }
+
+export VNode, div, section, article, header, footer, nav, main, aside,
+       h1, h2, h3, h4, h5, h6, p, span, strong, em, code, pre, a,
+       ul, ol, li, form, label, button, input, textarea, select, option,
+       img, hr, br, table, thead, tbody, tr, th, td

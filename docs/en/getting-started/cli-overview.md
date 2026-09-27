@@ -21,6 +21,21 @@ aipo run src/main.aipo --package-cache .aipo/cache
 aipo run src/main.aipo --message-format=jsonl
 ```
 
+### `aipo test`
+
+Discovers and executes unit tests automatically across `*_test.aipo` and `test_*.aipo` files, with full isolation, zeroed PRNG seeds, and a frozen virtual clock:
+
+```bash
+# Run all unit tests
+aipo test
+
+# Filter tests by name or path pattern
+aipo test --filter math
+
+# Machine-readable streaming JSONL for CI/CD
+aipo test --message-format=jsonl
+```
+
 ### `aipo check`
 
 Runs the complete static analysis pipeline (Lexer, Parser, HIR, SEMA, and bytecode verification) without running the VM:
@@ -80,3 +95,7 @@ aipo package cache verify .aipo/cache
 # Prune unreferenced, stale cache entries safely
 aipo package cache prune .aipo/cache --lock aipo.lock --apply
 ```
+
+::: tip 📖 Comprehensive Tooling Guide
+For in-depth details on compiler flags, WebAssembly targets, CI/CD integrations, and real-world examples, visit the [Complete Developer Tooling Guide](/en/tools/).
+:::

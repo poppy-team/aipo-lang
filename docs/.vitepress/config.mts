@@ -102,68 +102,39 @@ export default defineConfig({
               { text: 'Pacotes & Módulos', link: '/manual/packages-and-modules' }
             ]
           },
+          { text: 'Ferramentas', link: '/tools/' },
+          { text: 'Exemplos', link: '/examples/' },
           {
-            text: 'Trajetória',
+            text: 'Pacotes',
             items: [
-              { text: 'Mapa da Jornada', link: '/trajectory/' },
-              { text: 'Wave 0: MVP em 11 Slices', link: '/trajectory/wave-0-mvp' },
-              { text: 'Wave 1: Contratos & Conformance', link: '/trajectory/wave-1-contracts' },
-              { text: 'Wave 2: Paridade JS & Fuzzing', link: '/trajectory/wave-2-js-parity' },
-              { text: 'Wave 3: Tipos Ricos & Async', link: '/trajectory/wave-3-async' },
-              { text: 'Wave 4: Host ABI & Poppy Engine', link: '/trajectory/wave-4-host-poppy' },
-              { text: 'Wave 5: Pacotes Herméticos', link: '/trajectory/wave-5-packages' },
-              { text: 'Wave 6: Rumo à Release v0.1.0', link: '/trajectory/wave-6-release-v010' }
+              { text: 'Catálogo Oficial', link: '/packages/' },
+              { text: 'aipo.html (Web & DOM)', link: '/packages/aipo-html' },
+              { text: 'aipo.ui (Multiplataforma)', link: '/packages/aipo-ui' }
             ]
           },
           {
-            text: 'Arquitetura',
+            text: 'Engenharia',
             items: [
-              { text: 'Macroarquitetura do Sistema', link: '/architecture/' },
-              { text: 'Frontend do Compilador', link: '/architecture/compiler-frontend' },
-              { text: 'Bytecode & Máquina Virtual', link: '/architecture/bytecode-and-vm' },
-              { text: 'Backend JavaScript (aipo-js)', link: '/architecture/js-emitter' },
-              { text: 'Host ABI & Sandboxing', link: '/architecture/host-abi' },
-              { text: 'Contratos das Crates', link: '/architecture/crates' }
-            ]
-          },
-          {
-            text: 'Decisões (ADPs)',
-            items: [
-              { text: 'Índice de Decisões', link: '/decisions/' },
-              { text: 'ADP-001: Tipos Core & Bytes', link: '/decisions/adp-001' },
-              { text: 'ADP-002: Hooks & Contratos', link: '/decisions/adp-002' },
-              { text: 'ADP-003: Orçamentos de Execução', link: '/decisions/adp-003' },
-              { text: 'ADP-004: Identificadores Unicode', link: '/decisions/adp-004' },
-              { text: 'ADP-005: Limites de Recursão', link: '/decisions/adp-005' },
-              { text: 'ADP-006: Decisões Waves 3 & 4', link: '/decisions/adp-006' },
-              { text: 'ADP-007: Identidade de Pacotes', link: '/decisions/adp-007' },
-              { text: 'ADP-008: Release v0.1.0 Boundary', link: '/decisions/adp-008' },
-              { text: 'ADP-009: C ABI Síncrona', link: '/decisions/adp-009' },
-              { text: 'ADP-010: Thin Proofs (Rust, C, JS)', link: '/decisions/adp-010' },
-              { text: 'ADP-011: Roteiro Performance & Ergonomia', link: '/decisions/adp-011' }
-            ]
-          },
-          {
-            text: 'Evidências',
-            items: [
-              { text: 'Benchmarks Cross-Language', link: '/evidence/cross-language' },
-              { text: 'A Saga de Otimização & Lições', link: '/evidence/performance-lessons' },
-              { text: 'Matriz de Conformance', link: '/evidence/conformance' },
-              { text: 'Registro de Slices (P00-P04)', link: '/evidence/slices' }
-            ]
-          },
-          {
-            text: 'Governança',
-            items: [
-              { text: 'Prumo & Metodologia LPC', link: '/governance/prumo-and-lpc' },
-              { text: 'Padrões de Código & Testes', link: '/governance/standards-and-testing' },
-              { text: 'Segurança & Sandboxing', link: '/governance/security-and-threat-model' },
-              { text: 'Changelog Oficial', link: '/governance/changelog' }
+              { text: 'Trajetória & Waves', link: '/trajectory/' },
+              { text: 'Arquitetura do Compilador & VM', link: '/architecture/' },
+              { text: 'Decisões Arquiteturais (ADPs)', link: '/decisions/' },
+              { text: 'Evidências & Benchmarks', link: '/evidence/cross-language' },
+              { text: 'Governança & Processo', link: '/governance/prumo-and-lpc' }
             ]
           }
         ],
 
         sidebar: {
+          '/packages/': [
+            {
+              text: 'Pacotes & Frameworks Oficiais',
+              items: [
+                { text: 'Catálogo Oficial', link: '/packages/' },
+                { text: 'aipo.html (Web & DOM)', link: '/packages/aipo-html' },
+                { text: 'aipo.ui (Multiplataforma)', link: '/packages/aipo-ui' }
+              ]
+            }
+          ],
           '/getting-started/': [
             {
               text: 'Começando com Aipo',
@@ -188,6 +159,29 @@ export default defineConfig({
                 { text: 'Concorrência & Async', link: '/manual/async-and-concurrency' },
                 { text: 'Biblioteca Padrão (Stdlib)', link: '/manual/stdlib' },
                 { text: 'Pacotes & Módulos', link: '/manual/packages-and-modules' }
+              ]
+            }
+          ],
+          '/tools/': [
+            {
+              text: 'Ferramentas do Desenvolvedor',
+              items: [
+                { text: 'Visão Geral do CLI', link: '/tools/' },
+                { text: 'Instalação & Setup', link: '/getting-started/installation' },
+                { text: 'Primeiro Programa (5 min)', link: '/getting-started/first-program' },
+                { text: 'Guia do CLI (aipo)', link: '/getting-started/cli-overview' },
+                { text: 'Catálogo de Exemplos', link: '/examples/' }
+              ]
+            }
+          ],
+          '/examples/': [
+            {
+              text: 'Exemplos Práticos & Receitas',
+              items: [
+                { text: 'Receitas & Casos Reais', link: '/examples/' },
+                { text: 'Primeiro Programa', link: '/getting-started/first-program' },
+                { text: 'Ferramentas do Desenvolvedor', link: '/tools/' },
+                { text: 'Manual da Linguagem', link: '/manual/' }
               ]
             }
           ],
@@ -304,68 +298,39 @@ export default defineConfig({
               { text: 'Packages & Modules', link: '/en/manual/packages-and-modules' }
             ]
           },
+          { text: 'Tools', link: '/en/tools/' },
+          { text: 'Examples', link: '/en/examples/' },
           {
-            text: 'Trajectory',
+            text: 'Packages',
             items: [
-              { text: 'Journey Overview', link: '/en/trajectory/' },
-              { text: 'Wave 0: MVP in 11 Slices', link: '/en/trajectory/wave-0-mvp' },
-              { text: 'Wave 1: Contracts & Conformance', link: '/en/trajectory/wave-1-contracts' },
-              { text: 'Wave 2: JS Parity & Fuzzing', link: '/en/trajectory/wave-2-js-parity' },
-              { text: 'Wave 3: Rich Types & Async', link: '/en/trajectory/wave-3-async' },
-              { text: 'Wave 4: Host ABI & Poppy Engine', link: '/en/trajectory/wave-4-host-poppy' },
-              { text: 'Wave 5: Hermetic Packages', link: '/en/trajectory/wave-5-packages' },
-              { text: 'Wave 6: Towards Release v0.1.0', link: '/en/trajectory/wave-6-release-v010' }
+              { text: 'Official Catalog', link: '/en/packages/' },
+              { text: 'aipo.html (Web & DOM)', link: '/en/packages/aipo-html' },
+              { text: 'aipo.ui (Multiplatform)', link: '/en/packages/aipo-ui' }
             ]
           },
           {
-            text: 'Architecture',
+            text: 'Engineering',
             items: [
-              { text: 'System Macroarchitecture', link: '/en/architecture/' },
-              { text: 'Compiler Frontend', link: '/en/architecture/compiler-frontend' },
-              { text: 'Bytecode & Virtual Machine', link: '/en/architecture/bytecode-and-vm' },
-              { text: 'JavaScript Backend (aipo-js)', link: '/en/architecture/js-emitter' },
-              { text: 'Host ABI & Sandboxing', link: '/en/architecture/host-abi' },
-              { text: 'Workspace Crate Contracts', link: '/en/architecture/crates' }
-            ]
-          },
-          {
-            text: 'Decisions (ADPs)',
-            items: [
-              { text: 'Decisions Index', link: '/en/decisions/' },
-              { text: 'ADP-001: Core Types & Bytes', link: '/en/decisions/adp-001' },
-              { text: 'ADP-002: Hooks & Contracts', link: '/en/decisions/adp-002' },
-              { text: 'ADP-003: Execution Budgets', link: '/en/decisions/adp-003' },
-              { text: 'ADP-004: Unicode Identifiers', link: '/en/decisions/adp-004' },
-              { text: 'ADP-005: Parser Recursion Limits', link: '/en/decisions/adp-005' },
-              { text: 'ADP-006: Decisions Waves 3 & 4', link: '/en/decisions/adp-006' },
-              { text: 'ADP-007: Package Identity', link: '/en/decisions/adp-007' },
-              { text: 'ADP-008: Release v0.1.0 Boundary', link: '/en/decisions/adp-008' },
-              { text: 'ADP-009: Synchronous C ABI', link: '/en/decisions/adp-009' },
-              { text: 'ADP-010: Thin Proofs (Rust, C, JS)', link: '/en/decisions/adp-010' },
-              { text: 'ADP-011: Performance & Ergonomics Roadmap', link: '/en/decisions/adp-011' }
-            ]
-          },
-          {
-            text: 'Evidence',
-            items: [
-              { text: 'Cross-Language Benchmarks', link: '/en/evidence/cross-language' },
-              { text: 'Optimization Saga & Lessons', link: '/en/evidence/performance-lessons' },
-              { text: 'Conformance Matrix', link: '/en/evidence/conformance' },
-              { text: 'Slice Register (P00-P04)', link: '/en/evidence/slices' }
-            ]
-          },
-          {
-            text: 'Governance',
-            items: [
-              { text: 'Prumo & LPC Methodology', link: '/en/governance/prumo-and-lpc' },
-              { text: 'Code Standards & Testing', link: '/en/governance/standards-and-testing' },
-              { text: 'Security & Sandboxing', link: '/en/governance/security-and-threat-model' },
-              { text: 'Official Changelog', link: '/en/governance/changelog' }
+              { text: 'Trajectory & Waves', link: '/en/trajectory/' },
+              { text: 'Compiler & VM Architecture', link: '/en/architecture/' },
+              { text: 'Architectural Decisions (ADPs)', link: '/en/decisions/' },
+              { text: 'Evidence & Benchmarks', link: '/en/evidence/cross-language' },
+              { text: 'Governance & Process', link: '/en/governance/prumo-and-lpc' }
             ]
           }
         ],
 
         sidebar: {
+          '/en/packages/': [
+            {
+              text: 'Official Packages & Frameworks',
+              items: [
+                { text: 'Official Catalog', link: '/en/packages/' },
+                { text: 'aipo.html (Web & DOM)', link: '/en/packages/aipo-html' },
+                { text: 'aipo.ui (Multiplatform)', link: '/en/packages/aipo-ui' }
+              ]
+            }
+          ],
           '/en/getting-started/': [
             {
               text: 'Getting Started with Aipo',
@@ -390,6 +355,29 @@ export default defineConfig({
                 { text: 'Concurrency & Async', link: '/en/manual/async-and-concurrency' },
                 { text: 'Standard Library (Stdlib)', link: '/en/manual/stdlib' },
                 { text: 'Packages & Modules', link: '/en/manual/packages-and-modules' }
+              ]
+            }
+          ],
+          '/en/tools/': [
+            {
+              text: 'Developer Tooling',
+              items: [
+                { text: 'CLI Suite Overview', link: '/en/tools/' },
+                { text: 'Installation & Setup', link: '/en/getting-started/installation' },
+                { text: 'First Program (5 min)', link: '/en/getting-started/first-program' },
+                { text: 'Quick CLI Guide', link: '/en/getting-started/cli-overview' },
+                { text: 'Examples Catalog', link: '/en/examples/' }
+              ]
+            }
+          ],
+          '/en/examples/': [
+            {
+              text: 'Practical Examples & Recipes',
+              items: [
+                { text: 'Recipes & Real Cases', link: '/en/examples/' },
+                { text: 'First Program', link: '/en/getting-started/first-program' },
+                { text: 'Developer Tooling', link: '/en/tools/' },
+                { text: 'Language Manual', link: '/en/manual/' }
               ]
             }
           ],
