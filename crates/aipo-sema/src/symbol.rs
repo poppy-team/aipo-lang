@@ -8,7 +8,7 @@ use std::collections::HashMap;
 pub enum Mutability {
     /// Immutable binding (e.g. `let`, immutable parameter, fixed field).
     Immutable,
-    /// Mutable binding (e.g. `var`, mutable parameter `!`, mutable receiver `self!`).
+    /// Mutable binding (e.g. `var`, mutable parameter `!`, mutable receiver `var self`).
     Mutable,
 }
 
@@ -45,7 +45,7 @@ pub struct MethodSignature {
     pub min_args: usize,
     /// Maximum allowed arguments.
     pub max_args: usize,
-    /// Whether receiver is mutable (`self!`).
+    /// Whether receiver is mutable (`var self`).
     pub is_mut_self: bool,
     /// Whether method is async.
     pub is_async: bool,

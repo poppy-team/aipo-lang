@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_fixed_field_reassignment_reported() {
-        let code = "struct User\n  fixed id\n  name\nend\n\nimpl User\n  fn change_id(self!, new_id)\n    self.id = new_id\n  end\nend";
+        let code = "struct User {\n  fixed id\n  name\n}\n\nimpl User {\n  fn change_id(var self, new_id) {\n    self.id = new_id\n  }\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_FIXED_REASSIGN);
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_satisfy_receiver_mutability_mismatch() {
-        let code = "interface Mutator\n  fn mutate(self!)\nend\n\nstruct State\nend\n\nimpl State\n  fn mutate(self)\n  end\nend\n\nsatisfy State: Mutator";
+        let code = "interface Mutator {\n  fn mutate(var self)\n}\n\nstruct State {}\n\nimpl State {\n  fn mutate(self) {}\n}\n\nsatisfy State: Mutator";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(

@@ -463,7 +463,7 @@ impl<'a> SemanticAnalyzer<'a> {
                                     Diagnostic::error(
                                         DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC,
                                         format!(
-                                            "method '{}' on '{}' requires mutable receiver 'self!' to satisfy interface '{}'",
+                                            "method '{}' on '{}' requires mutable receiver 'var self' to satisfy interface '{}'",
                                             method_name, sat.target, iface_name
                                         ),
                                     )
@@ -976,7 +976,7 @@ impl<'a> SemanticAnalyzer<'a> {
                                 Diagnostic::error(
                                     DiagnosticCode::AIPO_SEM_READONLY_MUTATION,
                                     format!(
-                                        "cannot mutate field '{}' through immutable receiver 'self'; method requires 'self!'",
+                                        "cannot mutate field '{}' through immutable receiver 'self'; method requires 'var self'",
                                         member
                                     ),
                                 )
@@ -1060,7 +1060,7 @@ impl<'a> SemanticAnalyzer<'a> {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     DiagnosticCode::AIPO_SEM_READONLY_MUTATION,
-                                    "cannot mutate through immutable receiver 'self'; method requires 'self!'",
+                                    "cannot mutate through immutable receiver 'self'; method requires 'var self'",
                                 )
                                 .with_primary_span(self.source, *index_span),
                             );
