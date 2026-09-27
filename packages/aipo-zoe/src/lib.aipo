@@ -156,6 +156,14 @@ fn split_view(arg1, arg2, arg3 = none) {
     return components_mod.make_split_view(arg1, arg2, arg3)
 }
 
+fn tab_bar(props: Dict) {
+    return components_mod.make_tab_bar(props)
+}
+
+fn tab_view(props: Dict, views: Dict) {
+    return components_mod.make_tab_view(props, views)
+}
+
 # --- Reactive Hooks ---
 
 fn use_state(initial_value) {
@@ -234,7 +242,7 @@ fn create_color(r, g, b, a) {
 
 export column, row, stack, center, spacer, divider
 export rect, label, container
-export button, switch, slider, progress_bar, card, badge, split_view
+export button, switch, slider, progress_bar, card, badge, split_view, tab_bar, tab_view
 export use_state, set_state
 export rgb, rgba, hex, color
 export mount, step, draw_ui, get_root_element, compute_layout

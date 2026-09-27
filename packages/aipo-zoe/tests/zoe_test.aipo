@@ -243,3 +243,62 @@ test("split_view drag handler clamping and signal update") do
     (on_drag)({ "x": 760.0, "y": 0.0, "dx": 720.0, "dy": 0.0 })
     expect.equal(split_sig.get(), 0.875)
 end
+
+test("tab_bar layout and reactive tab switching") do
+    let active_tab = zoe.use_state("scene")
+    let bar = zoe.tab_bar({
+        "active": active_tab,
+        "tabs": [
+            { "id": "scene", "label": "Cena" },
+            { "id": "game", "label": "Jogo" }
+        ]
+    })
+
+    expect.equal(bar.tag, "tab_bar")
+    expect.equal(bar.children.len(), 2)
+
+    # First tab is active, has indicator
+    let tab0 = bar.children[0]
+    expect.equal(tab0.tag, "tab_item")
+    expect.equal(tab0.children.len(), 2) # label + tab_indicator
+
+    # Click second tab
+    let tab1 = bar.children[1]
+    let on_click = tab1.props["on_click"]
+    (on_click)({})
+    expect.equal(active_tab.get(), "game")
+end
+
+test("tab_view high-level container with flex content height") do
+    let active_tab = zoe.use_state("console")
+    let p_console = zoe.label("Log output")
+    let p_assets = zoe.label("Sprite.png")
+
+    let tv = zoe.tab_view(
+        {
+            "active": active_tab,
+            "height": 400.0,
+            "tabs": [
+                { "id": "console", "label": "Console" },
+                { "id": "assets", "label": "Assets" }
+            ]
+        },
+        {
+            "console": p_console,
+            "assets": p_assets
+        }
+    )
+
+    zoe.compute_layout(tv, 800.0, 400.0)
+
+    expect.equal(tv.layout.height, 400.0)
+    expect.equal(tv.children.len(), 2)
+
+    # Tab bar on top (height = 34.0)
+    let bar = tv.children[0]
+    expect.equal(bar.layout.height, 34.0)
+
+    # Content container flex fills rest: 400.0 - 34.0 = 366.0
+    let content = tv.children[1]
+    expect.equal(content.layout.height, 366.0)
+end

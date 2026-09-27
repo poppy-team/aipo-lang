@@ -381,4 +381,133 @@ fn make_split_view(arg1, arg2, arg3 = none) {
     return container
 }
 
-export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge, make_split_view
+# Tab bar component
+fn make_tab_bar(props: Dict) {
+    let active_prop = if props.has("active") then props["active"] else ""
+    let tabs = if props.has("tabs") then props["tabs"] else []
+    let height = if props.has("height") then (props["height"] + 0.0) else 34.0
+    let bg = if props.has("background") then props["background"] else color_mod.mantle
+    let active_color = if props.has("active_color") then props["active_color"] else color_mod.blue
+    let cur_active = if (active_prop is String) then active_prop else (active_prop.get() + "")
+
+    var tab_items = []
+    each tab in tabs {
+        var tab_id = ""
+        var tab_label = ""
+        if (tab is Dict) {
+            tab_id = if tab.has("id") then tab["id"] else ""
+            tab_label = if tab.has("label") then tab["label"] else tab_id
+        } else {
+            tab_id = f"{tab}"
+            tab_label = tab_id
+        }
+
+        let is_selected = (tab_id == cur_active)
+        let tab_bg = if is_selected then color_mod.base else color_mod.mantle
+        let text_color = if is_selected then color_mod.text else color_mod.subtext
+
+        let click_handler = fn(e) {
+            if not (active_prop is String) {
+                hooks_mod.signal_set_value(active_prop, tab_id)
+            }
+            if props.has("on_change") {
+                (props["on_change"])(tab_id)
+            }
+        }
+
+        # Tab button container
+        var children = [
+            elements_mod.make_label(tab_label, {
+                "font_size": 13.0,
+                "color": text_color,
+                "font_weight": if is_selected then "bold" else "normal"
+            })
+        ]
+
+        # Active indicator line at bottom of tab
+        if is_selected {
+            children.add(
+                elements_mod.make_rect({
+                    "tag": "tab_indicator",
+                    "width": "100%",
+                    "height": 2.0,
+                    "background": active_color
+                }, [])
+            )
+        }
+
+        let item = elements_mod.make_rect(
+            {
+                "tag": "tab_item",
+                "direction": "column",
+                "align_items": "center",
+                "justify_content": "center",
+                "height": height,
+                "padding_x": 16.0,
+                "background": tab_bg,
+                "on_click": click_handler
+            },
+            children
+        )
+        tab_items.add(item)
+    }
+
+    return elements_mod.make_rect(
+        {
+            "tag": "tab_bar",
+            "direction": "row",
+            "align_items": "center",
+            "width": if props.has("width") then props["width"] else "100%",
+            "height": height,
+            "background": bg,
+            "border_width": 1.0,
+            "border_color": color_mod.surface_0,
+            "gap": 2.0
+        },
+        tab_items
+    )
+}
+
+# High-level Tab View component (tab_bar + active content view)
+fn make_tab_view(props: Dict, views: Dict) {
+    let bar_props = {
+        "active": if props.has("active") then props["active"] else "",
+        "tabs": if props.has("tabs") then props["tabs"] else [],
+        "height": if props.has("bar_height") then props["bar_height"] else 34.0,
+        "active_color": if props.has("active_color") then props["active_color"] else color_mod.blue
+    }
+    if props.has("tab_bar_background") {
+        bar_props["background"] = props["tab_bar_background"]
+    }
+    let tab_bar_node = make_tab_bar(bar_props)
+    let active_prop = if props.has("active") then props["active"] else ""
+    let cur_active = if (active_prop is String) then active_prop else (active_prop.get() + "")
+
+    var content_node = elements_mod.make_rect({
+        "tag": "tab_empty",
+        "width": "100%",
+        "height": "flex"
+    }, [])
+
+    if views.has(cur_active) {
+        let child = views[cur_active]
+        content_node = elements_mod.make_rect({
+            "tag": "tab_content",
+            "direction": "column",
+            "width": "100%",
+            "height": "flex"
+        }, [child])
+    }
+
+    return elements_mod.make_rect(
+        {
+            "tag": "tab_view",
+            "direction": "column",
+            "width": if props.has("width") then props["width"] else "100%",
+            "height": if props.has("height") then props["height"] else "100%"
+        },
+        [tab_bar_node, content_node]
+    )
+}
+
+export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge, make_split_view, make_tab_bar, make_tab_view
