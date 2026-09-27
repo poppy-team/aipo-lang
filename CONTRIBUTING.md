@@ -58,9 +58,9 @@ impacted docs (`docs/conformance/README.md` matrix, `docs/stdlib/mvp-subset.md`,
 - `diagnostics/*.code` lists one diagnostic code per line; every listed code must
   appear, so failing for the *wrong* reason also fails.
 - `formatting/*.expected.aipo` is both formatter output and canonical source.
-- New language behavior needs a new fixture proving it on **both** backends.
+- New language behavior needs a new fixture proving it across all execution backends.
 
 ## License
 
 By contributing, you agree that your contributions are licensed under the
-MIT OR Apache-2.0 dual license of this repository.
+[MIT License](LICENSE) of this repository.

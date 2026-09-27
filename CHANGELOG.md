@@ -275,7 +275,7 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 - **Índice de chaves `String` no `Dict`** (`DictMap`): lookup/upsert O(1) no caso comum, preservando ordem de inserção e igualdade estrutural; espelhado no shim JS.
 - **Fuzz gramatical** (`fuzz_smoke`): mutações por tokens (keywords, `end`-stripping, splice de programas) sobre `check`/`fmt --check`, mais execução real de mutantes sob `timeout` com assert de exit codes e ausência de panic.
 - **Property tests do `aipo-js`**: determinismo da emissão e coerência do bundle sobre todo o corpus, mais `runtime/selftest.mjs` (propriedades da camada pura do shim sob `node`).
-- **Documentação de distribuição**: `README.md` reescrito (quickstart, comandos, backends, testes), `CONTRIBUTING.md`, licenças `LICENSE-MIT`/`LICENSE-APACHE` (dual license do workspace).
+- **Documentação de distribuição**: `README.md` reescrito (quickstart, comandos, backends, testes), `CONTRIBUTING.md`, licença `LICENSE` (licença MIT do workspace).
 
 ### Corrigido
 - **Emissor rejeita estouros de operandos**: contagens que não cabem em u16/u8 (nomes, constantes, itens, aridade, slots, capturas, alvos de salto) e funções desconhecidas agora são erro de compilação em vez de truncamento silencioso.

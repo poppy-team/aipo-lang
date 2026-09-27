@@ -1,5 +1,5 @@
 # cargo-deny policy for Aipo. Checked in CI tier "scheduled" (`cargo deny check`).
-# Workspace license is dual MIT OR Apache-2.0; dependencies must be compatible.
+# Workspace license is MIT; dependencies must be compatible.
 
 [graph]
 targets = [

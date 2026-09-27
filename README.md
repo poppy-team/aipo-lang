@@ -1,7 +1,8 @@
 # Aipo
 
-> **TL;DR:** Aipo is a small programming language. It runs on a bytecode VM written
-> in Rust, and also compiles to JavaScript. Both backends must produce identical output.
+> **TL;DR:** Aipo is a simple and fast programming language. It runs on a bytecode VM written
+> in Rust, compiles to WebAssembly (Wasm) with high-performance JIT execution, and emits JavaScript.
+> All execution backends produce identical, deterministic output.
 
 ```aipo
 fn greet(name: String) -> String {
@@ -104,7 +105,4 @@ prumo validate . && prumo doctor .
 
 ## License
 
-Dual license, your choice:
-
-- MIT — [`LICENSE-MIT`](LICENSE-MIT)
-- Apache 2.0 — [`LICENSE-APACHE`](LICENSE-APACHE)
+Licensed under the [MIT License](LICENSE).
