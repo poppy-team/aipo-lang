@@ -30,6 +30,7 @@ fn test_host_surface_registration() {
     assert!(surface.contains("host_mouse_wheel_y"));
     assert!(surface.contains("host_push_clip_rect"));
     assert!(surface.contains("host_pop_clip_rect"));
+    assert!(surface.contains("host_set_viewport_camera"));
 
     // Verify canonical __aipo_game_* aliases
     assert!(surface.contains("__aipo_game_draw_rect"));
@@ -187,7 +188,36 @@ fn test_camera_and_sprite_host_calls() {
     let reset_cam = vm
         .globals
         .get("host_reset_camera")
+        .cloned()
         .expect("host_reset_camera exists");
+    let res = vm.invoke(
+        &aipo_bytecode::BytecodeModule::new(),
+        reset_cam.clone(),
+        &[],
+    );
+    assert!(res.is_ok());
+
+    // Call host_set_viewport_camera
+    let set_vp_cam = vm
+        .globals
+        .get("host_set_viewport_camera")
+        .cloned()
+        .expect("host_set_viewport_camera exists");
+    let res = vm.invoke(
+        &aipo_bytecode::BytecodeModule::new(),
+        set_vp_cam.clone(),
+        &[
+            Value::Float(100.0), // vx
+            Value::Float(50.0),  // vy
+            Value::Float(640.0), // vw
+            Value::Float(480.0), // vh
+            Value::Float(0.0),   // tx
+            Value::Float(0.0),   // ty
+            Value::Float(2.0),   // zoom
+        ],
+    );
+    assert!(res.is_ok());
+
     let res = vm.invoke(
         &aipo_bytecode::BytecodeModule::new(),
         reset_cam.clone(),
@@ -472,6 +502,90 @@ fn test_zoe_ui_dashboard_compilation_and_execution() {
     );
 
     // 6. Verify draw() renders the declarative tree headlessly
+    let draw_fn = vm
+        .globals
+        .get("draw")
+        .cloned()
+        .expect("draw function should exist in globals");
+    let draw_res = vm.invoke(&module, draw_fn.clone(), &[]);
+    assert!(
+        draw_res.is_ok(),
+        "draw() should succeed headlessly without panic: {:?}",
+        draw_res.err()
+    );
+
+    // 7. Verify multi-frame execution stability
+    for _ in 0..5 {
+        assert!(
+            vm.invoke(&module, update_fn.clone(), &[Value::Float(0.016)])
+                .is_ok()
+        );
+        assert!(vm.invoke(&module, draw_fn.clone(), &[]).is_ok());
+    }
+}
+
+#[test]
+fn test_zoe_ui_editor_compilation_and_execution() {
+    let path_buf =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/aipo-zoe/examples/editor.aipo");
+    let path = path_buf.as_path();
+    assert!(
+        path.exists(),
+        "packages/aipo-zoe/examples/editor.aipo must exist at {}",
+        path.display()
+    );
+
+    // 1. Compile script with host surface symbols
+    let mut host_surface = aipo_cli::prelude_surface();
+    host_bridge::register_surface_symbols(&mut host_surface);
+
+    let (_source, module) = match aipo_cli::compile_file(path, Some(&host_surface)) {
+        Ok(res) => res,
+        Err((_src, diags)) => {
+            panic!("Compilation failed with diagnostics: {:?}", diags);
+        }
+    };
+    assert!(
+        !module.code.is_empty(),
+        "Bytecode module should not be empty"
+    );
+
+    // 2. Initialize VM and register host natives
+    let (mut vm, _) = aipo_cli::standard_environment();
+    aipo_cli::register_module_symbols(&mut vm, &module);
+    host_bridge::register_vm_natives(&mut vm);
+
+    // 3. Execute top-level script statements
+    let run_res = vm.run(&module);
+    assert!(
+        run_res.is_ok(),
+        "Top-level execution should succeed: {:?}",
+        run_res.err()
+    );
+
+    // 4. Verify setup() mounts the Zoe component tree
+    let setup_fn = vm
+        .globals
+        .get("setup")
+        .cloned()
+        .expect("setup function should exist in globals");
+    let setup_res = vm.invoke(&module, setup_fn, &[]);
+    assert!(setup_res.is_ok(), "setup() should succeed");
+
+    // 5. Verify update(dt) updates Zoe framework state
+    let update_fn = vm
+        .globals
+        .get("update")
+        .cloned()
+        .expect("update function should exist in globals");
+    let update_res = vm.invoke(&module, update_fn.clone(), &[Value::Float(0.016)]);
+    assert!(
+        update_res.is_ok(),
+        "update(dt) should succeed: {:?}",
+        update_res.err()
+    );
+
+    // 6. Verify draw() renders the declarative tree and viewport headlessly
     let draw_fn = vm
         .globals
         .get("draw")

@@ -185,8 +185,15 @@ fn safe_draw_texture(tex: Option<&Texture2D>, x: f32, y: f32, params: DrawTextur
     }
 }
 
+fn safe_macroquad_call<F: FnOnce() + std::panic::UnwindSafe>(f: F) {
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let _ = std::panic::catch_unwind(f);
+    std::panic::set_hook(prev_hook);
+}
+
 fn safe_set_camera(tx: f32, ty: f32, zoom: f32, sw: f32, sh: f32) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    safe_macroquad_call(|| {
         set_camera(&Camera2D {
             offset: vec2(0.0, 0.0),
             target: vec2(tx, ty),
@@ -195,11 +202,34 @@ fn safe_set_camera(tx: f32, ty: f32, zoom: f32, sw: f32, sh: f32) {
             render_target: None,
             viewport: None,
         });
-    }));
+    });
+}
+
+fn safe_set_camera_viewport(
+    tx: f32,
+    ty: f32,
+    zoom: f32,
+    gl_x: i32,
+    gl_y: i32,
+    gl_w: i32,
+    gl_h: i32,
+) {
+    let vw = (gl_w as f32).max(1.0);
+    let vh = (gl_h as f32).max(1.0);
+    safe_macroquad_call(|| {
+        set_camera(&Camera2D {
+            offset: vec2(0.0, 0.0),
+            target: vec2(tx, ty),
+            rotation: 0.0,
+            zoom: vec2((2.0 / vw) * zoom, (2.0 / vh) * zoom),
+            render_target: None,
+            viewport: Some((gl_x, gl_y, gl_w, gl_h)),
+        });
+    });
 }
 
 fn safe_reset_camera() {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(set_default_camera));
+    safe_macroquad_call(set_default_camera);
 }
 
 // --- Helper Conversion Functions ---
@@ -690,6 +720,32 @@ pub fn host_reset_camera(_args: &[Value]) -> Result<Value, VmFault> {
     Ok(Value::None)
 }
 
+/// host_set_viewport_camera(vx, vy, vw, vh, target_x, target_y, zoom)
+pub fn host_set_viewport_camera(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 7 {
+        return Err(VmFault::TypeMismatch {
+            expected: "7 arguments (vx, vy, vw, vh, target_x, target_y, zoom)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let vx = to_f32(&args[0])?;
+    let vy = to_f32(&args[1])?;
+    let vw = to_f32(&args[2])?.max(1.0);
+    let vh = to_f32(&args[3])?.max(1.0);
+    let tx = to_f32(&args[4])?;
+    let ty = to_f32(&args[5])?;
+    let z = to_f32(&args[6])?.max(0.001);
+
+    let sh = safe_screen_height();
+    let gl_x = vx as i32;
+    let gl_y = (sh - (vy + vh)).max(0.0) as i32;
+    let gl_w = vw as i32;
+    let gl_h = vh as i32;
+
+    safe_set_camera_viewport(tx, ty, z, gl_x, gl_y, gl_w, gl_h);
+    Ok(Value::None)
+}
+
 /// host_load_sound(path: String) -> Int
 pub fn host_load_sound(args: &[Value]) -> Result<Value, VmFault> {
     if args.is_empty() {
@@ -853,6 +909,7 @@ const NATIVES: &[NativeEntry] = &[
     ("host_draw_sprite_subrect", 10, host_draw_sprite_subrect),
     ("host_set_camera", 3, host_set_camera),
     ("host_reset_camera", 0, host_reset_camera),
+    ("host_set_viewport_camera", 7, host_set_viewport_camera),
     ("host_load_sound", 1, host_load_sound),
     ("host_play_sound", 3, host_play_sound),
     ("host_play_preset", 3, host_play_preset),

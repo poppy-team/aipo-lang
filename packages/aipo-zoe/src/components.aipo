@@ -642,4 +642,70 @@ fn make_scroll_view(arg1, arg2 = none) {
     return container
 }
 
-export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge, make_split_view, make_tab_bar, make_tab_view, make_scroll_view
+# Native Integrated Sub-rect Viewport for 2D/3D scenes, retro games and engine editors
+fn make_viewport(props: Dict, children: List) {
+    let width_val = if props.has("width") then props["width"] else "flex"
+    let height_val = if props.has("height") then props["height"] else "flex"
+    let bg = if props.has("background") then props["background"] else color_mod.crust
+    let bw = if props.has("border_width") then (props["border_width"] + 0.0) else 1.0
+    let bc = if props.has("border_color") then props["border_color"] else color_mod.surface_0
+
+    var node_props = {
+        "tag": "viewport",
+        "direction": "column",
+        "width": width_val,
+        "height": height_val,
+        "background": bg,
+        "border_width": bw,
+        "border_color": bc,
+        "clip": true
+    }
+
+    if props.has("on_render") {
+        node_props["on_render"] = props["on_render"]
+    }
+    if props.has("on_drag") {
+        node_props["on_drag"] = props["on_drag"]
+    }
+    if props.has("on_drag_end") {
+        node_props["on_drag_end"] = props["on_drag_end"]
+    }
+    if props.has("on_wheel") {
+        node_props["on_wheel"] = props["on_wheel"]
+    }
+    if props.has("on_click") {
+        node_props["on_click"] = props["on_click"]
+    }
+    if props.has("id") {
+        node_props["id"] = props["id"]
+    }
+
+    return elements_mod.make_rect(node_props, children)
+}
+
+# Translates window screen coordinates to viewport world coordinates given camera target and zoom
+fn calc_screen_to_world(rect: Dict, screen_x: Float, screen_y: Float, cam_x: Float, cam_y: Float, zoom: Float) -> Dict {
+    let local_x = (screen_x + 0.0) - (rect["x"] + 0.0)
+    let local_y = (screen_y + 0.0) - (rect["y"] + 0.0)
+    let z = if zoom > 0.001 then zoom else 1.0
+    let world_x = (cam_x + 0.0) + (local_x - (rect["width"] + 0.0) / 2.0) / z
+    let world_y = (cam_y + 0.0) + (local_y - (rect["height"] + 0.0) / 2.0) / z
+    return {
+        "x": world_x,
+        "y": world_y
+    }
+}
+
+# Configures the GPU camera viewport and scissor sub-rect for the active viewport
+fn apply_viewport_camera(rect: Dict, target_x: Float, target_y: Float, zoom: Float) {
+    let vx = rect["x"] + 0.0
+    let vy = rect["y"] + 0.0
+    let vw = rect["width"] + 0.0
+    let vh = rect["height"] + 0.0
+    let tx = target_x + 0.0
+    let ty = target_y + 0.0
+    let z = if zoom > 0.001 then zoom else 1.0
+    host_set_viewport_camera(vx, vy, vw, vh, tx, ty, z)
+}
+
+export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge, make_split_view, make_tab_bar, make_tab_view, make_scroll_view, make_viewport, calc_screen_to_world, apply_viewport_camera

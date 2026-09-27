@@ -9,7 +9,7 @@ O **Zoe UI** foi concebido para o ecossistema Aipo com arquitetura pura, declara
 ## Características Principais
 
 1. **Árvore Declarativa e Containers Ergonômicos:**
-   Construção de interfaces limpas e expressivas com containers sem cerimônia (`column`, `row`, `stack`, `center`, `spacer`, `divider`, `split_view`, `tab_bar`, `tab_view`, `scroll_view`) e catálogo completo de componentes (`button`, `switch`, `slider`, `card`, `badge`, `label`, `rect`).
+   Construção de interfaces limpas e expressivas com containers sem cerimônia (`column`, `row`, `stack`, `center`, `spacer`, `divider`, `split_view`, `tab_bar`, `tab_view`, `scroll_view`, `viewport`) e catálogo completo de componentes (`button`, `switch`, `slider`, `card`, `badge`, `label`, `rect`).
 
 2. **Engine de Layout Leona:**
    Algoritmo hierárquico de medição e posicionamento que resolve:
@@ -84,12 +84,16 @@ fn draw() {
 
 ---
 
-## Executando o Exemplo de Demonstração
+## Executando Exemplos de Demonstração
 
-Um dashboard completo e interativo com contador, switches, sliders e barra de progresso está disponível em `examples/dashboard.aipo`:
-
+- Um dashboard completo e interativo com contador, switches, sliders e barra de progresso está disponível em `examples/dashboard.aipo`:
 ```bash
 cargo run -p aipo-game-host -- packages/aipo-zoe/examples/dashboard.aipo
+```
+
+- Um editor visual de game engine completo com splitters redimensionáveis, painéis laterais de abas, viewport 2D interativa com câmera GPU (pan e zoom) e inspetor de nós está disponível em `examples/editor.aipo`:
+```bash
+cargo run -p aipo-game-host -- packages/aipo-zoe/examples/editor.aipo
 ```
 
 ---
@@ -104,4 +108,7 @@ cargo test -p aipo-game-host --test bridge_tests test_zoe_ui_unit_test_suite
 
 # Executa o teste de compilação e execução estável multi-frame do Dashboard
 cargo test -p aipo-game-host --test bridge_tests test_zoe_ui_dashboard_compilation_and_execution
+
+# Executa o teste de compilação e execução estável multi-frame do Editor Visual
+cargo test -p aipo-game-host --test bridge_tests test_zoe_ui_editor_compilation_and_execution
 ```

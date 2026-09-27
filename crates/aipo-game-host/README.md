@@ -51,6 +51,7 @@ Os scripts `.aipo` têm acesso nativo e sem atrito a:
 | `host_screen_width()`, `host_screen_height()` | Nenhum | Retorna as dimensões atuais da janela |
 | `host_frame_time()` | Nenhum | Retorna o delta time `dt` em segundos (~0.016s a 60 FPS) |
 | `host_set_camera(tx, ty, zoom)` | `Float, Float, Float` | Move e aplica zoom na câmera 2D |
+| `host_set_viewport_camera(vx, vy, vw, vh, tx, ty, zoom)` | `Float...` | Configura câmera 2D com sub-retângulo de viewport e recorte (Scissor) |
 | `host_reset_camera()` | Nenhum | Retorna a câmera para a projeção padrão |
 | `host_load_sound(path)` | `String -> Int` | Carrega arquivo de áudio WAV/OGG em memória e retorna ID |
 | `host_play_sound(id, volume, pitch)` | `Int, Float, Float` | Reproduz som por ID com volume (0.0 a 1.0) e pitch |
