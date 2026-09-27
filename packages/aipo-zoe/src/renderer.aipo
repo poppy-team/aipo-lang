@@ -33,7 +33,9 @@ fn render_node(node) {
         let bw = props["border_width"] + 0.0
         if bw > 0.0 {
             var bc = color_mod.surface_2
-            if props.has("border_color") {
+            if node.is_focused {
+                bc = if props.has("focus_border_color") then props["focus_border_color"] else color_mod.blue
+            } elif props.has("border_color") {
                 let pbc = props["border_color"]
                 if pbc != none {
                     bc = pbc

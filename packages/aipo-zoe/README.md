@@ -9,7 +9,7 @@ O **Zoe UI** foi concebido para o ecossistema Aipo com arquitetura pura, declara
 ## Características Principais
 
 1. **Árvore Declarativa e Containers Ergonômicos:**
-   Construção de interfaces limpas e expressivas com containers sem cerimônia (`column`, `row`, `stack`, `center`, `spacer`, `divider`, `split_view`, `tab_bar`, `tab_view`, `scroll_view`, `viewport`) e catálogo completo de componentes (`button`, `switch`, `slider`, `card`, `badge`, `label`, `rect`).
+   Construção de interfaces limpas e expressivas com containers sem cerimônia (`column`, `row`, `stack`, `center`, `spacer`, `divider`, `split_view`, `tab_bar`, `tab_view`, `scroll_view`, `viewport`) e catálogo completo de componentes (`button`, `switch`, `slider`, `text_input`, `number_input`, `dropdown_select`, `color_picker`, `card`, `badge`, `label`, `rect`).
 
 2. **Engine de Layout Leona:**
    Algoritmo hierárquico de medição e posicionamento que resolve:

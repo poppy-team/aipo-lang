@@ -31,6 +31,7 @@ fn test_host_surface_registration() {
     assert!(surface.contains("host_push_clip_rect"));
     assert!(surface.contains("host_pop_clip_rect"));
     assert!(surface.contains("host_set_viewport_camera"));
+    assert!(surface.contains("host_get_char_pressed"));
 
     // Verify canonical __aipo_game_* aliases
     assert!(surface.contains("__aipo_game_draw_rect"));

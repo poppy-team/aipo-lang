@@ -187,6 +187,22 @@ fn set_viewport_camera(rect, target_x, target_y, zoom) {
     components_mod.apply_viewport_camera(rect, target_x, target_y, zoom)
 }
 
+fn text_input(props: Dict = {}) {
+    return components_mod.make_text_input(props)
+}
+
+fn number_input(props: Dict = {}) {
+    return components_mod.make_number_input(props)
+}
+
+fn dropdown_select(props: Dict = {}) {
+    return components_mod.make_dropdown_select(props)
+}
+
+fn color_picker(props: Dict = {}) {
+    return components_mod.make_color_picker(props)
+}
+
 # --- Reactive Hooks ---
 
 fn use_state(initial_value) {
@@ -266,6 +282,7 @@ fn create_color(r, g, b, a) {
 export column, row, stack, center, spacer, divider
 export rect, label, container
 export button, switch, slider, progress_bar, card, badge, split_view, tab_bar, tab_view, scroll_view, viewport
+export text_input, number_input, dropdown_select, color_picker
 export screen_to_world, set_viewport_camera
 export use_state, set_state
 export rgb, rgba, hex, color

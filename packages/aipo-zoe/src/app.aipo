@@ -15,9 +15,24 @@ var _drag_handler = none
 var _drag_end_handler = none
 var _prev_mx = 0.0
 var _prev_my = 0.0
+var _focused_node = none
 
 fn app_get_root_element() {
     return _root_element
+}
+
+fn app_get_focused_node() {
+    return _focused_node
+}
+
+fn app_set_focused_node(node) {
+    if _focused_node != none and _focused_node != node {
+        _focused_node.is_focused = false
+    }
+    _focused_node = node
+    if node != none {
+        node.is_focused = true
+    }
 }
 
 # Re-evaluates component tree and triggers Leona layout computation
@@ -123,6 +138,18 @@ fn app_update(dt: Float) {
 
     # 2. Click & Drag start dispatch (mouse press edge detection)
     if btn_down and not _prev_mouse_btn {
+        # Focus management
+        if target != none and (target.props.has("on_char") or target.props.has("on_backspace") or (target.props.has("focusable") and target.props["focusable"] == true)) {
+            if _focused_node != none and _focused_node != target {
+                _focused_node.is_focused = false
+            }
+            target.is_focused = true
+            _focused_node = target
+        } elif _focused_node != none and _focused_node != target {
+            _focused_node.is_focused = false
+            _focused_node = none
+        }
+
         if target != none {
             if target.props.has("on_click") {
                 let handler = target.props["on_click"]
@@ -212,7 +239,48 @@ fn app_update(dt: Float) {
         }
     }
 
-    # 6. Check if reactive state changed; if so, re-layout tree
+    # 6. Keyboard input dispatch to focused element
+    if _focused_node != none {
+        if host_key_pressed(256) {
+            # Escape key clears focus
+            _focused_node.is_focused = false
+            _focused_node = none
+        } else {
+            # Process typed characters
+            var typed_char = host_get_char_pressed()
+            while typed_char.len() > 0 {
+                if _focused_node.props.has("on_char") {
+                    let char_fn = _focused_node.props["on_char"]
+                    if char_fn != none {
+                        (char_fn)(typed_char)
+                    }
+                }
+                typed_char = host_get_char_pressed()
+            }
+
+            # Backspace key
+            if host_key_pressed(259) {
+                if _focused_node.props.has("on_backspace") {
+                    let bs_fn = _focused_node.props["on_backspace"]
+                    if bs_fn != none {
+                        (bs_fn)()
+                    }
+                }
+            }
+
+            # Enter / Return key (submit)
+            if host_key_pressed(257) {
+                if _focused_node.props.has("on_submit") {
+                    let sub_fn = _focused_node.props["on_submit"]
+                    if sub_fn != none {
+                        (sub_fn)()
+                    }
+                }
+            }
+        }
+    }
+
+    # 7. Check if reactive state changed; if so, re-layout tree
     if hooks_mod.is_dirty() {
         rebuild_tree()
     }
@@ -227,4 +295,4 @@ fn app_render() {
     }
 }
 
-export app_mount, app_update, app_render, rebuild_tree, hit_test, app_get_root_element, find_wheel_target
+export app_mount, app_update, app_render, rebuild_tree, hit_test, app_get_root_element, find_wheel_target, app_get_focused_node, app_set_focused_node

@@ -708,4 +708,327 @@ fn apply_viewport_camera(rect: Dict, target_x: Float, target_y: Float, zoom: Flo
     host_set_viewport_camera(vx, vy, vw, vh, tx, ty, z)
 }
 
+# Text input component with cursor and keyboard entry
+fn make_text_input(props: Dict = {}) {
+    let value_prop = if props.has("value") then props["value"] else ""
+    let placeholder = if props.has("placeholder") then props["placeholder"] else "..."
+    let width_val = if props.has("width") then props["width"] else "100%"
+    let height_val = if props.has("height") then props["height"] else 34.0
+    let font_size = if props.has("font_size") then (props["font_size"] + 0.0) else 13.0
+    let bg = if props.has("background") then props["background"] else color_mod.mantle
+    let border_color = if props.has("border_color") then props["border_color"] else color_mod.surface_1
+    let border_width = if props.has("border_width") then (props["border_width"] + 0.0) else 1.0
+
+    let cur_str = if (value_prop is String) then value_prop else (if value_prop != none then (value_prop.get() + "") else "")
+
+    let on_char_handler = fn(ch) {
+        if ch == "\n" or ch == "\r" or ch == "\t" {
+            return
+        }
+        let cur = if (value_prop is String) then value_prop else (if value_prop != none then (value_prop.get() + "") else "")
+        let next_val = cur + ch
+        if not (value_prop is String) and value_prop != none {
+            hooks_mod.signal_set_value(value_prop, next_val)
+        }
+        if props.has("on_change") {
+            (props["on_change"])(next_val)
+        }
+    }
+
+    let on_bs_handler = fn() {
+        let cur = if (value_prop is String) then value_prop else (if value_prop != none then (value_prop.get() + "") else "")
+        if cur.len() > 0 {
+            let next_val = if cur.len() <= 1 then "" else cur.slice(0, cur.len() - 1)
+            if not (value_prop is String) and value_prop != none {
+                hooks_mod.signal_set_value(value_prop, next_val)
+            }
+            if props.has("on_change") {
+                (props["on_change"])(next_val)
+            }
+        }
+    }
+
+    let on_submit_handler = fn() {
+        let cur = if (value_prop is String) then value_prop else (if value_prop != none then (value_prop.get() + "") else "")
+        if props.has("on_submit") {
+            (props["on_submit"])(cur)
+        }
+    }
+
+    let display_text = if cur_str.len() > 0 then cur_str else placeholder
+    let display_color = if cur_str.len() > 0 then color_mod.text else color_mod.overlay_0
+
+    let label_node = elements_mod.make_label(display_text, {
+        "font_size": font_size,
+        "color": display_color
+    })
+
+    return elements_mod.make_rect(
+        {
+            "tag": "text_input",
+            "direction": "row",
+            "align_items": "center",
+            "width": width_val,
+            "height": height_val,
+            "background": bg,
+            "border_width": border_width,
+            "border_color": border_color,
+            "border_radius": 6.0,
+            "padding_x": 10.0,
+            "focusable": true,
+            "on_char": on_char_handler,
+            "on_backspace": on_bs_handler,
+            "on_submit": on_submit_handler
+        },
+        [label_node]
+    )
+}
+
+# Number input with direct numeric entry and stepper [-] / [+] buttons
+fn make_number_input(props: Dict = {}) {
+    let value_prop = if props.has("value") then props["value"] else 0.0
+    let step = if props.has("step") then (props["step"] + 0.0) else 1.0
+    let min_val = if props.has("min") then props["min"] else none
+    let max_val = if props.has("max") then props["max"] else none
+    let width_val = if props.has("width") then props["width"] else 140.0
+    let height_val = if props.has("height") then props["height"] else 32.0
+
+    let cur_num = if (value_prop is Float or value_prop is Int) then (value_prop + 0.0) else (value_prop.get() + 0.0)
+
+    let update_num = fn(new_num) {
+        var clamped = new_num
+        if min_val != none and clamped < (min_val + 0.0) {
+            clamped = min_val + 0.0
+        }
+        if max_val != none and clamped > (max_val + 0.0) {
+            clamped = max_val + 0.0
+        }
+        if not (value_prop is Float or value_prop is Int) and value_prop != none {
+            hooks_mod.signal_set_value(value_prop, clamped)
+        }
+        if props.has("on_change") {
+            (props["on_change"])(clamped)
+        }
+    }
+
+    let on_dec = fn(e) {
+        let cur = if (value_prop is Float or value_prop is Int) then (value_prop + 0.0) else (value_prop.get() + 0.0)
+        update_num(cur - step)
+    }
+
+    let on_inc = fn(e) {
+        let cur = if (value_prop is Float or value_prop is Int) then (value_prop + 0.0) else (value_prop.get() + 0.0)
+        update_num(cur + step)
+    }
+
+    let num_str = f"{cur_num}"
+
+    let dec_btn = elements_mod.make_rect(
+        {
+            "tag": "num_dec_btn",
+            "direction": "row",
+            "align_items": "center",
+            "justify_content": "center",
+            "width": 26.0,
+            "height": height_val - 4.0,
+            "background": color_mod.surface_1,
+            "border_radius": 4.0,
+            "on_click": on_dec
+        },
+        [elements_mod.make_label("-", { "font_size": 14.0, "color": color_mod.text, "font_weight": "bold" })]
+    )
+
+    let val_label = elements_mod.make_label(num_str, {
+        "font_size": 13.0,
+        "color": color_mod.text
+    })
+
+    let val_container = elements_mod.make_rect(
+        {
+            "tag": "num_value",
+            "direction": "row",
+            "align_items": "center",
+            "justify_content": "center",
+            "width": "flex",
+            "height": "100%"
+        },
+        [val_label]
+    )
+
+    let inc_btn = elements_mod.make_rect(
+        {
+            "tag": "num_inc_btn",
+            "direction": "row",
+            "align_items": "center",
+            "justify_content": "center",
+            "width": 26.0,
+            "height": height_val - 4.0,
+            "background": color_mod.surface_1,
+            "border_radius": 4.0,
+            "on_click": on_inc
+        },
+        [elements_mod.make_label("+", { "font_size": 14.0, "color": color_mod.text, "font_weight": "bold" })]
+    )
+
+    return elements_mod.make_rect(
+        {
+            "tag": "number_input",
+            "direction": "row",
+            "align_items": "center",
+            "width": width_val,
+            "height": height_val,
+            "background": color_mod.mantle,
+            "border_width": 1.0,
+            "border_color": color_mod.surface_1,
+            "border_radius": 6.0,
+            "padding": 2.0,
+            "gap": 4.0
+        },
+        [dec_btn, val_container, inc_btn]
+    )
+}
+
+# Dropdown selector for picking from a list of options (e.g. Layers, Tags, Presets)
+fn make_dropdown_select(props: Dict = {}) {
+    let options = if props.has("options") then props["options"] else ["Default"]
+    let selected_prop = if props.has("selected") then props["selected"] else (if options.len() > 0 then options[0] else "")
+    let width_val = if props.has("width") then props["width"] else "100%"
+    let height_val = if props.has("height") then props["height"] else 32.0
+
+    let cur_selected = if (selected_prop is String) then selected_prop else (selected_prop.get() + "")
+
+    let on_toggle_select = fn(e) {
+        if options.len() <= 1 {
+            return
+        }
+        let cur = if (selected_prop is String) then selected_prop else (selected_prop.get() + "")
+        var next_idx = 0
+        var i = 0
+        while i < options.len() {
+            if options[i] == cur {
+                next_idx = (i + 1) % options.len()
+            }
+            i += 1
+        }
+        let next_val = options[next_idx]
+        if not (selected_prop is String) and selected_prop != none {
+            hooks_mod.signal_set_value(selected_prop, next_val)
+        }
+        if props.has("on_select") {
+            (props["on_select"])(next_val)
+        }
+    }
+
+    return elements_mod.make_rect(
+        {
+            "tag": "dropdown_select",
+            "direction": "row",
+            "align_items": "center",
+            "justify_content": "start",
+            "width": width_val,
+            "height": height_val,
+            "background": color_mod.mantle,
+            "border_width": 1.0,
+            "border_color": color_mod.surface_1,
+            "border_radius": 6.0,
+            "padding_x": 10.0,
+            "gap": 8.0,
+            "on_click": on_toggle_select
+        },
+        [
+            elements_mod.make_label(cur_selected, {
+                "font_size": 13.0,
+                "color": color_mod.text
+            }),
+            elements_mod.make_rect({ "tag": "spacer", "width": "flex", "height": "100%" }, []),
+            elements_mod.make_label("v", {
+                "font_size": 10.0,
+                "color": color_mod.overlay_0
+            })
+        ]
+    )
+}
+
+# Color swatch picker cycling or selecting Catppuccin palette colors
+fn make_color_picker(props: Dict = {}) {
+    let color_prop = if props.has("color") then props["color"] else color_mod.blue
+    let width_val = if props.has("width") then props["width"] else "100%"
+    let height_val = if props.has("height") then props["height"] else 32.0
+
+    let palette = [
+        color_mod.blue,
+        color_mod.green,
+        color_mod.red,
+        color_mod.peach,
+        color_mod.yellow,
+        color_mod.lavender,
+        color_mod.white
+    ]
+
+    let is_sig = hooks_mod.is_signal(color_prop)
+    let cur_color = if is_sig then color_prop.get() else color_prop
+
+    let on_pick_next = fn(e) {
+        let is_s = hooks_mod.is_signal(color_prop)
+        let cur = if is_s then color_prop.get() else color_prop
+        var next_idx = 0
+        var i = 0
+        while i < palette.len() {
+            let p = palette[i]
+            if p.r == cur.r and p.g == cur.g and p.b == cur.b {
+                next_idx = (i + 1) % palette.len()
+            }
+            i += 1
+        }
+        let next_c = palette[next_idx]
+        if is_s {
+            hooks_mod.signal_set_value(color_prop, next_c)
+        }
+        if props.has("on_change") {
+            (props["on_change"])(next_c)
+        }
+    }
+
+    let swatch = elements_mod.make_rect(
+        {
+            "tag": "color_swatch",
+            "width": 18.0,
+            "height": 18.0,
+            "background": cur_color,
+            "border_width": 1.0,
+            "border_color": color_mod.surface_2,
+            "border_radius": 4.0
+        },
+        []
+    )
+
+    let hex_label = elements_mod.make_label("Color", {
+        "font_size": 12.0,
+        "color": color_mod.text
+    })
+
+    return elements_mod.make_rect(
+        {
+            "tag": "color_picker",
+            "direction": "row",
+            "align_items": "center",
+            "width": width_val,
+            "height": height_val,
+            "background": color_mod.mantle,
+            "border_width": 1.0,
+            "border_color": color_mod.surface_1,
+            "border_radius": 6.0,
+            "padding_x": 10.0,
+            "gap": 8.0,
+            "on_click": on_pick_next
+        },
+        [
+            swatch,
+            hex_label,
+            elements_mod.make_rect({ "tag": "spacer", "width": "flex", "height": "100%" }, [])
+        ]
+    )
+}
+
 export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge, make_split_view, make_tab_bar, make_tab_view, make_scroll_view, make_viewport, calc_screen_to_world, apply_viewport_camera
+export make_text_input, make_number_input, make_dropdown_select, make_color_picker

@@ -18,6 +18,10 @@ var _is_playing = none
 var _selected_node = none
 var _left_split = none
 var _right_split = none
+var _hero_x = none
+var _hero_y = none
+var _hero_layer = none
+var _hero_color = none
 
 fn draw_grid(w: Float, h: Float, cell_size: Float) {
     var x = 0.0
@@ -39,9 +43,13 @@ fn view() {
         _cam_zoom = zoe.use_state(1.0)
         _show_grid = zoe.use_state(true)
         _is_playing = zoe.use_state(false)
-        _selected_node = zoe.use_state("Player (Hero)")
+        _selected_node = zoe.use_state("Hero")
         _left_split = zoe.use_state(0.22)
         _right_split = zoe.use_state(0.72)
+        _hero_x = zoe.use_state(0.0)
+        _hero_y = zoe.use_state(0.0)
+        _hero_layer = zoe.use_state("Player")
+        _hero_color = zoe.use_state(zoe.color.blue)
     }
 
     let on_play_toggle = fn(_) {
@@ -133,9 +141,12 @@ fn view() {
         let cx = rect["x"] + rect["width"] / 2.0
         let cy = rect["y"] + rect["height"] / 2.0
 
-        # Player
-        host_draw_rect(cx - 24.0, cy - 24.0, 48.0, 48.0, 0.2, 0.6, 1.0, 1.0)
-        host_draw_text("Hero", cx - 18.0, cy - 32.0, 14.0, 1.0, 1.0, 1.0)
+        # Player (Hero) with dynamic position, color, and name from Inspector
+        let hx = cx + _hero_x.get()
+        let hy = cy + _hero_y.get()
+        let hc = _hero_color.get()
+        host_draw_rect(hx - 24.0, hy - 24.0, 48.0, 48.0, hc.r, hc.g, hc.b, hc.a)
+        host_draw_text(_selected_node.get(), hx - 18.0, hy - 32.0, 14.0, 1.0, 1.0, 1.0)
 
         # Star / Coin
         host_draw_circle(cx + 80.0, cy - 40.0, 14.0, 0.95, 0.85, 0.3, 1.0)
@@ -179,7 +190,7 @@ fn view() {
         ])
     ])
 
-    # Right Panel: Inspector
+    # Right Panel: Inspector with fine editing components (text_input, number_input, dropdown_select, color_picker)
     let right_inspector = zoe.column(
         {
             "width": "100%",
@@ -192,17 +203,29 @@ fn view() {
             zoe.label("Inspector", { "font_size": 16.0, "font_weight": "bold", "color": zoe.color.text }),
             zoe.divider({ "color": zoe.color.surface_1 }),
             zoe.card({ "padding": 12.0, "gap": 8.0, "background": zoe.color.mantle }, [
-                zoe.label("Selected Entity:", { "font_size": 12.0, "color": zoe.color.lavender }),
-                zoe.label(_selected_node.get(), { "font_size": 14.0, "font_weight": "bold", "color": zoe.color.blue }),
+                zoe.label("Entity Name:", { "font_size": 12.0, "color": zoe.color.lavender }),
+                zoe.text_input({ "value": _selected_node }),
                 zoe.divider({ "color": zoe.color.surface_0 }),
-                zoe.label("Transform:", { "font_size": 12.0, "color": zoe.color.text }),
+                zoe.label("Position X & Y:", { "font_size": 12.0, "color": zoe.color.text }),
                 zoe.row({ "gap": 8.0 }, [
-                    zoe.badge("X: 0.0", { "background": zoe.color.surface_1, "color": zoe.color.peach }),
-                    zoe.badge("Y: 0.0", { "background": zoe.color.surface_1, "color": zoe.color.green }),
-                    zoe.badge("Rot: 0°", { "background": zoe.color.surface_1, "color": zoe.color.blue })
+                    zoe.column({ "width": "flex", "gap": 2.0 }, [
+                        zoe.label("X:", { "font_size": 11.0, "color": zoe.color.peach }),
+                        zoe.number_input({ "value": _hero_x, "step": 5.0, "min": -500.0, "max": 500.0 })
+                    ]),
+                    zoe.column({ "width": "flex", "gap": 2.0 }, [
+                        zoe.label("Y:", { "font_size": 11.0, "color": zoe.color.green }),
+                        zoe.number_input({ "value": _hero_y, "step": 5.0, "min": -500.0, "max": 500.0 })
+                    ])
                 ]),
-                zoe.label("Layer: Default", { "font_size": 12.0, "color": zoe.color.overlay_0 }),
-                zoe.label("Visible: true", { "font_size": 12.0, "color": zoe.color.green })
+                zoe.divider({ "color": zoe.color.surface_0 }),
+                zoe.label("Layer:", { "font_size": 12.0, "color": zoe.color.overlay_0 }),
+                zoe.dropdown_select({
+                    "options": ["Default", "Player", "Enemy", "Foreground", "Background"],
+                    "selected": _hero_layer
+                }),
+                zoe.divider({ "color": zoe.color.surface_0 }),
+                zoe.label("Tint / Color:", { "font_size": 12.0, "color": zoe.color.text }),
+                zoe.color_picker({ "color": _hero_color })
             ]),
             zoe.spacer(),
             zoe.button("Delete Entity", on_delete_entity, { "variant": "danger", "background": zoe.color.red })

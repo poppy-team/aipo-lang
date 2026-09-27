@@ -61,6 +61,7 @@ struct Element {
     var layout = none
     var is_hovered = false
     var is_active = false
+    var is_focused = false
 }
 
 fn create_element(id, tag, props, children) {
@@ -71,7 +72,8 @@ fn create_element(id, tag, props, children) {
         children: children,
         layout: none,
         is_hovered: false,
-        is_active: false
+        is_active: false,
+        is_focused: false
     }
 }
 

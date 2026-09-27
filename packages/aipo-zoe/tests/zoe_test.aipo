@@ -406,3 +406,96 @@ test("viewport on_render execution and camera dispatch") do
     expect.equal(tracker["width"], 500.0)
     expect.equal(tracker["height"], 300.0)
 end
+
+test("text_input typing, backspace, and state update") do
+    let name_sig = zoe.use_state("Hero")
+    let input = zoe.text_input({
+        "value": name_sig,
+        "width": 180.0
+    })
+
+    expect.equal(input.tag, "text_input")
+    expect.true(input.props.has("on_char"))
+    expect.true(input.props.has("on_backspace"))
+
+    let on_char = input.props["on_char"]
+    let on_bs = input.props["on_backspace"]
+
+    # Type exclamation mark
+    (on_char)("!")
+    expect.equal(name_sig.get(), "Hero!")
+
+    # Type letter 's'
+    (on_char)("s")
+    expect.equal(name_sig.get(), "Hero!s")
+
+    # Backspace twice
+    (on_bs)()
+    expect.equal(name_sig.get(), "Hero!")
+    (on_bs)()
+    expect.equal(name_sig.get(), "Hero")
+end
+
+test("number_input stepper decrement and increment") do
+    let pos_sig = zoe.use_state(10.0)
+    let num_in = zoe.number_input({
+        "value": pos_sig,
+        "step": 2.5,
+        "min": 0.0,
+        "max": 50.0
+    })
+
+    expect.equal(num_in.tag, "number_input")
+    expect.equal(num_in.children.len(), 3)
+
+    let dec_btn = num_in.children[0]
+    let inc_btn = num_in.children[2]
+
+    # Increment +2.5 -> 12.5
+    let on_inc = inc_btn.props["on_click"]
+    (on_inc)({})
+    expect.equal(pos_sig.get(), 12.5)
+
+    # Increment +2.5 -> 15.0
+    (on_inc)({})
+    expect.equal(pos_sig.get(), 15.0)
+
+    # Decrement -2.5 -> 12.5
+    let on_dec = dec_btn.props["on_click"]
+    (on_dec)({})
+    expect.equal(pos_sig.get(), 12.5)
+end
+
+test("dropdown_select cycle through options") do
+    let sel_sig = zoe.use_state("Player")
+    let dd = zoe.dropdown_select({
+        "options": ["Player", "Enemy", "Item"],
+        "selected": sel_sig
+    })
+
+    expect.equal(dd.tag, "dropdown_select")
+    let on_toggle = dd.props["on_click"]
+
+    (on_toggle)({})
+    expect.equal(sel_sig.get(), "Enemy")
+
+    (on_toggle)({})
+    expect.equal(sel_sig.get(), "Item")
+
+    (on_toggle)({})
+    expect.equal(sel_sig.get(), "Player")
+end
+
+test("color_picker cycles through palette") do
+    let col_sig = zoe.use_state(zoe.color.blue)
+    let cp = zoe.color_picker({
+        "color": col_sig
+    })
+
+    expect.equal(cp.tag, "color_picker")
+    let on_pick = cp.props["on_click"]
+
+    (on_pick)({})
+    # Next color after blue is green
+    expect.equal(col_sig.get().g, zoe.color.green.g)
+end

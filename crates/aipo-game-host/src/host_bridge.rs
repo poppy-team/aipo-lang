@@ -102,6 +102,10 @@ fn safe_is_key_pressed(key: KeyCode) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| is_key_pressed(key))).unwrap_or(false)
 }
 
+fn safe_get_char_pressed() -> Option<char> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(get_char_pressed)).unwrap_or(None)
+}
+
 fn safe_mouse_position() -> (f32, f32) {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(mouse_position)).unwrap_or((0.0, 0.0))
 }
@@ -364,6 +368,15 @@ pub fn host_key_pressed(args: &[Value]) -> Result<Value, VmFault> {
     let code = to_i64(&args[0])?;
     let pressed = map_keycode(code).is_some_and(safe_is_key_pressed);
     Ok(Value::Bool(pressed))
+}
+
+/// host_get_char_pressed() -> String
+pub fn host_get_char_pressed(_args: &[Value]) -> Result<Value, VmFault> {
+    if let Some(ch) = safe_get_char_pressed() {
+        Ok(Value::String(std::rc::Rc::new(ch.to_string())))
+    } else {
+        Ok(Value::String(std::rc::Rc::new(String::new())))
+    }
 }
 
 /// host_mouse_x() -> Float
@@ -886,6 +899,7 @@ const NATIVES: &[NativeEntry] = &[
     ("host_close", 0, host_close),
     ("host_key_down", 1, host_key_down),
     ("host_key_pressed", 1, host_key_pressed),
+    ("host_get_char_pressed", 0, host_get_char_pressed),
     ("host_mouse_x", 0, host_mouse_x),
     ("host_mouse_y", 0, host_mouse_y),
     ("host_mouse_btn", 1, host_mouse_btn),
