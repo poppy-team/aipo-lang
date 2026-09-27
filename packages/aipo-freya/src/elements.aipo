@@ -1,0 +1,25 @@
+# elements.aipo — Core Freya element primitives
+# Provides make_rect, make_label, and make_container
+
+import types as types_mod
+
+# Primary container element in Freya
+fn make_rect(props: Dict, children: List) {
+    let id = types_mod.next_element_id()
+    let tag = if props.has("tag") then props["tag"] else "rect"
+    return types_mod.create_element(id, tag, props, children)
+}
+
+# Text rendering element in Freya
+fn make_label(text: String, props: Dict) {
+    let id = types_mod.next_element_id()
+    props["text"] = text
+    return types_mod.create_element(id, "label", props, [])
+}
+
+# Convenience container element
+fn make_container(props: Dict, children: List) {
+    return make_rect(props, children)
+}
+
+export make_rect, make_label, make_container

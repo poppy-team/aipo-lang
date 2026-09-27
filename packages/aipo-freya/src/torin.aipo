@@ -1,0 +1,267 @@
+# torin.aipo — Torin Layout Engine for aipo.freya
+# Computes bounding boxes, flex distribution, alignment, and hierarchical constraints
+
+import types as types_mod
+
+fn get_prop(props: Dict, key: String, default_val) {
+    if props.has(key) {
+        return props[key]
+    }
+    return default_val
+}
+
+fn parse_pct(s: String) -> Float {
+    if s.ends_with("%") {
+        let num_str = s.slice(0, s.len() - 1)
+        # Handle common percentage literals safely
+        if num_str == "100" { return 100.0 }
+        if num_str == "75" { return 75.0 }
+        if num_str == "50" { return 50.0 }
+        if num_str == "33" { return 33.33 }
+        if num_str == "25" { return 25.0 }
+        if num_str == "20" { return 20.0 }
+        if num_str == "10" { return 10.0 }
+        if num_str == "0" { return 0.0 }
+    }
+    return 100.0
+}
+
+fn is_pct(val) -> Bool {
+    if (val is String) {
+        return val.ends_with("%")
+    }
+    return false
+}
+
+fn is_flex(val) -> Bool {
+    if (val is String) {
+        return val.starts_with("flex")
+    }
+    return false
+}
+
+# Resolve intrinsic size of a leaf node (e.g. text label)
+fn measure_leaf_node(node) {
+    if node.tag == "label" {
+        let text = get_prop(node.props, "text", "")
+        let font_size = get_prop(node.props, "font_size", 14.0) + 0.0
+        let text_w = (text.len() + 0.0) * (font_size * 0.55)
+        let text_h = font_size * 1.35
+        
+        let w_prop = get_prop(node.props, "width", "auto")
+        let h_prop = get_prop(node.props, "height", "auto")
+
+        if w_prop == "auto" {
+            node.layout.width = text_w
+        }
+        if h_prop == "auto" {
+            node.layout.height = text_h
+        }
+    }
+}
+
+# Main recursive layout pass
+fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: Float) {
+    if node.layout == none {
+        node.layout = types_mod.types_make_rect(parent_x, parent_y, 0.0, 0.0)
+    } else {
+        node.layout.x = parent_x
+        node.layout.y = parent_y
+    }
+
+    let w_prop = get_prop(node.props, "width", "auto")
+    let h_prop = get_prop(node.props, "height", "auto")
+
+    # Resolve width
+    var computed_w = 0.0
+    if (w_prop is Float or w_prop is Int) {
+        computed_w = w_prop + 0.0
+    } elif is_pct(w_prop) {
+        computed_w = avail_w * (parse_pct(w_prop) / 100.0)
+    } elif is_flex(w_prop) {
+        computed_w = avail_w
+    } else {
+        computed_w = avail_w # auto fallback
+    }
+
+    # Resolve height
+    var computed_h = 0.0
+    if (h_prop is Float or h_prop is Int) {
+        computed_h = h_prop + 0.0
+    } elif is_pct(h_prop) {
+        computed_h = avail_h * (parse_pct(h_prop) / 100.0)
+    } elif is_flex(h_prop) {
+        computed_h = avail_h
+    } else {
+        computed_h = avail_h # auto fallback
+    }
+
+    node.layout.width = computed_w
+    node.layout.height = computed_h
+
+    # Measure leaf intrinsic bounds
+    measure_leaf_node(node)
+
+    let children = node.children
+    if children.len() == 0 {
+        return
+    }
+
+    # Layout children inside container
+    let pad = get_prop(node.props, "padding", 0.0) + 0.0
+    let pad_x = get_prop(node.props, "padding_x", pad) + 0.0
+    let pad_y = get_prop(node.props, "padding_y", pad) + 0.0
+    let gap = get_prop(node.props, "gap", 0.0) + 0.0
+
+    let dir = get_prop(node.props, "direction", "column")
+    let is_row = (dir == "row" or dir == "horizontal")
+    let align_items = get_prop(node.props, "align_items", "start")
+    let justify_content = get_prop(node.props, "justify_content", "start")
+
+    let inner_avail_w = if node.layout.width > (pad_x * 2.0) then node.layout.width - (pad_x * 2.0) else 0.0
+    let inner_avail_h = if node.layout.height > (pad_y * 2.0) then node.layout.height - (pad_y * 2.0) else 0.0
+
+    # 1. Pre-measure children and identify flex items
+    var used_main_axis = 0.0
+    var flex_count = 0
+    var non_flex_children = []
+
+    each child in children {
+        if child.layout == none {
+            child.layout = types_mod.types_make_rect(0.0, 0.0, 0.0, 0.0)
+        }
+
+        let cw = get_prop(child.props, "width", "auto")
+        let ch = get_prop(child.props, "height", "auto")
+
+        if is_row {
+            if is_flex(cw) {
+                flex_count = flex_count + 1
+            } else {
+                var child_w = 0.0
+                if (cw is Float or cw is Int) {
+                    child_w = cw + 0.0
+                } elif is_pct(cw) {
+                    child_w = inner_avail_w * (parse_pct(cw) / 100.0)
+                } else {
+                    child_w = 40.0 # auto fallback
+                }
+                child.layout.width = child_w
+                used_main_axis = used_main_axis + child_w
+                non_flex_children.add(child)
+            }
+        } else {
+            if is_flex(ch) {
+                flex_count = flex_count + 1
+            } else {
+                var child_h = 0.0
+                if (ch is Float or ch is Int) {
+                    child_h = ch + 0.0
+                } elif is_pct(ch) {
+                    child_h = inner_avail_h * (parse_pct(ch) / 100.0)
+                } else {
+                    child_h = 30.0 # auto fallback
+                }
+                child.layout.height = child_h
+                used_main_axis = used_main_axis + child_h
+                non_flex_children.add(child)
+            }
+        }
+    }
+
+    if children.len() > 1 {
+        used_main_axis = used_main_axis + (children.len() - 1 + 0.0) * gap
+    }
+
+    # 2. Distribute flex space
+    var flex_size = 0.0
+    if is_row {
+        let remaining = inner_avail_w - used_main_axis
+        if remaining > 0.0 and flex_count > 0 {
+            flex_size = remaining / (flex_count + 0.0)
+        }
+        each child in children {
+            let cw = get_prop(child.props, "width", "auto")
+            if is_flex(cw) {
+                child.layout.width = flex_size
+            }
+        }
+    } else {
+        let remaining = inner_avail_h - used_main_axis
+        if remaining > 0.0 and flex_count > 0 {
+            flex_size = remaining / (flex_count + 0.0)
+        }
+        each child in children {
+            let ch = get_prop(child.props, "height", "auto")
+            if is_flex(ch) {
+                child.layout.height = flex_size
+            }
+        }
+    }
+
+    # 3. Position and layout each child
+    var main_cursor = 0.0
+    if justify_content == "center" {
+        let total_main = if is_row then inner_avail_w else inner_avail_h
+        let free_space = total_main - (used_main_axis + flex_size * (flex_count + 0.0))
+        if free_space > 0.0 {
+            main_cursor = free_space / 2.0
+        }
+    } elif justify_content == "end" {
+        let total_main = if is_row then inner_avail_w else inner_avail_h
+        let free_space = total_main - (used_main_axis + flex_size * (flex_count + 0.0))
+        if free_space > 0.0 {
+            main_cursor = free_space
+        }
+    }
+
+    each child in children {
+        var cx = 0.0
+        var cy = 0.0
+        var cw = child.layout.width
+        var ch = child.layout.height
+
+        let off_x = get_prop(child.props, "offset_x", 0.0) + 0.0
+        let off_y = get_prop(child.props, "offset_y", 0.0) + 0.0
+
+        if is_row {
+            cx = parent_x + pad_x + main_cursor + off_x
+            
+            # Cross-axis alignment
+            if align_items == "center" {
+                cy = parent_y + pad_y + (inner_avail_h - ch) / 2.0 + off_y
+            } elif align_items == "end" {
+                cy = parent_y + pad_y + (inner_avail_h - ch) + off_y
+            } else {
+                cy = parent_y + pad_y + off_y
+            }
+
+            layout_node(child, cx, cy, inner_avail_w, inner_avail_h)
+            main_cursor = main_cursor + child.layout.width + gap
+        } else {
+            cy = parent_y + pad_y + main_cursor + off_y
+
+            # Cross-axis alignment
+            if align_items == "center" {
+                cx = parent_x + pad_x + (inner_avail_w - cw) / 2.0 + off_x
+            } elif align_items == "end" {
+                cx = parent_x + pad_x + (inner_avail_w - cw) + off_x
+            } else {
+                cx = parent_x + pad_x + off_x
+            }
+
+            layout_node(child, cx, cy, inner_avail_w, inner_avail_h)
+            main_cursor = main_cursor + child.layout.height + gap
+        }
+    }
+}
+
+# Entrypoint for root layout computation
+fn torin_compute_layout(root, screen_w: Float, screen_h: Float) {
+    if root == none {
+        return
+    }
+    layout_node(root, 0.0, 0.0, screen_w, screen_h)
+}
+
+export get_prop, parse_pct, is_pct, is_flex, measure_leaf_node, torin_compute_layout, layout_node

@@ -1,0 +1,10 @@
+[package]
+name = "aipo.egui"
+version = "0.1.0"
+entry = "src/lib.aipo"
+authors = ["Aipo Core Team <core@aipo-lang.org>"]
+description = "Agnostic Immediate-Mode GUI library powered by egui for the Aipo programming language"
+license = "MIT"
+repository = "https://github.com/poppy-team/aipo-lang"
+
+targets = ["native"]

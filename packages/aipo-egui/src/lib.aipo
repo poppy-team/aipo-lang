@@ -1,0 +1,90 @@
+# lib.aipo — Entrypoint for `aipo.egui`
+# Agnostic Immediate-Mode GUI library powered by egui
+
+import ffi as ffi
+
+# Cria um novo contexto egui imediato retornando seu handle.
+fn new_context() {
+    return ffi.host_create_context()
+}
+
+# Destrói o contexto e libera seus recursos.
+fn destroy(ctx) {
+    ffi.host_destroy_context(ctx)
+}
+
+# Inicia um novo frame de interface imediata passando parâmetros de tela e entrada.
+fn begin_frame(ctx, options) {
+    ffi.host_begin_frame(ctx, options)
+}
+
+# Finaliza o frame e retorna o mapa de saída com formas visuais e foco.
+fn end_frame(ctx) {
+    return ffi.host_end_frame(ctx)
+}
+
+# Cria uma janela com título executando o callback de corpo.
+fn window(title: String, callback) {
+    ffi.host_begin_window(title, 50.0, 50.0, 260.0, 220.0)
+    callback()
+    ffi.host_end_window()
+}
+
+# Cria uma janela com título, posição e tamanho explícitos.
+fn window_at(title: String, x: Float, y: Float, width: Float, height: Float, callback) {
+    ffi.host_begin_window(title, x, y, width, height)
+    callback()
+    ffi.host_end_window()
+}
+
+# Renderiza um texto estático.
+fn label(text: String) {
+    ffi.host_label(text)
+}
+
+# Renderiza um cabeçalho em destaque.
+fn heading(text: String) {
+    ffi.host_heading(text)
+}
+
+# Renderiza uma linha divisória horizontal.
+fn separator() {
+    ffi.host_separator()
+}
+
+# Renderiza um botão clicável, retornando verdadeiro se clicado no frame atual.
+fn button(text: String) -> Bool {
+    return ffi.host_button(text)
+}
+
+# Renderiza uma caixa de seleção, retornando o estado booleano atualizado.
+fn checkbox(text: String, checked: Bool) -> Bool {
+    return ffi.host_checkbox(text, checked)
+}
+
+# Renderiza um slider numérico, retornando o valor float atualizado.
+fn slider(text: String, value: Float, min: Float, max: Float) -> Float {
+    return ffi.host_slider(text, value, min, max)
+}
+
+# Renderiza um campo de entrada de texto de linha única.
+fn text_edit(label_text: String, current_text: String) -> String {
+    return ffi.host_text_edit(label_text, current_text)
+}
+
+# Renderiza uma barra de progresso entre 0.0 e 1.0.
+fn progress_bar(fraction: Float) {
+    ffi.host_progress_bar(fraction)
+}
+
+# Retorna se o egui está interagindo ou capturando o cursor do mouse.
+fn wants_pointer(ctx) -> Bool {
+    return ffi.host_wants_pointer(ctx)
+}
+
+# Retorna se o egui está com foco ativo em campo de texto.
+fn wants_keyboard(ctx) -> Bool {
+    return ffi.host_wants_keyboard(ctx)
+}
+
+export new_context, destroy, begin_frame, end_frame, window, window_at, label, heading, separator, button, checkbox, slider, text_edit, progress_bar, wants_pointer, wants_keyboard

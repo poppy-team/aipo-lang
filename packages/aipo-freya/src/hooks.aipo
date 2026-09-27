@@ -1,0 +1,53 @@
+# hooks.aipo — Reactive state hooks for aipo.freya
+# Inspired by Freya's use_signal / use_state
+
+import types as types_mod
+
+var _signals = []
+var _signal_index = 0
+var _is_dirty = true
+
+fn is_dirty() -> Bool {
+    return _is_dirty
+}
+
+fn mark_dirty() {
+    _is_dirty = true
+}
+
+fn clear_dirty() {
+    _is_dirty = false
+}
+
+fn reset_hooks() {
+    _signal_index = 0
+}
+
+fn reset_all_signals() {
+    _signals = []
+    _signal_index = 0
+    _is_dirty = true
+}
+
+fn signal_use_state(initial_value) {
+    if _signal_index >= _signals.len() {
+        let sig = types_mod.create_signal(_signals.len(), initial_value)
+        _signals.add(sig)
+        _signal_index = _signal_index + 1
+        return sig
+    } else {
+        let sig = _signals[_signal_index]
+        _signal_index = _signal_index + 1
+        return sig
+    }
+}
+
+fn signal_set_value(sig, new_value) {
+    if sig.value != new_value {
+        sig.value = new_value
+        mark_dirty()
+    }
+}
+
+export is_dirty, mark_dirty, clear_dirty, reset_hooks, reset_all_signals
+export signal_use_state, signal_set_value

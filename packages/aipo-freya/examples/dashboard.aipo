@@ -1,0 +1,167 @@
+# dashboard.aipo — Interactive Declarative Freya UI Dashboard in Aipo
+# Run with: cargo run -p aipo-game-host -- packages/aipo-freya/examples/dashboard.aipo
+#
+# Demonstrates Torin Layout, Reactive State Hooks, Interactive Buttons,
+# Switches, Sliders, and Modern GPU Theme Rendering.
+
+import aipo.freya as freya
+
+fn view() {
+    # 1. Reactive state hooks
+    let counter = freya.use_state(42)
+    let turbo_mode = freya.use_state(true)
+    let volume = freya.use_state(70.0)
+
+    # 2. Declarative UI tree with Torin Layout
+    return freya.rect(
+        {
+            "tag": "root",
+            "direction": "column",
+            "width": "100%",
+            "height": "100%",
+            "background": freya.rgb(17, 17, 27), # Catppuccin Crust
+            "padding": 32.0,
+            "gap": 20.0
+        },
+        [
+            # Header Row
+            freya.rect(
+                {
+                    "direction": "row",
+                    "align_items": "center",
+                    "width": "100%",
+                    "gap": 16.0
+                },
+                [
+                    freya.label("Freya UI para Aipo", {
+                        "font_size": 28.0,
+                        "color": freya.rgb(205, 214, 244), # Catppuccin Text
+                        "font_weight": "bold"
+                    }),
+                    freya.badge("Nativo 60 FPS", {
+                        "background": freya.rgb(49, 50, 68),
+                        "color": freya.rgb(137, 180, 250)
+                    })
+                ]
+            ),
+
+            # Card 1: Reatividade e Contador
+            freya.card(
+                {
+                    "width": "100%",
+                    "background": freya.rgb(30, 30, 46), # Base
+                    "border_color": freya.rgb(49, 50, 68),
+                    "padding": 20.0,
+                    "gap": 16.0
+                },
+                [
+                    freya.label("Contador Reativo (use_state):", {
+                        "font_size": 18.0,
+                        "color": freya.rgb(186, 194, 222)
+                    }),
+                    freya.label(f"Valor atual: {counter.get()}", {
+                        "font_size": 24.0,
+                        "color": freya.rgb(137, 180, 250)
+                    }),
+                    freya.rect(
+                        {
+                            "direction": "row",
+                            "gap": 12.0
+                        },
+                        [
+                            freya.button("+1 Incrementar", _ => freya.set_state(counter, counter.get() + 1), {
+                                "variant": "primary",
+                                "background": freya.rgb(137, 180, 250)
+                            }),
+                            freya.button("-1 Decrementar", _ => freya.set_state(counter, counter.get() - 1), {
+                                "variant": "secondary",
+                                "background": freya.rgb(69, 71, 90)
+                            }),
+                            freya.button("Zerar", _ => freya.set_state(counter, 0), {
+                                "variant": "danger",
+                                "background": freya.rgb(243, 139, 168)
+                            })
+                        ]
+                    )
+                ]
+            ),
+
+            # Card 2: Controles de Interface (Switch & Slider)
+            freya.card(
+                {
+                    "width": "100%",
+                    "background": freya.rgb(30, 30, 46),
+                    "border_color": freya.rgb(49, 50, 68),
+                    "padding": 20.0,
+                    "gap": 16.0
+                },
+                [
+                    freya.label("Controles de Sistema:", {
+                        "font_size": 18.0,
+                        "color": freya.rgb(186, 194, 222)
+                    }),
+                    
+                    # Linha do Switch
+                    freya.rect(
+                        {
+                            "direction": "row",
+                            "align_items": "center",
+                            "gap": 16.0
+                        },
+                        [
+                            freya.label(f"Modo Turbo GPU ({turbo_mode.get()}):", {
+                                "font_size": 15.0,
+                                "color": freya.rgb(205, 214, 244)
+                            }),
+                            freya.switch(turbo_mode.get(), _ => freya.set_state(turbo_mode, not turbo_mode.get()), {})
+                        ]
+                    ),
+
+                    # Linha do Slider & Barra de Progresso
+                    freya.rect(
+                        {
+                            "direction": "column",
+                            "gap": 8.0
+                        },
+                        [
+                            freya.label(f"Volume de Saída ({volume.get()}%):", {
+                                "font_size": 15.0,
+                                "color": freya.rgb(205, 214, 244)
+                            }),
+                            freya.progress_bar(volume.get() / 100.0, {
+                                "width": 320.0,
+                                "height": 8.0,
+                                "color": freya.rgb(166, 227, 161)
+                            }),
+                            freya.rect(
+                                {
+                                    "direction": "row",
+                                    "gap": 8.0
+                                },
+                                [
+                                    freya.button("25%", _ => freya.set_state(volume, 25.0), { "variant": "ghost" }),
+                                    freya.button("50%", _ => freya.set_state(volume, 50.0), { "variant": "ghost" }),
+                                    freya.button("75%", _ => freya.set_state(volume, 75.0), { "variant": "ghost" }),
+                                    freya.button("100%", _ => freya.set_state(volume, 100.0), { "variant": "ghost" })
+                                ]
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+    )
+}
+
+fn setup() {
+    io.println("Freya UI Dashboard inicializado no Aipo!")
+    freya.mount(view)
+}
+
+fn update(dt) {
+    freya.step(dt)
+}
+
+fn draw() {
+    freya.draw_ui()
+}

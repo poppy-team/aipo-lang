@@ -1,0 +1,98 @@
+# types.aipo — Core Data Structures and Factory Functions for aipo.freya
+# Inspired by Freya UI and Torin Layout Engine
+
+var _element_id_counter = 0
+
+fn next_element_id() -> Int {
+    _element_id_counter = _element_id_counter + 1
+    return _element_id_counter
+}
+
+fn reset_element_counter() {
+    _element_id_counter = 0
+}
+
+struct Rect {
+    var x = 0.0
+    var y = 0.0
+    var width = 0.0
+    var height = 0.0
+}
+
+impl Rect {
+    fn contains(self, px, py) {
+        if px >= self.x and px <= (self.x + self.width) and py >= self.y and py <= (self.y + self.height) {
+            return true
+        }
+        return false
+    }
+}
+
+fn types_make_rect(x, y, w, h) {
+    return Rect {
+        x: x + 0.0,
+        y: y + 0.0,
+        width: w + 0.0,
+        height: h + 0.0
+    }
+}
+
+struct Color {
+    r
+    g
+    b
+    a
+}
+
+fn types_make_color(r, g, b, a) {
+    return Color {
+        r: r,
+        g: g,
+        b: b,
+        a: a
+    }
+}
+
+struct Element {
+    id
+    tag
+    props
+    children
+    var layout = none
+    var is_hovered = false
+    var is_active = false
+}
+
+fn create_element(id, tag, props, children) {
+    return Element {
+        id: id,
+        tag: tag,
+        props: props,
+        children: children,
+        layout: none,
+        is_hovered: false,
+        is_active: false
+    }
+}
+
+struct StateSignal {
+    id
+    var value
+}
+
+impl StateSignal {
+    fn get(self) {
+        return self.value
+    }
+}
+
+fn create_signal(id, value) {
+    return StateSignal {
+        id: id,
+        value: value
+    }
+}
+
+export next_element_id, reset_element_counter
+export Rect, Color, Element, StateSignal
+export types_make_rect, types_make_color, create_element, create_signal

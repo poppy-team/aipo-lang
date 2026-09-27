@@ -1,0 +1,118 @@
+# app.aipo — Application Lifecycle, Hit Testing, and Event Loop for aipo.freya
+# Manages component mount, reactive re-rendering, mouse dispatch, and frame steps
+
+import types as types_mod
+import torin as torin_mod
+import hooks as hooks_mod
+import renderer as renderer_mod
+
+var _root_component = none
+var _root_element = none
+var _prev_mouse_btn = false
+var _hovered_node = none
+
+fn app_get_root_element() {
+    return _root_element
+}
+
+# Re-evaluates component tree and triggers Torin layout computation
+fn rebuild_tree() {
+    if _root_component == none {
+        return
+    }
+
+    hooks_mod.reset_hooks()
+    _root_element = (_root_component)()
+
+    let sw = host_screen_width()
+    let sh = host_screen_height()
+    torin_mod.torin_compute_layout(_root_element, sw, sh)
+    hooks_mod.clear_dirty()
+}
+
+# Hit-testing: finds deepest element under cursor (px, py)
+fn hit_test(node, px: Float, py: Float) {
+    if node == none or node.layout == none {
+        return none
+    }
+
+    if not node.layout.contains(px, py) {
+        return none
+    }
+
+    # Search children from topmost to bottom
+    var i = node.children.len() - 1
+    while i >= 0 {
+        let child = node.children[i]
+        let hit = hit_test(child, px, py)
+        if hit != none {
+            return hit
+        }
+        i = i - 1
+    }
+
+    return node
+}
+
+# Mounts a root declarative Freya component
+fn app_mount(component_fn) {
+    _root_component = component_fn
+    rebuild_tree()
+}
+
+# Updates input, hit testing, and handles clicks
+fn app_update(dt: Float) {
+    if _root_component == none {
+        return
+    }
+
+    let mx = host_mouse_x()
+    let my = host_mouse_y()
+    let btn_down = host_mouse_btn(0)
+
+    # 1. Hit testing and hover tracking
+    let target = hit_test(_root_element, mx, my)
+
+    if _hovered_node != none and _hovered_node != target {
+        _hovered_node.is_hovered = false
+    }
+
+    if target != none {
+        target.is_hovered = true
+        _hovered_node = target
+    } else {
+        _hovered_node = none
+    }
+
+    # 2. Click dispatch (mouse press edge detection)
+    if btn_down and not _prev_mouse_btn {
+        if target != none and target.props.has("on_click") {
+            let handler = target.props["on_click"]
+            if handler != none {
+                let event = {
+                    "x": mx,
+                    "y": my,
+                    "target_id": target.id
+                }
+                (handler)(event)
+            }
+        }
+    }
+    _prev_mouse_btn = btn_down
+
+    # 3. Check if reactive state changed; if so, re-layout tree
+    if hooks_mod.is_dirty() {
+        rebuild_tree()
+    }
+}
+
+# Renders the current frame
+fn app_render() {
+    # Default background: Catppuccin Crust dark tone
+    host_clear_background(0.067, 0.067, 0.106)
+    if _root_element != none {
+        renderer_mod.render_tree(_root_element)
+    }
+}
+
+export app_mount, app_update, app_render, rebuild_tree, hit_test, app_get_root_element

@@ -203,7 +203,25 @@ pub(crate) fn resolve(
     };
     entry_items.retain(|item| !matches!(item, HirItem::Import(_) | HirItem::Export(_)));
     for item in entry_items {
-        items.push(item);
+        match item {
+            HirItem::Fn(mut decl) => {
+                rewrite_function(&mut decl, &entry_scope);
+                items.push(HirItem::Fn(decl));
+            }
+            HirItem::Struct(mut decl) => {
+                for field in &mut decl.fields {
+                    if let Some(default) = field.default.take() {
+                        field.default = Some(rewrite_expr(default, &entry_scope));
+                    }
+                }
+                items.push(HirItem::Struct(decl));
+            }
+            HirItem::Impl(mut block) => {
+                rewrite_impl(&mut block, &entry_scope);
+                items.push(HirItem::Impl(block));
+            }
+            other => items.push(other),
+        }
     }
     let entry_statements = entry_program.statements;
     for statement in entry_statements {

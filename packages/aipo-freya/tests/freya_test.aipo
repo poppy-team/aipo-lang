@@ -1,0 +1,112 @@
+# freya_test.aipo — Comprehensive unit tests for Freya UI framework in Aipo
+
+import aipo.freya as freya
+
+test("color palette and hex parsing") do
+    let c1 = freya.rgb(255, 128, 0)
+    expect.equal(c1.r, 1.0)
+    expect.approx(c1.g, 0.5019, 0.01)
+    expect.equal(c1.b, 0.0)
+    expect.equal(c1.a, 1.0)
+
+    let c2 = freya.rgba(0, 255, 0, 0.5)
+    expect.equal(c2.r, 0.0)
+    expect.equal(c2.g, 1.0)
+    expect.equal(c2.b, 0.0)
+    expect.equal(c2.a, 0.5)
+
+    let hex_c = freya.hex("#ffffff")
+    expect.equal(hex_c.r, 1.0)
+    expect.equal(hex_c.g, 1.0)
+    expect.equal(hex_c.b, 1.0)
+end
+
+test("reactive hooks use_state and set_state") do
+    let sig = freya.use_state(100)
+    expect.equal(sig.get(), 100)
+
+    freya.set_state(sig, 250)
+    expect.equal(sig.get(), 250)
+
+    freya.set_state(sig, sig.get() + 50)
+    expect.equal(sig.get(), 300)
+end
+
+test("element and component trees creation") do
+    let btn_clicked = freya.use_state(false)
+    let btn = freya.button("Clique Aqui", _ => freya.set_state(btn_clicked, true), { "variant": "primary" })
+    expect.equal(btn.tag, "button")
+    expect.true(btn.props.has("on_click"))
+    expect.equal(btn.children.len(), 1)
+
+    let sw = freya.switch(true, _ => none, {})
+    expect.equal(sw.tag, "switch")
+
+    let sl = freya.slider(50.0, 0.0, 100.0, _ => none, {})
+    expect.equal(sl.tag, "slider")
+
+    let pb = freya.progress_bar(0.75, {})
+    expect.equal(pb.tag, "progress_bar")
+
+    let bdg = freya.badge("Ativo", {})
+    expect.equal(bdg.tag, "badge")
+
+    let crd = freya.card({}, [btn, sw])
+    expect.equal(crd.tag, "card")
+    expect.equal(crd.children.len(), 2)
+end
+
+test("torin layout engine coordinates calculation") do
+    let child1 = freya.rect({ "width": 100.0, "height": 40.0 }, [])
+    let child2 = freya.rect({ "width": 150.0, "height": 60.0 }, [])
+    let container = freya.rect(
+        {
+            "direction": "column",
+            "width": 400.0,
+            "height": 300.0,
+            "padding": 10.0,
+            "gap": 15.0
+        },
+        [child1, child2]
+    )
+
+    freya.compute_layout(container, 800.0, 600.0)
+
+    # Root bounds
+    expect.equal(container.layout.x, 0.0)
+    expect.equal(container.layout.y, 0.0)
+    expect.equal(container.layout.width, 400.0)
+    expect.equal(container.layout.height, 300.0)
+
+    # Children bounds in column direction
+    let c1_bounds = child1.layout
+    expect.equal(c1_bounds.x, 10.0)
+    expect.equal(c1_bounds.y, 10.0)
+    expect.equal(c1_bounds.width, 100.0)
+    expect.equal(c1_bounds.height, 40.0)
+
+    let c2_bounds = child2.layout
+    expect.equal(c2_bounds.x, 10.0)
+    expect.equal(c2_bounds.y, 65.0)
+    expect.equal(c2_bounds.width, 150.0)
+    expect.equal(c2_bounds.height, 60.0)
+end
+
+test("torin layout percentage sizing") do
+    let child = freya.rect({ "width": "50%", "height": "25%" }, [])
+    let root = freya.rect({ "width": 800.0, "height": 400.0 }, [child])
+
+    freya.compute_layout(root, 800.0, 400.0)
+
+    let c_bounds = child.layout
+    expect.equal(c_bounds.width, 400.0)
+    expect.equal(c_bounds.height, 100.0)
+end
+
+test("rect point containment hit testing") do
+    let r = freya.create_rect(10.0, 10.0, 100.0, 40.0)
+    expect.true(r.contains(20.0, 20.0))
+    expect.false(r.contains(5.0, 20.0))
+    expect.false(r.contains(120.0, 20.0))
+    expect.false(r.contains(20.0, 60.0))
+end

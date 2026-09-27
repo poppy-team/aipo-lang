@@ -1,0 +1,216 @@
+# components.aipo — Standard Freya UI component library for aipo.freya
+# Includes Button, Switch, Slider, ProgressBar, Card, and Badge
+
+import types as types_mod
+import color as color_mod
+import elements as elements_mod
+
+# Interactive clickable button
+fn make_button(label_text: String, on_click, props: Dict) {
+    let variant = if props.has("variant") then props["variant"] else "primary"
+    let width = if props.has("width") then props["width"] else "auto"
+    let height = if props.has("height") then props["height"] else 38.0
+    let font_size = if props.has("font_size") then props["font_size"] else 14.0
+
+    var default_bg = color_mod.blue
+    if variant == "danger" {
+        default_bg = color_mod.red
+    } elif variant == "secondary" {
+        default_bg = color_mod.surface_1
+    } elif variant == "ghost" {
+        default_bg = color_mod.surface_0
+    }
+
+    let bg = if props.has("background") then props["background"] else default_bg
+    let text_clr = if props.has("color") then props["color"] else color_mod.white
+
+    return elements_mod.make_rect(
+        {
+            "tag": "button",
+            "direction": "row",
+            "align_items": "center",
+            "justify_content": "center",
+            "width": width,
+            "height": height,
+            "background": bg,
+            "border_radius": 8.0,
+            "border_width": 1.0,
+            "border_color": color_mod.surface_2,
+            "padding_x": 16.0,
+            "padding_y": 8.0,
+            "on_click": on_click
+        },
+        [
+            elements_mod.make_label(label_text, {
+                "font_size": font_size,
+                "color": text_clr,
+                "font_weight": "bold"
+            })
+        ]
+    )
+}
+
+# Toggle switch (On/Off)
+fn make_switch(is_on: Bool, on_toggle, props: Dict) {
+    let width = if props.has("width") then props["width"] else 46.0
+    let height = if props.has("height") then props["height"] else 24.0
+
+    let bg = if is_on then color_mod.green else color_mod.surface_1
+    let knob_x = if is_on then 22.0 else 2.0
+
+    return elements_mod.make_rect(
+        {
+            "tag": "switch",
+            "width": width,
+            "height": height,
+            "background": bg,
+            "border_radius": 12.0,
+            "border_width": 1.0,
+            "border_color": color_mod.surface_2,
+            "padding": 2.0,
+            "on_click": on_toggle
+        },
+        [
+            elements_mod.make_rect(
+                {
+                    "tag": "switch_knob",
+                    "width": 20.0,
+                    "height": 20.0,
+                    "offset_x": knob_x,
+                    "background": color_mod.white,
+                    "border_radius": 10.0
+                },
+                []
+            )
+        ]
+    )
+}
+
+# Range slider
+fn make_slider(value: Float, min_val: Float, max_val: Float, on_change, props: Dict) {
+    let width = if props.has("width") then props["width"] else 180.0
+    let height = if props.has("height") then props["height"] else 24.0
+
+    let diff = max_val - min_val
+    let ratio = if diff > 0.0 then (value - min_val) / diff else 0.0
+    let clamped_ratio = if ratio < 0.0 then 0.0 else (if ratio > 1.0 then 1.0 else ratio)
+    let filled_w = (width + 0.0) * clamped_ratio
+
+    return elements_mod.make_rect(
+        {
+            "tag": "slider",
+            "direction": "row",
+            "align_items": "center",
+            "width": width,
+            "height": height,
+            "on_click": on_change
+        },
+        [
+            elements_mod.make_rect(
+                {
+                    "tag": "slider_track",
+                    "width": width,
+                    "height": 6.0,
+                    "background": color_mod.surface_0,
+                    "border_radius": 3.0
+                },
+                [
+                    elements_mod.make_rect(
+                        {
+                            "tag": "slider_fill",
+                            "width": filled_w,
+                            "height": 6.0,
+                            "background": color_mod.blue,
+                            "border_radius": 3.0
+                        },
+                        []
+                    )
+                ]
+            )
+        ]
+    )
+}
+
+# Progress bar
+fn make_progress_bar(progress: Float, props: Dict) {
+    let width = if props.has("width") then props["width"] else 200.0
+    let height = if props.has("height") then props["height"] else 10.0
+    let fill_color = if props.has("color") then props["color"] else color_mod.blue
+
+    let p = if progress < 0.0 then 0.0 else (if progress > 1.0 then 1.0 else progress)
+    let fill_w = (width + 0.0) * p
+
+    return elements_mod.make_rect(
+        {
+            "tag": "progress_bar",
+            "width": width,
+            "height": height,
+            "background": color_mod.surface_0,
+            "border_radius": (height + 0.0) / 2.0
+        },
+        [
+            elements_mod.make_rect(
+                {
+                    "tag": "progress_fill",
+                    "width": fill_w,
+                    "height": height,
+                    "background": fill_color,
+                    "border_radius": (height + 0.0) / 2.0
+                },
+                []
+            )
+        ]
+    )
+}
+
+# Elevated card surface
+fn make_card(props: Dict, children: List) {
+    let width = if props.has("width") then props["width"] else "100%"
+    let height = if props.has("height") then props["height"] else "auto"
+    let padding = if props.has("padding") then props["padding"] else 16.0
+    let gap = if props.has("gap") then props["gap"] else 12.0
+    let bg = if props.has("background") then props["background"] else color_mod.base
+    let border_color = if props.has("border_color") then props["border_color"] else color_mod.surface_0
+    let direction = if props.has("direction") then props["direction"] else "column"
+
+    props["tag"] = "card"
+    props["direction"] = direction
+    props["width"] = width
+    props["height"] = height
+    props["padding"] = padding
+    props["gap"] = gap
+    props["background"] = bg
+    props["border_radius"] = 12.0
+    props["border_width"] = 1.0
+    props["border_color"] = border_color
+
+    return elements_mod.make_rect(props, children)
+}
+
+# Badge tag
+fn make_badge(text: String, props: Dict) {
+    let bg = if props.has("background") then props["background"] else color_mod.surface_1
+    let text_clr = if props.has("color") then props["color"] else color_mod.text
+
+    return elements_mod.make_rect(
+        {
+            "tag": "badge",
+            "direction": "row",
+            "align_items": "center",
+            "justify_content": "center",
+            "background": bg,
+            "border_radius": 10.0,
+            "padding_x": 10.0,
+            "padding_y": 4.0
+        },
+        [
+            elements_mod.make_label(text, {
+                "font_size": 12.0,
+                "color": text_clr,
+                "font_weight": "bold"
+            })
+        ]
+    )
+}
+
+export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge

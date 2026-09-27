@@ -1,0 +1,68 @@
+# ffi.aipo — Host FFI contract bridge for `aipo.egui`
+# Connects Aipo bytecode to the engine-agnostic egui Rust host
+
+fn host_create_context() {
+    return 1
+}
+
+fn host_destroy_context(ctx) {
+}
+
+fn host_begin_frame(ctx, options) {
+}
+
+fn host_end_frame(ctx) {
+    return {
+        "shapes": [],
+        "wants_pointer_input": false,
+        "wants_keyboard_input": false,
+        "cursor": "default"
+    }
+}
+
+fn host_begin_window(title: String, x: Float, y: Float, width: Float, height: Float) {
+}
+
+fn host_end_window() {
+}
+
+fn host_label(text: String) {
+}
+
+fn host_heading(text: String) {
+}
+
+fn host_separator() {
+}
+
+fn host_button(text: String) -> Bool {
+    return false
+}
+
+fn host_checkbox(text: String, checked: Bool) -> Bool {
+    return checked
+}
+
+fn host_slider(text: String, value: Float, min: Float, max: Float) -> Float {
+    return value
+}
+
+fn host_text_edit(label_text: String, current_text: String) -> String {
+    return current_text
+}
+
+fn host_progress_bar(fraction: Float) {
+}
+
+fn host_wants_pointer(ctx) -> Bool {
+    return false
+}
+
+fn host_wants_keyboard(ctx) -> Bool {
+    return false
+}
+
+export host_create_context, host_destroy_context, host_begin_frame, host_end_frame
+export host_begin_window, host_end_window, host_label, host_heading, host_separator
+export host_button, host_checkbox, host_slider, host_text_edit, host_progress_bar
+export host_wants_pointer, host_wants_keyboard

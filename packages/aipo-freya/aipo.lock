@@ -1,0 +1,14 @@
+[[packages]]
+coordinate = "aipo.freya"
+version = "0.1.0"
+digest = "0f368690cf667be159c646fdef5216494dd9996402c5040a5052987ff317226b"
+dependencies = []
+capabilities = []
+targets = [
+    "js",
+    "native",
+]
+
+[packages.source]
+type = "path"
+path = "."

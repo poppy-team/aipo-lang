@@ -1,0 +1,106 @@
+# lib.aipo — Entrypoint for `aipo.freya`
+# Declarative GUI Framework for Aipo inspired by Freya UI and Torin Layout Engine
+
+import types as types_mod
+import color as color_mod
+import torin as torin_mod
+import hooks as hooks_mod
+import elements as elements_mod
+import components as components_mod
+import app as app_mod
+
+# --- Core Elements ---
+fn rect(props: Dict, children: List) {
+    return elements_mod.make_rect(props, children)
+}
+
+fn label(text: String, props: Dict) {
+    return elements_mod.make_label(text, props)
+}
+
+fn container(props: Dict, children: List) {
+    return elements_mod.make_container(props, children)
+}
+
+# --- Built-in Freya Components ---
+fn button(label_text: String, on_click, props: Dict) {
+    return components_mod.make_button(label_text, on_click, props)
+}
+
+fn switch(is_on: Bool, on_toggle, props: Dict) {
+    return components_mod.make_switch(is_on, on_toggle, props)
+}
+
+fn slider(value: Float, min_val: Float, max_val: Float, on_change, props: Dict) {
+    return components_mod.make_slider(value, min_val, max_val, on_change, props)
+}
+
+fn progress_bar(progress: Float, props: Dict) {
+    return components_mod.make_progress_bar(progress, props)
+}
+
+fn card(props: Dict, children: List) {
+    return components_mod.make_card(props, children)
+}
+
+fn badge(text: String, props: Dict) {
+    return components_mod.make_badge(text, props)
+}
+
+# --- Reactive Hooks ---
+fn use_state(initial_value) {
+    return hooks_mod.signal_use_state(initial_value)
+}
+
+fn set_state(sig, new_value) {
+    hooks_mod.signal_set_value(sig, new_value)
+}
+
+# --- Color Utilities ---
+fn rgb(r, g, b) {
+    return color_mod.to_rgb(r, g, b)
+}
+
+fn rgba(r, g, b, a) {
+    return color_mod.to_rgba(r, g, b, a)
+}
+
+fn hex(code: String) {
+    return color_mod.parse_hex(code)
+}
+
+# --- Application Lifecycle ---
+fn mount(component_fn) {
+    app_mod.app_mount(component_fn)
+}
+
+fn step(dt) {
+    app_mod.app_update(dt)
+}
+
+fn draw_ui() {
+    app_mod.app_render()
+}
+
+fn get_root_element() {
+    return app_mod.app_get_root_element()
+}
+
+fn compute_layout(root, screen_w, screen_h) {
+    torin_mod.torin_compute_layout(root, screen_w, screen_h)
+}
+
+fn create_rect(x, y, w, h) {
+    return types_mod.types_make_rect(x, y, w, h)
+}
+
+fn create_color(r, g, b, a) {
+    return types_mod.types_make_color(r, g, b, a)
+}
+
+export rect, label, container
+export button, switch, slider, progress_bar, card, badge
+export use_state, set_state
+export rgb, rgba, hex
+export mount, step, draw_ui, get_root_element, compute_layout
+export create_rect, create_color

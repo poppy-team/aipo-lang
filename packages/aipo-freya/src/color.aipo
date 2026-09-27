@@ -1,0 +1,65 @@
+# color.aipo — Color utilities and Catppuccin Mocha palette for aipo.freya
+# Part of `aipo.freya`
+
+import types as types_mod
+
+fn to_rgb(r, g, b) {
+    let rf = (r + 0.0) / 255.0
+    let gf = (g + 0.0) / 255.0
+    let bf = (b + 0.0) / 255.0
+    return types_mod.types_make_color(rf, gf, bf, 1.0)
+}
+
+fn to_rgba(r, g, b, a) {
+    let rf = (r + 0.0) / 255.0
+    let gf = (g + 0.0) / 255.0
+    let bf = (b + 0.0) / 255.0
+    return types_mod.types_make_color(rf, gf, bf, a + 0.0)
+}
+
+fn parse_hex(code: String) {
+    if code == "#ffffff" or code == "ffffff" {
+        return to_rgb(255, 255, 255)
+    }
+    if code == "#000000" or code == "000000" {
+        return to_rgb(0, 0, 0)
+    }
+    return to_rgb(100, 100, 100)
+}
+
+# Standard semantic constants
+let transparent = to_rgba(0, 0, 0, 0.0)
+let white = to_rgb(255, 255, 255)
+let black = to_rgb(0, 0, 0)
+
+# Catppuccin Mocha Palette
+let crust = to_rgb(17, 17, 27)
+let mantle = to_rgb(24, 24, 37)
+let base = to_rgb(30, 30, 46)
+let surface_0 = to_rgb(49, 50, 68)
+let surface_1 = to_rgb(69, 71, 90)
+let surface_2 = to_rgb(88, 91, 112)
+let overlay_0 = to_rgb(108, 112, 134)
+let overlay_1 = to_rgb(127, 132, 156)
+let subtext = to_rgb(166, 173, 200)
+let text = to_rgb(205, 214, 244)
+
+let blue = to_rgb(137, 180, 250)
+let lavender = to_rgb(180, 190, 254)
+let sapphire = to_rgb(116, 199, 236)
+let sky = to_rgb(137, 220, 235)
+let teal = to_rgb(148, 226, 213)
+let green = to_rgb(166, 227, 161)
+let yellow = to_rgb(249, 226, 175)
+let peach = to_rgb(250, 179, 135)
+let maroon = to_rgb(235, 160, 172)
+let red = to_rgb(243, 139, 168)
+let mauve = to_rgb(203, 166, 247)
+let pink = to_rgb(245, 194, 231)
+let flamingo = to_rgb(242, 205, 205)
+let rosewater = to_rgb(245, 224, 220)
+
+export to_rgb, to_rgba, parse_hex
+export transparent, white, black
+export crust, mantle, base, surface_0, surface_1, surface_2, overlay_0, overlay_1, subtext, text
+export blue, lavender, sapphire, sky, teal, green, yellow, peach, maroon, red, mauve, pink, flamingo, rosewater
