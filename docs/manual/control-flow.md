@@ -1,6 +1,6 @@
 # Controle de Fluxo & Falhas
 
-O Aipo oferece estruturas de controle de fluxo limpas e expressivas inspiradas na ergonomia moderna de Gleam e Swift: blocos delimitados por chaves `{ ... }` sem parênteses redundantes ao redor de condições, combinados com um modelo transacional de tratamento de erros com rollback atômico.
+O Aipo oferece estruturas de controle de fluxo limpas, determinísticas e altamente legíveis: blocos delimitados por chaves `{ ... }` sem parênteses redundantes ao redor de condições, combinados com um modelo transacional de tratamento de erros com rollback atômico.
 
 ---
 
@@ -8,7 +8,7 @@ O Aipo oferece estruturas de controle de fluxo limpas e expressivas inspiradas n
 
 ### Bloco `if ... elif ... else`
 
-As condições dispensam parênteses obrigatórios e os blocos são abertos e fechados por chaves `{ ... }`. Isso previne a "cegueira de fechamento", habilita destaque visual (*rainbow brackets*) e dobragem de código (*code folding*) nativa em qualquer IDE:
+As condições dispensam parênteses obrigatórios e os blocos são abertos e fechados por chaves `{ ... }`. A sintaxe fornece clareza visual imediata, com suporte nativo a realce de pares (*rainbow brackets*) e dobragem de código (*code folding*) em qualquer IDE:
 
 ```aipo
 var pontuacao = 85

@@ -137,8 +137,8 @@ impl Button {
     }
 }
 
-# Button automatically satisfies Drawable!
-# No 'implements' keyword or orphan 'satisfy' statements required.
+# Button satisfies Drawable automatically via structural method matching.
+# No explicit implementation declaration is required.
 
 # Function accepting any type that fulfills the Drawable contract
 fn render_element(item: Drawable) -> String {

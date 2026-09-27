@@ -137,8 +137,8 @@ impl Botao {
     }
 }
 
-# Botao satisfaz Renderizavel AUTOMATICAMENTE!
-# Não há palavras-chave 'implements' nem comandos órfãos 'satisfy'.
+# Botao satisfaz Renderizavel automaticamente por correspondência estrutural de métodos.
+# Nenhuma declaração explícita de implementação é necessária.
 
 # Aceita qualquer valor que satisfaça a interface Renderizavel
 fn renderizar_elemento(item: Renderizavel) -> String {

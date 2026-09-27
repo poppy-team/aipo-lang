@@ -17,7 +17,7 @@ A **Wave 1** elevou o Aipo além de um interpretador convencional, introduzindo 
   - Se a execução for bem-sucedida, o journal é descartado sem custo de cópia residual.
 
 ### 3. Validação Estática e em Runtime de Interfaces
-- Suporte a `interface` e `satisfy`:
+- Suporte a interfaces formais e conformidade estrutural:
   - O analisador semântico valida previamente a correspondência de nomes de métodos, aridade de parâmetros e compatibilidade do receptor `self`.
   - Em tempo de execução, chamadas através de interfaces realizam validação estrutural segura, disparando falhas determinísticas caso um objeto não conforme seja fornecido.
 

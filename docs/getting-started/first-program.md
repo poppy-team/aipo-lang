@@ -39,7 +39,7 @@ struct Conta {
 }
 
 impl Conta {
-    fn init(titular, numero = 0, saldo = 0.0) {
+    init(titular, numero = 0, saldo = 0.0) {
         self.titular = titular
         self.numero = numero
         self.saldo = saldo

@@ -155,14 +155,38 @@ let clicou = g.input.mouse_down("left")
 
 ### Efeitos Sonoros e Trilha Sonora
 ```aipo
+// Reprodução de arquivos de áudio externos
 g.audio.play("tiro.wav")
 g.audio.play_sound("tiro.wav", volume: 0.8, pitch: 1.2)
 g.audio.play_music("trilha_fase1.ogg", volume: 0.5, loop: true)
+
+// Síntese Procedural Chiptune (Estilo SFXR) — Zero arquivos externos necessários!
+g.audio.sfx("coin")       // Moeda / Coleta
+g.audio.sfx("jump")       // Pulo com curva ascendente
+g.audio.sfx("laser")      // Disparo de projétil
+g.audio.sfx("explosion")  // Explosão em ruído branco
+g.audio.sfx("powerup")    // Upgrade sonoro
 ```
 
 ---
 
-## 6. Sistema de Nós Visuais Anti-Espaguete
+## 6. Animações com Tweening & "Game Juice"
+
+O módulo de tweening (`aipo.game.tween`) confere elasticidade e vida ao jogo com interpolações suaves e curvas de aceleração:
+
+```aipo
+// Squash & Stretch ao aterrissar ou pular
+g.animate(heroi, prop: "scale_x", to_val: 1.3, duration: 0.1, ease_fn: g.ease_out)
+g.animate(heroi, prop: "scale_y", to_val: 0.7, duration: 0.1, ease_fn: g.ease_out, on_complete: _ => {
+    // Retorna ao tamanho normal com efeito elástico
+    g.animate(heroi, prop: "scale_x", to_val: 1.0, duration: 0.2, ease_fn: g.bounce_out)
+    g.animate(heroi, prop: "scale_y", to_val: 1.0, duration: 0.2, ease_fn: g.bounce_out)
+})
+```
+
+---
+
+## 7. Sistema de Nós Visuais Anti-Espaguete
 
 O módulo `aipo.game.nodes` implementa a arquitetura de programação visual para ferramentas visuais (como o futuro **Aipo Game Studio**).
 

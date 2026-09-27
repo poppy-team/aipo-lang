@@ -17,7 +17,7 @@
   - Upon successful block completion, the journal is committed and discarded without lingering memory overhead.
 
 ### 3. Static and Runtime Interface Validation
-- Support for `interface` declarations and `satisfy` assertions:
+- Support for formal interfaces and structural conformance:
   - Semantic analysis pre-validates method names, parameter arities, and `self` receiver compatibility.
   - At runtime, calls dispatched through interfaces perform structural validation, yielding deterministic faults if an incompatible object is provided.
 

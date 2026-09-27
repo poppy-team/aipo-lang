@@ -10,19 +10,19 @@ To guarantee clean, high-performance, and accessible code (especially welcoming 
 
 | Canonical Practice (The Aipo Way) | Anti-Pattern to Avoid | Why this matters |
 | :--- | :--- | :--- |
-| `let name = "Dev"` (Immutable by default) | `var name = "Dev"` | Prevents accidental mutation and simplifies reasoning about program state. |
-| `struct Point { x, var y = 0 }` | Unmarked mutable fields or `fixed` | Consistent immutability across scopes; mutation requires explicit `var`. |
-| `User{ name: "Ana", age: 28 }` | `User{ name = "Ana" }` | Colon unifies key-value association across dictionaries and structs without motor confusion. |
-| `if condition { ... }` (Brace blocks) | `if condition ... end` | Parenthesis-free braces prevent "end-blindness" and enable native *rainbow brackets* and auto-folding. |
-| `fn deposit(var self, amount)` | `fn deposit(self!, amount)` | `var` is the universal keyword for mutability; eliminates cryptic isolated sigils. |
-| `a // b` and `a //= b` (Integer division) | `a div b` | Arithmetic operators maintain consistency and symbolic symmetry. |
-| `f"User {id}: {email}"` | `"User " + String(id) + ": " + email` | Direct interpolation eliminates visual clutter and intermediate heap allocations. |
-| `r"C:\data\report.csv"` | `"C:\\data\\report.csv"` | Raw strings eliminate backslash pollution in file paths and regex patterns. |
-| `let city = user?.profile?.city` | `if user != none and ...` | Safe navigation avoids redundant nested null-checking boilerplate. |
-| `let port = load_port() or_else 8080` | `attempt { port = load_port() } failed ...` | `or_else` provides immediate default values in single-line failure expressions. |
-| `data |> filter() |> calculate()` | `calculate(filter(data))` | The pipeline operator expresses data transformations in natural left-to-right order. |
-| `list.add(item)` | `list.push(item)` | `.add()` is the universal canonical insertion method for lists and sets. |
-| `data.lazy().filter(...).collect()` | `data.filter(...).map(...)` | `.lazy()` consumes constant memory without allocating temporary intermediate lists. |
+| `let name = "Dev"` (Immutable by default) | `var name = "Dev"` without need for mutation | Prevents accidental mutation and simplifies deterministic reasoning about state. |
+| `struct Point { x, var y = 0 }` (Immutable fields by default) | Global mutations or unstructured state | Guarantees struct integrity; mutation requires explicit intent via `var`. |
+| `User{ name: "Ana", age: 28 }` (Key-value with `:`) | Divergent mapping syntax | Colon unifies key-value association across dictionaries and structs without motor confusion. |
+| `if condition { ... }` (Brace blocks) | Redundant parentheses around conditions | Lean syntax without parenthesis clutter, fully compatible with native rainbow brackets and code folding. |
+| `fn deposit(var self, amount)` (Explicit mutator receiver) | Hidden side effects in methods | `var` is the universal keyword for mutability, making side effects visually clear. |
+| `a // b` and `a //= b` (Integer division) | Truncated manual casts | Expressive and symmetric canonical arithmetic operator alongside `+`, `-`, `*`, `/`. |
+| `f"User {id}: {email}"` (Direct interpolation) | String concatenation `"User " + String(id) + ": " + email` | Direct interpolation eliminates visual clutter and intermediate heap allocations. |
+| `r"C:\data\report.csv"` (Raw strings) | Escape sequences `"C:\\data\\report.csv"` | Raw strings eliminate backslash pollution in file paths and regex patterns. |
+| `let city = user?.profile?.city` (Safe navigation) | Defensive cascading `if user != none and ...` | Safe navigation avoids redundant nested null-checking boilerplate. |
+| `let port = load_port() or_else 8080` (Fallback `or_else`) | Heavy error handling `attempt { port = ... } failed ...` | `or_else` provides immediate default values in failure-prone expressions. |
+| `data |> filter() |> calculate()` (Pipeline `\|>`) | Deep nesting `calculate(filter(data))` | The pipeline operator expresses data transformations in natural left-to-right order. |
+| `list.add(item)` (Universal insertion) | Heterogeneous collection operations | `.add()` is the universal canonical insertion method for lists and sets. |
+| `data.lazy().filter(...).collect()` (Lazy evaluation) | Intermediate heap allocations | `.lazy()` consumes constant memory without allocating temporary intermediate lists. |
 
 ---
 

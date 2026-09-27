@@ -87,7 +87,7 @@ Related ADPs.**
 - **Owns:** typed AST nodes with spans, literal kinds (incl. f/r/fr strings, multiline), match/when, attempt/failed, trailing blocks (pre-lowering).
 - **Allowed deps:** aipo-source, aipo-diagnostics, aipo-syntax (consumes its output).
 - **Forbidden:** name resolution decisions, IR, VM.
-- **Invariants:** every AST node has a span; structural phase (import/export/satisfy/fn/struct/interface/impl) is distinguishable from executable phase.
+- **Invariants:** every AST node has a span; structural phase (import/export/fn/struct/interface/impl) is distinguishable from executable phase.
 - **Testing:** builder unit tests; snapshot tests; property test (AST spans point at valid syntax).
 - **Related ADPs:** none.
 
@@ -101,7 +101,7 @@ Related ADPs.**
 - **Related ADPs:** none.
 
 ### aipo-sema (MVP)
-- **Responsibility:** semantic analysis: name resolution, lexical scopes, shadowing/redeclaration rules, mutability-path checks (let/var/parameter `!`/`self!`), arity and signature contract checks, structural module resolution (imports acyclic, exports), value/no-result function classification, `is`/`T?` handling, structural interface compatibility (`satisfy`, `is Interface`).
+- **Responsibility:** semantic analysis: name resolution, lexical scopes, shadowing/redeclaration rules, mutability-path checks (let/var, struct field immutability, `var self`), arity and signature contract checks, structural module resolution (imports acyclic, exports), value/no-result function classification, `is`/`T?` handling, structural interface compatibility (`is Interface`).
 - **Owns:** resolver, scope tree, semantic facts (resolved symbols, mutability), type/category lattice for opportunist analysis, interface compatibility checker.
 - **Allowed deps:** aipo-source, aipo-diagnostics, aipo-ast, aipo-hir.
 - **Forbidden:** bytecode, VM, JS; no IR construction (aipo-ir builds it).

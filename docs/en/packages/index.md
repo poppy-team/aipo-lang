@@ -13,6 +13,7 @@ In accordance with language governance, **domain-specific features (such as HTML
 | **[`aipo.html`](/en/packages/aipo-html)** | `v0.1.0` | **Web & DOM** | Declarative HTML5 DSL, typed CSS-in-Aipo, and **Fine-Grained MVU** reactivity for browsers. |
 | **[`aipo.ui`](/en/packages/aipo-ui)** | `v0.1.0` | **Multiplatform UI** | Universal declarative UI framework (Desktop GPU via Skia/Freya, WebGL, and TUI) with Flexbox/Taffy layout. |
 | **[`aipo.game`](/en/packages/aipo-game)** | `v0.1.0` | **2D Game Engine** | Actor and Scene-driven 2D micro-engine featuring 1-line behaviors, visual nodes, and deterministic simulation. |
+| **[`aipo.http`](/en/packages/aipo-http)** *(Roadmap)* | `v0.1.0-alpha` | **Web Server & APIs** | Asynchronous HTTP/WebSocket microframework with type-safe Radix tree routing inspired by Hono and FastAPI. |
 
 ---
 

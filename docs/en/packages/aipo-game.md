@@ -155,14 +155,38 @@ let clicked = g.input.mouse_down("left")
 
 ### Sound Effects & Music
 ```aipo
+// External audio file playback
 g.audio.play("laser.wav")
 g.audio.play_sound("laser.wav", volume: 0.8, pitch: 1.2)
 g.audio.play_music("bgm_stage1.ogg", volume: 0.5, loop: true)
+
+// Procedural Chiptune SFX (SFXR style) — Zero external audio files required!
+g.audio.sfx("coin")       // Coin / Pickup chime
+g.audio.sfx("jump")       // Rising pitch jump sound
+g.audio.sfx("laser")      // Blaster laser sound
+g.audio.sfx("explosion")  // White noise explosion rumble
+g.audio.sfx("powerup")    // Ascending arpeggio powerup
 ```
 
 ---
 
-## 6. Anti-Spaghetti Visual Scripting Nodes
+## 6. Tweening & "Game Juice" Animations
+
+The tweening module (`aipo.game.tween`) infuses games with springy, elastic animations using customizable easing curves:
+
+```aipo
+// Squash & Stretch on landing or jumping
+g.animate(player, prop: "scale_x", to_val: 1.3, duration: 0.1, ease_fn: g.ease_out)
+g.animate(player, prop: "scale_y", to_val: 0.7, duration: 0.1, ease_fn: g.ease_out, on_complete: _ => {
+    // Return to normal dimensions with a bouncy settle
+    g.animate(player, prop: "scale_x", to_val: 1.0, duration: 0.2, ease_fn: g.bounce_out)
+    g.animate(player, prop: "scale_y", to_val: 1.0, duration: 0.2, ease_fn: g.bounce_out)
+})
+```
+
+---
+
+## 7. Anti-Spaghetti Visual Scripting Nodes
 
 The `aipo.game.nodes` module defines the data structures and compiler for graphical editing tools.
 

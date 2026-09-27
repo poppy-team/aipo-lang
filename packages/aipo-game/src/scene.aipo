@@ -3,6 +3,7 @@
 
 import .actor as act
 import .ffi as ffi
+import .tween as tween_mod
 
 struct SceneType {
     name: String
@@ -79,7 +80,10 @@ fn step_simulation(sc: Scene, dt: Float) {
         }
     }
 
-    // 2. Update behaviors and actor scripts
+    // 2. Update active easing animations (tweens)
+    tween_mod.update_tweens(dt)
+
+    // 3. Update behaviors and actor scripts
     for actor in sc.actors {
         if actor.is_alive {
             for b in actor.behaviors {

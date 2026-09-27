@@ -39,7 +39,7 @@ struct Account {
 }
 
 impl Account {
-    fn init(holder, account_number = 0, balance = 0.0) {
+    init(holder, account_number = 0, balance = 0.0) {
         self.holder = holder
         self.account_number = account_number
         self.balance = balance

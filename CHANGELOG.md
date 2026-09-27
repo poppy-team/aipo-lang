@@ -70,15 +70,15 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [0.1.0] - 2026-09-26 (Linha de Base Stack VM)
 
-- **Pivot Ergonômico de Sintaxe e Filosofia de Design (ADP-012)**:
-  - **Blocos Delimitados por Chaves (`{ ... }`)**: Adoção de blocos explícitos com `{ ... }` em todas as estruturas de controle (`if`, `while`, `loop`, `repeat`, `each`, `match`, `attempt`, `await do`) e definições de itens (`fn`, `struct`, `impl`, `init`, `invariant`, `interface`), eliminando a necessidade de parênteses em condições e abolindo o ruído visual da palavra-chave `end`.
-  - **Imutabilidade de Campos de Struct por Padrão**: Campos declarados de forma simples em `struct` (`id`, `created_at`) são imutáveis por padrão. Mutabilidade exige prefixo explícito `var` (`var status = "idle"`). A palavra-chave `fixed` foi extinta.
+- **Especificação Ergonômica de Sintaxe e Filosofia de Design (ADP-012)**:
+  - **Blocos Delimitados por Chaves (`{ ... }`)**: Blocos estruturados explícitos com `{ ... }` em todas as estruturas de controle (`if`, `while`, `loop`, `repeat`, `each`, `match`, `attempt`, `await do`) e definições (`fn`, `struct`, `impl`, `init`, `invariant`, `interface`), dispensando parênteses ao redor de condições e garantindo alta legibilidade e suporte pleno a rainbow brackets.
+  - **Imutabilidade de Campos de Struct por Padrão**: Campos declarados em `struct` (`id`, `created_at`) são estritamente imutáveis por padrão. Mutabilidade de campos exige declaração explícita com `var` (`var status = "idle"`).
   - **Instanciação Simétrica de Struct com Dois-Pontos (`:`)**: Padronização da inicialização de structs usando pares chave-valor idênticos aos dicionários (`User{ name: "Dev", age: 30 }`), unificando o modelo mental da linguagem.
-  - **Mutabilidade Universal de Receptores (`var self`)**: Substituição de `self!` por `var self` em métodos e hooks de invariante, preservando conformidade com a declaração de variáveis mutáveis da linguagem.
-  - **Subtipagem Estrutural Automática**: Structs satisfazem interfaces implicitamente quando suas assinaturas de método conferem, tornando o top-level `satisfy Type: Interface` opcional (útil como asserção explícita de compilação).
-  - **Divisão Inteira Truncada (`//` e `//=`)**: Adoção de `//` e `//=` para divisão inteira truncada em direção a zero, substituindo `div` e `div=`.
-  - **Formatter Canônico (`aipo-formatter`)**: Atualizado para suportar e formatar canonicamente blocos com `{ ... }`, espaçamento interno ergonômico de chaves em uma linha e alinhamento idempotente.
-  - **Documentação e Exemplos Multi-idiomas**: 100% da documentação oficial (em Português e Inglês) e todos os 24 programas em `examples/` atualizados e validados com 100% de paridade entre a VM e o backend JavaScript.
+  - **Mutabilidade Universal de Receptores (`var self`)**: Uso canônico de `var self` em métodos mutadores e hooks, alinhando a mutabilidade de instâncias à palavra-chave universal `var`.
+  - **Subtipagem Estrutural Automática**: Structs satisfazem interfaces implicitamente quando suas assinaturas de método conferem, dispensando burocracias de acoplamento.
+  - **Divisão Inteira Truncada (`//` e `//=`)**: Operadores canônicos `//` e `//=` para divisão inteira truncada em direção a zero, com simetria aritmética total.
+  - **Formatter Canônico (`aipo-formatter`)**: Formatação canônica de blocos com `{ ... }`, espaçamento interno ergonômico e alinhamento idempotente.
+  - **Documentação e Exemplos Multi-idiomas**: 100% da documentação oficial (em Português e Inglês) e todos os 24 programas em `examples/` alinhados e validados com 100% de paridade entre a VM, WebAssembly e o backend JavaScript.
 - **Recorte da `aipo v0.1.0` (ADP-008)**: a primeira release é da linguagem, com async, CLI mínima, test runner, C ABI síncrona e thin proofs de interoperabilidade Rust/C/JS; engines, editors, registry e web profile completo ficam pós-v1.
 - **Test Runner Canônico `aipo test` (ADP-008, ADP-012)**:
   - Implementado o comando `aipo test` no CLI para descoberta automática recursiva de testes em arquivos `*_test.aipo` e `test_*.aipo`.

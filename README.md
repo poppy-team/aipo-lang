@@ -4,9 +4,9 @@
 > in Rust, and also compiles to JavaScript. Both backends must produce identical output.
 
 ```aipo
-fn greet(name)
+fn greet(name: String) -> String {
     return f"Hello, {name}!"
-end
+}
 
 io.println(greet("world"))
 ```
@@ -15,57 +15,49 @@ io.println(greet("world"))
 
 You need: Rust 1.85+ and Node 20+.
 
-1. Build it:
+1. Build the CLI:
    ```bash
    cargo build -p aipo-cli
    ```
 2. Run a program:
    ```bash
-   cargo run -q -p aipo-cli -- run examples/01_fizzbuzz.aipo
+   cargo run -q -p aipo-cli -- run examples/24_idiomatic_aipo_showcase.aipo
    ```
-3. Done. To learn the commands, see the table below.
+3. Run the test suite:
+   ```bash
+   cargo run -q -p aipo-cli -- test
+   ```
 
-## Commands
+## Developer Tooling & Commands
 
-| What you want | Command |
-|---|---|
-| Run a program | `aipo run <file.aipo>` |
-| Check for errors (no execution) | `aipo check <file.aipo>` |
-| Build a JavaScript bundle | `aipo build <file.aipo> --out dist` then `node dist/app.js` |
-| Format code | `aipo fmt <files...> [--check]` |
-| Machine-readable errors | Add `--message-format=jsonl` |
-| Version / help | `aipo --version`, `aipo --help` |
+| Task | Command | Description |
+|---|---|---|
+| **Run Program** | `aipo run <file.aipo>` | Executes via VM or WebAssembly JIT (`--wasm`) |
+| **Run Tests** | `aipo test [path] [--filter <pattern>]` | Automated test runner with temporal/PRNG isolation |
+| **Type & Semantic Check** | `aipo check <file.aipo>` | Instant static analysis without execution |
+| **Build Bundle / Wasm** | `aipo build <file.aipo> [--target <js\|wasm>]` | Emits JS bundle (`dist/app.js`) or Wasm binary (`dist/app.wasm`) |
+| **Code Formatting** | `aipo fmt <files...> [--check]` | Opinionated canonical formatter (CI audit with `--check`) |
+| **Package Management** | `aipo package <lock\|audit\|cache>` | Hermetic lockfiles, SHA pinning, and offline caching |
+| **Bytecode / Wasm Disasm** | `aipo disasm <file.aibc\|file.wasm>` | Disassembles to readable bytecode or WAT text |
 
-Exit codes: `0` = ok. `1` = language error. `2` = wrong command usage.
+Exit codes: `0` = OK, `1` = Language or test failure, `2` = Command usage error.
 
-Full reference: [`docs/reference/cli.md`](docs/reference/cli.md).
+Full reference: [`docs/tools/index.md`](docs/tools/index.md) and [`docs/reference/cli.md`](docs/reference/cli.md).
 
 ## What is Aipo?
 
-Short version, one idea per line:
-
-- Small and general-purpose.
-- Dynamically typed, but types are checked (strongly typed).
-- Optional contracts on functions: `fn add(a: Int, b: Int) -> Int`.
-- Safe strings: always valid Unicode, normalized.
-- Two error channels, never mixed:
-  - Recoverable problems → `Failure` (you catch with `attempt`).
-  - Programming bugs → faults (they stop the program).
-- Modules: one file = one module.
-- Small standard library: Prelude, `math`, `string`, `io`.
-
-<details>
-<summary>More detail (types, structs, errors)</summary>
-
-- Literals: `none`, `true`/`false`, `Int` (±(2^53−1)), finite `Float`, `Byte`, strings (`"…"`, `f"…"`, `r"…"`, `fr"…"`, `"""…"""`).
-- `let`/`var`, closures, local functions, default and named arguments, `do … end` blocks, `|>` pipelines.
-- `struct` with `fixed` fields, `init` and `invariant()` hooks, `impl` methods.
-- Ordered `List`/`Dict`, `Bytes(count)`, ranges, tolerant slicing.
-- Interfaces are structural, checked with `satisfy`.
-- The executable definition of all of the above is the corpus in [`docs/conformance/`](docs/conformance/).
-- If the VM and the JS backend disagree on any program, that is a bug.
-
-</details>
+- **Clean & Ergonomic Syntax**: Curly-brace blocks `{ ... }` without parentheses around conditions, designed for cognitive clarity and neurodivergent accessibility.
+- **Strong Dynamic Typing with Optional Contracts**: Fast dynamic prototyping with structural signature contracts on boundaries (`fn compute(val: Int) -> Float`).
+- **Immutability by Default**: Variables (`let`) and struct fields are immutable unless declared with `var`. Receiver mutation requires explicit `var self`.
+- **Automatic Structural Interfaces**: Types satisfy interfaces automatically when signatures match, without ceremony or boilerplate.
+- **Safe Unicode Strings**: Always valid UTF-8 with automatic NFC normalization, f-strings (`f"Hello, {name}!"`), raw strings (`r"..."`), and multi-line strings (`"""..."""`).
+- **Two Separate Error Channels**:
+  - Recoverable failures: `fail(msg)`, captured via `attempt { ... } failed err { ... }` with automatic mutation rollback, or fallback with `or_else`.
+  - Programming faults: Fatal violations (overflow, contract breach) halt execution deterministically.
+- **Cooperative Virtual-Time Async**: `async fn`, sequential `await do { ... }`, and structured concurrency combinators (`task.spawn`, `task.all`, `task.race`, `task.sleep`).
+- **Standard Library Built-in**: Global modules (`math`, `string`, `io`, `task`, `time`, `random`, `json`, `binary`, `path`, `url`, `regex`, `expect`, `testing`, `fs`, `env`).
+- **Dual Execution Substrates**: Native WebAssembly (Wasm 2.0 / WASI) with JIT execution via Wasmtime, Stack VM interpreter, and optimized ES2022 JavaScript emitter.
+- **Hermetic Package Manager**: Cryptographically pinned dependencies by commit SHA, deterministic lockfiles, and immutable local cache.
 
 ## Where things live
 

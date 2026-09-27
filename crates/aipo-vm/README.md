@@ -14,9 +14,9 @@
 - **Data & Collections**:
   - `List`: Ordered sequence supporting negative indexing (e.g. `-1` for last element) and bounds checking (`AIPO_RT_INDEX_OUT_OF_RANGE`).
   - `Dict`: Key-value map preserving insertion order.
-  - `Struct`: Named instances with `fixed` immutability enforcement and post-mutation `invariant` validation.
+  - `Struct`: Named instances with immutability by default, `var` mutability tracking, and post-mutation `invariant` validation.
 - **Error Model (Model B)**:
   - `Failure`: Recoverable error value created via `fail(message)` with mandatory `.message` property, automatically propagating across unhandled expressions and calls.
-  - Recovery: `attempt ... failed err ... end` blocks register `HandlerFrame` to catch failures; `or_else` provides expression-level fallback.
+  - Recovery: `attempt { ... } failed err { ... }` blocks register `HandlerFrame` to catch failures; `or_else` provides expression-level fallback.
   - Runtime Faults: Unrecoverable programming/contract violations (`VmFault`) that bypass `attempt` handlers and halt execution.
 - **Safety**: `#![forbid(unsafe_code)]`. Zero unhandled panics escaping as user-facing errors.

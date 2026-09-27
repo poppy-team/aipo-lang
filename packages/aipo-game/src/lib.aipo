@@ -7,6 +7,8 @@ import .behaviors as behaviors_mod
 import .input as input_mod
 import .audio as audio_mod
 import .nodes as nodes_mod
+import .sfx as sfx_mod
+import .tween as tween_mod
 
 // Core Factory Functions
 export act_mod.actor
@@ -17,7 +19,14 @@ export behaviors_mod as behaviors
 export input_mod as input
 export audio_mod as audio
 export nodes_mod as nodes
+export sfx_mod as sfx
+export tween_mod as tween
+
+// Tween & Easing Shorthands
+export tween_mod.create_tween as animate
+export tween_mod.linear, tween_mod.ease_in, tween_mod.ease_out, tween_mod.ease_in_out, tween_mod.bounce_out
 
 // Types
 export act_mod.Actor, act_mod.ActorType
 export scene_mod.Scene, scene_mod.SceneType
+

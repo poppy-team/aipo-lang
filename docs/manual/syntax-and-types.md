@@ -10,19 +10,19 @@ Para garantir código limpo, de alta performance e fácil de ler (especialmente 
 
 | Prática Canônica (O Jeito Aipo) | Anti-Padrão a Evitar | Por que isso importa? |
 | :--- | :--- | :--- |
-| `let nome = "Dev"` (Imutável por padrão) | `var nome = "Dev"` | Previne mutações acidentais e facilita o raciocínio sobre o estado do programa. |
-| `struct Ponto { x, var y = 0 }` | Campos mutáveis sem aviso ou `fixed` | Imutabilidade consistente em todos os escopos; mutabilidade exige `var` explícito. |
-| `Usuario{ nome: "Ana", idade: 28 }` | `Usuario{ nome = "Ana" }` | Dois-pontos unifica a sintaxe de associação em dicionários e structs sem conflito motor. |
-| `if condicao { ... }` (Blocos com chaves) | `if condicao ... end` | Chaves sem parênteses previnem a "cegueira de end", habilitam *rainbow brackets* e auto-folding. |
-| `fn depositar(var self, valor)` | `fn depositar(self!, valor)` | `var` é a palavra universal de mutabilidade; elimina caracteres crípticos soltos. |
-| `a // b` e `a //= b` (Divisão inteira) | `a div b` | Operadores aritméticos possuem consistência e simetria simbólica. |
-| `f"Usuário {id}: {email}"` | `"Usuário " + String(id) + ": " + email` | Interpolação direta elimina ruído visual e múltiplas alocações temporárias no heap. |
-| `r"C:\dados\relatorio.csv"` | `"C:\\dados\\relatorio.csv"` | Strings brutas eliminam o excesso de barras invertidas em caminhos e regex. |
-| `let cidade = usuario?.perfil?.cidade` | `if usuario != none and ...` | Navegação segura evita verificações aninhadas redundantes de nulidade. |
-| `let porta = ler_porta() or_else 8080` | `attempt { porta = ler_porta() } failed ...` | `or_else` fornece valores padrão imediatos em expressões de falha de linha única. |
-| `dados |> filtrar() |> calcular()` | `calcular(filtrar(dados))` | O operador pipeline expressa transformações na ordem natural de execução. |
-| `lista.add(item)` | `lista.push(item)` | `.add()` é a operação canônica universal de inserção em listas e conjuntos. |
-| `dados.lazy().filter(...).collect()` | `dados.filter(...).map(...)` | `.lazy()` consome memória constante sem gerar listas temporárias intermediárias. |
+| `let nome = "Dev"` (Imutabilidade por padrão) | `var nome = "Dev"` sem necessidade de mutação | Previne mutações acidentais e facilita o raciocínio determinístico sobre o estado. |
+| `struct Ponto { x, var y = 0 }` (Campos imutáveis por padrão) | Mutações globais ou campos mutáveis desnecessários | Mantém integridade de estruturas; mutabilidade exige intenção explícita com `var`. |
+| `Usuario{ nome: "Ana", idade: 28 }` (Chave-valor com `:`) | Sintaxe divergente de mapeamento | Dois-pontos unifica a sintaxe de associação em dicionários e structs sem conflito motor. |
+| `if condicao { ... }` (Blocos com chaves) | Parênteses redundantes ao redor de condições | Sintaxe enxuta, sem parênteses extras e compatível com realce visual por pares (*rainbow brackets*). |
+| `fn depositar(var self, valor)` (Receptor mutável explícito) | Efeitos colaterais ocultos em métodos | `var` é a palavra universal de mutabilidade na linguagem, tornando efeitos colaterais visíveis. |
+| `a // b` e `a //= b` (Divisão inteira) | Conversões manuais truncadas | Operador aritmético canônico expressivo e simétrico com `+`, `-`, `*`, `/`. |
+| `f"Usuário {id}: {email}"` (Interpolação direta) | Concatenação `"Usuário " + String(id) + ": " + email` | Interpolação direta elimina ruído visual e múltiplas alocações temporárias no heap. |
+| `r"C:\dados\relatorio.csv"` (Strings brutas) | Sequências de escape `"C:\\dados\\relatorio.csv"` | Strings brutas eliminam o excesso de barras invertidas em caminhos de arquivos e regex. |
+| `let cidade = usuario?.perfil?.cidade` (Navegação segura) | Encadeamentos defensivos `if usuario != none and ...` | Navegação segura evita verificações aninhadas redundantes de nulidade. |
+| `let porta = ler_porta() or_else 8080` (Fallback `or_else`) | Tratamento burocrático `attempt { porta = ... } failed ...` | `or_else` fornece valores padrão imediatos em expressões sujeitas a falha. |
+| `dados |> filtrar() |> calcular()` (Pipeline `\|>`) | Aninhamento profundo `calcular(filtrar(dados))` | O operador pipeline expressa transformações na ordem natural de execução dos dados. |
+| `lista.add(item)` (Inserção universal) | Métodos heterogêneos de coleção | `.add()` é a operação canônica universal de inserção em listas e conjuntos. |
+| `dados.lazy().filter(...).collect()` (Avaliação lazy) | Múltiplas etapas intermediárias no heap | `.lazy()` consome memória constante sem gerar listas temporárias intermediárias. |
 
 ---
 

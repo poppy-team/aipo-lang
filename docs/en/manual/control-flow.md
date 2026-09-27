@@ -1,6 +1,6 @@
 # Control Flow & Failures
 
-Aipo offers clean, expressive control flow constructs inspired by the modern ergonomics of Gleam and Swift: blocks enclosed in curly braces `{ ... }` without redundant parentheses around conditions, combined with a transactional error handling model with automatic atomic rollback.
+Aipo offers clean, deterministic, and highly readable control flow constructs: blocks enclosed in curly braces `{ ... }` without redundant parentheses around conditions, combined with a transactional error handling model with automatic atomic rollback.
 
 ---
 
@@ -8,7 +8,7 @@ Aipo offers clean, expressive control flow constructs inspired by the modern erg
 
 ### `if ... elif ... else` Blocks
 
-Conditions require no parentheses, and blocks open and close with braces `{ ... }`. This eliminates closing ambiguity ("end-blindness"), enables native *rainbow brackets*, and supports instant code folding in IDEs:
+Conditions require no parentheses, and blocks open and close with braces `{ ... }`. The syntax provides immediate visual clarity, with native support for rainbow brackets and automatic code folding in any IDE:
 
 ```aipo
 var score = 85

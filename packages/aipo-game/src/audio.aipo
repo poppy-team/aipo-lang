@@ -1,6 +1,7 @@
 // audio.aipo — Sound effects and music subsystem for `aipo.game`
 
 import .ffi as ffi
+import .sfx as sfx_mod
 
 var _sound_cache = {}
 var _music_cache = {}
@@ -27,3 +28,9 @@ fn play_music(path: String, volume: Float = 1.0, loop: Bool = true) {
     let id = load_sound(path)
     ffi.host_play_music(id, volume, loop)
 }
+
+// Procedural Chiptune SFX with zero external audio assets
+fn sfx(preset_name: String, pitch: Float = 1.0) {
+    sfx_mod.play_preset(preset_name, pitch)
+}
+

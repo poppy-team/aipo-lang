@@ -7,15 +7,16 @@
 ## Stable commands
 
 The stable command surface comprises (`run`/`check`/`fmt` stable since Wave 1,
-`build` stable since Wave 2, `disasm` stable since Wave 4):
+`build` stable since Wave 2, `disasm` stable since Wave 4, `test` and Wasm targets stable since v0.1.0/ADP-013):
 
-- `aipo run <file.aipo> [--package-cache <dir>]`: Compiles and executes an Aipo source file. The optional cache flag consumes a previously locked mixed local/GitHub graph without network access.
-- `aipo run <file.aibc>`: Loads, verifies and executes a pre-compiled bytecode file.
-- `aipo check <file.aipo> [--package-cache <dir>]`: Runs the frontend and semantic analysis without bytecode execution, emitting diagnostics. The optional cache flag consumes a previously locked mixed local/GitHub graph without network access.
-- `aipo build <file.aipo> [--out <dir>] [--package-cache <dir>]`: Emits a JavaScript bundle (`app.js` + `aipo-runtime.js` + `app.js.map`, ESM with ECMA-426 source maps) to `<dir>` (`<parent>/dist` by default). Fails with the same diagnostic codes as `check` and emits no files on failure; runtime faults surface when `node` runs the bundle, with the same codes as `run`.
-- `aipo disasm <file.aipo|file.aibc> [--package-cache <dir>]`: Disassembles a source or bytecode file, printing a human-readable listing. Source files (`.aipo`) include line/column annotations; bytecode files (`.aibc`) show raw instruction offsets.
-- `aipo fmt [files...]`: Formats source files idempotently according to canonical indentation rules.
-- `aipo package lock <package-dir> [--fetch-github --cache <dir>] [--github-token-env <name>]`: Resolves a local package graph and writes `aipo.lock` in the package root. The explicit fetch form also resolves pinned GitHub dependencies and may access the network. Authentication is opt-in through an environment-variable name.
+- `aipo run <file.aipo> [--wasm] [--package-cache <dir>]`: Compiles and executes an Aipo source file via Stack VM or WebAssembly JIT engine (`--wasm` / `-t wasm`).
+- `aipo run <file.aibc|file.wasm>`: Loads, verifies and executes a pre-compiled bytecode file or WebAssembly binary.
+- `aipo test [path] [--filter <pattern>] [--package-cache <dir>]`: Discovers and executes isolated unit tests (`*_test.aipo`, `test_*.aipo`) with temporal freezing and PRNG seed reset.
+- `aipo check <file.aipo> [--wasm] [--package-cache <dir>]`: Runs the frontend and semantic analysis without execution, emitting diagnostics.
+- `aipo build <file.aipo> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>]`: Emits an ESM JavaScript bundle (`dist/app.js` + `dist/aipo-runtime.js` + source maps) or standalone WebAssembly binary (`dist/app.wasm`).
+- `aipo disasm <file.aipo|file.aibc|file.wasm> [--wasm] [--package-cache <dir>]`: Disassembles a source, bytecode, or Wasm file (printing bytecode disassembly or WebAssembly Text / WAT format).
+- `aipo fmt [files...] [--check]`: Formats source files idempotently according to canonical indentation rules.
+- `aipo package lock <package-dir> [--fetch-github --cache <dir>] [--github-token-env <name>]`: Resolves a local package graph and writes `aipo.lock` in the package root.
 - `aipo package audit <package-dir>`: Resolves a local package graph and verifies the existing `aipo.lock` without rewriting it.
 - `aipo package cache verify <cache-dir>`: Audits every existing GitHub cache entry without network access or filesystem mutation.
 - `aipo package cache prune <cache-dir> --lock <lockfile> [--apply]`: Removes only verified cache entries not referenced by the explicit lockfile; dry-run is the default.
