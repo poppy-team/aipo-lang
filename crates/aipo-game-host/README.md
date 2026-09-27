@@ -45,6 +45,9 @@ Os scripts `.aipo` têm acesso nativo e sem atrito a:
 | `host_key_pressed(key_code)` | `Int` | Retorna `true` no frame exato em que a tecla foi acionada |
 | `host_mouse_x()`, `host_mouse_y()` | Nenhum | Retorna as coordenadas X e Y do mouse |
 | `host_mouse_btn(button)` | `Int` | Retorna o estado do botão (0=esq, 1=dir, 2=meio) |
+| `host_mouse_wheel_x()`, `host_mouse_wheel_y()` | Nenhum | Retorna o deslocamento da roda de rolagem do mouse |
+| `host_push_clip_rect(x, y, w, h)` | `Float, Float, Float, Float` | Empilha retângulo de recorte para corte de GPU em 2D |
+| `host_pop_clip_rect()` | Nenhum | Desempilha o retângulo de recorte ativo |
 | `host_screen_width()`, `host_screen_height()` | Nenhum | Retorna as dimensões atuais da janela |
 | `host_frame_time()` | Nenhum | Retorna o delta time `dt` em segundos (~0.016s a 60 FPS) |
 | `host_set_camera(tx, ty, zoom)` | `Float, Float, Float` | Move e aplica zoom na câmera 2D |

@@ -60,9 +60,18 @@ fn render_node(node) {
         host_draw_text(text, r.x, text_y, font_size, tc.r, tc.g, tc.b)
     }
 
-    # 4. Recursively render children
+    # 4. Recursively render children with clipping support
+    let should_clip = props.has("clip") and props["clip"] == true
+    if should_clip {
+        host_push_clip_rect(r.x, r.y, r.width, r.height)
+    }
+
     each child in node.children {
         render_node(child)
+    }
+
+    if should_clip {
+        host_pop_clip_rect()
     }
 }
 

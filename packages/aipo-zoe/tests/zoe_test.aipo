@@ -302,3 +302,50 @@ test("tab_view high-level container with flex content height") do
     let content = tv.children[1]
     expect.equal(content.layout.height, 366.0)
 end
+
+test("scroll_view layout and offset calculation") do
+    let items = [
+        zoe.label("Entity 1"),
+        zoe.label("Entity 2"),
+        zoe.label("Entity 3")
+    ]
+    let sv = zoe.scroll_view({ "height": 200.0, "scroll_y": 50.0 }, items)
+
+    expect.equal(sv.tag, "scroll_view")
+    expect.true(sv.props["clip"])
+    expect.true(sv.props.has("on_wheel"))
+
+    zoe.compute_layout(sv, 400.0, 200.0)
+    expect.equal(sv.layout.width, 400.0)
+    expect.equal(sv.layout.height, 200.0)
+
+    # First child is viewport with clip: true
+    let viewport = sv.children[0]
+    expect.equal(viewport.tag, "scroll_viewport")
+    expect.true(viewport.props["clip"])
+
+    # Content inside viewport has offset_y = -50.0
+    let content = viewport.children[0]
+    expect.equal(content.tag, "scroll_content")
+    expect.equal(content.props["offset_y"], -50.0)
+end
+
+test("scroll_view wheel event handling and signal update") do
+    let scroll_sig = zoe.use_state(0.0)
+    let items = [zoe.label("Log line")]
+    let sv = zoe.scroll_view({ "scroll_y": scroll_sig, "scroll_speed": 20.0 }, items)
+
+    let on_wheel = sv.props["on_wheel"]
+
+    # Scroll wheel down (negative wheel_y delta pushes content up, increasing scroll_y)
+    (on_wheel)({ "wheel_y": -1.0, "wheel_x": 0.0 })
+    expect.equal(scroll_sig.get(), 20.0)
+
+    # Scroll more down
+    (on_wheel)({ "wheel_y": -2.0, "wheel_x": 0.0 })
+    expect.equal(scroll_sig.get(), 60.0)
+
+    # Scroll up past top boundary (clamped to 0.0)
+    (on_wheel)({ "wheel_y": 5.0, "wheel_x": 0.0 })
+    expect.equal(scroll_sig.get(), 0.0)
+end

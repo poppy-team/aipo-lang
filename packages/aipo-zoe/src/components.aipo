@@ -510,4 +510,136 @@ fn make_tab_view(props: Dict, views: Dict) {
     )
 }
 
-export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge, make_split_view, make_tab_bar, make_tab_view
+# Scrollable View Component with Clipping and Interactive Scrollbar
+fn make_scroll_view(arg1, arg2 = none) {
+    var props = {}
+    var children = []
+
+    if arg2 == none {
+        if (arg1 is List) {
+            props = {}
+            children = arg1
+        } else {
+            props = arg1
+            children = []
+        }
+    } else {
+        props = arg1
+        children = arg2
+    }
+
+    let scroll_y_prop = if props.has("scroll_y") then props["scroll_y"] else 0.0
+    let current_scroll = if (scroll_y_prop is Float or scroll_y_prop is Int) then (scroll_y_prop + 0.0) else (scroll_y_prop.get() + 0.0)
+    let clamped_scroll = if current_scroll < 0.0 then 0.0 else current_scroll
+
+    let width_val = if props.has("width") then props["width"] else "100%"
+    let height_val = if props.has("height") then props["height"] else "100%"
+    let show_scrollbar = if props.has("show_scrollbar") then props["show_scrollbar"] else true
+    let scrollbar_width = if props.has("scrollbar_width") then (props["scrollbar_width"] + 0.0) else 6.0
+    let pad = if props.has("padding") then (props["padding"] + 0.0) else 0.0
+    let gap_val = if props.has("gap") then (props["gap"] + 0.0) else 4.0
+    let scroll_speed = if props.has("scroll_speed") then (props["scroll_speed"] + 0.0) else 30.0
+    let bg = if props.has("background") then props["background"] else none
+
+    var scroll_container_ref = { "element": none }
+
+    let wheel_handler = fn(e) {
+        let cur = if (scroll_y_prop is Float or scroll_y_prop is Int) then (scroll_y_prop + 0.0) else (scroll_y_prop.get() + 0.0)
+        let delta = (e["wheel_y"] + 0.0) * scroll_speed
+        let new_s = cur - delta
+        let clamped = if new_s < 0.0 then 0.0 else new_s
+        if not (scroll_y_prop is Float or scroll_y_prop is Int) {
+            hooks_mod.signal_set_value(scroll_y_prop, clamped)
+        }
+        if props.has("on_scroll") {
+            (props["on_scroll"])(clamped)
+        }
+    }
+
+    let thumb_drag = fn(e) {
+        let container = scroll_container_ref["element"]
+        if container == none or container.layout == none {
+            return
+        }
+        let cur = if (scroll_y_prop is Float or scroll_y_prop is Int) then (scroll_y_prop + 0.0) else (scroll_y_prop.get() + 0.0)
+        let delta = (e["dy"] + 0.0) * 3.0
+        let new_s = cur + delta
+        let clamped = if new_s < 0.0 then 0.0 else new_s
+        if not (scroll_y_prop is Float or scroll_y_prop is Int) {
+            hooks_mod.signal_set_value(scroll_y_prop, clamped)
+        }
+        if props.has("on_scroll") {
+            (props["on_scroll"])(clamped)
+        }
+    }
+
+    let content_column = elements_mod.make_rect(
+        {
+            "tag": "scroll_content",
+            "direction": "column",
+            "width": "100%",
+            "offset_y": -clamped_scroll,
+            "padding": pad,
+            "gap": gap_val
+        },
+        children
+    )
+
+    let viewport_rect = elements_mod.make_rect(
+        {
+            "tag": "scroll_viewport",
+            "direction": "column",
+            "width": if show_scrollbar then "flex" else "100%",
+            "height": "100%",
+            "clip": true
+        },
+        [content_column]
+    )
+
+    var root_items = [viewport_rect]
+
+    if show_scrollbar {
+        let thumb_node = elements_mod.make_rect(
+            {
+                "tag": "scrollbar_thumb",
+                "width": scrollbar_width,
+                "height": 40.0,
+                "background": color_mod.surface_2,
+                "border_radius": 3.0,
+                "on_drag": thumb_drag
+            },
+            []
+        )
+
+        let track_node = elements_mod.make_rect(
+            {
+                "tag": "scrollbar_track",
+                "direction": "column",
+                "align_items": "center",
+                "width": scrollbar_width,
+                "height": "100%",
+                "background": color_mod.surface_0
+            },
+            [thumb_node]
+        )
+        root_items.add(track_node)
+    }
+
+    var container_props = {
+        "tag": "scroll_view",
+        "direction": "row",
+        "width": width_val,
+        "height": height_val,
+        "clip": true,
+        "on_wheel": wheel_handler
+    }
+    if bg != none {
+        container_props["background"] = bg
+    }
+
+    let container = elements_mod.make_rect(container_props, root_items)
+    scroll_container_ref["element"] = container
+    return container
+}
+
+export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge, make_split_view, make_tab_bar, make_tab_view, make_scroll_view

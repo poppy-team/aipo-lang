@@ -26,6 +26,10 @@ fn test_host_surface_registration() {
     assert!(surface.contains("host_synth_sound"));
     assert!(surface.contains("host_play_music"));
     assert!(surface.contains("host_stop_music"));
+    assert!(surface.contains("host_mouse_wheel_x"));
+    assert!(surface.contains("host_mouse_wheel_y"));
+    assert!(surface.contains("host_push_clip_rect"));
+    assert!(surface.contains("host_pop_clip_rect"));
 
     // Verify canonical __aipo_game_* aliases
     assert!(surface.contains("__aipo_game_draw_rect"));

@@ -1,7 +1,7 @@
 [[packages]]
 coordinate = "aipo.zoe"
 version = "0.1.0"
-digest = "01480b0192538ebf2d4e338c72a489c5eabd78576c8447de62eac62e3a4fa08e"
+digest = "6ade172ea57b85b8668d9a18df7b1b45021824022debd10c130f70ab9fd5fad9"
 dependencies = []
 capabilities = []
 targets = [

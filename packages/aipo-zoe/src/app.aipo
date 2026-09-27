@@ -59,6 +59,33 @@ fn hit_test(node, px: Float, py: Float) {
     return node
 }
 
+# Finds deepest element under cursor that handles wheel scrolling
+fn find_wheel_target(node, px: Float, py: Float) {
+    if node == none or node.layout == none {
+        return none
+    }
+
+    if not node.layout.contains(px, py) {
+        return none
+    }
+
+    var i = node.children.len() - 1
+    while i >= 0 {
+        let child = node.children[i]
+        let hit = find_wheel_target(child, px, py)
+        if hit != none {
+            return hit
+        }
+        i = i - 1
+    }
+
+    if node.props.has("on_wheel") {
+        return node
+    }
+
+    return none
+}
+
 # Mounts a root declarative Zoe component
 fn app_mount(component_fn) {
     _root_component = component_fn
@@ -168,7 +195,24 @@ fn app_update(dt: Float) {
     _prev_mx = mx
     _prev_my = my
 
-    # 5. Check if reactive state changed; if so, re-layout tree
+    # 5. Mouse wheel scroll dispatch
+    let wheel_y = host_mouse_wheel_y()
+    let wheel_x = host_mouse_wheel_x()
+    if wheel_y != 0.0 or wheel_x != 0.0 {
+        let wheel_node = find_wheel_target(_root_element, mx, my)
+        if wheel_node != none and wheel_node.props.has("on_wheel") {
+            let handler = wheel_node.props["on_wheel"]
+            (handler)({
+                "wheel_x": wheel_x,
+                "wheel_y": wheel_y,
+                "x": mx,
+                "y": my,
+                "target_id": wheel_node.id
+            })
+        }
+    }
+
+    # 6. Check if reactive state changed; if so, re-layout tree
     if hooks_mod.is_dirty() {
         rebuild_tree()
     }
@@ -183,4 +227,4 @@ fn app_render() {
     }
 }
 
-export app_mount, app_update, app_render, rebuild_tree, hit_test, app_get_root_element
+export app_mount, app_update, app_render, rebuild_tree, hit_test, app_get_root_element, find_wheel_target

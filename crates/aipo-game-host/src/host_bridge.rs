@@ -77,6 +77,27 @@ fn safe_is_key_down(key: KeyCode) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| is_key_down(key))).unwrap_or(false)
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ClipRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+static CLIP_STACK: Mutex<Vec<ClipRect>> = Mutex::new(Vec::new());
+
+fn current_clip() -> Option<ClipRect> {
+    CLIP_STACK
+        .lock()
+        .ok()
+        .and_then(|stack| stack.last().copied())
+}
+
+fn safe_mouse_wheel() -> (f32, f32) {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(mouse_wheel)).unwrap_or((0.0, 0.0))
+}
+
 fn safe_is_key_pressed(key: KeyCode) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| is_key_pressed(key))).unwrap_or(false)
 }
@@ -103,12 +124,33 @@ fn safe_frame_time() -> f32 {
 }
 
 fn safe_draw_rect(x: f32, y: f32, w: f32, h: f32, color: Color) {
+    let (draw_x, draw_y, draw_w, draw_h) = if let Some(clip) = current_clip() {
+        let x1 = x.max(clip.x);
+        let y1 = y.max(clip.y);
+        let x2 = (x + w).min(clip.x + clip.w);
+        let y2 = (y + h).min(clip.y + clip.h);
+        if x2 <= x1 || y2 <= y1 {
+            return;
+        }
+        (x1, y1, x2 - x1, y2 - y1)
+    } else {
+        (x, y, w, h)
+    };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        draw_rectangle(x, y, w, h, color)
+        draw_rectangle(draw_x, draw_y, draw_w, draw_h, color)
     }));
 }
 
 fn safe_draw_rect_lines(x: f32, y: f32, w: f32, h: f32, th: f32, color: Color) {
+    if let Some(clip) = current_clip() {
+        let x1 = x.max(clip.x);
+        let y1 = y.max(clip.y);
+        let x2 = (x + w).min(clip.x + clip.w);
+        let y2 = (y + h).min(clip.y + clip.h);
+        if x2 <= x1 || y2 <= y1 {
+            return;
+        }
+    }
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         draw_rectangle_lines(x, y, w, h, th, color)
     }));
@@ -121,6 +163,11 @@ fn safe_draw_circle(cx: f32, cy: f32, radius: f32, color: Color) {
 }
 
 fn safe_draw_text(text: &str, x: f32, y: f32, size: f32, color: Color) {
+    if let Some(clip) = current_clip() {
+        if y < clip.y || (y - size) > (clip.y + clip.h) || x > (clip.x + clip.w) {
+            return;
+        }
+    }
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         draw_text(text, x, y, size, color)
     }));
@@ -352,13 +399,72 @@ pub fn host_clear_background(args: &[Value]) -> Result<Value, VmFault> {
     Ok(Value::None)
 }
 
+/// host_mouse_wheel_x() -> Float
+pub fn host_mouse_wheel_x(_args: &[Value]) -> Result<Value, VmFault> {
+    let (wx, _) = safe_mouse_wheel();
+    Ok(Value::Float(wx as f64))
+}
+
+/// host_mouse_wheel_y() -> Float
+pub fn host_mouse_wheel_y(_args: &[Value]) -> Result<Value, VmFault> {
+    let (_, wy) = safe_mouse_wheel();
+    Ok(Value::Float(wy as f64))
+}
+
+/// host_push_clip_rect(x, y, w, h)
+pub fn host_push_clip_rect(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 4 {
+        return Err(VmFault::TypeMismatch {
+            expected: "4 arguments (x, y, w, h)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let x = to_f32(&args[0])?;
+    let y = to_f32(&args[1])?;
+    let w = to_f32(&args[2])?;
+    let h = to_f32(&args[3])?;
+
+    if let Ok(mut stack) = CLIP_STACK.lock() {
+        let new_clip = if let Some(parent) = stack.last() {
+            let x1 = x.max(parent.x);
+            let y1 = y.max(parent.y);
+            let x2 = (x + w).min(parent.x + parent.w);
+            let y2 = (y + h).min(parent.y + parent.h);
+            ClipRect {
+                x: x1,
+                y: y1,
+                w: (x2 - x1).max(0.0),
+                h: (y2 - y1).max(0.0),
+            }
+        } else {
+            ClipRect { x, y, w, h }
+        };
+        stack.push(new_clip);
+    }
+    Ok(Value::None)
+}
+
+/// host_pop_clip_rect()
+pub fn host_pop_clip_rect(_args: &[Value]) -> Result<Value, VmFault> {
+    if let Ok(mut stack) = CLIP_STACK.lock() {
+        stack.pop();
+    }
+    Ok(Value::None)
+}
+
 /// host_begin_frame(r: Float, g: Float, b: Float)
 pub fn host_begin_frame(args: &[Value]) -> Result<Value, VmFault> {
+    if let Ok(mut stack) = CLIP_STACK.lock() {
+        stack.clear();
+    }
     host_clear_background(args)
 }
 
 /// host_end_frame()
 pub fn host_end_frame(_args: &[Value]) -> Result<Value, VmFault> {
+    if let Ok(mut stack) = CLIP_STACK.lock() {
+        stack.clear();
+    }
     Ok(Value::None)
 }
 
@@ -727,6 +833,10 @@ const NATIVES: &[NativeEntry] = &[
     ("host_mouse_x", 0, host_mouse_x),
     ("host_mouse_y", 0, host_mouse_y),
     ("host_mouse_btn", 1, host_mouse_btn),
+    ("host_mouse_wheel_x", 0, host_mouse_wheel_x),
+    ("host_mouse_wheel_y", 0, host_mouse_wheel_y),
+    ("host_push_clip_rect", 4, host_push_clip_rect),
+    ("host_pop_clip_rect", 0, host_pop_clip_rect),
     ("host_screen_width", 0, host_screen_width),
     ("host_screen_height", 0, host_screen_height),
     ("host_frame_time", 0, host_frame_time),
