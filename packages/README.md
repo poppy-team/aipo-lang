@@ -8,3 +8,4 @@ Conforme a arquitetura da linguagem e o princípio de separação de domínios, 
 
 - **[`aipo-html`](./aipo-html/README.md)**: DSL declarativa para HTML5, CSS-in-Aipo tipado e reatividade com MVU de Granularidade Fina no navegador.
 - **[`aipo-ui`](./aipo-ui/README.md)**: Framework universal e multiplataforma de interfaces declarativas (Desktop GPU via Skia/Freya, WebGL/Canvas e Terminal TUI) com layout Flexbox/Grid alimentado pelo motor Taffy.
+- **[`aipo-game`](./aipo-game/README.md)**: Micro-engine 2D orientada a Atores e Cenas com comportamentos plugáveis em 1 linha, nós visuais anti-espaguete e simulação determinística.

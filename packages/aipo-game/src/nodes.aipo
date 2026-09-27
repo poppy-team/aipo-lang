@@ -1,0 +1,87 @@
+// nodes.aipo — Visual Scripting Node System (Trigger-Filter-Action)
+// Precludes visual wire spaghetti and serializes directly to canonical Aipo code
+
+struct TriggerNode {
+    id: String
+    event: String
+    params: Dict
+}
+
+struct FilterNode {
+    id: String
+    left: String
+    op: String
+    right: String
+}
+
+struct ActionNode {
+    id: String
+    action_type: String
+    params: Dict
+}
+
+struct VisualRule {
+    id: String
+    name: String
+    trigger: TriggerNode
+    filters: List
+    actions: List
+}
+
+// Visual Node Constructors
+fn trigger(event: String, params: Dict = {}) -> TriggerNode {
+    return TriggerNode{ id: event, event: event, params: params }
+}
+
+fn filter(left: String, op: String, right: String) -> FilterNode {
+    return FilterNode{ id: "filter", left: left, op: op, right: right }
+}
+
+fn action(action_type: String, params: Dict = {}) -> ActionNode {
+    return ActionNode{ id: action_type, action_type: action_type, params: params }
+}
+
+fn rule(name: String, trigger: TriggerNode, filters: List = [], actions: List = []) -> VisualRule {
+    return VisualRule{
+        id: name,
+        name: name,
+        trigger: trigger,
+        filters: filters,
+        actions: actions
+    }
+}
+
+// Transpiles a Visual Rule directly into clean, human-readable Aipo code
+fn transpile_to_aipo_code(rule: VisualRule) -> String {
+    var code = f"// Regra Visual: {rule.name}\n"
+
+    if rule.trigger.event == "on_collision" {
+        let target = rule.trigger.params.get("with", "Outro")
+        code += f"on_collision: (actor, other) => {{\n"
+        code += f"    if other.is_a({target}) {{\n"
+
+        // Inject filters
+        for f in rule.filters {
+            code += f"        if !({f.left} {f.op} {f.right}) {{ return }}\n"
+        }
+
+        // Inject actions
+        for act in rule.actions {
+            if act.action_type == "destroy" {
+                let who = act.params.get("target", "other")
+                code += f"        {who}.destroy()\n"
+            } else if act.action_type == "play_sound" {
+                let snd = act.params.get("file", "som.wav")
+                code += f"        g.audio.play(\"{snd}\")\n"
+            } else if act.action_type == "add_score" {
+                let pts = act.params.get("points", 10)
+                code += f"        actor.score += {pts}\n"
+            }
+        }
+
+        code += "    }\n"
+        code += "}\n"
+    }
+
+    return code
+}

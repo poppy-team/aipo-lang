@@ -1,0 +1,23 @@
+// lib.aipo — Entrypoint for `aipo.game`
+// 2D Game Engine with Actor-Scene lifecycle, pluggable Behaviors and Visual Scripting Nodes
+
+import .actor as act_mod
+import .scene as scene_mod
+import .behaviors as behaviors_mod
+import .input as input_mod
+import .audio as audio_mod
+import .nodes as nodes_mod
+
+// Core Factory Functions
+export act_mod.actor
+export scene_mod.scene, scene_mod.spawn, scene_mod.start
+
+// Subsystems
+export behaviors_mod as behaviors
+export input_mod as input
+export audio_mod as audio
+export nodes_mod as nodes
+
+// Types
+export act_mod.Actor, act_mod.ActorType
+export scene_mod.Scene, scene_mod.SceneType

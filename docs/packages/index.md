@@ -12,7 +12,7 @@ Conforme estabelecido pela governança da linguagem, **recursos de domínio espe
 |---|:---:|---|---|
 | **[`aipo.html`](/packages/aipo-html)** | `v0.1.0` | **Web & DOM** | DSL declarativa para HTML5, CSS-in-Aipo tipado e reatividade com **MVU de Granularidade Fina** no navegador. |
 | **[`aipo.ui`](/packages/aipo-ui)** | `v0.1.0` | **UI Multiplataforma** | Framework declarativo de interface universal (Desktop GPU via Skia/Freya, WebGL e Terminal TUI) com layout Flexbox/Taffy. |
-| **`aipo.game`** *(Roadmap)* | `v0.1.0-alpha` | **Game Engine 2D** | Micro-engine 2D orientada a Atores e Cenas com determinismo de simulação, netcode rollback e exportação multiplataforma. |
+| **[`aipo.game`](/packages/aipo-game)** | `v0.1.0` | **Game Engine 2D** | Micro-engine 2D orientada a Atores e Cenas com comportamentos em 1 linha, nós visuais e determinismo de simulação. |
 
 ---
 

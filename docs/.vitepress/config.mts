@@ -109,7 +109,8 @@ export default defineConfig({
             items: [
               { text: 'Catálogo Oficial', link: '/packages/' },
               { text: 'aipo.html (Web & DOM)', link: '/packages/aipo-html' },
-              { text: 'aipo.ui (Multiplataforma)', link: '/packages/aipo-ui' }
+              { text: 'aipo.ui (Multiplataforma)', link: '/packages/aipo-ui' },
+              { text: 'aipo.game (Game Engine 2D)', link: '/packages/aipo-game' }
             ]
           },
           {
@@ -131,7 +132,8 @@ export default defineConfig({
               items: [
                 { text: 'Catálogo Oficial', link: '/packages/' },
                 { text: 'aipo.html (Web & DOM)', link: '/packages/aipo-html' },
-                { text: 'aipo.ui (Multiplataforma)', link: '/packages/aipo-ui' }
+                { text: 'aipo.ui (Multiplataforma)', link: '/packages/aipo-ui' },
+                { text: 'aipo.game (Game Engine 2D)', link: '/packages/aipo-game' }
               ]
             }
           ],
@@ -305,7 +307,8 @@ export default defineConfig({
             items: [
               { text: 'Official Catalog', link: '/en/packages/' },
               { text: 'aipo.html (Web & DOM)', link: '/en/packages/aipo-html' },
-              { text: 'aipo.ui (Multiplatform)', link: '/en/packages/aipo-ui' }
+              { text: 'aipo.ui (Multiplatform)', link: '/en/packages/aipo-ui' },
+              { text: 'aipo.game (2D Game Engine)', link: '/en/packages/aipo-game' }
             ]
           },
           {
@@ -327,7 +330,8 @@ export default defineConfig({
               items: [
                 { text: 'Official Catalog', link: '/en/packages/' },
                 { text: 'aipo.html (Web & DOM)', link: '/en/packages/aipo-html' },
-                { text: 'aipo.ui (Multiplatform)', link: '/en/packages/aipo-ui' }
+                { text: 'aipo.ui (Multiplatform)', link: '/en/packages/aipo-ui' },
+                { text: 'aipo.game (2D Game Engine)', link: '/en/packages/aipo-game' }
               ]
             }
           ],

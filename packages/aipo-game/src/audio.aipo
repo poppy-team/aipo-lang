@@ -1,0 +1,29 @@
+// audio.aipo — Sound effects and music subsystem for `aipo.game`
+
+import .ffi as ffi
+
+var _sound_cache = {}
+var _music_cache = {}
+
+fn load_sound(path: String) -> Int {
+    if _sound_cache.contains(path) {
+        return _sound_cache.get(path, 0)
+    }
+    let id = ffi.host_load_sound(path)
+    _sound_cache.set(path, id)
+    return id
+}
+
+fn play_sound(path: String, volume: Float = 1.0, pitch: Float = 1.0) {
+    let id = load_sound(path)
+    ffi.host_play_sound(id, volume, pitch)
+}
+
+fn play(path: String) {
+    play_sound(path, 1.0, 1.0)
+}
+
+fn play_music(path: String, volume: Float = 1.0, loop: Bool = true) {
+    let id = load_sound(path)
+    ffi.host_play_music(id, volume, loop)
+}
