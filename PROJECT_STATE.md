@@ -135,12 +135,23 @@
     - `startup`: **15,64ms** incluindo parsing, lowering, compilação Wasm e compilação JIT de código de máquina pelo Cranelift — superando os tempos de startup de CPython (21ms), Node.js (58ms) e Ruby (90ms).
   - Documentação canônica atualizada e sincronizada em `docs/performance/cross-language.md`.
 
+- **Engine 2D Nativa e Host Desktop Miniquad (`aipo-game-host` & `packages/aipo-game`)**:
+  - Implementação completa da crate `crates/aipo-game-host` conectando scripts dinâmicos `.aipo` diretamente ao loop GPU nativo a 60 FPS com backend Miniquad / Macroquad.
+  - Ponte FFI de hardware (`host_bridge.rs`) fornecendo 23 funções nativas aceleradas: renderização 2D (retângulos, círculos, texto), carregamento e desenho de texturas e fatiamento de spritesheets com cache seguro, câmera 2D com tracking suave e zoom, e mapeamento de entradas de teclado/mouse GLFW.
+  - Live Hot-Reload dinâmico via `F5` / `Ctrl+R` com overlay gráfico de diagnósticos em tela para erros de sintaxe ou tipos.
+  - Proteção total headless com `catch_unwind(AssertUnwindSafe)` permitindo execução estável de 100% dos testes sem servidores X11 ou janelas gráficas.
+  - Publicação de superfícies de compilação em `aipo-cli` (`compile_file`, `analyze_with_surface`, `prelude_surface`, `register_module_symbols`, `emit_diagnostics`).
+  - Refatoração e validação canônica de 100% dos módulos do pacote `packages/aipo-game/src/` (`actor`, `audio`, `behaviors`, `ffi`, `input`, `lib`, `nodes`, `scene`, `sfx`, `tween`) aprovados pelo `aipo check`.
+  - Exemplos interativos canônicos `examples/26_interactive_game.aipo` e `examples/27_camera_and_sprites.aipo` validados em suíte automatizada de testes.
+
 ## Next action
 
-Trilha WebAssembly (Marcos 1 a 6) e Bateria de Benchmarks concluídas com êxito!
-Próximos passos disponíveis:
-1. Formalização de evidência final e sincronização com o Prumo.
-2. Expansão de recursos adicionais da Trilha Wasm (ex: arrays dinâmicos / heap collections).
+Engine 2D Nativa (Caminho 1 - Fase Inicial) concluída com sucesso!
+Próximos passos disponíveis para expansão da Game Engine:
+1. Pipeline de Áudio Nativo (som procedural e reprodução WAV/OGG em tempo real via `macroquad::audio`).
+2. Sistema de UI / HUD embutido para jogos (botões clicáveis, barras de progresso/vida, textos alinhados).
+3. Sistema de Tilemap e Colisão 2D com Grid.
+4. Exportação/Suporte WebAssembly (Wasm/WebGL Canvas) para rodar os mesmos jogos `.aipo` no navegador.
 
 ## Recovery order
 
