@@ -10,6 +10,11 @@ var _root_component = none
 var _root_element = none
 var _prev_mouse_btn = false
 var _hovered_node = none
+var _dragged_node = none
+var _drag_handler = none
+var _drag_end_handler = none
+var _prev_mx = 0.0
+var _prev_my = 0.0
 
 fn app_get_root_element() {
     return _root_element
@@ -54,13 +59,13 @@ fn hit_test(node, px: Float, py: Float) {
     return node
 }
 
-# Mounts a root declarative Freya component
+# Mounts a root declarative Zoe component
 fn app_mount(component_fn) {
     _root_component = component_fn
     rebuild_tree()
 }
 
-# Updates input, hit testing, and handles clicks
+# Updates input, hit testing, click and continuous drag dispatch
 fn app_update(dt: Float) {
     if _root_component == none {
         return
@@ -73,34 +78,97 @@ fn app_update(dt: Float) {
     # 1. Hit testing and hover tracking
     let target = hit_test(_root_element, mx, my)
 
-    if _hovered_node != none and _hovered_node != target {
-        _hovered_node.is_hovered = false
-    }
+    if _dragged_node == none {
+        if _hovered_node != none and _hovered_node != target {
+            _hovered_node.is_hovered = false
+        }
 
-    if target != none {
-        target.is_hovered = true
-        _hovered_node = target
+        if target != none {
+            target.is_hovered = true
+            _hovered_node = target
+        } else {
+            _hovered_node = none
+        }
     } else {
-        _hovered_node = none
+        _dragged_node.is_hovered = true
+        _dragged_node.is_active = true
     }
 
-    # 2. Click dispatch (mouse press edge detection)
+    # 2. Click & Drag start dispatch (mouse press edge detection)
     if btn_down and not _prev_mouse_btn {
-        if target != none and target.props.has("on_click") {
-            let handler = target.props["on_click"]
-            if handler != none {
-                let event = {
-                    "x": mx,
-                    "y": my,
-                    "target_id": target.id
+        if target != none {
+            if target.props.has("on_click") {
+                let handler = target.props["on_click"]
+                if handler != none {
+                    let event = {
+                        "x": mx,
+                        "y": my,
+                        "target_id": target.id
+                    }
+                    (handler)(event)
                 }
-                (handler)(event)
+            }
+
+            if target.props.has("on_drag") {
+                _dragged_node = target
+                _drag_handler = target.props["on_drag"]
+                _drag_end_handler = if target.props.has("on_drag_end") then target.props["on_drag_end"] else none
+                target.is_active = true
+                if _drag_handler != none {
+                    let drag_event = {
+                        "x": mx,
+                        "y": my,
+                        "dx": 0.0,
+                        "dy": 0.0,
+                        "target_id": target.id,
+                        "target": target
+                    }
+                    (_drag_handler)(drag_event)
+                }
             }
         }
     }
-    _prev_mouse_btn = btn_down
 
-    # 3. Check if reactive state changed; if so, re-layout tree
+    # 3. Active continuous drag dispatch (while mouse button is held down)
+    if btn_down and _drag_handler != none {
+        let dx = mx - _prev_mx
+        let dy = my - _prev_my
+        if dx != 0.0 or dy != 0.0 {
+            let drag_event = {
+                "x": mx,
+                "y": my,
+                "dx": dx,
+                "dy": dy,
+                "target_id": if _dragged_node != none then _dragged_node.id else 0,
+                "target": _dragged_node
+            }
+            (_drag_handler)(drag_event)
+        }
+    }
+
+    # 4. Drag release (mouse release edge detection)
+    if not btn_down and _prev_mouse_btn {
+        if _dragged_node != none {
+            _dragged_node.is_active = false
+        }
+        if _drag_end_handler != none {
+            let end_event = {
+                "x": mx,
+                "y": my,
+                "target_id": if _dragged_node != none then _dragged_node.id else 0
+            }
+            (_drag_end_handler)(end_event)
+        }
+        _dragged_node = none
+        _drag_handler = none
+        _drag_end_handler = none
+    }
+
+    _prev_mouse_btn = btn_down
+    _prev_mx = mx
+    _prev_my = my
+
+    # 5. Check if reactive state changed; if so, re-layout tree
     if hooks_mod.is_dirty() {
         rebuild_tree()
     }

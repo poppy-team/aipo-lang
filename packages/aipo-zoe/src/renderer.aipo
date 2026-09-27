@@ -1,5 +1,5 @@
-# renderer.aipo — Hardware-accelerated GPU renderer for aipo.freya
-# Translates Torin-computed layout trees into native GPU draw calls
+# renderer.aipo — Hardware-accelerated GPU renderer for aipo.zoe
+# Translates Leona-computed layout trees into native GPU draw calls
 
 import types as types_mod
 import color as color_mod
@@ -16,11 +16,11 @@ fn render_node(node) {
     if props.has("background") {
         var bg = props["background"]
         if bg != none {
-            # Hover feedback: brighten slightly if hovered
-            if node.is_hovered and (props.has("on_click") or node.tag == "button") {
-                let hover_r = if bg.r + 0.08 > 1.0 then 1.0 else bg.r + 0.08
-                let hover_g = if bg.g + 0.08 > 1.0 then 1.0 else bg.g + 0.08
-                let hover_b = if bg.b + 0.08 > 1.0 then 1.0 else bg.b + 0.08
+            # Hover/active feedback: brighten slightly if hovered or active
+            if (node.is_hovered or node.is_active) and (props.has("on_click") or props.has("on_drag") or node.tag == "button" or node.tag == "split_handle") {
+                let hover_r = if bg.r + 0.12 > 1.0 then 1.0 else bg.r + 0.12
+                let hover_g = if bg.g + 0.12 > 1.0 then 1.0 else bg.g + 0.12
+                let hover_b = if bg.b + 0.12 > 1.0 then 1.0 else bg.b + 0.12
                 host_draw_rect(r.x, r.y, r.width, r.height, hover_r, hover_g, hover_b, bg.a)
             } else {
                 host_draw_rect(r.x, r.y, r.width, r.height, bg.r, bg.g, bg.b, bg.a)

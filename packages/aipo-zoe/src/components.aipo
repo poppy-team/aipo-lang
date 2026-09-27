@@ -4,6 +4,7 @@
 import types as types_mod
 import color as color_mod
 import elements as elements_mod
+import hooks as hooks_mod
 
 # Interactive clickable button
 fn make_button(label_text: String, on_click, props: Dict) {
@@ -213,4 +214,171 @@ fn make_badge(text: String, props: Dict) {
     )
 }
 
-export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge
+# Resizable Split View Container (horizontal or vertical with draggable handle)
+fn make_split_view(arg1, arg2, arg3 = none) {
+    var props = {}
+    var first_child = none
+    var second_child = none
+
+    if arg3 == none {
+        if (arg1 is List) {
+            props = {}
+            first_child = arg1[0]
+            second_child = arg1[1]
+        } elif (arg2 is List) {
+            props = arg1
+            first_child = arg2[0]
+            second_child = arg2[1]
+        } else {
+            props = {}
+            first_child = arg1
+            second_child = arg2
+        }
+    } else {
+        props = arg1
+        first_child = arg2
+        second_child = arg3
+    }
+
+    let direction = if props.has("direction") then props["direction"] else "horizontal"
+    let split_prop = if props.has("split") then props["split"] else 0.5
+    let min_first = if props.has("min_first") then (props["min_first"] + 0.0) else 50.0
+    let min_second = if props.has("min_second") then (props["min_second"] + 0.0) else 50.0
+    let handle_size = if props.has("handle_size") then (props["handle_size"] + 0.0) else 6.0
+    let handle_color = if props.has("handle_color") then props["handle_color"] else color_mod.surface_0
+    let width_val = if props.has("width") then props["width"] else "100%"
+    let height_val = if props.has("height") then props["height"] else "100%"
+
+    let ratio = if (split_prop is Float or split_prop is Int) then (split_prop + 0.0) else (split_prop.get() + 0.0)
+    let clamped_ratio = if ratio < 0.01 then 0.01 else (if ratio > 0.99 then 0.99 else ratio)
+
+    var container_ref = { "element": none }
+    var container = none
+
+    let drag_handler = fn(e) {
+        let container = container_ref["element"]
+        if container == none or container.layout == none {
+            return
+        }
+        if direction == "horizontal" {
+            let total_w = container.layout.width
+            if total_w <= 0.0 {
+                return
+            }
+            let local_x = e["x"] - container.layout.x
+            let new_ratio = local_x / total_w
+            let min_r = min_first / total_w
+            let max_r = 1.0 - (min_second / total_w)
+            let clamped = if new_ratio < min_r then min_r else (if new_ratio > max_r then max_r else new_ratio)
+            if not (split_prop is Float or split_prop is Int) {
+                hooks_mod.signal_set_value(split_prop, clamped)
+            }
+            if props.has("on_change") {
+                (props["on_change"])(clamped)
+            }
+        } else {
+            let total_h = container.layout.height
+            if total_h <= 0.0 {
+                return
+            }
+            let local_y = e["y"] - container.layout.y
+            let new_ratio = local_y / total_h
+            let min_r = min_first / total_h
+            let max_r = 1.0 - (min_second / total_h)
+            let clamped = if new_ratio < min_r then min_r else (if new_ratio > max_r then max_r else new_ratio)
+            if not (split_prop is Float or split_prop is Int) {
+                hooks_mod.signal_set_value(split_prop, clamped)
+            }
+            if props.has("on_change") {
+                (props["on_change"])(clamped)
+            }
+        }
+    }
+
+    if direction == "horizontal" {
+        let first_pct = clamped_ratio * 100.0
+        let first_wrapper = elements_mod.make_rect({
+            "tag": "split_first",
+            "direction": "column",
+            "width": f"{first_pct}%",
+            "height": "100%"
+        }, [first_child])
+
+        let handle_node = elements_mod.make_rect({
+            "tag": "split_handle",
+            "direction": "column",
+            "align_items": "center",
+            "justify_content": "center",
+            "width": handle_size,
+            "height": "100%",
+            "background": handle_color,
+            "on_drag": drag_handler
+        }, [
+            elements_mod.make_rect({
+                "width": 2.0,
+                "height": 28.0,
+                "background": color_mod.overlay_0,
+                "border_radius": 1.0
+            }, [])
+        ])
+
+        let second_wrapper = elements_mod.make_rect({
+            "tag": "split_second",
+            "direction": "column",
+            "width": "flex",
+            "height": "100%"
+        }, [second_child])
+
+        container = elements_mod.make_rect({
+            "tag": "split_view",
+            "direction": "row",
+            "width": width_val,
+            "height": height_val
+        }, [first_wrapper, handle_node, second_wrapper])
+    } else {
+        let first_pct = clamped_ratio * 100.0
+        let first_wrapper = elements_mod.make_rect({
+            "tag": "split_first",
+            "direction": "column",
+            "width": "100%",
+            "height": f"{first_pct}%"
+        }, [first_child])
+
+        let handle_node = elements_mod.make_rect({
+            "tag": "split_handle",
+            "direction": "row",
+            "align_items": "center",
+            "justify_content": "center",
+            "width": "100%",
+            "height": handle_size,
+            "background": handle_color,
+            "on_drag": drag_handler
+        }, [
+            elements_mod.make_rect({
+                "width": 28.0,
+                "height": 2.0,
+                "background": color_mod.overlay_0,
+                "border_radius": 1.0
+            }, [])
+        ])
+
+        let second_wrapper = elements_mod.make_rect({
+            "tag": "split_second",
+            "direction": "column",
+            "width": "100%",
+            "height": "flex"
+        }, [second_child])
+
+        container = elements_mod.make_rect({
+            "tag": "split_view",
+            "direction": "column",
+            "width": width_val,
+            "height": height_val
+        }, [first_wrapper, handle_node, second_wrapper])
+    }
+
+    container_ref["element"] = container
+    return container
+}
+
+export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge, make_split_view

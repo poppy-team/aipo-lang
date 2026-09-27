@@ -163,3 +163,83 @@ test("rect point containment hit testing") do
     expect.false(r.contains(120.0, 20.0))
     expect.false(r.contains(20.0, 60.0))
 end
+
+test("split_view horizontal layout and proportion calculation") do
+    let p1 = zoe.label("Left Panel")
+    let p2 = zoe.label("Right Panel")
+    let sv = zoe.split_view({ "split": 0.25, "direction": "horizontal", "handle_size": 6.0 }, p1, p2)
+
+    zoe.compute_layout(sv, 800.0, 600.0)
+
+    expect.equal(sv.layout.width, 800.0)
+    expect.equal(sv.layout.height, 600.0)
+
+    # First wrapper (25% of 800.0 = 200.0)
+    let first_wrapper = sv.children[0]
+    expect.equal(first_wrapper.layout.x, 0.0)
+    expect.equal(first_wrapper.layout.width, 200.0)
+
+    # Handle (width = 6.0 at x = 200.0)
+    let handle = sv.children[1]
+    expect.equal(handle.layout.x, 200.0)
+    expect.equal(handle.layout.width, 6.0)
+
+    # Second wrapper (flex = 800 - 200 - 6 = 594.0 at x = 206.0)
+    let second_wrapper = sv.children[2]
+    expect.equal(second_wrapper.layout.x, 206.0)
+    expect.equal(second_wrapper.layout.width, 594.0)
+end
+
+test("split_view vertical layout and proportion calculation") do
+    let p1 = zoe.label("Top Panel")
+    let p2 = zoe.label("Bottom Panel")
+    let sv = zoe.split_view({ "split": 0.30, "direction": "vertical", "handle_size": 8.0 }, p1, p2)
+
+    zoe.compute_layout(sv, 800.0, 600.0)
+
+    expect.equal(sv.layout.width, 800.0)
+    expect.equal(sv.layout.height, 600.0)
+
+    # First wrapper (30% of 600.0 = 180.0)
+    let first_wrapper = sv.children[0]
+    expect.equal(first_wrapper.layout.y, 0.0)
+    expect.equal(first_wrapper.layout.height, 180.0)
+
+    # Handle (height = 8.0 at y = 180.0)
+    let handle = sv.children[1]
+    expect.equal(handle.layout.y, 180.0)
+    expect.equal(handle.layout.height, 8.0)
+
+    # Second wrapper (flex = 600 - 180 - 8 = 412.0 at y = 188.0)
+    let second_wrapper = sv.children[2]
+    expect.equal(second_wrapper.layout.y, 188.0)
+    expect.equal(second_wrapper.layout.height, 412.0)
+end
+
+test("split_view drag handler clamping and signal update") do
+    let split_sig = zoe.use_state(0.50)
+    let p1 = zoe.label("Panel A")
+    let p2 = zoe.label("Panel B")
+    let sv = zoe.split_view({
+        "split": split_sig,
+        "direction": "horizontal",
+        "min_first": 100.0,
+        "min_second": 100.0
+    }, p1, p2)
+
+    zoe.compute_layout(sv, 800.0, 600.0)
+    let handle = sv.children[1]
+    let on_drag = handle.props["on_drag"]
+
+    # Drag to 200px (25%)
+    (on_drag)({ "x": 200.0, "y": 0.0, "dx": -200.0, "dy": 0.0 })
+    expect.equal(split_sig.get(), 0.25)
+
+    # Drag to 40px (below min_first 100px -> clamped to 100 / 800 = 0.125)
+    (on_drag)({ "x": 40.0, "y": 0.0, "dx": -160.0, "dy": 0.0 })
+    expect.equal(split_sig.get(), 0.125)
+
+    # Drag to 760px (violates min_second 100px -> clamped to 1.0 - 100/800 = 0.875)
+    (on_drag)({ "x": 760.0, "y": 0.0, "dx": 720.0, "dy": 0.0 })
+    expect.equal(split_sig.get(), 0.875)
+end

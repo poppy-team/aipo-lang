@@ -13,15 +13,8 @@ fn get_prop(props: Dict, key: String, default_val) {
 fn parse_pct(s: String) -> Float {
     if s.ends_with("%") {
         let num_str = s.slice(0, s.len() - 1)
-        # Handle common percentage literals safely
-        if num_str == "100" { return 100.0 }
-        if num_str == "75" { return 75.0 }
-        if num_str == "50" { return 50.0 }
-        if num_str == "33" { return 33.33 }
-        if num_str == "25" { return 25.0 }
-        if num_str == "20" { return 20.0 }
-        if num_str == "10" { return 10.0 }
-        if num_str == "0" { return 0.0 }
+        let parsed = Float(num_str) or_else 100.0
+        return parsed + 0.0
     }
     return 100.0
 }
@@ -220,6 +213,8 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
         var cy = 0.0
         var cw = child.layout.width
         var ch = child.layout.height
+        let prop_w = get_prop(child.props, "width", "auto")
+        let prop_h = get_prop(child.props, "height", "auto")
 
         let off_x = get_prop(child.props, "offset_x", 0.0) + 0.0
         let off_y = get_prop(child.props, "offset_y", 0.0) + 0.0
@@ -236,7 +231,8 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
                 cy = parent_y + pad_y + off_y
             }
 
-            layout_node(child, cx, cy, inner_avail_w, inner_avail_h)
+            let child_avail_w = if is_flex(prop_w) then flex_size else inner_avail_w
+            layout_node(child, cx, cy, child_avail_w, inner_avail_h)
             main_cursor = main_cursor + child.layout.width + gap
         } else {
             cy = parent_y + pad_y + main_cursor + off_y
@@ -250,7 +246,8 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
                 cx = parent_x + pad_x + off_x
             }
 
-            layout_node(child, cx, cy, inner_avail_w, inner_avail_h)
+            let child_avail_h = if is_flex(prop_h) then flex_size else inner_avail_h
+            layout_node(child, cx, cy, inner_avail_w, child_avail_h)
             main_cursor = main_cursor + child.layout.height + gap
         }
     }
