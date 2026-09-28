@@ -8,6 +8,7 @@
 use crate::audio_system::{AUDIO, SynthConfig};
 use aipo_sema::PreludeSurface;
 use aipo_vm::{Value, Vm, VmFault};
+use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation};
 use macroquad::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -70,6 +71,488 @@ impl TextureCache {
 }
 
 static TEXTURE_CACHE: Mutex<TextureCache> = Mutex::new(TextureCache::new());
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct IconKey {
+    path_data: String,
+    size_px: u32,
+    stroke_th_fixed: u32,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+}
+
+/// Maximum number of distinct rasterized icon textures retained on the GPU.
+///
+/// The cache key includes the RGBA color, so a theme swap alone enumerates a new
+/// key per icon. Without a bound, switching themes repeatedly grows GPU memory
+/// without limit. 512 entries covers every icon in the built-in registry across
+/// several themes and sizes.
+const ICON_CACHE_CAPACITY: usize = 512;
+
+struct IconCache {
+    /// LRU-ordered entries. Front is most-recently used, back is eviction victim.
+    ///
+    /// A hand-rolled list keeps the dependency surface at zero and the working
+    /// set small enough that O(n) eviction is cheaper than maintaining a
+    /// `HashMap` plus intrusive list.
+    entries: std::collections::VecDeque<(IconKey, Texture2D)>,
+}
+
+impl IconCache {
+    fn new() -> Self {
+        Self {
+            entries: std::collections::VecDeque::with_capacity(ICON_CACHE_CAPACITY),
+        }
+    }
+
+    /// Returns the cached texture for `key`, promoting it to most-recently used.
+    fn touch(&mut self, key: &IconKey) -> Option<Texture2D> {
+        let idx = self.entries.iter().position(|(k, _)| k == key)?;
+        let entry = self.entries.remove(idx)?;
+        let tex = entry.1.clone();
+        self.entries.push_front(entry);
+        Some(tex)
+    }
+
+    /// Inserts `key`/`tex`, evicting the least-recently used entry if full.
+    fn insert(&mut self, key: IconKey, tex: Texture2D) {
+        if self.entries.len() >= ICON_CACHE_CAPACITY {
+            if let Some(victim) = self.entries.pop_back() {
+                debug_assert!(std::mem::size_of_val(&victim) > 0);
+            }
+        }
+        self.entries.push_front((key, tex));
+    }
+
+    /// Number of retained icon textures. Exposed for the cache-eviction test.
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn get_or_render(
+        &mut self,
+        path_data: &str,
+        size_px: u32,
+        stroke_width: f32,
+        color: Color,
+    ) -> Option<Texture2D> {
+        let size_px = size_px.clamp(8, 256);
+        let key = IconKey {
+            path_data: path_data.to_string(),
+            size_px,
+            stroke_th_fixed: (stroke_width * 10.0) as u32,
+            r: (color.r * 255.0).clamp(0.0, 255.0) as u8,
+            g: (color.g * 255.0).clamp(0.0, 255.0) as u8,
+            b: (color.b * 255.0).clamp(0.0, 255.0) as u8,
+            a: (color.a * 255.0).clamp(0.0, 255.0) as u8,
+        };
+
+        if let Some(tex) = self.touch(&key) {
+            return Some(tex);
+        }
+
+        let mut pb = tiny_skia::PathBuilder::new();
+        for segment in svgtypes::SimplifyingPathParser::from(path_data) {
+            match segment {
+                Ok(svgtypes::SimplePathSegment::MoveTo { x, y }) => pb.move_to(x as f32, y as f32),
+                Ok(svgtypes::SimplePathSegment::LineTo { x, y }) => pb.line_to(x as f32, y as f32),
+                Ok(svgtypes::SimplePathSegment::CurveTo {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    x,
+                    y,
+                }) => pb.cubic_to(
+                    x1 as f32, y1 as f32, x2 as f32, y2 as f32, x as f32, y as f32,
+                ),
+                Ok(svgtypes::SimplePathSegment::Quadratic { x1, y1, x, y }) => {
+                    pb.quad_to(x1 as f32, y1 as f32, x as f32, y as f32)
+                }
+                Ok(svgtypes::SimplePathSegment::ClosePath) => pb.close(),
+                Err(_) => {}
+            }
+        }
+
+        let path = pb.finish()?;
+        let bounds = path.bounds();
+        let max_dim = bounds.width().max(bounds.height()).max(1.0);
+        let base_extent = if max_dim <= 24.0 { 24.0 } else { max_dim };
+        let scale = (size_px as f32) / base_extent;
+        let transform = tiny_skia::Transform::from_scale(scale, scale);
+
+        let mut pixmap = tiny_skia::Pixmap::new(size_px, size_px)?;
+        let mut paint = tiny_skia::Paint::default();
+        paint.set_color(tiny_skia::Color::from_rgba8(key.r, key.g, key.b, key.a));
+        paint.anti_alias = true;
+
+        if stroke_width > 0.0 {
+            let stroke = tiny_skia::Stroke {
+                width: stroke_width,
+                line_cap: tiny_skia::LineCap::Round,
+                line_join: tiny_skia::LineJoin::Round,
+                ..Default::default()
+            };
+            pixmap.stroke_path(&path, &paint, &stroke, transform, None);
+        } else {
+            pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, transform, None);
+        }
+
+        let tex = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let t = Texture2D::from_rgba8(size_px as u16, size_px as u16, pixmap.data());
+            t.set_filter(FilterMode::Linear);
+            t
+        }))
+        .ok()?;
+
+        self.insert(key, tex.clone());
+        Some(tex)
+    }
+}
+
+static ICON_CACHE: Mutex<Option<IconCache>> = Mutex::new(None);
+
+/// Returns the number of icon textures currently retained in the LRU cache.
+///
+/// Zero when no icon has been rasterized yet. Used by the cache-eviction test.
+pub fn icon_cache_len() -> usize {
+    ICON_CACHE
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(IconCache::len))
+        .unwrap_or(0)
+}
+
+// --- Zoe Typography Engine (Inter Font) ---
+
+/// CPU-side fontdue font for headless-safe text measurement.
+static ZOE_FONTDUE: std::sync::OnceLock<fontdue::Font> = std::sync::OnceLock::new();
+
+/// Returns the Inter font instance for CPU-side text measurement (headless-safe).
+fn get_zoe_fontdue() -> &'static fontdue::Font {
+    ZOE_FONTDUE.get_or_init(|| {
+        let bytes = include_bytes!("../assets/fonts/Inter.ttf");
+        fontdue::Font::from_bytes(bytes as &[u8], fontdue::FontSettings::default())
+            .expect("Failed to load Inter font from embedded bytes")
+    })
+}
+
+static ZOE_FONT_INITIALIZED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Initializes the Inter font for GPU rendering via macroquad.
+/// Must be called from the macroquad main loop (not in headless tests).
+/// Safe to call multiple times — only initializes once.
+pub fn init_zoe_font() {
+    if ZOE_FONT_INITIALIZED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let bytes = include_bytes!("../assets/fonts/Inter.ttf");
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        load_ttf_font_from_bytes(bytes).ok()
+    }));
+    if let Ok(Some(font)) = result {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            set_default_font(font);
+        }));
+        ZOE_FONT_INITIALIZED.store(true, std::sync::atomic::Ordering::Relaxed);
+        println!("[aipo-game-host] Inter font loaded — subpixel typography active");
+    }
+}
+
+// --- Zoe GPU SDF Shader Engine (M14) ---
+//
+// M14 replaces the M9 shader, which had four mathematical defects:
+//
+//   1. Anti-aliasing used a hardcoded 1.0px band (`clamp(0.5 - dist, 0, 1)`).
+//      That is only correct at scale 1:1. Under a viewport camera zoom the
+//      distance-per-pixel changes and the edge reads as too fat or too thin.
+//      Fixed with a zoom-derived `u_pixel_scale` uniform rather than
+//      `fwidth`/`dFdx`: the shader stays on GLSL ES 100 and needs no
+//      `GL_OES_standard_derivatives` extension, so it works on every backend
+//      the host already supports, including WebGL1.
+//
+//   2. The border was composited with `mix` over a single SDF
+//      (`b_dist = dist + border_width`). Adding the border width to the SDF
+//      destroys the `min(max(q.x,q.y),0.0)` term, so the inner corner radius
+//      came out wrong, and `mix` is not a correct `over` when the fill is
+//      translucent. Now: two independent SDFs, alpha-premultiplied output.
+//
+//   3. There was no shadow at all; overlays faked one with a hard offset
+//      rectangle. Now: two stacked soft-shadow layers with CSS `over` order
+//      and gamma compensation, which is what makes a translucent black shadow
+//      land at its intended darkness instead of at roughly half of it.
+//
+//   4. `sd_rounded_box` took a single radius. Now per-corner radii, so
+//      asymmetric shapes ("squircles") are expressible.
+//
+// Note on MSAA: these quads are geometrically full-rasterized and all edge
+// anti-aliasing is analytic in the fragment shader, so hardware MSAA adds
+// nothing here. Correctness comes from `u_pixel_scale`, not from sample count.
+
+const SDF_VERTEX_SHADER: &str = r#"#version 100
+attribute vec3 position;
+attribute vec4 color0;
+attribute vec2 texcoord;
+
+varying lowp vec2 uv;
+varying lowp vec4 color;
+
+uniform mat4 Model;
+uniform mat4 Projection;
+
+void main() {
+    gl_Position = Projection * Model * vec4(position, 1.0);
+    uv = texcoord;
+    color = color0 / 255.0;
+}
+"#;
+
+const SDF_FRAGMENT_SHADER: &str = r#"#version 100
+precision mediump float;
+
+varying lowp vec2 uv;
+varying lowp vec4 color;
+
+// Size of the quad actually rasterized, in pixels. Larger than the box when
+// padding is reserved for an outward focus ring or a blurred shadow.
+uniform vec2 u_quad_size;
+
+// Half extents of the BOX (not the quad), in pixels. Rounded corners, the
+// border and the shadow are all measured from this.
+uniform vec2 u_box_half;
+
+// Per-corner radii, clockwise from top-left: (tl, tr, br, bl).
+uniform vec4 u_radii;
+
+uniform float u_pixel_scale;     // 1.0 at 1:1, 1/zoom under a camera
+uniform float u_border_width;    // 0 disables the border branch
+uniform vec4  u_border_color;
+uniform float u_inner_highlight; // 0 disables the chamfer light
+uniform vec4  u_shadow1;         // (dy, blur, spread, alpha)
+uniform vec4  u_shadow2;         // (dy, blur, spread, alpha)
+
+// Signed distance to a rounded box with independent per-corner radii.
+float sd_rounded_box(vec2 p, vec2 b, vec4 r) {
+    float r_top = (p.x > 0.0) ? r.y : r.x;  // tr : tl
+    float r_bot = (p.x > 0.0) ? r.z : r.w;  // br : bl
+    float rd    = (p.y < 0.0) ? r_top : r_bot;
+    vec2 q = abs(p) - b + vec2(rd);
+    return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - rd;
+}
+
+// Coverage of one soft-shadow layer at box-local pixel position `p`.
+float shadow_layer(vec2 p, vec2 half_size, vec4 radii, vec4 layer) {
+    if (layer.w <= 0.0) { return 0.0; }
+    float d = sd_rounded_box(p - vec2(0.0, layer.x), half_size, radii) - layer.z;
+    float blur = max(layer.y, 0.5);
+    return (1.0 - smoothstep(-blur, blur, d)) * layer.w;
+}
+
+void main() {
+    vec2 quad_half = u_quad_size * 0.5;
+    // Pixel position relative to the BOX center. The quad is centered on the
+    // box, so quad-relative and box-relative coincide.
+    vec2 p = uv * u_quad_size - quad_half;
+
+    vec2 box_half = u_box_half;
+    float max_r = min(box_half.x, box_half.y);
+    vec4 radii = clamp(u_radii, vec4(0.0), vec4(max_r));
+
+    float d = sd_rounded_box(p, box_half, radii);
+
+    // (1) FIX: AA width derived from the device scale instead of a fixed 1.0px.
+    //     For a true normalized SDF the gradient magnitude is ~1, so the
+    //     per-pixel distance is exactly 1/u_pixel_scale.
+    float aa = max(1.0 / max(u_pixel_scale, 0.0001), 0.5);
+    float inside = 1.0 - smoothstep(-aa, 0.0, d);
+
+    vec4 col = color;
+
+    // (3) NEW: two soft-shadow layers, composited in CSS `over` order.
+    if (u_shadow1.w > 0.0 || u_shadow2.w > 0.0) {
+        float a1 = shadow_layer(p, box_half, radii, u_shadow1);
+        float a2 = shadow_layer(p, box_half, radii, u_shadow2);
+        float a_css = 1.0 - (1.0 - a1) * (1.0 - a2);
+        // Gamma compensation: a translucent BLACK shadow composited in
+        // encoded sRGB needs a 2.2 power, otherwise an alpha of 0.05 lands
+        // at roughly half its intended darkness on light surfaces.
+        float sa = 1.0 - pow(1.0 - a_css, 2.2);
+        col = vec4(0.0, 0.0, 0.0, sa);
+    }
+
+    // Fill over the shadow: never shrink the alpha already contributed by
+    // the shadow, so a translucent panel still casts a readable shadow.
+    if (color.a > 0.0) {
+        float fa = color.a * inside;
+        col = vec4(mix(col.rgb, color.rgb, fa), max(col.a, fa));
+    }
+
+    // (2) FIX: border from an INDEPENDENT SDF, then premultiplied-alpha
+    //     output. `abs(d) - w/2` places the stroke centred on the box
+    //     boundary, so it follows the same curvature without a seam.
+    float bw = u_border_width;
+    if (bw > 0.0 && u_border_color.a > 0.0) {
+        float stroke_d = abs(d) - bw * 0.5;
+        float sa = (1.0 - smoothstep(-aa, aa, stroke_d)) * u_border_color.a;
+        float fill_a = color.a * inside;
+        float out_a = sa + fill_a * (1.0 - sa);
+        vec3 out_rgb = (out_a > 1e-5)
+            ? (u_border_color.rgb * sa + color.rgb * fill_a * (1.0 - sa)) / out_a
+            : u_border_color.rgb;
+        col = vec4(out_rgb, out_a);
+    }
+
+    // 1px top inner highlight: simulates ambient light catching the chamfer.
+    if (u_inner_highlight > 0.0 && d <= -aa && col.a > 0.0) {
+        float top_y = uv.y * u_quad_size.y - quad_half.y;
+        float from_top = (box_half.y) - top_y;
+        if (from_top <= (u_border_width + 1.2) && from_top >= 0.0) {
+            col.rgb += vec3(0.12 * u_inner_highlight);
+        }
+    }
+
+    if (col.a <= 0.0) {
+        discard;
+    }
+    gl_FragColor = col;
+}
+"#;
+
+static ZOE_SDF_MATERIAL: Mutex<Option<Material>> = Mutex::new(None);
+static ZOE_SDF_INITIALIZED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Soft-shadow elevation levels.
+///
+/// `(dy, blur, spread, alpha)` per level, mirroring Tailwind's discrete
+/// anchors. `SHADOW_ANCHORS` is interpolated by `shadow_layers` so a caller
+/// can pass a continuous elevation and still get a smooth transition between
+/// the two CSS layers. Levels above the last anchor scale the `xl` geometry
+/// proportionally.
+///
+/// These literals are the contract with `SDF_FRAGMENT_SHADER`; the parity test
+/// `test_sdf_elevation_anchor_parity` reads the shader source and asserts each
+/// row appears verbatim, so the two cannot drift apart.
+pub const SHADOW_ANCHORS: [[f32; 4]; 5] = [
+    [2.0, 3.0, 0.0, 0.05],    // 0 = shadow-xs
+    [4.0, 6.0, -1.0, 0.08],   // 1 = shadow-sm
+    [12.0, 16.0, -3.0, 0.10], // 2 = shadow-md
+    [24.0, 32.0, -6.0, 0.14], // 3 = shadow-lg
+    [40.0, 48.0, -9.0, 0.18], // 4 = shadow-xl
+];
+
+/// The raw elevation anchor table. Exposed so tests can assert the invariants
+/// the interpolation in `shadow_master` depends on.
+pub fn shadow_anchors() -> &'static [[f32; 4]] {
+    &SHADOW_ANCHORS
+}
+
+/// Interpolates the master shadow curve at a continuous elevation level.
+///
+/// Returns `(dy, blur, spread, alpha)` for the requested level. Between
+/// anchors the values are linearly interpolated, so raising elevation
+/// animates smoothly instead of popping at integer levels. Past the last
+/// anchor the geometry scales proportionally so very high elevations keep
+/// growing rather than clamping flat.
+pub fn shadow_master(elevation: f32) -> [f32; 4] {
+    let n = SHADOW_ANCHORS.len() as f32;
+    if elevation >= n {
+        let t = 1.0 + (elevation - n) * 0.25;
+        let a = SHADOW_ANCHORS[SHADOW_ANCHORS.len() - 1];
+        return [a[0] * t, a[1] * t, a[2] * t, a[3]];
+    }
+    let idx = (elevation.max(0.0) as usize).min(SHADOW_ANCHORS.len() - 1);
+    let frac = elevation - idx as f32;
+    let a = SHADOW_ANCHORS[idx];
+    let b = SHADOW_ANCHORS[(idx + 1).min(SHADOW_ANCHORS.len() - 1)];
+    [
+        a[0] + (b[0] - a[0]) * frac,
+        a[1] + (b[1] - a[1]) * frac,
+        a[2] + (b[2] - a[2]) * frac,
+        a[3] + (b[3] - a[3]) * frac,
+    ]
+}
+
+/// Derives the two shadow layers from a continuous elevation.
+///
+/// Returns `(contact, ambient)`, each `(dy, blur, spread, alpha)`.
+///
+/// Two layers rather than one because a single soft shadow reads as a blur;
+/// a tight, darker *contact* layer under a broad, lighter *ambient* layer is
+/// what actually reads as depth. The contact layer is the tighter and more
+/// opaque of the two, so it is drawn first in the shader's `over` chain.
+///
+/// An elevation of `0.0` returns two transparent layers, so the shader skips
+/// the branch entirely and unelevated widgets cost nothing.
+pub fn shadow_layers(elevation: f32) -> ([f32; 4], [f32; 4]) {
+    const TRANSPARENT: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+    if elevation <= 0.0 {
+        return (TRANSPARENT, TRANSPARENT);
+    }
+
+    let m = shadow_master(elevation);
+    let (dy, blur, spread, alpha) = (m[0], m[1], m[2], m[3]);
+
+    // Contact: tight and denser, hugging the surface.
+    let contact = [dy * 0.35, blur * 0.35, spread * 0.5, (alpha * 1.4).min(1.0)];
+    // Ambient: the full master curve, lighter and broader.
+    let ambient = [dy, blur, spread, (alpha * 0.65).min(1.0)];
+
+    (contact, ambient)
+}
+
+/// Initializes the GPU SDF shader material for analytical UI rendering.
+pub fn init_zoe_shaders() {
+    if ZOE_SDF_INITIALIZED.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let shader = ShaderSource::Glsl {
+            vertex: SDF_VERTEX_SHADER,
+            fragment: SDF_FRAGMENT_SHADER,
+        };
+        let params = MaterialParams {
+            pipeline_params: PipelineParams {
+                color_blend: Some(BlendState::new(
+                    Equation::Add,
+                    BlendFactor::Value(BlendValue::SourceAlpha),
+                    BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
+                )),
+                alpha_blend: Some(BlendState::new(
+                    Equation::Add,
+                    BlendFactor::Value(BlendValue::SourceAlpha),
+                    BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
+                )),
+                ..Default::default()
+            },
+            uniforms: vec![
+                UniformDesc::new("u_quad_size", UniformType::Float2),
+                UniformDesc::new("u_box_half", UniformType::Float2),
+                UniformDesc::new("u_radii", UniformType::Float4),
+                UniformDesc::new("u_pixel_scale", UniformType::Float1),
+                UniformDesc::new("u_border_width", UniformType::Float1),
+                UniformDesc::new("u_border_color", UniformType::Float4),
+                UniformDesc::new("u_inner_highlight", UniformType::Float1),
+                UniformDesc::new("u_shadow1", UniformType::Float4),
+                UniformDesc::new("u_shadow2", UniformType::Float4),
+            ],
+            textures: vec![],
+        };
+        load_material(shader, params).ok()
+    }));
+    if let Ok(Some(mat)) = result {
+        if let Ok(mut lock) = ZOE_SDF_MATERIAL.lock() {
+            *lock = Some(mat);
+        }
+        ZOE_SDF_INITIALIZED.store(true, std::sync::atomic::Ordering::Relaxed);
+        println!(
+            "[aipo-game-host] GPU SDF analytical UI shader active (M14: scaled AA, 2-layer shadow, premultiplied border, per-corner radii)"
+        );
+    }
+}
 
 // --- Headless-safe Macroquad Wrappers ---
 
@@ -160,22 +643,378 @@ fn safe_draw_rect_lines(x: f32, y: f32, w: f32, h: f32, th: f32, color: Color) {
     }));
 }
 
+fn clip_line(
+    mut x0: f32,
+    mut y0: f32,
+    mut x1: f32,
+    mut y1: f32,
+    clip: ClipRect,
+) -> Option<(f32, f32, f32, f32)> {
+    const INSIDE: u8 = 0;
+    const LEFT: u8 = 1;
+    const RIGHT: u8 = 2;
+    const BOTTOM: u8 = 4;
+    const TOP: u8 = 8;
+
+    let xmin = clip.x;
+    let xmax = clip.x + clip.w;
+    let ymin = clip.y;
+    let ymax = clip.y + clip.h;
+
+    let compute_outcode = |x: f32, y: f32| -> u8 {
+        let mut code = INSIDE;
+        if x < xmin {
+            code |= LEFT;
+        } else if x > xmax {
+            code |= RIGHT;
+        }
+        if y < ymin {
+            code |= TOP;
+        } else if y > ymax {
+            code |= BOTTOM;
+        }
+        code
+    };
+
+    let mut code0 = compute_outcode(x0, y0);
+    let mut code1 = compute_outcode(x1, y1);
+
+    loop {
+        if (code0 | code1) == 0 {
+            return Some((x0, y0, x1, y1));
+        } else if (code0 & code1) != 0 {
+            return None;
+        } else {
+            let code_out = if code0 != 0 { code0 } else { code1 };
+            let mut x = 0.0;
+            let mut y = 0.0;
+
+            if (code_out & TOP) != 0 {
+                x = x0 + (x1 - x0) * (ymin - y0) / (y1 - y0);
+                y = ymin;
+            } else if (code_out & BOTTOM) != 0 {
+                x = x0 + (x1 - x0) * (ymax - y0) / (y1 - y0);
+                y = ymax;
+            } else if (code_out & RIGHT) != 0 {
+                y = y0 + (y1 - y0) * (xmax - x0) / (x1 - x0);
+                x = xmax;
+            } else if (code_out & LEFT) != 0 {
+                y = y0 + (y1 - y0) * (xmin - x0) / (x1 - x0);
+                x = xmin;
+            }
+
+            if code_out == code0 {
+                x0 = x;
+                y0 = y;
+                code0 = compute_outcode(x0, y0);
+            } else {
+                x1 = x;
+                y1 = y;
+                code1 = compute_outcode(x1, y1);
+            }
+        }
+    }
+}
+
+fn safe_draw_line(x1: f32, y1: f32, x2: f32, y2: f32, th: f32, color: Color) {
+    let (cx1, cy1, cx2, cy2) = if let Some(clip) = current_clip() {
+        if let Some(clipped) = clip_line(x1, y1, x2, y2, clip) {
+            clipped
+        } else {
+            return;
+        }
+    } else {
+        (x1, y1, x2, y2)
+    };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        draw_line(cx1, cy1, cx2, cy2, th, color)
+    }));
+}
+
 fn safe_draw_circle(cx: f32, cy: f32, radius: f32, color: Color) {
+    if let Some(clip) = current_clip() {
+        if cx + radius < clip.x
+            || cx - radius > (clip.x + clip.w)
+            || cy + radius < clip.y
+            || cy - radius > (clip.y + clip.h)
+        {
+            return;
+        }
+    }
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         draw_circle(cx, cy, radius, color)
     }));
 }
 
 fn safe_draw_triangle(v1: Vec2, v2: Vec2, v3: Vec2, color: Color) {
+    if let Some(clip) = current_clip() {
+        let min_x = v1.x.min(v2.x).min(v3.x);
+        let max_x = v1.x.max(v2.x).max(v3.x);
+        let min_y = v1.y.min(v2.y).min(v3.y);
+        let max_y = v1.y.max(v2.y).max(v3.y);
+        if max_x < clip.x
+            || min_x > (clip.x + clip.w)
+            || max_y < clip.y
+            || min_y > (clip.y + clip.h)
+        {
+            return;
+        }
+    }
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         draw_triangle(v1, v2, v3, color);
     }));
 }
 
 fn safe_draw_triangle_lines(v1: Vec2, v2: Vec2, v3: Vec2, th: f32, color: Color) {
+    if let Some(clip) = current_clip() {
+        let min_x = v1.x.min(v2.x).min(v3.x);
+        let max_x = v1.x.max(v2.x).max(v3.x);
+        let min_y = v1.y.min(v2.y).min(v3.y);
+        let max_y = v1.y.max(v2.y).max(v3.y);
+        if max_x < clip.x
+            || min_x > (clip.x + clip.w)
+            || max_y < clip.y
+            || min_y > (clip.y + clip.h)
+        {
+            return;
+        }
+    }
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         draw_triangle_lines(v1, v2, v3, th, color);
     }));
+}
+
+fn safe_draw_round_rect(x: f32, y: f32, w: f32, h: f32, radius: f32, color: Color) {
+    let r = radius.min(w * 0.5).min(h * 0.5).max(0.0);
+    if r < 1.0 {
+        safe_draw_rect(x, y, w, h, color);
+        return;
+    }
+    // Main body rectangles (clipped via safe_draw_rect)
+    safe_draw_rect(x + r, y, w - 2.0 * r, h, color);
+    safe_draw_rect(x, y + r, r, h - 2.0 * r, color);
+    safe_draw_rect(x + w - r, y + r, r, h - 2.0 * r, color);
+    // 4 corner circles (clipped via safe_draw_circle)
+    safe_draw_circle(x + r, y + r, r, color);
+    safe_draw_circle(x + w - r, y + r, r, color);
+    safe_draw_circle(x + r, y + h - r, r, color);
+    safe_draw_circle(x + w - r, y + h - r, r, color);
+}
+
+fn safe_draw_round_rect_lines(x: f32, y: f32, w: f32, h: f32, radius: f32, th: f32, color: Color) {
+    let r = radius.min(w * 0.5).min(h * 0.5).max(0.0);
+    if r < 1.0 {
+        safe_draw_rect_lines(x, y, w, h, th, color);
+        return;
+    }
+    // 4 straight edges (clipped via safe_draw_line)
+    safe_draw_line(x + r, y, x + w - r, y, th, color);
+    safe_draw_line(x + r, y + h, x + w - r, y + h, th, color);
+    safe_draw_line(x, y + r, x, y + h - r, th, color);
+    safe_draw_line(x + w, y + r, x + w, y + h - r, th, color);
+
+    // 4 corner arcs approximation (4 segments each)
+    let steps = 4;
+    let arc = |cx: f32, cy: f32, start_ang: f32| {
+        let step_ang = std::f32::consts::FRAC_PI_2 / (steps as f32);
+        for i in 0..steps {
+            let a1 = start_ang + (i as f32) * step_ang;
+            let a2 = a1 + step_ang;
+            let p1x = cx + r * a1.cos();
+            let p1y = cy + r * a1.sin();
+            let p2x = cx + r * a2.cos();
+            let p2y = cy + r * a2.sin();
+            safe_draw_line(p1x, p1y, p2x, p2y, th, color);
+        }
+    };
+    use std::f32::consts::PI;
+    arc(x + w - r, y + h - r, 0.0); // bottom-right: 0 to PI/2
+    arc(x + r, y + h - r, PI * 0.5); // bottom-left: PI/2 to PI
+    arc(x + r, y + r, PI); // top-left: PI to 3PI/2
+    arc(x + w - r, y + r, PI * 1.5); // top-right: 3PI/2 to 2PI
+}
+
+/// Geometry and paint of one analytical SDF quad.
+///
+/// Grouped into a struct so the draw path stays under clippy's argument-count
+/// limit and so the same shape is reused by the M15 instanced batch path.
+///
+/// `radii` is per-corner `(tl, tr, br, bl)`; `radius` is the shorthand that
+/// fills all four. `elevation` selects the soft-shadow level and `focus_width`
+/// draws the focus ring in the same pass, so a widget with a border, a shadow
+/// and a focus ring still costs exactly one draw call.
+#[derive(Clone, Copy)]
+struct SdfQuad {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    radii: [f32; 4],
+    border_width: f32,
+    border_color: Color,
+    inner_highlight: f32,
+    bg_color: Color,
+    elevation: f32,
+    focus_width: f32,
+    focus_color: Color,
+}
+
+impl SdfQuad {
+    /// Uniform corner radii. Used when no per-corner shape is supplied.
+    fn uniform_radii(&self) -> [f32; 4] {
+        [self.radius; 4]
+    }
+
+    /// Per-corner radii, falling back to the uniform radius per corner.
+    fn effective_radii(&self) -> [f32; 4] {
+        let uniform = self.uniform_radii();
+        let mut out = [0.0f32; 4];
+        for i in 0..4 {
+            out[i] = if self.radii[i] > 0.0 {
+                self.radii[i]
+            } else {
+                uniform[i]
+            };
+        }
+        out
+    }
+
+    /// Padding the rasterized quad needs on each side so the outward parts
+    /// (shadow blur and an outward focus ring) are not clipped away.
+    fn padding(&self) -> f32 {
+        let (s1, s2) = shadow_layers(self.elevation);
+        let blur = s1[1].max(s2[1]);
+        let spread = s1[2].min(s2[2]);
+        let focus = if self.focus_width > 0.0 {
+            self.focus_width
+        } else {
+            0.0
+        };
+        (blur + spread.abs() + focus + 1.0).max(0.0)
+    }
+}
+
+/// Number of physical pixels per logical (framebuffer) pixel.
+///
+/// The SDF anti-aliasing band is specified in logical pixels, so on a HiDPI
+/// display one logical pixel covers `dpi_scale` physical pixels. Without this
+/// the analytic edge would be `dpi_scale` times too thin on Retina/HiDPI
+/// surfaces. Returns 1.0 headless, which is the identity case.
+fn pixel_scale() -> f32 {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let s = macroquad::miniquad::window::dpi_scale();
+        if s > 0.0 { s } else { 1.0 }
+    }))
+    .unwrap_or(1.0)
+}
+
+fn safe_draw_sdf_rect(quad: &SdfQuad) {
+    let (x, y, w, h) = (quad.x, quad.y, quad.w, quad.h);
+    let radii = quad.effective_radii();
+    let uniform_radius = quad.radius;
+    let border_width = quad.border_width;
+    let border_color = quad.border_color;
+    let inner_highlight = quad.inner_highlight;
+    let bg_color = quad.bg_color;
+    let (shadow1, shadow2) = shadow_layers(quad.elevation);
+
+    let pad = quad.padding();
+    // The quad grows symmetrically about the box center; the shader works in
+    // box-local coordinates so the offset between quad and box origin cancels.
+    let quad_w = w + pad * 2.0;
+    let quad_h = h + pad * 2.0;
+    let quad_x = x - pad;
+    let quad_y = y - pad;
+
+    if let Some(clip) = current_clip() {
+        if quad_x + quad_w < clip.x
+            || quad_x > (clip.x + clip.w)
+            || quad_y + quad_h < clip.y
+            || quad_y > (clip.y + clip.h)
+        {
+            return;
+        }
+    }
+    let drawn = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if let Ok(lock) = ZOE_SDF_MATERIAL.lock() {
+            if let Some(ref mat) = *lock {
+                let max_r = w.min(h) * 0.5;
+                let clamped = [
+                    radii[0].min(max_r),
+                    radii[1].min(max_r),
+                    radii[2].min(max_r),
+                    radii[3].min(max_r),
+                ];
+                mat.set_uniform("u_quad_size", vec2(quad_w, quad_h));
+                mat.set_uniform("u_box_half", vec2(w * 0.5, h * 0.5));
+                mat.set_uniform(
+                    "u_radii",
+                    vec4(clamped[0], clamped[1], clamped[2], clamped[3]),
+                );
+                mat.set_uniform("u_pixel_scale", pixel_scale());
+                mat.set_uniform("u_border_width", border_width);
+                mat.set_uniform(
+                    "u_border_color",
+                    vec4(
+                        border_color.r,
+                        border_color.g,
+                        border_color.b,
+                        border_color.a,
+                    ),
+                );
+                mat.set_uniform("u_inner_highlight", inner_highlight);
+                mat.set_uniform(
+                    "u_shadow1",
+                    vec4(shadow1[0], shadow1[1], shadow1[2], shadow1[3]),
+                );
+                mat.set_uniform(
+                    "u_shadow2",
+                    vec4(shadow2[0], shadow2[1], shadow2[2], shadow2[3]),
+                );
+                gl_use_material(mat);
+                draw_rectangle(quad_x, quad_y, quad_w, quad_h, bg_color);
+                gl_use_default_material();
+                return true;
+            }
+        }
+        false
+    }))
+    .unwrap_or(false);
+
+    if !drawn {
+        // Software fallback: no shader available (headless tests, or a context
+        // where material loading failed). Shadows are approximated with a
+        // single offset layer, which is what the pre-M14 renderer did for
+        // every overlay anyway.
+        if quad.elevation > 0.0 {
+            let offset = shadow1[0].max(2.0);
+            safe_draw_round_rect(
+                x,
+                y + offset,
+                w,
+                h,
+                uniform_radius,
+                Color::new(0.0, 0.0, 0.0, shadow1[3] * 0.8),
+            );
+        }
+        safe_draw_round_rect(x, y, w, h, uniform_radius, bg_color);
+        if border_width > 0.0 {
+            safe_draw_round_rect_lines(x, y, w, h, uniform_radius, border_width, border_color);
+        }
+        if quad.focus_width > 0.0 && quad.focus_color.a > 0.0 {
+            let t = quad.focus_width;
+            safe_draw_round_rect_lines(
+                x - t,
+                y - t,
+                w + t * 2.0,
+                h + t * 2.0,
+                uniform_radius + t,
+                t,
+                quad.focus_color,
+            );
+        }
+    }
 }
 
 fn safe_draw_text(text: &str, x: f32, y: f32, size: f32, color: Color) {
@@ -195,6 +1034,14 @@ fn safe_clear_background(color: Color) {
 
 fn safe_draw_texture(tex: Option<&Texture2D>, x: f32, y: f32, params: DrawTextureParams) {
     if let Some(t) = tex {
+        if let Some(clip) = current_clip() {
+            let dw = params.dest_size.map(|s| s.x).unwrap_or(t.width());
+            let dh = params.dest_size.map(|s| s.y).unwrap_or(t.height());
+            if x + dw < clip.x || x > (clip.x + clip.w) || y + dh < clip.y || y > (clip.y + clip.h)
+            {
+                return;
+            }
+        }
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             draw_texture_ex(t, x, y, WHITE, params)
         }));
@@ -303,6 +1150,12 @@ fn map_keycode(code: i64) -> Option<KeyCode> {
         263 => Some(KeyCode::Left),
         264 => Some(KeyCode::Down),
         265 => Some(KeyCode::Up),
+        340 => Some(KeyCode::LeftShift),
+        341 => Some(KeyCode::LeftControl),
+        342 => Some(KeyCode::LeftAlt),
+        344 => Some(KeyCode::RightShift),
+        345 => Some(KeyCode::RightControl),
+        346 => Some(KeyCode::RightAlt),
         // ASCII A-Z (65..=90)
         65 => Some(KeyCode::A),
         66 => Some(KeyCode::B),
@@ -583,6 +1436,218 @@ pub fn host_draw_circle(args: &[Value]) -> Result<Value, VmFault> {
     Ok(Value::None)
 }
 
+/// host_draw_round_rect(x, y, w, h, radius, r, g, b, a)
+pub fn host_draw_round_rect(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 9 {
+        return Err(VmFault::TypeMismatch {
+            expected: "9 arguments (x, y, w, h, radius, r, g, b, a)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let x = to_f32(&args[0])?;
+    let y = to_f32(&args[1])?;
+    let w = to_f32(&args[2])?;
+    let h = to_f32(&args[3])?;
+    let radius = to_f32(&args[4])?;
+    let r = to_f32(&args[5])?;
+    let g = to_f32(&args[6])?;
+    let b = to_f32(&args[7])?;
+    let a = to_f32(&args[8])?;
+    safe_draw_round_rect(x, y, w, h, radius, Color::new(r, g, b, a));
+    Ok(Value::None)
+}
+
+/// host_draw_round_rect_lines(x, y, w, h, radius, thickness, r, g, b, a)
+pub fn host_draw_round_rect_lines(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 10 {
+        return Err(VmFault::TypeMismatch {
+            expected: "10 arguments (x, y, w, h, radius, thickness, r, g, b, a)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let x = to_f32(&args[0])?;
+    let y = to_f32(&args[1])?;
+    let w = to_f32(&args[2])?;
+    let h = to_f32(&args[3])?;
+    let radius = to_f32(&args[4])?;
+    let th = to_f32(&args[5])?;
+    let r = to_f32(&args[6])?;
+    let g = to_f32(&args[7])?;
+    let b = to_f32(&args[8])?;
+    let a = to_f32(&args[9])?;
+    safe_draw_round_rect_lines(x, y, w, h, radius, th, Color::new(r, g, b, a));
+    Ok(Value::None)
+}
+
+/// host_draw_sdf_rect(x, y, w, h, radius, border_w, border_r, border_g, border_b, border_a, inner_hl, bg_r, bg_g, bg_b, bg_a)
+/// host_draw_sdf_rect(x, y, w, h, radius, border_w, border_r, border_g, border_b, border_a, inner_hl, bg_r, bg_g, bg_b, bg_a)
+/// host_draw_sdf_rect_v2(x, y, w, h, radius, elevation, focus_w, focus_r, focus_g, focus_b, focus_a, border_w, border_r, border_g, border_b, border_a, inner_hl, bg_r, bg_g, bg_b, bg_a)
+pub fn host_draw_sdf_rect(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 15 {
+        return Err(VmFault::TypeMismatch {
+            expected: "15 arguments (x, y, w, h, radius, border_w, border_r, border_g, border_b, border_a, inner_hl, bg_r, bg_g, bg_b, bg_a)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let x = to_f32(&args[0])?;
+    let y = to_f32(&args[1])?;
+    let w = to_f32(&args[2])?;
+    let h = to_f32(&args[3])?;
+    let radius = to_f32(&args[4])?;
+    let border_w = to_f32(&args[5])?;
+    let border_r = to_f32(&args[6])?;
+    let border_g = to_f32(&args[7])?;
+    let border_b = to_f32(&args[8])?;
+    let border_a = to_f32(&args[9])?;
+    let inner_hl = to_f32(&args[10])?;
+    let bg_r = to_f32(&args[11])?;
+    let bg_g = to_f32(&args[12])?;
+    let bg_b = to_f32(&args[13])?;
+    let bg_a = to_f32(&args[14])?;
+
+    safe_draw_sdf_rect(&SdfQuad {
+        x,
+        y,
+        w,
+        h,
+        radius,
+        radii: [0.0; 4],
+        border_width: border_w,
+        border_color: Color::new(border_r, border_g, border_b, border_a),
+        inner_highlight: inner_hl,
+        bg_color: Color::new(bg_r, bg_g, bg_b, bg_a),
+        elevation: 0.0,
+        focus_width: 0.0,
+        focus_color: Color::new(0.0, 0.0, 0.0, 0.0),
+    });
+    Ok(Value::None)
+}
+
+/// M14 extended SDF draw: adds soft-shadow elevation and a focus ring that
+/// composites in the same pass as the fill and border.
+///
+/// Argument order keeps the legacy tail intact so the two natives can coexist:
+///   x, y, w, h, radius, elevation, focus_w,
+///   focus_r, focus_g, focus_b, focus_a,
+///   border_w, border_r, border_g, border_b, border_a, inner_hl,
+///   bg_r, bg_g, bg_b, bg_a
+pub fn host_draw_sdf_rect_v2(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 21 {
+        return Err(VmFault::TypeMismatch {
+            expected: "21 arguments (x, y, w, h, radius, elevation, focus_w, focus_r, focus_g, focus_b, focus_a, border_w, border_r, border_g, border_b, border_a, inner_hl, bg_r, bg_g, bg_b, bg_a)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let x = to_f32(&args[0])?;
+    let y = to_f32(&args[1])?;
+    let w = to_f32(&args[2])?;
+    let h = to_f32(&args[3])?;
+    let radius = to_f32(&args[4])?;
+    let elevation = to_f32(&args[5])?;
+    let focus_w = to_f32(&args[6])?;
+    let focus_r = to_f32(&args[7])?;
+    let focus_g = to_f32(&args[8])?;
+    let focus_b = to_f32(&args[9])?;
+    let focus_a = to_f32(&args[10])?;
+    let border_w = to_f32(&args[11])?;
+    let border_r = to_f32(&args[12])?;
+    let border_g = to_f32(&args[13])?;
+    let border_b = to_f32(&args[14])?;
+    let border_a = to_f32(&args[15])?;
+    let inner_hl = to_f32(&args[16])?;
+    let bg_r = to_f32(&args[17])?;
+    let bg_g = to_f32(&args[18])?;
+    let bg_b = to_f32(&args[19])?;
+    let bg_a = to_f32(&args[20])?;
+
+    safe_draw_sdf_rect(&SdfQuad {
+        x,
+        y,
+        w,
+        h,
+        radius,
+        radii: [0.0; 4],
+        border_width: border_w,
+        border_color: Color::new(border_r, border_g, border_b, border_a),
+        inner_highlight: inner_hl,
+        bg_color: Color::new(bg_r, bg_g, bg_b, bg_a),
+        elevation,
+        focus_width: focus_w,
+        focus_color: Color::new(focus_r, focus_g, focus_b, focus_a),
+    });
+    Ok(Value::None)
+}
+
+/// host_draw_sdf_rect_corners(x, y, w, h, tl, tr, br, bl, elevation, focus_w, focus_r, focus_g, focus_b, focus_a, border_w, border_r, border_g, border_b, border_a, inner_hl, bg_r, bg_g, bg_b, bg_a)
+///
+/// Per-corner radii variant, for asymmetric "squircle" shapes.
+pub fn host_draw_sdf_rect_corners(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 24 {
+        return Err(VmFault::TypeMismatch {
+            expected: "24 arguments (x, y, w, h, tl, tr, br, bl, elevation, focus_w, focus_r, focus_g, focus_b, focus_a, border_w, border_r, border_g, border_b, border_a, inner_hl, bg_r, bg_g, bg_b, bg_a)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let a = |i: usize| -> Result<f32, VmFault> { to_f32(&args[i]) };
+    let quad = SdfQuad {
+        x: a(0)?,
+        y: a(1)?,
+        w: a(2)?,
+        h: a(3)?,
+        radius: 0.0,
+        radii: [a(4)?, a(5)?, a(6)?, a(7)?],
+        elevation: a(8)?,
+        focus_width: a(9)?,
+        focus_color: Color::new(a(10)?, a(11)?, a(12)?, a(13)?),
+        border_width: a(14)?,
+        border_color: Color::new(a(15)?, a(16)?, a(17)?, a(18)?),
+        inner_highlight: a(19)?,
+        bg_color: Color::new(a(20)?, a(21)?, a(22)?, a(23)?),
+    };
+    safe_draw_sdf_rect(&quad);
+    Ok(Value::None)
+}
+
+/// host_draw_bezier(x1, y1, cx1, cy1, cx2, cy2, x2, y2, thickness, r, g, b, a)
+pub fn host_draw_bezier(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 13 {
+        return Err(VmFault::TypeMismatch {
+            expected: "13 arguments (x1, y1, cx1, cy1, cx2, cy2, x2, y2, thickness, r, g, b, a)"
+                .to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let x1 = to_f32(&args[0])?;
+    let y1 = to_f32(&args[1])?;
+    let cx1 = to_f32(&args[2])?;
+    let cy1 = to_f32(&args[3])?;
+    let cx2 = to_f32(&args[4])?;
+    let cy2 = to_f32(&args[5])?;
+    let x2 = to_f32(&args[6])?;
+    let y2 = to_f32(&args[7])?;
+    let th = to_f32(&args[8])?;
+    let r = to_f32(&args[9])?;
+    let g = to_f32(&args[10])?;
+    let b = to_f32(&args[11])?;
+    let a = to_f32(&args[12])?;
+
+    let color = Color::new(r, g, b, a);
+    let steps = 24;
+    let mut prev_x = x1;
+    let mut prev_y = y1;
+
+    for i in 1..=steps {
+        let t = (i as f32) / (steps as f32);
+        let u = 1.0 - t;
+        let cur_x = u * u * u * x1 + 3.0 * u * u * t * cx1 + 3.0 * u * t * t * cx2 + t * t * t * x2;
+        let cur_y = u * u * u * y1 + 3.0 * u * u * t * cy1 + 3.0 * u * t * t * cy2 + t * t * t * y2;
+        safe_draw_line(prev_x, prev_y, cur_x, cur_y, th, color);
+        prev_x = cur_x;
+        prev_y = cur_y;
+    }
+    Ok(Value::None)
+}
+
 /// host_draw_line(x1, y1, x2, y2, thickness, r, g, b, a)
 pub fn host_draw_line(args: &[Value]) -> Result<Value, VmFault> {
     if args.len() < 9 {
@@ -600,9 +1665,7 @@ pub fn host_draw_line(args: &[Value]) -> Result<Value, VmFault> {
     let g = to_f32(&args[6])?;
     let b = to_f32(&args[7])?;
     let a = to_f32(&args[8])?;
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        draw_line(x1, y1, x2, y2, th, Color::new(r, g, b, a));
-    }));
+    safe_draw_line(x1, y1, x2, y2, th, Color::new(r, g, b, a));
     Ok(Value::None)
 }
 
@@ -663,6 +1726,55 @@ pub fn host_draw_triangle_lines(args: &[Value]) -> Result<Value, VmFault> {
 }
 
 /// host_draw_text(text, x, y, font_size, r, g, b)
+/// Numeric weight (CSS-style 100..=900) to synthetic emboldening offset in
+/// pixels at a given font size.
+///
+/// Macroquad's text pipeline rasterizes glyphs from a single static font
+/// instance and exposes no hook for OpenType variation coordinates, so the
+/// `wght` axis of the bundled Inter variable font cannot be addressed at
+/// draw time. Weight is therefore applied as a stroke-like emboldening: the
+/// glyph is drawn once normally, then re-drawn with a small offset whose
+/// magnitude tracks the requested weight. This is the same technique fontdue
+/// itself uses for `FontSettings::embolden`.
+///
+/// Returns `0.0` for weights at or below normal, so regular text renders
+/// through the single-pass fast path.
+fn embolden_offset(weight: i64, font_size: f32) -> f32 {
+    if weight <= 500 {
+        return 0.0;
+    }
+    // 500 -> 0, 700 -> ~1/24 em, 900 -> ~1/16 em. Sub-pixel, clamped to 2px:
+    // beyond that the glyph counters start to fill in and read as blurry
+    // rather than bold.
+    let t = ((weight - 500) as f32) / 400.0;
+    (t * font_size / 20.0).min(2.0)
+}
+
+/// Resolves the `font_weight` prop value to a CSS-style numeric weight.
+///
+/// Accepts keyword strings (the historical Aipo prop contract) and raw
+/// numbers. Unknown values fall back to normal.
+fn resolve_font_weight(val: &Value) -> i64 {
+    match val {
+        Value::Int(n) => *n,
+        Value::Float(f) => *f as i64,
+        Value::String(s) => match s.to_ascii_lowercase().as_str() {
+            "thin" | "hairline" => 100,
+            "extralight" | "ultralight" => 200,
+            "light" => 300,
+            "normal" | "regular" | "book" => 400,
+            "medium" => 500,
+            "semibold" | "demibold" => 600,
+            "bold" => 700,
+            "extrabold" | "ultrabold" => 800,
+            "black" | "heavy" => 900,
+            _ => 400,
+        },
+        _ => 400,
+    }
+}
+
+/// host_draw_text(text, x, y, font_size, r, g, b)
 pub fn host_draw_text(args: &[Value]) -> Result<Value, VmFault> {
     if args.len() < 7 {
         return Err(VmFault::TypeMismatch {
@@ -677,8 +1789,116 @@ pub fn host_draw_text(args: &[Value]) -> Result<Value, VmFault> {
     let r = to_f32(&args[4])?;
     let g = to_f32(&args[5])?;
     let b = to_f32(&args[6])?;
-    safe_draw_text(&text, x, y, size, Color::new(r, g, b, 1.0));
+
+    // Optional 8th argument: font weight (see `resolve_font_weight`).
+    let weight = if args.len() >= 8 {
+        resolve_font_weight(&args[7])
+    } else {
+        400
+    };
+
+    let color = Color::new(r, g, b, 1.0);
+    let offset = embolden_offset(weight, size);
+
+    if offset > 0.0 {
+        // Four passes at the compass points approximate a dilated stroke and
+        // read as a heavier weight at UI sizes. Diagonals are omitted: they
+        // add cost without visible benefit below ~24px.
+        for (dx, dy) in [(offset, 0.0), (-offset, 0.0), (0.0, offset), (0.0, -offset)] {
+            safe_draw_text(&text, x + dx, y + dy, size, color);
+        }
+    }
+    safe_draw_text(&text, x, y, size, color);
     Ok(Value::None)
+}
+
+/// host_measure_text(text: String, font_size: Float) -> Float
+/// host_measure_text(text: String, font_size: Float, font_weight: Int) -> Float
+///
+/// Returns the exact pixel width of the given text at the specified font size.
+/// Uses the fontdue CPU-side rasterizer (headless-safe, no GPU required).
+///
+/// The optional third argument applies the same synthetic emboldening as
+/// `host_draw_text`, so measurement and rendering agree for bold text.
+pub fn host_measure_text(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 2 {
+        return Err(VmFault::TypeMismatch {
+            expected: "2 arguments (text, font_size), or 3 with font_weight".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let text = to_string(&args[0])?;
+    let font_size = to_f32(&args[1])?;
+
+    if text.is_empty() {
+        return Ok(Value::Float(0.0));
+    }
+
+    let font = get_zoe_fontdue();
+    let mut width = 0.0f32;
+    let mut prev_char: Option<char> = None;
+
+    for ch in text.chars() {
+        // Add kerning between adjacent characters
+        if let Some(prev) = prev_char {
+            if let Some(kern) = font.horizontal_kern(prev, ch, font_size) {
+                width += kern;
+            }
+        }
+        let metrics = font.metrics(ch, font_size);
+        width += metrics.advance_width;
+        prev_char = Some(ch);
+    }
+
+    // Bold advances grow by the emboldening offset, matching the draw path.
+    if args.len() >= 3 {
+        let offset = embolden_offset(resolve_font_weight(&args[2]), font_size);
+        if offset > 0.0 {
+            width += offset * 2.0;
+        }
+    }
+
+    Ok(Value::Float(width as f64))
+}
+
+/// host_font_metrics(font_size: Float) -> Dict
+/// Returns font metrics for baseline-aligned text rendering:
+/// { "ascent": Float, "descent": Float, "line_gap": Float, "line_height": Float }
+pub fn host_font_metrics(args: &[Value]) -> Result<Value, VmFault> {
+    let font_size = if args.is_empty() {
+        14.0
+    } else {
+        to_f32(&args[0])?
+    };
+
+    let font = get_zoe_fontdue();
+    let lm = font.horizontal_line_metrics(font_size);
+
+    let (ascent, descent, line_gap, line_height) = match lm {
+        Some(m) => (m.ascent, m.descent, m.line_gap, m.new_line_size),
+        None => (font_size * 0.8, font_size * -0.2, 0.0, font_size * 1.2),
+    };
+
+    let entries = vec![
+        (
+            Value::String(Rc::new("ascent".to_string())),
+            Value::Float(ascent as f64),
+        ),
+        (
+            Value::String(Rc::new("descent".to_string())),
+            Value::Float(descent as f64),
+        ),
+        (
+            Value::String(Rc::new("line_gap".to_string())),
+            Value::Float(line_gap as f64),
+        ),
+        (
+            Value::String(Rc::new("line_height".to_string())),
+            Value::Float(line_height as f64),
+        ),
+    ];
+    let dict_map = aipo_vm::DictMap::from_entries(entries);
+    Ok(Value::Dict(Rc::new(RefCell::new(dict_map))))
 }
 
 /// host_load_texture(path: String) -> Int
@@ -773,6 +1993,49 @@ pub fn host_draw_sprite_subrect(args: &[Value]) -> Result<Value, VmFault> {
             ..Default::default()
         },
     );
+    Ok(Value::None)
+}
+
+/// host_draw_icon_path(path_data: String, x: Float, y: Float, size: Float, stroke_width: Float, r: Float, g: Float, b: Float, a: Float)
+pub fn host_draw_icon_path(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 9 {
+        return Err(VmFault::TypeMismatch {
+            expected: "9 arguments (path_data, x, y, size, stroke_width, r, g, b, a)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let path_data = to_string(&args[0])?;
+    let x = to_f32(&args[1])?;
+    let y = to_f32(&args[2])?;
+    let size = to_f32(&args[3])?;
+    let stroke_width = to_f32(&args[4])?;
+    let r = to_f32(&args[5])?;
+    let g = to_f32(&args[6])?;
+    let b = to_f32(&args[7])?;
+    let a = to_f32(&args[8])?;
+
+    let size_u32 = (size.round() as u32).clamp(8, 256);
+    let color = Color::new(r, g, b, a);
+
+    let tex_opt = if let Ok(mut cache_lock) = ICON_CACHE.lock() {
+        let cache = cache_lock.get_or_insert_with(IconCache::new);
+        cache.get_or_render(&path_data, size_u32, stroke_width, color)
+    } else {
+        None
+    };
+
+    if let Some(ref tex) = tex_opt {
+        safe_draw_texture(
+            Some(tex),
+            x,
+            y,
+            DrawTextureParams {
+                dest_size: Some(vec2(size, size)),
+                ..Default::default()
+            },
+        );
+    }
+
     Ok(Value::None)
 }
 
@@ -983,14 +2246,28 @@ const NATIVES: &[NativeEntry] = &[
     ("host_end_frame", 0, host_end_frame),
     ("host_draw_rect", 8, host_draw_rect),
     ("host_draw_rect_lines", 9, host_draw_rect_lines),
+    ("host_draw_round_rect", 9, host_draw_round_rect),
+    ("host_draw_round_rect_lines", 10, host_draw_round_rect_lines),
+    ("host_draw_sdf_rect", 15, host_draw_sdf_rect),
+    ("host_draw_sdf_rect_v2", 21, host_draw_sdf_rect_v2),
+    ("host_draw_sdf_rect_corners", 24, host_draw_sdf_rect_corners),
     ("host_draw_circle", 7, host_draw_circle),
     ("host_draw_line", 9, host_draw_line),
+    ("host_draw_bezier", 13, host_draw_bezier),
     ("host_draw_triangle", 10, host_draw_triangle),
     ("host_draw_triangle_lines", 11, host_draw_triangle_lines),
     ("host_draw_text", 7, host_draw_text),
+    ("host_measure_text", 2, host_measure_text),
+    // Optional-argument overloads. The prelude records the minimum arity, so
+    // the 8-argument form of draw_text and 3-argument form of measure_text
+    // are declared under distinct names for static resolution.
+    ("host_draw_text_weighted", 8, host_draw_text),
+    ("host_measure_text_weighted", 3, host_measure_text),
+    ("host_font_metrics", 1, host_font_metrics),
     ("host_load_texture", 1, host_load_texture),
     ("host_draw_sprite", 7, host_draw_sprite),
     ("host_draw_sprite_subrect", 10, host_draw_sprite_subrect),
+    ("host_draw_icon_path", 9, host_draw_icon_path),
     ("host_set_camera", 3, host_set_camera),
     ("host_reset_camera", 0, host_reset_camera),
     ("host_set_viewport_camera", 7, host_set_viewport_camera),

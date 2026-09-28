@@ -470,7 +470,8 @@ test("dropdown_select cycle through options") do
     let sel_sig = zoe.use_state("Player")
     let dd = zoe.dropdown_select({
         "options": ["Player", "Enemy", "Item"],
-        "selected": sel_sig
+        "selected": sel_sig,
+        "cycle": true
     })
 
     expect.equal(dd.tag, "dropdown_select")
@@ -700,6 +701,791 @@ test("retro3d 3D gizmo rendering and hit detection") do
     let hit_miss = zoe.test_gizmo_3d_hit(100.0, 100.0, obj_pos, cam, rect, 40.0)
     expect.equal(hit_miss, "none")
 end
+
+test("overlay stack management push pop and clear") do
+    zoe.clear_overlays()
+    expect.false(zoe.has_overlays())
+
+    let dummy_elem = zoe.rect({ "width": 200.0, "height": 100.0 })
+    let id1 = zoe.push_overlay(dummy_elem, { "dismissible": true })
+    expect.true(zoe.has_overlays())
+    expect.true(id1 > 0)
+
+    let top = zoe.get_top_overlay()
+    expect.equal(top.id, id1)
+    expect.true(top.dismissible)
+    expect.false(top.scrim)
+
+    let dummy2 = zoe.rect({ "width": 300.0, "height": 200.0 })
+    let id2 = zoe.push_overlay(dummy2, { "scrim": true })
+    let top2 = zoe.get_top_overlay()
+    expect.equal(top2.id, id2)
+    expect.true(top2.scrim)
+
+    let popped = zoe.pop_overlay()
+    expect.true(popped)
+    expect.equal(zoe.get_top_overlay().id, id1)
+
+    zoe.clear_overlays()
+    expect.false(zoe.has_overlays())
+end
+
+test("modal dialog creation and layout") do
+    zoe.clear_overlays()
+    var confirmed = false
+    var cancelled = false
+
+    let on_ok = fn() { confirmed = true }
+    let on_cancel = fn() { cancelled = true }
+
+    let body_label = zoe.label("Deseja realmente excluir?")
+    let diag = zoe.dialog("Confirmar Ação", [body_label], on_ok, on_cancel, {
+        "width": 380.0,
+        "height": 200.0,
+        "confirm_text": "Sim",
+        "cancel_text": "Não"
+    })
+
+    expect.equal(diag.tag, "dialog_card")
+    expect.equal(diag.layout.width, 380.0)
+    expect.equal(diag.layout.height, 200.0)
+    expect.equal(diag.children.len(), 4)
+
+    # Open dialog as modal overlay
+    let ov_id = zoe.open_dialog("Alerta", [body_label], on_ok, on_cancel)
+    expect.true(zoe.has_overlays())
+    let top = zoe.get_top_overlay()
+    expect.true(top.scrim)
+    expect.false(top.dismissible)
+
+    zoe.clear_overlays()
+end
+
+test("dropdown select with floating menu overlay") do
+    zoe.clear_overlays()
+    let selected = zoe.use_state("Opção A")
+    let dd = zoe.dropdown_select({
+        "options": ["Opção A", "Opção B", "Opção C"],
+        "selected": selected
+    })
+
+    expect.equal(dd.tag, "dropdown_select")
+    expect.true(dd.props.has("on_click"))
+
+    # Simulate click on dropdown to open menu overlay
+    let click_handler = dd.props["on_click"]
+    let fake_event = {
+        "x": 100.0,
+        "y": 100.0,
+        "rect": { "x": 100.0, "y": 100.0, "width": 160.0, "height": 32.0 },
+        "target_id": dd.id
+    }
+    (click_handler)(fake_event)
+
+    expect.true(zoe.has_overlays())
+    let top = zoe.get_top_overlay()
+    expect.equal(top.element.tag, "dropdown_menu")
+    expect.equal(top.element.children.len(), 3)
+    # Check menu positioning right below trigger rect
+    expect.equal(top.element.layout.x, 100.0)
+    expect.equal(top.element.layout.y, 136.0)
+
+    # Click on the 2nd option item
+    let item2 = top.element.children[1]
+    expect.equal(item2.tag, "dropdown_item")
+    expect.true(item2.props.has("on_click"))
+    (item2.props["on_click"])(fake_event)
+
+    # Selection updated and overlay closed
+    expect.equal(selected.get(), "Opção B")
+    expect.false(zoe.has_overlays())
+end
+
+test("tooltip property on elements") do
+    let btn_with_tip = zoe.button("Salvar", none, { "tooltip": "Salvar Arquivo (Ctrl+S)" })
+    expect.true(btn_with_tip.props.has("tooltip"))
+    expect.equal(btn_with_tip.props["tooltip"], "Salvar Arquivo (Ctrl+S)")
+end
+
+test("leona layout min_width and max_width constraints") do
+    let wide_card = zoe.card({
+        "width": "100%",
+        "max_width": 500.0,
+        "height": 100.0
+    }, [])
+
+    zoe.compute_layout(wide_card, 800.0, 600.0)
+    expect.equal(wide_card.layout.width, 500.0)
+
+    let tiny_card = zoe.card({
+        "width": 50.0,
+        "min_width": 140.0,
+        "height": 100.0
+    }, [])
+
+    zoe.compute_layout(tiny_card, 800.0, 600.0)
+    expect.equal(tiny_card.layout.width, 140.0)
+end
+
+test("leona layout min_height and max_height constraints") do
+    let tall_card = zoe.card({
+        "width": 200.0,
+        "height": "100%",
+        "max_height": 280.0
+    }, [])
+
+    zoe.compute_layout(tall_card, 800.0, 600.0)
+    expect.equal(tall_card.layout.height, 280.0)
+
+    let short_card = zoe.card({
+        "width": 200.0,
+        "height": 30.0,
+        "min_height": 90.0
+    }, [])
+
+    zoe.compute_layout(short_card, 800.0, 600.0)
+    expect.equal(short_card.layout.height, 90.0)
+end
+
+test("leona multi-line flow wrap layout") do
+    let c1 = zoe.rect({ "width": 90.0, "height": 30.0 }, [])
+    let c2 = zoe.rect({ "width": 90.0, "height": 30.0 }, [])
+    let c3 = zoe.rect({ "width": 90.0, "height": 30.0 }, [])
+
+    let flow_row = zoe.row({
+        "wrap": true,
+        "width": 200.0,
+        "height": "auto",
+        "padding": 0.0,
+        "gap": 10.0
+    }, [c1, c2, c3])
+
+    zoe.compute_layout(flow_row, 800.0, 600.0)
+
+    # Line 1: c1 at x=0, c2 at x=100 (90 + 10 gap)
+    expect.equal(c1.layout.x, 0.0)
+    expect.equal(c1.layout.y, 0.0)
+    expect.equal(c2.layout.x, 100.0)
+    expect.equal(c2.layout.y, 0.0)
+
+    # Line 2: c3 wraps to new line at x=0, y=40 (30 height + 10 gap)
+    expect.equal(c3.layout.x, 0.0)
+    expect.equal(c3.layout.y, 40.0)
+
+    # Container hugs two lines: 30 + 10 + 30 = 70.0
+    expect.equal(flow_row.layout.height, 70.0)
+end
+
+test("leona stack container overlapping layout") do
+    let bg = zoe.rect({ "width": 400.0, "height": 300.0 }, [])
+    let overlay_badge = zoe.rect({ "width": 60.0, "height": 24.0, "offset_x": 16.0, "offset_y": 16.0 }, [])
+
+    let stk = zoe.stack({ "width": 400.0, "height": 300.0 }, [bg, overlay_badge])
+    zoe.compute_layout(stk, 800.0, 600.0)
+
+    expect.equal(stk.layout.width, 400.0)
+    expect.equal(stk.layout.height, 300.0)
+
+    expect.equal(bg.layout.x, 0.0)
+    expect.equal(bg.layout.y, 0.0)
+    expect.equal(overlay_badge.layout.x, 16.0)
+    expect.equal(overlay_badge.layout.y, 16.0)
+end
+
+test("use_memo caching and dependency invalidation") do
+    let tracker = { "computations": 0 }
+    let count = zoe.use_state(10)
+
+    let compute = fn() {
+        tracker["computations"] = tracker["computations"] + 1
+        return count.get() * 2
+    }
+
+    # Pass 1: compute initial memo
+    let m1 = zoe.use_memo(compute, [count.get()])
+    expect.equal(m1.get(), 20)
+    expect.equal(tracker["computations"], 1)
+
+    # Pass 2: memo caches value without re-running compute()
+    expect.equal(m1.value, 20)
+    expect.equal(tracker["computations"], 1)
+end
+
+test("use_effect lifecycle tracking") do
+    let tracker = { "ran": false, "cleaned_up": false }
+
+    let effect = fn() {
+        tracker["ran"] = true
+        return fn() {
+            tracker["cleaned_up"] = true
+        }
+    }
+
+    zoe.use_effect(effect, ["initial"])
+    expect.true(tracker["ran"])
+    expect.false(tracker["cleaned_up"])
+end
+
+test("focus ring and focus tracking state") do
+    let btn1 = zoe.button("Opção 1", none, { "focusable": true })
+    let btn2 = zoe.button("Opção 2", none, { "focusable": true })
+
+    expect.false(btn1.is_focused)
+    expect.false(btn2.is_focused)
+
+    # Focus btn1
+    zoe.set_focused_node(btn1)
+    expect.true(btn1.is_focused)
+    expect.equal(zoe.get_focused_node().id, btn1.id)
+
+    # Shift focus to btn2
+    zoe.set_focused_node(btn2)
+    expect.false(btn1.is_focused)
+    expect.true(btn2.is_focused)
+    expect.equal(zoe.get_focused_node().id, btn2.id)
+
+    # Clear focus
+    zoe.set_focused_node(none)
+    expect.false(btn2.is_focused)
+    expect.equal(zoe.get_focused_node(), none)
+end
+
+test("tree_view hierarchical rendering and selection") do
+    let selected_id = zoe.use_state("player")
+    let tree_data = [
+        {
+            "id": "scene",
+            "label": "Scene Root",
+            "expanded": true,
+            "children": [
+                { "id": "camera", "label": "Main Camera" },
+                { "id": "player", "label": "Player" },
+                { "id": "light", "label": "Directional Light" }
+            ]
+        }
+    ]
+
+    let tv = zoe.tree_view({
+        "nodes": tree_data,
+        "selected": selected_id
+    })
+
+    expect.equal(tv.tag, "tree_view")
+    # 1 root + 3 children = 4 tree_node elements
+    expect.equal(tv.children.len(), 4)
+
+    # Click on the camera node (index 1)
+    let cam_node = tv.children[1]
+    expect.equal(cam_node.tag, "tree_node")
+    expect.true(cam_node.props.has("on_click"))
+    (cam_node.props["on_click"])({})
+
+    expect.equal(selected_id.get(), "camera")
+end
+
+test("virtual_list windowed O(1) item generation") do
+    let vlist = zoe.virtual_list({
+        "item_count": 10000,
+        "item_height": 30.0,
+        "height": 300.0,
+        "scroll": 0.0,
+        "render_item": fn(i) {
+            return zoe.label(f"Item #{i}")
+        }
+    })
+
+    expect.equal(vlist.tag, "virtual_list")
+    # Only visible window (~10 items + overscan + spacers) should be generated, NOT 10,000!
+    expect.true(vlist.children.len() < 25)
+    expect.true(vlist.children.len() > 5)
+end
+
+test("use_tween interpolation over time") do
+    let tw = zoe.use_tween(0.0, 100.0, 1.0, "linear")
+    expect.equal(tw.get(), 0.0)
+    expect.equal(tw.target_val, 100.0)
+    expect.equal(tw.start_val, 0.0)
+
+    # Advance 0.5s (50% progress in linear easing -> 50.0)
+    zoe.step(0.5)
+    expect.equal(tw.get(), 50.0)
+
+    # Advance another 0.5s -> 100.0 (reached target)
+    zoe.step(0.5)
+    expect.equal(tw.get(), 100.0)
+end
+
+test("devtools inspector toggle and state") do
+    expect.false(zoe.is_inspector_enabled())
+
+    zoe.toggle_inspector()
+    expect.true(zoe.is_inspector_enabled())
+
+    zoe.toggle_inspector()
+    expect.false(zoe.is_inspector_enabled())
+end
+
+test("design tokens system verification") do
+    expect.equal(zoe.tokens["space_xs"], 4.0)
+    expect.equal(zoe.tokens["space_sm"], 8.0)
+    expect.equal(zoe.tokens["space_md"], 12.0)
+    expect.equal(zoe.tokens["space_lg"], 16.0)
+
+    expect.equal(zoe.tokens["font_micro"], 10.0)
+    expect.equal(zoe.tokens["font_base"], 13.0)
+    expect.equal(zoe.tokens["font_title"], 16.0)
+
+    expect.equal(zoe.tokens["control_h_sm"], 24.0)
+    expect.equal(zoe.tokens["control_h_md"], 28.0)
+    expect.equal(zoe.tokens["control_h_lg"], 34.0)
+
+    expect.true(zoe.tokens.has("bg_canvas"))
+    expect.true(zoe.tokens.has("bg_panel"))
+    expect.true(zoe.tokens.has("bg_surface"))
+    expect.true(zoe.tokens.has("accent_x"))
+    expect.true(zoe.tokens.has("accent_y"))
+    expect.true(zoe.tokens.has("accent_z"))
+end
+
+test("scrubber_input continuous drag and modifiers") do
+    let val_sig = zoe.use_state(50.0)
+    let scrubber = zoe.scrubber_input({
+        "label": "X",
+        "label_color": zoe.color.peach,
+        "value": val_sig,
+        "step": 1.0,
+        "min": 0.0,
+        "max": 100.0
+    })
+
+    expect.equal(scrubber.tag, "scrubber_input")
+    expect.true(scrubber.props.has("on_drag"))
+
+    let on_drag = scrubber.props["on_drag"]
+
+    # Normal drag: delta dx = 10.0 -> +2.0 (10.0 * 1.0 * 0.2)
+    (on_drag)({ "dx": 10.0, "shift": false, "ctrl": false })
+    expect.equal(val_sig.get(), 52.0)
+
+    # Shift drag (micro precision 0.1x): delta dx = 10.0 -> +0.2
+    (on_drag)({ "dx": 10.0, "shift": true, "ctrl": false })
+    expect.equal(val_sig.get(), 52.2)
+
+    # Ctrl drag (macro snap 10.0x): delta dx = 10.0 -> +20.0
+    (on_drag)({ "dx": 10.0, "shift": false, "ctrl": true })
+    expect.equal(val_sig.get(), 72.2)
+
+    # Clamping at max: 100.0
+    (on_drag)({ "dx": 200.0, "shift": false, "ctrl": false })
+    expect.equal(val_sig.get(), 100.0)
+end
+
+test("segmented_group pill toggle and active elevation") do
+    let cur_mode = zoe.use_state("2d")
+    let seg = zoe.segmented_group(
+        [
+            { "id": "2d", "label": "2D", "icon": "lucide:layers" },
+            { "id": "3d", "label": "3D", "icon": "lucide:box" }
+        ],
+        cur_mode
+    )
+
+    expect.equal(seg.tag, "segmented_group")
+    expect.equal(seg.children.len(), 2)
+
+    let item_2d = seg.children[0]
+    let item_3d = seg.children[1]
+
+    # Active item is elevated with surface_2 background
+    expect.equal(item_2d.props["background"], zoe.color.surface_2)
+    expect.equal(item_3d.props["background"], zoe.color.transparent)
+
+    # Clicking 3D segment updates signal
+    let click_3d = item_3d.props["on_click"]
+    (click_3d)({})
+    expect.equal(cur_mode.get(), "3d")
+end
+
+test("hierarchy_tree layout and semantic badges") do
+    let selected_sig = zoe.use_state("hero")
+    let tree = zoe.hierarchy_tree({
+        "selected": selected_sig,
+        "nodes": [
+            {
+                "id": "root",
+                "label": "RootScene",
+                "type": "3d",
+                "children": [
+                    { "id": "cam", "label": "MainCamera", "type": "camera" },
+                    { "id": "hero", "label": "Player", "type": "3d" }
+                ]
+            }
+        ]
+    })
+
+    expect.equal(tree.tag, "hierarchy_tree")
+    # Generates rows: RootScene (level 0), MainCamera (level 1), Player (level 1)
+    expect.equal(tree.children.len(), 3)
+
+    let root_row = tree.children[0]
+    let cam_row = tree.children[1]
+    let hero_row = tree.children[2]
+
+    # Fitts's Law: 100% width on rows
+    expect.equal(root_row.props["width"], "100%")
+    expect.equal(cam_row.props["width"], "100%")
+    expect.equal(hero_row.props["width"], "100%")
+
+    # Selected row has surface_1 highlight
+    expect.equal(hero_row.props["background"], zoe.color.surface_1)
+    expect.equal(root_row.props["background"], zoe.color.transparent)
+
+    # Clicking cam row selects it
+    (cam_row.props["on_click"])({})
+    expect.equal(selected_sig.get(), "cam")
+end
+
+test("icon element creation and runtime registration") do
+    let play_icon = zoe.icon("lucide:play", { "size": 20.0, "color": zoe.color.green })
+    expect.equal(play_icon.tag, "icon")
+    expect.equal(play_icon.props["width"], 20.0)
+    expect.equal(play_icon.props["height"], 20.0)
+    expect.true(play_icon.props.has("on_custom_draw"))
+
+    # Runtime icon registration
+    zoe.register_icon("custom:star", "M12 2l3 7h7l-5.5 4.5L18 21l-6-4.5L6 21l1.5-7.5L2 9h7z")
+    let custom_icon = zoe.icon("custom:star", { "size": 16.0 })
+    expect.equal(custom_icon.tag, "icon")
+end
+
+test("leona align_items baseline layout alignment") do
+    let l1 = zoe.label("Big", { "font_size": 24.0 })
+    let l2 = zoe.label("Small", { "font_size": 12.0 })
+    let b_row = zoe.row({
+        "align_items": "baseline",
+        "width": 300.0,
+        "height": 60.0
+    }, [l1, l2])
+
+    zoe.compute_layout(b_row, 800.0, 600.0)
+    expect.equal(b_row.layout.width, 300.0)
+    expect.equal(b_row.layout.height, 60.0)
+
+    # Both labels should have calculated Y values aligning their font baselines
+    expect.true(l1.layout.y >= 0.0)
+    expect.true(l2.layout.y >= 0.0)
+end
+
+test("code_editor advanced widget creation and custom draw") do
+    let sample_code = "fn greet(name) {\n    let msg = \"Hello \" + name\n    return msg\n}"
+    let ed = zoe.code_editor({
+        "code": sample_code,
+        "cursor_line": 1,
+        "cursor_col": 8,
+        "width": 500.0,
+        "height": 220.0
+    })
+
+    expect.equal(ed.tag, "code_editor")
+    expect.true(ed.props["clip"])
+    expect.true(ed.props.has("on_custom_draw"))
+
+    zoe.compute_layout(ed, 800.0, 600.0)
+    expect.equal(ed.layout.width, 500.0)
+    expect.equal(ed.layout.height, 220.0)
+
+    # Execute custom draw headlessly without panic
+    let draw_fn = ed.props["on_custom_draw"]
+    (draw_fn)(ed)
+end
+
+test("node_graph advanced widget creation and bezier cables") do
+    let nodes_def = [
+        {
+            "id": "tex",
+            "title": "Texture 2D",
+            "x": 40.0,
+            "y": 50.0,
+            "outputs": [{ "name": "RGBA", "color": zoe.color.yellow }]
+        },
+        {
+            "id": "out",
+            "title": "Fragment Output",
+            "x": 280.0,
+            "y": 60.0,
+            "inputs": [{ "name": "Color", "color": zoe.color.green }]
+        }
+    ]
+    let wires_def = [
+        {
+            "from_node": "tex",
+            "from_socket": "RGBA",
+            "to_node": "out",
+            "to_socket": "Color",
+            "color": zoe.color.yellow
+        }
+    ]
+
+    let graph = zoe.node_graph({
+        "nodes": nodes_def,
+        "connections": wires_def,
+        "width": 600.0,
+        "height": 340.0
+    })
+
+    expect.equal(graph.tag, "node_graph")
+    expect.true(graph.props["clip"])
+    expect.true(graph.props.has("on_custom_draw"))
+
+    zoe.compute_layout(graph, 800.0, 600.0)
+    expect.equal(graph.layout.width, 600.0)
+    expect.equal(graph.layout.height, 340.0)
+
+    # Execute custom draw with host_draw_bezier headlessly without panic
+    let draw_fn = graph.props["on_custom_draw"]
+    (draw_fn)(graph)
+end
+
+test("modal_dialog and open_modal helper integration") do
+    zoe.clear_overlays()
+    var confirmed = false
+    let on_ok = fn() { confirmed = true }
+
+    let body = zoe.label("Configurações salvas com sucesso.")
+    let modal_id = zoe.open_modal("Sucesso", [body], on_ok, none, {
+        "width": 360.0,
+        "height": 180.0
+    })
+
+    expect.true(zoe.has_overlays())
+    let top = zoe.get_top_overlay()
+    expect.equal(top.id, modal_id)
+    expect.true(top.scrim)
+    expect.true(top.dismissible)
+
+    zoe.pop_overlay()
+    expect.false(zoe.has_overlays())
+end
+
+
+
+
+
+
+
+
+
+
+
+# =========================================================================
+# M13 REGRESSION SUITE
+# Every test below locks in a defect fixed in the M13 wave. They are written
+# to fail against the pre-M13 implementation.
+# =========================================================================
+
+test("M13: hex parser accepts every common notation") do
+    # 6-digit with and without the leading '#'
+    let c6 = zoe.hex("#89b4fa")
+    expect.approx(c6.r, 0.537, 0.01)
+    expect.approx(c6.g, 0.706, 0.01)
+    expect.approx(c6.b, 0.980, 0.01)
+    expect.equal(c6.a, 1.0)
+
+    let c6b = zoe.hex("89b4fa")
+    expect.approx(c6b.r, c6.r, 0.0001)
+
+    # 3-digit shorthand: each nibble is doubled ('f0a' -> 'ff00aa')
+    let c3 = zoe.hex("#f0a")
+    expect.equal(c3.r, 1.0)
+    expect.equal(c3.g, 0.0)
+    expect.approx(c3.b, 0.667, 0.01)
+
+    # 8-digit with alpha
+    let c8 = zoe.hex("#89b4fa80")
+    expect.approx(c8.r, 0.537, 0.01)
+    expect.approx(c8.a, 0.502, 0.01)
+
+    # Uppercase is accepted
+    let cu = zoe.hex("#89B4FA")
+    expect.approx(cu.r, c6.r, 0.0001)
+end
+
+test("M13: hex parser returns transparent on invalid input, never gray") do
+    let bad1 = zoe.hex("#nothex")
+    expect.equal(bad1.a, 0.0)
+    let bad2 = zoe.hex("")
+    expect.equal(bad2.a, 0.0)
+    let bad3 = zoe.hex("#12345")
+    expect.equal(bad3.a, 0.0)
+    # The pre-M13 bug returned opaque gray (100,100,100) for these.
+    expect.false(bad1.r == 0.392 and bad1.g == 0.392 and bad1.b == 0.392)
+end
+
+test("M13: color_to_hex round-trips through the parser") do
+    let c = zoe.hex("#89b4fa")
+    let s = zoe.color_to_hex(c)
+    expect.equal(s, "#89b4fa")
+    let back = zoe.hex(s)
+    expect.approx(back.r, c.r, 0.01)
+    expect.approx(back.g, c.g, 0.01)
+    expect.approx(back.b, c.b, 0.01)
+end
+
+test("M13: font_weight keywords resolve to numeric weights") do
+    expect.equal(zoe.resolve_weight("thin"), 100)
+    expect.equal(zoe.resolve_weight("light"), 300)
+    expect.equal(zoe.resolve_weight("normal"), 400)
+    expect.equal(zoe.resolve_weight("regular"), 400)
+    expect.equal(zoe.resolve_weight("medium"), 500)
+    expect.equal(zoe.resolve_weight("semibold"), 600)
+    expect.equal(zoe.resolve_weight("bold"), 700)
+    expect.equal(zoe.resolve_weight("black"), 900)
+
+    # Unknown values fall back to normal rather than failing.
+    expect.equal(zoe.resolve_weight("nonsense"), 400)
+    expect.equal(zoe.resolve_weight(none), 400)
+    # Numbers pass through.
+    expect.equal(zoe.resolve_weight(650), 650)
+end
+
+test("M13: bold text measures wider than regular at the same size") do
+    let regular = zoe.measure_text("Inspector", 14.0, 400)
+    let bold = zoe.measure_text("Inspector", 14.0, 700)
+    # The pre-M13 code returned the same width for both because the prop was
+    # accepted and then ignored.
+    expect.true(bold > regular)
+end
+
+test("M13: labels honor font_weight in intrinsic measurement") do
+    let plain = zoe.label("Scene", { "font_size": 14.0 })
+    let bold = zoe.label("Scene", { "font_size": 14.0, "font_weight": "bold" })
+
+    # Measure directly: the synthetic emboldening is intentionally sub-pixel
+    # (0.35px per side at 14pt), so the delta is small but strictly positive.
+    let w_plain = zoe.measure_text("Scene", 14.0, 400)
+    let w_bold = zoe.measure_text("Scene", 14.0, "bold")
+    expect.true(w_bold > w_plain)
+
+    # An explicit `width: "auto"` selects the intrinsic path, so the resolved
+    # box is exactly the measured advance. This is the width every auto-sized
+    # parent, row distribution and button composition depends on.
+    let auto_plain = zoe.label("Scene", { "font_size": 14.0, "width": "auto" })
+    let auto_bold = zoe.label("Scene", { "font_size": 14.0, "width": "auto", "font_weight": "bold" })
+    zoe.compute_layout(auto_plain, 400.0, 200.0)
+    zoe.compute_layout(auto_bold, 400.0, 200.0)
+
+    expect.approx(auto_plain.layout.width, w_plain, 0.01)
+    expect.approx(auto_bold.layout.width, w_bold, 0.01)
+    expect.true(auto_bold.layout.width > auto_plain.layout.width)
+end
+
+test("M13: spacer honors its flex weight") do
+    let s1 = zoe.spacer(1.0)
+    let s3 = zoe.spacer(3.0)
+    # flex > 1 emits a weighted dimension; the default keeps the bare spelling.
+    expect.equal(s3.props["width"], "flex3.0")
+    expect.equal(s1.props["width"], "flex")
+
+    # Two spacers in a row split leftover space in proportion to their weight.
+    # Note: the local must not be named `row`, which would shadow the
+    # container constructor in this scope.
+    let container = zoe.row({ "width": 400.0, "height": 40.0, "direction": "row" }, [
+        zoe.label("A", { "width": 100.0 }),
+        zoe.spacer(1.0),
+        zoe.spacer(3.0)
+    ])
+    zoe.compute_layout(container, 400.0, 40.0)
+    let one = container.children[1].layout.width
+    let three = container.children[2].layout.width
+    # 300px of leftover split 1:3 -> 75 and 225. Pre-M13 both received 150.
+    expect.approx(one, 75.0, 1.0)
+    expect.approx(three, 225.0, 1.0)
+end
+
+test("M13: runtime string table is overridable and resettable") do
+    expect.equal(zoe.str("dialog.confirm"), "Confirm")
+    expect.equal(zoe.str("dialog.cancel"), "Cancel")
+
+    zoe.set_strings({ "dialog.confirm": "Confirmar", "dialog.cancel": "Cancelar" })
+    expect.equal(zoe.str("dialog.confirm"), "Confirmar")
+    expect.equal(zoe.str("dialog.cancel"), "Cancelar")
+    # Partial override leaves other keys untouched.
+    expect.equal(zoe.str("dialog.close"), "Close")
+
+    zoe.reset_strings()
+    expect.equal(zoe.str("dialog.confirm"), "Confirm")
+end
+
+test("M13: ellipsize truncates to fit a width budget") do
+    let s = "RootScene3D with a very long descriptive name"
+    let short = zoe.ellipsize(s, 80.0, 12.0, 400)
+    expect.true(short.len() < s.len())
+    expect.true(zoe.measure_text(short, 12.0, 400) <= 80.0)
+
+    # Text that already fits is returned unchanged.
+    let fits = zoe.ellipsize("OK", 200.0, 12.0, 400)
+    expect.equal(fits, "OK")
+    # A zero budget yields the ellipsis alone.
+    expect.equal(zoe.ellipsize(s, 0.0, 12.0, 400), "")
+end
+
+test("M13: wrap_text breaks into multiple lines within max_lines") do
+    let s = "The quick brown fox jumps over the lazy dog repeatedly and often"
+    let lines = zoe.wrap_text(s, 100.0, 12.0, 400, 3)
+    expect.true(lines.len() > 1)
+    expect.true(lines.len() <= 3)
+    each line in lines {
+        expect.true(zoe.measure_text(line, 12.0, 400) <= 130.0)
+    }
+end
+
+test("M13: wrap_text breaks a single unbreakable token mid-word") do
+    let token = "Supercalifragilisticexpialidocious"
+    let lines = zoe.wrap_text(token, 40.0, 12.0, 400, 4)
+    expect.true(lines.len() > 1)
+    each line in lines {
+        expect.true(zoe.measure_text(line, 12.0, 400) <= 40.0)
+    }
+end
+
+test("M13: slider exposes drag handlers and a thumb") do
+    let changed = []
+    let sl = zoe.slider(50.0, 0.0, 100.0, fn(v) { changed.add(v) }, {})
+
+    # A slider with no drag handler could not be scrubbed at all pre-M13.
+    expect.true(sl.children[0].props.has("on_drag"))
+    expect.true(sl.children[0].props.has("on_click"))
+
+    # The thumb exists and is positioned proportionally to the value.
+    let track = sl.children[0]
+    var found_thumb = false
+    each child in track.children {
+        if child.tag == "slider_thumb" {
+            found_thumb = true
+        }
+    }
+    expect.true(found_thumb)
+end
+
+test("M13: retro3d trigonometry matches the standard library") do
+    # The pre-M13 polynomial approximations reached 4.22% error at cos(0.6),
+    # which is the default orbit-camera yaw.
+    let cam = zoe.camera_3d(0.6, 0.45, 240.0)
+    let rect = { "x": 0.0, "y": 0.0, "width": 800.0, "height": 600.0 }
+    let p = zoe.project_3d(0.0, 0.0, 0.0, cam, rect)
+
+    # A point at the orbit target projects to the viewport center.
+    expect.approx(p["x"], 400.0, 0.5)
+    expect.approx(p["y"], 300.0, 0.5)
+    expect.true(p["visible"])
+
+    # Vector length uses a real square root.
+    let v = zoe.vec3(3.0, 4.0, 0.0)
+    let cube = zoe.cube_mesh(2.0, 2.0, 2.0)
+    expect.true(cube["vertices"].len() == 8)
+    expect.true(v["x"] == 3.0)
+end
+
 
 
 

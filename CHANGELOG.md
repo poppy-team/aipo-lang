@@ -5,7 +5,174 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [0.11.0] - Em desenvolvimento (Trilha WebAssembly & Self-Hosting)
 
-- **Máquina de Estados de Animação 2D e Sistema de Partículas com Física (`packages/aipo-game` & `aipo-game-host`)**:
+- **M14 — Shader SDF v2: Antialiasing Escalado, Sombra Real e Anel de Foco Composto (`aipo.zoe`)**:
+  - **Quatro defeitos matemáticos corrigidos no fragment shader analítico**:
+    - **(1) Antialiasing com banda fixa de 1px**: `clamp(0.5 - dist, 0, 1)` só é correto em escala 1:1. Sob zoom de câmera de viewport a distância-por-pixel muda e a borda fica ora grossa demais ora fina demais. Corrigido com o uniform `u_pixel_scale`, derivado de `miniquad::window::dpi_scale()`, para que a banda continue com um pixel físico em qualquer HiDPI e qualquer zoom.
+      - **Decisão de implementação**: usar uniform derivado do DPI em vez de `fwidth`/`dFdx`. Manter o shader em GLSL ES 100 dispensa a extensão `GL_OES_standard_derivatives` e assim funciona em **todos** os backends já suportados pelo host, incluindo WebGL1. Derivados também seriam desnecessários aqui: estes quads são rasterizados geometricamente completos e todo o antialiasing é analítico no fragment shader, então MSAA de hardware não acrescentaria nada.
+    - **(2) Borda composta por `mix` sobre SDF único**: `b_dist = dist + border_width` destrói o termo `min(max(q.x,q.y),0.0)`, fazendo o raio interno sair errado, e `mix` não é um `over` correto quando o fill é translúcido. Agora: dois SDFs independentes (`abs(d) - w*0.5`, que centra o traço no limite do box) e saída com alfa pré-multiplicado.
+    - **(3) Ausência total de sombra**: sobreposições simulavam profundidade com um retângulo preto deslocado, produzindo uma borda dura. Agora: duas camadas de sombra suave compostas na ordem `over` do CSS, com **compensação de gamma de 2.2** — sem ela um alfa de 0.05 aterrissa a cerca de metade da escuridão pretendida em superfícies claras.
+    - **(4) Raio único de canto**: `sd_rounded_box` agora recebe raios por canto (`tl, tr, br, bl`), permitindo formas assimétricas.
+  - **Modelo de duas camadas de sombra**: um único blur lê como borrão; o que lê como profundidade é uma camada de *contato* estreita e densa sob uma camada *ambiente* ampla e leve. O nível de elevação (0..5, contínuo) interpola entre âncoras discretas (xs/sm/md/lg/xl), então elevar é animável sem "pop".
+  - **Anel de foco composto na mesma passada**: `renderer.aipo` emitia um segundo `host_draw_rect_lines` externo com uma única cor, que falha WCAG 2.4.13 tanto em superfícies claras quanto escuras. Agora o anel é parte do mesmo draw call do fill, da borda e da sombra, com props `focus_ring_width` e `focus_ring_color`.
+  - **Novos host natives**: `host_draw_sdf_rect_v2` (21 args, elevação + anel de foco) e `host_draw_sdf_rect_corners` (24 args, raios por canto). `host_draw_sdf_rect` de 15 args é preservado para compatibilidade.
+  - **Padding do quad**: o quad rasterizado cresce simetricamente em torno do centro do box para acomodar o blur da sombra e o anel de foco externo, evitando corte. O shader trabalha em coordenadas locais ao box, então a origem do quad cancela.
+  - **Tokens de elevação** (`tokens.aipo`): `elevation_none` a `elevation_max`. `card` recebe `elevation_sm` por padrão e `button` repassa a prop `elevation`, então a sombra nova é visível no catálogo.
+  - **Fallback headless preservado**: sem contexto GL, o caminho de software desenha sombra, preenchimento, borda e anel de foco — os 29 testes continuam rodando sem GPU.
+  - **Testes de paridade Rust↔GLSL (16 testes novos em `bridge_tests.rs`)**: o teste lê o **fonte do shader** via `include_str!` e falha se a banda fixa de 1px, o `dist + border_width`, a ausência de compensação de gamma ou o raio escalar reaparecerem. Testes de invariante cobrem monotonicidade da tabela de âncoras, interpolação estrita entre âncoras, continuidade na resolução de 1/16 de nível, extrapolação além de `xl` e a relação de ordem entre as camadas de contato e ambiente. **Um desses testes pegou um bug real na primeira implementação** — a camada de contato usava a âncora bruta em vez do valor interpolado, e a extrapolação nunca crescia.
+
+- **M13 — Fundamentos Numéricos, Tipografia Real e Correções de API do `aipo.zoe`**:
+  - **Trigonometria correta no subsistema 3D (`retro3d.aipo`)**:
+    - Removidas as aproximações polinomiais locais de `sin`, `cos` e `sqrt` (série de Taylor de 3 termos com `cos` derivado de `sin(x + pi/2)`).
+    - O módulo passou a delegar a `math.sin` / `math.cos` / `math.sqrt` da biblioteca padrão, que operam em `f64`.
+    - **Correção de bug quantificada**: a aproximação anterior atingia **4,22% de erro relativo em `cos(0.6)`** — exatamente o `yaw` padrão de `camera_3d(yaw = 0.6, ...)` — corrompendo de forma visível a projeção de profundidade do viewport 3D. O erro agora é da ordem do épsilon de ponto flutuante.
+    - Teste de regressão `M13: retro3d trigonometry matches the standard library` valida que um ponto no alvo da órbita projeta no centro do viewport.
+  - **Peso de fonte real (`font_weight`)**:
+    - `font_weight` era aceito como propriedade e **nunca lido**: todo `"font_weight": "bold"` no código era um no-op e a hierarquia tipográfica não existia.
+    - `host_draw_text` e `host_measure_text` agora aceitam um peso CSS (100–900) e aplicam engrossamento sintético por passagens offset nos pontos cardeais.
+    - O bundled Inter é uma fonte variável confirmada (`fvar` + `gvar` presentes), porém o pipeline de texto do macroquad expõe apenas a instância estática; o engrossamento sintético é a via correta dentro dessa restrição.
+    - **Medição e renderização agora concordam**: Leona mede com o mesmo peso que o renderizador pinta.
+  - **Novo módulo `text.aipo` — resolução tipográfica centralizada**:
+    - Ponto único de resolução de peso, tamanho, `line_height`, `letter_spacing`, alinhamento horizontal/vertical, corte com reticências e quebra de linha.
+    - `text_ellipsize` faz busca binária sobre o número de grafemas (O(log n) medições em vez de O(n)).
+    - `text_wrap` quebra em espaços quando possível e apenas no meio da palavra para um token indivisível, com teto de `max_lines` e reticência na última linha preservada.
+  - **Medição de cor em hexadecimal completa (`color.aipo`)**:
+    - `hex()` antes reconhecia **apenas** `#ffffff` e `#000000`; qualquer outro valor retornava cinza opaco `(100,100,100)`. Agora aceita `#RGB`, `#RRGGBB`, `#RRGGBBAA`, com ou sem `#`, maiúsculas ou minúsculas.
+    - Entrada inválida retorna transparente em vez de uma cor arbitrária, para que um erro de digitação nunca seja renderizado como cor plausível.
+    - Novo `to_hex` / `color_to_hex` para serialização, com round-trip verificado em teste.
+    - Nota de implementação: `Int("a")` em Aipo faz parse **decimal apenas**, então os dígitos hexadecimais usam uma varredura posicional sobre o alfabeto — sem custo de conversão, sem dependência de locale e sem modo de falha.
+  - **Tabela de strings em runtime (`strings.aipo`)**:
+    - Elimina os rótulos `"Confirmar"` / `"Cancelar"` hardcoded num framework de alcance global.
+    - English é o padrão; `zoe.set_strings({...})` sobrescreve parcialmente com segurança e `zoe.reset_strings()` restaura.
+  - **Distribuição flex ponderada (`leona.aipo`)**:
+    - `spacer(n)` honrosa o argumento: `spacer(3.0)` ocupa três vezes o espaço restante de `spacer(1.0)`. Antes o parâmetro era completamente ignorado.
+    - Leona agora soma os pesos `flex` e divide proporcionalmente; `justify_content` centraliza contra o bloco de conteúdo real, e não contra o maior filho flex.
+    - `spacer()` sem argumento mantém a grafia `"flex"` para não quebrar árvores e testes existentes.
+  - **Correção do caminho intrínseco de layout (`leona.aipo`)**:
+    - Um `width: "auto"` explícito agora resolve para o tamanho intrínseco medido. Antes, tanto `"auto"` quanto uma propriedade ausente caíam no espaço disponível, e um `zoe.label(..., {"width": "auto"})` na raiz era esticado pela viewport inteira, descartando a largura medida.
+  - **Rolagem com clamp e polegar proporcional (`components.aipo`)**:
+    - Clamp superior aplicado a partir da segunda passagem de layout, quando o transbordo já foi medido por Leona e republicado via `Element.max_scroll`.
+    - O offset inicial de `scroll_y` passa intocado na primeira passagem, para que restaurar uma posição de rolagem salva continue possível.
+    - O polegar reflete a fração visível do conteúdo e é posicionado pelo deslocamento, em vez de ser um bloco fixo de 40px preso ao topo.
+    - Arrastar o polegar move o conteúdo proporcionalmente ao span, e não por um multiplicador fixo.
+  - **Slider arrastável (`make_slider`)**:
+    - O slider expunha apenas `on_click`, então o valor **não podia ser alterado arrastando**. Agora suporta pressionar na trilha (salto para a posição) e pressionar-e-arrastar (seguimento contínuo), com `step` opcional, `on_drag_end` para push de entrada de undo e trilho/polegar estilizados separadamente.
+  - **Cache de ícones com LRU real (`host_bridge.rs`)**:
+    - O README prometia cache LRU; o código usava `HashMap` sem eviction, e a chave inclui RGBA — então trocar de tema enumerava uma nova chave por ícone e a memória de GPU crescia sem limite.
+    - Implementado LRU com `VecDeque` de 512 entradas, mantendo a superfície de dependências em zero. `icon_cache_len()` expõe a contagem para teste.
+  - **Telemetria real no editor (`examples/editor.aipo`)**:
+    - `"FPS: 60"` e `"Leona Layout: OK"` eram strings hardcoded. Agora derivam de `host_frame_time()`, com cor por faixa de FPS, tempo de quadro em ms e contagem de objetos.
+    - "Delete Entity" estava atrás de um closure vazio (`fn(_) {}`); agora limpa a seleção.
+  - **Suíte de regressão M13 (13 testes em `tests/zoe_test.aipo`)**: cada teste trava um defeito corrigido e falha contra a implementação pré-M13.
+  - **Portão de verificação (`scripts/verify.sh`)**: re-bloqueia os pacotes Aipo locais (o digest cobre fontes, então qualquer edição invalida o lockfile) e executa fmt, clippy, testes e build da documentação. `aipo-c-abi` fica fora do escopo por padrão por trabalho em andamento já presente na árvore; use `--all` quando esse trabalho for integrado.
+
+- **Site Documental Dedicado do Zoe UI & Playground Interativo (M12)**:
+  - **Hub Documental no VitePress (`docs/zoe/` e `docs/en/zoe/`)**:
+    - Estruturação completa de 11 páginas documentais especializadas em Português e Inglês: Landing Page com arquitetura gráfica, Guias de Primeiros Passos, Motor Leona 2.0, Reatividade & Sinais, Criação de Componentes Customizados, Catálogo detalhado (Botões, Inputs/Scrubbers, Layout, Navegação, Widgets Avançados) e Playground interativo.
+    - Integração de navegação dedicada e sidebars estruturadas no `docs/.vitepress/config.mts`, com compilação e verificação de integridade 100% verde (`npm run docs:build`).
+  - **Playground com Pré-Visualização e Código em Aipo**:
+    - Seção com exemplos ao vivo unindo editores de código, split views e renderização em GPU.
+
+- **Catálogo de Componentes Avançados em `aipo.zoe` (M11 - Advanced Widgets)**:
+  - **Módulo de Widgets Especializados (`packages/aipo-zoe/src/widgets.aipo`)**:
+    - **`code_editor`**: Editor de código virtualizado com gutter e numeração dinâmica de linhas, realce sintático léxico completo para Aipo (`fn`, `let`, `var`, `if`, strings, comentários, números), cursor piscante com tween, destaque de linha ativa e descarte vertical de linhas invisíveis (culling).
+    - **`node_graph`**: Canvas infinito para grafos visuais e shaders lógicos com grade de fundo, cartões de nós com portas de soquete coloridas por tipo semântico (float, vec, color, tex) e cabos suaves renderizados via nova primitiva `host_draw_bezier` com brilho (*glow*) e anti-aliasing contínuo.
+    - **`modal_dialog` & `open_modal`**: Diálogos modais flutuantes com escurecimento de fundo (*scrim backdrop*), botão de descarte e botões de ação estilizados.
+  - **Primitiva Nativa Bézier em GPU (`host_bridge.rs`)**:
+    - Exposição de `host_draw_bezier` (13 argumentos) e registro na tabela `NATIVES` e prelúdio para renderização de curvas cúbicas em GPU com 24 segmentos e recorte por hardware.
+  - **Re-exportações em `lib.aipo`**: `code_editor`, `node_graph`, `modal_dialog`, `open_modal`.
+
+- **Leona 2.0, Alinhamento por Baseline Tipográfica & Otimização Estrutural de Stack (M10)**:
+  - **Alinhamento na Linha de Base Tipográfica (`align_items: "baseline"`)**:
+    - Suporte a alinhamento horizontal orientado à tipografia usando `host_font_metrics["ascent"]`, eliminando flutuações e desalinhamentos entre ícones e rótulos de texto de diferentes tamanhos.
+  - **Otimização Estrutural de Stack Frames no Leona (`leona.aipo`)**:
+    - Decomposição das passadas de medição e flex em funções modulares auxiliares (`distribute_flex_and_measure`, `get_child_ascent`, `compute_max_ascent`).
+    - Redução do frame de execução de `layout_node` de 70 slots para ~18 slots por nível na pilha do interpretador, permitindo a travessia de árvores arbitrariamente profundas (30+ níveis) com zero risco de transbordamento de operand stack (`AIPO_RT_OVERFLOW`).
+
+- **Shaders Analíticos de UI por GPU em `aipo.zoe` (M9 - GPU SDF)**:
+  - **Pipeline de Fragment Shader SDF (`host_bridge.rs`)**:
+    - Novo pipeline de renderização acelerada por GPU utilizando *Signed Distance Fields* analíticos (`sd_rounded_box`), eliminando a decomposição em polígonos aproximados da CPU.
+    - Suavização contínua de bordas (*anti-aliasing* subpixel) calculada via função de distância analítica direta no pixel shader.
+    - Suporte a *Top Inner Highlight* de 1px simulando reflexão de luz física ambiente no chanfro superior de botões, cartões e abas.
+    - Borda interna precisa calculada continuamente ao longo da curvatura de `border_radius` sem emendas ou bicos.
+    - Nova primitiva nativa `host_draw_sdf_rect` unificando fundo, curvatura, borda e luz interna em uma única passada de draw call na GPU.
+  - **Integração com o Renderizador (`renderer.aipo`)**:
+    - Todos os nós com fundo ou borda agora emitem quads analíticos para a GPU, com fallback automático e seguro para testes headless.
+  - **Testes**: 13/13 aprovados (`cargo test -p aipo-game-host`).
+
+- **Motor Tipográfico Subpixel com Fonte Inter em `aipo.zoe` (M8)**:
+  - **Fonte Inter Embutida (`crates/aipo-game-host/assets/fonts/Inter.ttf`)**:
+    - Substituição da fonte padrão ProggyClean (bitmap pixelada) pela Inter Variable (860KB), uma fonte profissional otimizada para UI com hinting subpixel, carregada via `set_default_font` do macroquad no início de cada sessão.
+  - **Medição de Texto por Hardware (`host_measure_text`)**:
+    - Nova primitiva nativa que retorna a largura exata em pixels de qualquer texto para um dado `font_size`, usando `fontdue` diretamente (CPU-side, headless-safe) com suporte a kerning horizontal.
+    - Substitui a aproximação grosseira `text.len() * font_size * 0.55` em todos os pontos de `leona.aipo`.
+  - **Métricas Tipográficas Reais (`host_font_metrics`)**:
+    - Nova primitiva nativa retornando `{ ascent, descent, line_gap, line_height }` para posicionamento de texto por baseline.
+    - `renderer.aipo` agora usa alinhamento por baseline real: `text_y = box_top + (box_h - (ascent - descent)) / 2 + ascent`, eliminando o fator fudge `font_size * 0.2`.
+  - **Layout Leona Pixel-Perfect**:
+    - `measure_node_intrinsic` em `leona.aipo` usa `host_measure_text` e `host_font_metrics["line_height"]` para dimensionamento intrínseco de labels, buttons e badges.
+    - Tooltips em `renderer.aipo` também atualizados para medição real.
+  - **Recorte por Hardware e Geometria Estabilizada em `host_bridge` e `leona`**:
+    - **Recorte de Linhas Cohen-Sutherland (`safe_draw_line`)**: Algoritmo exato de clipping de segmentos contra o retângulo ativo (`CLIP_STACK`), eliminando o vazamento de linhas da grade 3D sobre o painel lateral de hierarquia.
+    - **Primitivas de Cantos Arredondados (`host_draw_round_rect`, `host_draw_round_rect_lines`)**: Suporte real a `border_radius` no renderizador para botões, cartões e abas com cantos suaves.
+    - **Medição Intrínseca Hierárquica no Leona (`leona.aipo`)**: Resolução completa de `tab_item`, `segment_item`, `segmented_group`, `button` (composição ícone + texto) e `badge`, extinguindo sobreposições como `"ierarchAssets"` e o corte de texto em botões com ícones.
+    - **Distribuição Flex Proporcional em Linhas**: Campos de coordenadas (X, Y, Z) agora dividem o container do Inspetor em 3 colunas simétricas de 33.3% (`width: "flex"`).
+  - **Testes**: 13/13 aprovados (`cargo test -p aipo-game-host`).
+
+- **Modernização de UI, Motor de Ícones Vetoriais e Tokens de Design em `aipo.zoe`**:
+  - **Design Tokens Canônicos (`packages/aipo-zoe/src/tokens.aipo`)**:
+    - Tipografia escalada (`10.0` a `18.0`), grade geométrica estrita de 4px/8px, raios de borda padronizados, alturas táteis de controle e paleta de superfícies Catppuccin Mocha (`bg_canvas`, `bg_panel`, `bg_surface`, `accent_x`, `accent_y`, `accent_z`).
+  - **Motor de Ícones Vetoriais por Hardware (`crates/aipo-game-host`)**:
+    - Integração de `tiny-skia` e `svgtypes` no host nativo com LRU GPU Cache (`Texture2D`), rasterizando caminhos SVG em resolução nítida no primeiro frame e desenhando quads acelerados a 60+ FPS nos frames seguintes.
+    - Nova primitiva nativa `host_draw_icon_path` e módulo declarativo `icons.aipo` com `zoe.icon` e `zoe.register_icon`, incluindo suporte canônico a Lucide (`play`, `pause`, `rotate-ccw`, `grid`, `box`, `layers`, `trash`, `camera`, `sun`, `volume`, `sparkles`, etc.), Heroicons, Tabler, Material Symbols e Devicons (`rust`).
+  - **Componentes Profissionais de Alta Precisão (`packages/aipo-zoe/src/components.aipo`)**:
+    - `scrubber_input`: Controle numérico estilo Blender com arrasto contínuo, badges coloridos de eixos, precisão decimal configurável e suporte a modificadores de teclado (`Shift` para ajuste fino 0.1x, `Ctrl` para saltos 10x).
+    - `segmented_group`: Controle em pílula (Linear/Raycast) com superfície ativa elevada, suporte a ícones vetoriais e rótulos tipográficos.
+    - `hierarchy_tree`: Árvore de cena profissional (Godot/Blender) com seleção em largura total (Fitts's Law), guias verticais de indentação, carets rotativos e badges semânticos (`[3D]`, `[2D]`, `[CAM]`, `[SFX]`).
+    - `button`: Suporte aprimorado a ícones embutidos (`icon`, `icon_size`).
+  - **Evolução do Editor Visual de Game Engine (`packages/aipo-zoe/examples/editor.aipo`)**:
+    - Adoção completa de `segmented_group` para alternância 2D/3D, `hierarchy_tree` na aba de hierarquia, `scrubber_input` para coordenadas X/Y/Z no Inspetor e ícones vetoriais em botões da barra de ferramentas e lista de assets.
+  - **Suíte de Testes Automatizados**:
+    - Novo teste de unidade `test_host_draw_icon_path` e validação multi-frame em `test_zoe_ui_editor_compilation_and_execution` e `test_zoe_ui_unit_test_suite` (13/13 testes aprovados).
+
+- **Amadurecimento Completo de `aipo.html` (Web Declarativa, SSR e TEA/MVU)**:
+  - **Evolução Sintática do Compilador (`crates/aipo-syntax/src/parser.rs`)**:
+    - Suporte a identificadores contextuais para `div`, permitindo que `fn div`, `export div` e chamadas `div(...)` funcionem como expressões e declarações sem conflito com o operador legado de divisão inteira.
+  - **Correção no Sistema de Módulos (`crates/aipo-cli/src/modules.rs`)**:
+    - Renomeação consistente de identificadores privados em declarações de funções (`HirItem::Fn`), estruturas (`HirItem::Struct`), blocos de implementação (`HirItem::Impl`) e construtores (`HirExpr::Construct`), garantindo isolamento estrito de visibilidade em submódulos de pacotes.
+  - **Serializador SSR Puro e Fragmentos (`packages/aipo-html/src/tags.aipo`)**:
+    - `render_to_string(vnode)`: serialização pura de árvores virtuais para HTML5 canônico com escape preventivo de entidades (`&`, `<`, `>`, `"`) em nós de texto e atributos.
+    - `fragment(body)`: suporte a fragmentos virtuais para renderizar múltiplos elementos irmãos sem contêineres adicionais no DOM ou HTML final.
+    - `each_item(items, render_fn)`: iterador declarativo para renderização de coleções.
+  - **CSS-in-Aipo Tipado com Media Queries (`packages/aipo-html/src/css.aipo`)**:
+    - `css(rules)`: geração determinística de classes com hash (`aipo-s{id}`), suporte a pseudo-classes (`hover`, `active`, `focus`, `disabled`) e blocos responsivos `@media`.
+    - `get_injected_css()` / `clear_css_registry()`: concatenação de folhas de estilo injetadas para embutimento no `<head>` em SSR.
+  - **Runtime MVU/TEA Reativo com Comandos (`packages/aipo-html/src/mvu.aipo`)**:
+    - Padrão The Elm Architecture (TEA) suportando tuplas `[model, cmd]` e despachos reativos sem necessidade de diffing da árvore inteira.
+    - Construtores de comandos explícitos: `cmd_none()`, `cmd_msg(msg)` e `cmd_task(task_fn, on_success, on_error)`.
+  - **Bateria de Testes Automatizados (`packages/aipo-html/tests/html_test.aipo`)**:
+    - 6 testes cobrindo árvores aninhadas, tags folha e void, serialização SSR com escaping, fragmentos, regras de CSS com media queries e cadeia de comandos MVU.
+
+- **Implementação do Framework HTTP e Roteador de Microsserviços (`packages/aipo-http`)**:
+  - **Roteador Zero-Regex em Árvore de Segmentos (`packages/aipo-http/src/router.aipo`)**:
+    - Implementação de árvore Radix de segmentos (`RouteNode` / `Router`) sem dependência de expressões regulares em runtime.
+    - Suporte a rotas estáticas exatas, parâmetros dinâmicos (`:id`), múltiplos parâmetros aninhados e rotas coringa (*catch-all* `*filepath`).
+  - **Engine de Contexto Tipado (`packages/aipo-http/src/context.aipo`)**:
+    - Estrutura `Context` com métodos ergonômicos e orientados a objeto (`impl Context`): `status`, `set_header`, `header`, `param`, `query_param`, `json`, `text`, `html` e `body_json`.
+    - Parsing automatizado de query strings (`?key=val&k2=v2`) e decodificação segura de corpo JSON via `json.parse`.
+  - **Pipeline de Middlewares Estilo Cebola (`packages/aipo-http/src/middleware.aipo`)**:
+    - Executor recursivo `run_middleware_chain` com encadeamento de `next()`, permitindo pré-processamento, pós-processamento e curto-circuito seguro (e.g. guardas de autenticação).
+    - Middlewares canônicos embutidos:
+      - `cors(options)`: headers de Cross-Origin Resource Sharing e resposta automática de preflight OPTIONS (204 No Content).
+      - `logger(custom_logger)`: registro estruturado de método HTTP, caminho e status code da resposta.
+      - `recover(on_error)`: captura de falhas de runtime e exceções não tratadas com resposta 500 JSON.
+  - **Aplicação Central e Agrupamento de Rotas (`packages/aipo-http/src/app.aipo` & `lib.aipo`)**:
+    - Registro de rotas por verbo HTTP (`get`, `post`, `put`, `delete`, `patch`).
+    - Agrupamento hierárquico de rotas (`group`) com concatenação normalizada de caminhos (`combine_path`) e suporte a middlewares dedicados por grupo.
+    - Dispatcher puro e desacoplado (`handle_request(req_dict) -> res_dict`), permitindo testes unitários ultrarrápidos e desacoplamento de sockets de rede do SO.
+  - **Bateria de Testes Automatizados (`packages/aipo-http/tests/http_test.aipo`)**:
+    - 6 testes cobrindo roteamento básico, respostas tipadas, extração de parâmetros e wildcards, query strings e body JSON, esteira de middlewares e auth guard, middlewares embutidos (cors, recover) e agrupamento de rotas com 404.
+  - **Documentação Canônica Bilíngue (`docs/packages/aipo-http.md`, `docs/en/packages/aipo-http.md`)**:
+    - Guias detalhados com exemplos práticos de APIs REST, middlewares e testes desacoplados.
   - **Máquina de Estados e Animação de Spritesheets (`packages/aipo-game/src/animation.aipo`)**:
     - Estruturas de dados canônicas `AnimationClip` e `SpriteAnimator` para controle quadro-a-quadro de spritesheets 2D.
     - Suporte a clipes cíclicos (`is_looping == true`) e de disparo único (*one-shot* com travamento no último quadro e sinalizador `is_finished`).
@@ -39,15 +206,44 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
   - Exemplo executável `packages/aipo-game/examples/tilemap_and_hud.aipo` demonstrando todos os subsistemas em ação com movimentação fluida, colisão suave, zoom de câmera e mira laser via raycasting.
   - Teste de integração automatizado `test_tilemap_and_game_hud_compilation_and_execution` em `crates/aipo-game-host/tests/bridge_tests.rs`.
 
-- **Framework Declarativo de GUI Zoe UI e Engine Torin (`packages/aipo-zoe`)**:
+- **Framework Declarativo de GUI Zoe UI e Engine Leona (`packages/aipo-zoe`)**:
   - Implementação completa do pacote `packages/aipo-zoe` (`aipo.zoe`), disponibilizando a arquitetura declarativa de GUI do Zoe UI para Aipo com aceleração por GPU via `aipo-game-host`.
-  - **Engine de Layout Torin (`torin.aipo`)**: Algoritmo hierárquico resolvendo dimensões absolutas em pixels (`Float`/`Int`), percentuais (`"100%"`, `"50%"`), intrínsecas e espalhamento flexível (`"flex"`, `"auto"`), com alinhamento (`align_items`), distribuição (`justify_content`), espaçamento interno (`padding`) e vão entre filhos (`gap`).
-  - **Reatividade com Hooks (`hooks.aipo`)**: Runtime reativo (`use_state`, `set_state`) com rastreamento automático de quadros alterados (*dirty frames*), disparando reconstrução e re-layout eficientes apenas em caso de mutação.
-  - **Catálogo de Componentes e Elementos (`elements.aipo`, `components.aipo`)**: Primitivas fundamentais (`rect`, `label`, `container`) e componentes de alto nível (`button`, `switch`, `slider`, `progress_bar`, `card`, `badge`).
+  - **Engine de Layout Leona 2.0 (`leona.aipo`)**:
+    - Algoritmo hierárquico resolvendo dimensões absolutas em pixels (`Float`/`Int`), percentuais (`"100%"`, `"50%"`), intrínsecas e espalhamento flexível (`"flex"`, `"auto"`), com alinhamento (`align_items`), distribuição (`justify_content`), espaçamento interno (`padding`) e vão entre filhos (`gap`).
+    - Clamping estrito de restrições dimensionais: `min_width`, `max_width`, `min_height`, `max_height` em cartões e contêineres.
+    - Fluxo multi-linha com quebra automática (*flow wrap* via `wrap: true` ou `flex_wrap: true`) para chips, tags e elementos dinâmicos.
+    - Contêiner de sobreposição espacial (*stack layout* via `direction: "stack"`) para crachás flutuantes e sobreposições de camadas.
+    - Otimização extrema de profundidade de pilha da VM Aipo via decomposição modular da função `layout_node`, prevenindo saturação de operand stack em árvores profundas.
+  - **Reatividade Fina e Hooks Avançados (`hooks.aipo`, `types.aipo`)**:
+    - Estado reativo fundamental com `use_state` e `set_state` integrado ao rastreador de dirty frames.
+    - `MemoSignal` e hook `use_memo(compute_fn, deps)` com cache comutativo de avaliações caras e invalidação estrita de dependências.
+    - Hook `use_effect(effect_fn, deps)` com ciclo de vida acoplado e execução garantida de callbacks de limpeza (*cleanup*).
+  - **Camada de Overlays, Diálogos Modais e Portais (`overlay.aipo`)**:
+    - Pilha global de overlays (`overlay_push`, `overlay_pop`, `overlay_clear`, `has_overlays`, `get_top_overlay`) desacoplada da hierarquia visual primária.
+    - Suporte a scrim semitransparente escurecido e fechamento por toque externo (`dismissible`).
+    - Diálogos modais prontos (`dialog`, `open_dialog`) com cabeçalho, corpo flexível e ações de confirmação e cancelamento.
+    - Menus flutuantes tipo dropdown (`dropdown_menu`, `dropdown_item`) com auto-posicionamento relativo ao elemento de ativação.
+    - Sistema de tooltips em pílula com temporizador de permanência (*hover threshold* de 350ms) e descarte automático ao mover o mouse.
+  - **Acessibilidade, Navegação por Teclado e Foco (`app.aipo`, `renderer.aipo`)**:
+    - Navegação sequencial ciclável por teclado com `Tab` e `Shift+Tab` entre controles focáveis (`focusable: true`, campos de texto).
+    - Descarte de overlays e liberação de foco via tecla `Escape`.
+    - Ativação imediata de botões e itens com as teclas `Enter` e `Espaço`.
+    - Indicador visual de foco (*focus ring*) com contorno e halo difuso azul neon Catppuccin Mocha.
+    - APIs programáticas de foco: `get_focused_node()` e `set_focused_node(node)`.
+  - **Controles Especializados e Virtualização (`components.aipo`)**:
+    - Catálogo completo: `button`, `switch`, `slider`, `progress_bar`, `card`, `badge`, `split_view`, `tab_bar`, `tab_view`, `scroll_view`, `viewport`, `text_input`, `number_input`, `dropdown_select`, `color_picker`.
+    - Árvore hierárquica `tree_view(props)` com nós aninhados, chevrons colapsáveis e seleção reativa.
+    - Lista virtualizada `virtual_list(props)` de complexidade $O(\text{viewport})$, renderizando grandes volumes de dados (10.000+ itens) com janela dinâmica e overscan protetor sem engasgos de memória.
+  - **Micro-Animações e DevTools Inspector (`hooks.aipo`, `renderer.aipo`, `app.aipo`)**:
+    - `TweenSignal` e hook `use_tween(initial, target, duration, easing)` suportando curvas `linear`, `ease_in`, `ease_out` e `ease_in_out` sincronizadas com o delta time `dt`.
+    - Inspetor de árvore em tempo real (*DevTools Inspector*) alternável via `F12` ou `toggle_inspector()`, exibindo contornos de nós, destaques ao pairar e badge flutuante `<tag#id> WxH`.
   - **Paleta Catppuccin Mocha Embutida (`color.aipo`)**: Suporte a `rgb`, `rgba`, `hex` e constantes de tema modernas (`crust`, `mantle`, `base`, `surface_0..2`, `blue`, `lavender`, `green`, `red`, etc.).
   - **Ciclo de Vida e Renderizador GPU (`app.aipo`, `renderer.aipo`)**: Despacho de desenho recursivo, hit-testing de eventos de ponteiro/clique e renderização a 60 FPS com integração de lifecycle (`setup`, `update`, `draw`).
-  - **Resolução de Escopo de Módulos no Compilador (`crates/aipo-cli/src/modules.rs`)**: Correção no compilador onde itens de topo (`FnDecl`, `StructDecl`, `ImplBlock`) do arquivo de entrada não eram reescritos com `entry_scope`, garantindo resolução correta de acessos a membros importados (`alias.method(...)`) dentro de funções de usuário.
-  - **Demonstração e Testes Automatizados**: Exemplo `packages/aipo-zoe/examples/dashboard.aipo` e testes automatizados em `crates/aipo-game-host/tests/bridge_tests.rs` (`test_zoe_ui_dashboard_compilation_and_execution`, `test_zoe_ui_unit_test_suite`) validando 100% das asserções.
+  - **Documentação e Roadmap Arquitetural Canônico (`docs/packages/aipo-zoe.md`, `docs/en/packages/aipo-zoe.md`)**:
+    - Análise comparativa aprofundada de mercado com frameworks que compartilham a mesma filosofia declarativa sem widgets do SO (Freya/Torin, Flutter, Egui, SolidJS e Slint).
+    - Conclusão com sucesso dos 6 eixos estratégicos de amadurecimento (M1 a M6) implementados em Aipo puro e testados de ponta a ponta.
+    - Integração de `aipo.zoe` ao catálogo de pacotes oficiais e menus de navegação do site VitePress.
+  - **Demonstração e Testes Automatizados**: Exemplos `packages/aipo-zoe/examples/dashboard.aipo` e `packages/aipo-zoe/examples/editor.aipo` e testes automatizados em `crates/aipo-game-host/tests/bridge_tests.rs` (`test_zoe_ui_dashboard_compilation_and_execution`, `test_zoe_ui_editor_compilation_and_execution`, `test_zoe_ui_unit_test_suite`) validando 100% das asserções.
 
 - **Adaptador Host Agnóstico e Bindings Immediate-Mode GUI (`aipo-egui` & `packages/aipo-egui`)**:
   - Implementação completa da crate `crates/aipo-egui` concretizando o *thin proof* de interoperabilidade Rust do ADP-010.

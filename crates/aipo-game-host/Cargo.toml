@@ -32,3 +32,6 @@ aipo-cli = { path = "../aipo-cli" }
 aipo-egui = { path = "../aipo-egui" }
 egui = { version = "0.32", default-features = false, features = ["default_fonts"] }
 macroquad = { version = "0.4.16", features = ["audio"] }
+tiny-skia = "0.11"
+svgtypes = "0.15"
+fontdue = "0.9"

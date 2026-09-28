@@ -104,11 +104,13 @@ export default defineConfig({
           },
           { text: 'Ferramentas', link: '/tools/' },
           { text: 'Exemplos', link: '/examples/' },
+          { text: 'Zoe UI', link: '/zoe/' },
           {
             text: 'Pacotes',
             items: [
               { text: 'Catálogo Oficial', link: '/packages/' },
               { text: 'aipo.html (Web & DOM)', link: '/packages/aipo-html' },
+              { text: 'aipo.zoe (GUI & Leona)', link: '/packages/aipo-zoe' },
               { text: 'aipo.ui (Multiplataforma)', link: '/packages/aipo-ui' },
               { text: 'aipo.game (Game Engine 2D)', link: '/packages/aipo-game' },
               { text: 'aipo.http (Web & APIs)', link: '/packages/aipo-http' }
@@ -127,12 +129,47 @@ export default defineConfig({
         ],
 
         sidebar: {
+          '/zoe/': [
+            {
+              text: 'Zoe UI Framework',
+              items: [
+                { text: 'Visão Geral', link: '/zoe/' },
+                { text: 'Playground Interativo', link: '/zoe/playground' }
+              ]
+            },
+            {
+              text: 'Guias de Desenvolvimento',
+              items: [
+                { text: 'Primeiros Passos', link: '/zoe/guide/getting-started' },
+                { text: 'Motor Leona 2.0', link: '/zoe/guide/layout-leona' },
+                { text: 'Reatividade & Sinais', link: '/zoe/guide/reactivity' },
+                { text: 'Componentes Customizados', link: '/zoe/guide/custom-components' }
+              ]
+            },
+            {
+              text: 'Catálogo de Componentes',
+              items: [
+                { text: 'Botões & Seleção', link: '/zoe/components/buttons' },
+                { text: 'Campos de Entrada (Inputs)', link: '/zoe/components/inputs' },
+                { text: 'Contêineres de Layout', link: '/zoe/components/layout' },
+                { text: 'Navegação & Hierarquia', link: '/zoe/components/navigation' },
+                { text: 'Widgets Avançados', link: '/zoe/components/advanced' }
+              ]
+            },
+            {
+              text: 'Design & Roadmap',
+              items: [
+                { text: 'Dossiê de Modernização Visual', link: '/design/zoe-visual-modernization-dossier' }
+              ]
+            }
+          ],
           '/packages/': [
             {
               text: 'Pacotes & Frameworks Oficiais',
               items: [
                 { text: 'Catálogo Oficial', link: '/packages/' },
                 { text: 'aipo.html (Web & DOM)', link: '/packages/aipo-html' },
+                { text: 'aipo.zoe (GUI & Leona)', link: '/packages/aipo-zoe' },
                 { text: 'aipo.ui (Multiplataforma)', link: '/packages/aipo-ui' },
                 { text: 'aipo.game (Game Engine 2D)', link: '/packages/aipo-game' },
                 { text: 'aipo.http (Web & APIs)', link: '/packages/aipo-http' }
@@ -304,11 +341,13 @@ export default defineConfig({
           },
           { text: 'Tools', link: '/en/tools/' },
           { text: 'Examples', link: '/en/examples/' },
+          { text: 'Zoe UI', link: '/en/zoe/' },
           {
             text: 'Packages',
             items: [
               { text: 'Official Catalog', link: '/en/packages/' },
               { text: 'aipo.html (Web & DOM)', link: '/en/packages/aipo-html' },
+              { text: 'aipo.zoe (GUI & Leona)', link: '/en/packages/aipo-zoe' },
               { text: 'aipo.ui (Multiplatform)', link: '/en/packages/aipo-ui' },
               { text: 'aipo.game (2D Game Engine)', link: '/en/packages/aipo-game' },
               { text: 'aipo.http (Web & APIs)', link: '/en/packages/aipo-http' }
@@ -327,12 +366,41 @@ export default defineConfig({
         ],
 
         sidebar: {
+          '/en/zoe/': [
+            {
+              text: 'Zoe UI Framework',
+              items: [
+                { text: 'Overview', link: '/en/zoe/' },
+                { text: 'Interactive Playground', link: '/en/zoe/playground' }
+              ]
+            },
+            {
+              text: 'Development Guides',
+              items: [
+                { text: 'Getting Started', link: '/en/zoe/guide/getting-started' },
+                { text: 'Leona 2.0 Engine', link: '/en/zoe/guide/layout-leona' },
+                { text: 'Reactivity & Signals', link: '/en/zoe/guide/reactivity' },
+                { text: 'Custom Components', link: '/en/zoe/guide/custom-components' }
+              ]
+            },
+            {
+              text: 'Component Catalog',
+              items: [
+                { text: 'Buttons & Selection', link: '/en/zoe/components/buttons' },
+                { text: 'Inputs & Scrubbers', link: '/en/zoe/components/inputs' },
+                { text: 'Layout Containers', link: '/en/zoe/components/layout' },
+                { text: 'Navigation & Hierarchy', link: '/en/zoe/components/navigation' },
+                { text: 'Advanced Widgets', link: '/en/zoe/components/advanced' }
+              ]
+            }
+          ],
           '/en/packages/': [
             {
               text: 'Official Packages & Frameworks',
               items: [
                 { text: 'Official Catalog', link: '/en/packages/' },
                 { text: 'aipo.html (Web & DOM)', link: '/en/packages/aipo-html' },
+                { text: 'aipo.zoe (GUI & Leona)', link: '/en/packages/aipo-zoe' },
                 { text: 'aipo.ui (Multiplatform)', link: '/en/packages/aipo-ui' },
                 { text: 'aipo.game (2D Game Engine)', link: '/en/packages/aipo-game' },
                 { text: 'aipo.http (Web & APIs)', link: '/en/packages/aipo-http' }

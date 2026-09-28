@@ -1,0 +1,102 @@
+# icons.aipo — Universal Vector Icon System for Zoe UI (`aipo.zoe`)
+# Supports Lucide, Heroicons, Phosphor, Tabler, Material Symbols, and Devicons.
+# Rasterized on-demand via tiny-skia and hardware-cached in GPU textures.
+
+import types as types_mod
+import color as color_mod
+import elements as elements_mod
+
+# Built-in Icon Registry
+var _ICON_REGISTRY = {
+    # Lucide Icons
+    "lucide:play": "M5 3l14 9-14 9V3z",
+    "lucide:pause": "M6 4h4v16H6z M14 4h4v16h-4z",
+    "lucide:rotate-ccw": "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8 M3 3v5h5",
+    "lucide:grid": "M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z",
+    "lucide:box": "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12",
+    "lucide:layers": "M12 2L2 7l10 5 10-5-10-5z M2 17l10 5 10-5 M2 12l10 5 10-5",
+    "lucide:trash": "M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
+    "lucide:camera": "M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+    "lucide:sun": "M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M6.34 17.66l-1.41 1.41 M19.07 4.93l-1.41 1.41 M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
+    "lucide:volume": "M11 5L6 9H2v6h4l5 4V5z M15.54 8.46a5 5 0 0 1 0 7.07 M19.07 4.93a10 10 0 0 1 0 14.14",
+    "lucide:chevron-right": "M9 18l6-6-6-6",
+    "lucide:chevron-down": "M6 9l6 6 6-6",
+    "lucide:folder": "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z",
+    "lucide:file": "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z M13 2v7h7",
+    "lucide:move": "M5 9l-3 3 3 3 M9 5l3-3 3 3 M15 19l-3 3-3-3 M19 9l3 3-3 3 M2 12h20 M12 2v20",
+    "lucide:rotate-3d": "M16.466 7.5C15.643 4.237 13.952 2 12 2 9.239 2 7 6.477 7 12s2.239 10 5 10c.342 0 .677-.069 1-.2 M15.194 13.707l3.814 1.86-1.86 3.814 M19 15.57c-1.804.885-4.274 1.43-7 1.43-5.523 0-10-2.239-10-5s4.477-5 10-5c4.838 0 8.873 1.718 9.8 4",
+    "lucide:sparkles": "M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z",
+    "lucide:check": "M20 6L9 17l-5-5",
+    "lucide:x": "M18 6L6 18 M6 6l12 12",
+    "lucide:cube": "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z",
+
+    # Heroicons
+    "heroicons:cube": "M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9",
+    "heroicons:play": "M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z",
+    "heroicons:eye": "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+
+    # Tabler Icons
+    "tabler:axis-3d": "M4 4v10a2 2 0 0 0 2 2h10 M4 4l-2 2 M4 4l2 2 M18 14l2 2l-2 2 M14 20l2 -2l-2 -2 M4 16l4 4",
+    "tabler:device-gamepad": "M2 6m0 2a2 2 0 0 1 2 -2h16a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2z M6 12h4 M8 10v4 M15 11v.01 M18 13v.01",
+    "tabler:refresh": "M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4 M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4",
+
+    # Material Symbols
+    "material:search": "M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z",
+    "material:settings": "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z",
+
+    # Devicons
+    "devicons:rust": "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
+}
+
+# Registers or overrides an icon path definition
+fn icons_register_icon(name: String, path_data: String) {
+    _ICON_REGISTRY[name] = path_data
+}
+
+# Resolves an icon name to its vector path data string
+fn icons_get_icon_path(name: String) -> String {
+    if _ICON_REGISTRY.has(name) {
+        return _ICON_REGISTRY[name]
+    }
+    # Fallback to Lucide box
+    return _ICON_REGISTRY["lucide:box"]
+}
+
+# Creates a declarative Zoe icon element
+fn icons_make_icon(name: String, props: Dict = {}) {
+    let size = if props.has("size") then (props["size"] + 0.0) else 16.0
+    let stroke_width = if props.has("stroke_width") then (props["stroke_width"] + 0.0) else 1.8
+    let color_val = if props.has("color") then props["color"] else color_mod.text
+
+    let path_data = icons_get_icon_path(name)
+
+    let draw_icon_fn = fn(node) {
+        if node == none or node.layout == none {
+            return
+        }
+        let rx = node.layout.x + 0.0
+        let ry = node.layout.y + 0.0
+        let r = color_val.r + 0.0
+        let g = color_val.g + 0.0
+        let b = color_val.b + 0.0
+        let a = color_val.a + 0.0
+        host_draw_icon_path(path_data, rx, ry, size, stroke_width, r, g, b, a)
+    }
+
+    var node_props = {
+        "tag": "icon",
+        "width": size,
+        "height": size,
+        "on_custom_draw": draw_icon_fn
+    }
+    if props.has("on_click") {
+        node_props["on_click"] = props["on_click"]
+    }
+    if props.has("tooltip") {
+        node_props["tooltip"] = props["tooltip"]
+    }
+
+    return elements_mod.make_rect(node_props, [])
+}
+
+export icons_register_icon, icons_get_icon_path, icons_make_icon

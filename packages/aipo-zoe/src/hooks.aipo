@@ -1,10 +1,16 @@
-# hooks.aipo — Reactive state hooks for aipo.freya
-# Inspired by Freya's use_signal / use_state
+# hooks.aipo — Reactive state hooks for aipo.zoe
+# Inspired by SolidJS / Freya's fine-grained signals, use_memo, use_effect, and use_tween
 
 import types as types_mod
 
 var _signals = []
 var _signal_index = 0
+var _memos = []
+var _memo_index = 0
+var _effects = []
+var _effect_index = 0
+var _tweens = []
+var _tween_index = 0
 var _is_dirty = true
 
 fn is_dirty() -> Bool {
@@ -21,23 +27,46 @@ fn clear_dirty() {
 
 fn reset_hooks() {
     _signal_index = 0
+    _memo_index = 0
+    _effect_index = 0
+    _tween_index = 0
 }
 
 fn reset_all_signals() {
     _signals = []
     _signal_index = 0
+    _memos = []
+    _memo_index = 0
+    _effects = []
+    _effect_index = 0
+    _tweens = []
+    _tween_index = 0
     _is_dirty = true
+}
+
+fn deps_equal(prev_deps: List, new_deps: List) -> Bool {
+    if prev_deps.len() != new_deps.len() {
+        return false
+    }
+    var i = 0
+    while i < prev_deps.len() {
+        if prev_deps[i] != new_deps[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
 }
 
 fn signal_use_state(initial_value) {
     if _signal_index >= _signals.len() {
         let sig = types_mod.create_signal(_signals.len(), initial_value)
         _signals.add(sig)
-        _signal_index = _signal_index + 1
+        _signal_index += 1
         return sig
     } else {
         let sig = _signals[_signal_index]
-        _signal_index = _signal_index + 1
+        _signal_index += 1
         return sig
     }
 }
@@ -49,6 +78,106 @@ fn signal_set_value(sig, new_value) {
     }
 }
 
+fn signal_use_memo(compute_fn, deps: List) {
+    if _memo_index >= _memos.len() {
+        let val = (compute_fn)()
+        let m = types_mod.create_memo(_memos.len(), val, deps, compute_fn)
+        _memos.add(m)
+        _memo_index += 1
+        return m
+    } else {
+        let m = _memos[_memo_index]
+        _memo_index += 1
+        if not deps_equal(m.deps, deps) {
+            m.value = (m.compute_fn)()
+            m.deps = deps
+        }
+        return m
+    }
+}
+
+fn signal_use_effect(effect_fn, deps = none) {
+    if _effect_index >= _effects.len() {
+        let cleanup = (effect_fn)()
+        let eff = {
+            "id": _effects.len(),
+            "deps": deps,
+            "cleanup": cleanup
+        }
+        _effects.add(eff)
+        _effect_index += 1
+    } else {
+        let eff = _effects[_effect_index]
+        _effect_index += 1
+        var should_run = false
+        if deps == none or eff["deps"] == none {
+            should_run = true
+        } elif not deps_equal(eff["deps"], deps) {
+            should_run = true
+        }
+        if should_run {
+            if eff["cleanup"] != none {
+                (eff["cleanup"])()
+                eff["cleanup"] = none
+            }
+            eff["deps"] = deps
+            let new_cleanup = (effect_fn)()
+            eff["cleanup"] = new_cleanup
+        }
+    }
+}
+
+fn signal_use_tween(initial_val: Float, target_val: Float, duration: Float = 0.3, easing: String = "ease_out") {
+    let init_v = initial_val + 0.0
+    let target_v = target_val + 0.0
+    let dur = if duration > 0.0 then (duration + 0.0) else 0.3
+    if _tween_index >= _tweens.len() {
+        let tw = types_mod.create_tween(_tweens.len(), init_v, target_v, dur, easing)
+        _tweens.add(tw)
+        _tween_index += 1
+        return tw
+    } else {
+        let tw = _tweens[_tween_index]
+        _tween_index += 1
+        if tw.target_val != target_v {
+            tw.start_val = tw.value
+            tw.target_val = target_v
+            tw.elapsed = 0.0
+            tw.duration = dur
+            tw.easing = easing
+            mark_dirty()
+        }
+        return tw
+    }
+}
+
+fn hooks_update_tweens(dt: Float) {
+    var any_active = false
+    each tw in _tweens {
+        if tw.value != tw.target_val {
+            tw.elapsed += dt
+            var t = if tw.duration > 0.0 then (tw.elapsed / tw.duration) else 1.0
+            if t >= 1.0 {
+                tw.value = tw.target_val
+                tw.elapsed = tw.duration
+            } else {
+                var factor = t
+                if tw.easing == "ease_in" {
+                    factor = t * t
+                } elif tw.easing == "ease_out" {
+                    factor = t * (2.0 - t)
+                } elif tw.easing == "ease_in_out" {
+                    factor = if t < 0.5 then (2.0 * t * t) else (-1.0 + (4.0 - 2.0 * t) * t)
+                }
+                tw.value = tw.start_val + (tw.target_val - tw.start_val) * factor
+                any_active = true
+            }
+            mark_dirty()
+        }
+    }
+    return any_active
+}
+
 fn is_signal(val) -> Bool {
     if val == none {
         return false
@@ -58,8 +187,18 @@ fn is_signal(val) -> Bool {
             return true
         }
     }
+    each m in _memos {
+        if m == val {
+            return true
+        }
+    }
+    each tw in _tweens {
+        if tw == val {
+            return true
+        }
+    }
     return false
 }
 
 export is_dirty, mark_dirty, clear_dirty, reset_hooks, reset_all_signals
-export signal_use_state, signal_set_value, is_signal
+export signal_use_state, signal_set_value, signal_use_memo, signal_use_effect, signal_use_tween, hooks_update_tweens, is_signal

@@ -17,14 +17,115 @@ fn to_rgba(r, g, b, a) {
     return types_mod.types_make_color(rf, gf, bf, a + 0.0)
 }
 
+# --- Hexadecimal parsing (M13) ---
+#
+# Supports the three notations designers actually write:
+#   #RGB     (3-digit, each nibble doubled)      e.g. "#f0a"
+#   #RRGGBB  (6-digit)                           e.g. "#89b4fa"
+#   #RRGGBBAA (8-digit, alpha last)              e.g. "#89b4fa80"
+# An optional leading "#" is accepted. Invalid input returns transparent
+# rather than a wrong color, so a typo never renders as arbitrary gray.
+
+# Converts one hex digit to its numeric value, or -1 when not a hex digit.
+#
+# Aipo's `Int(...)` parses decimal only, so hexadecimal digits cannot go
+# through it. A positional scan over the digit alphabet is used instead: it
+# has no conversion cost, no locale dependency, and no failure mode.
+fn hex_digit_value(c: String) -> Int {
+    if c == "0" { return 0 }
+    if c == "1" { return 1 }
+    if c == "2" { return 2 }
+    if c == "3" { return 3 }
+    if c == "4" { return 4 }
+    if c == "5" { return 5 }
+    if c == "6" { return 6 }
+    if c == "7" { return 7 }
+    if c == "8" { return 8 }
+    if c == "9" { return 9 }
+    if c == "a" { return 10 }
+    if c == "b" { return 11 }
+    if c == "c" { return 12 }
+    if c == "d" { return 13 }
+    if c == "e" { return 14 }
+    if c == "f" { return 15 }
+    return -1
+}
+
+# Parses a 2-character hex substring at `start` into 0..=255, or -1 if invalid.
+fn hex_pair(s: String, start: Int) -> Int {
+    if start + 1 >= s.len() {
+        return -1
+    }
+    let hi = hex_digit_value(s.slice(start, start + 1))
+    let lo = hex_digit_value(s.slice(start + 1, start + 2))
+    if hi < 0 or lo < 0 {
+        return -1
+    }
+    return hi * 16 + lo
+}
+
 fn parse_hex(code: String) {
-    if code == "#ffffff" or code == "ffffff" {
-        return to_rgb(255, 255, 255)
+    if code == "" {
+        return to_rgba(0, 0, 0, 0.0)
     }
-    if code == "#000000" or code == "000000" {
-        return to_rgb(0, 0, 0)
+
+    # Normalize to lowercase and drop an optional leading "#".
+    var body = string.trim(code)
+    if body.starts_with("#") {
+        body = string.lower(body.slice(1, body.len()))
+    } else {
+        body = string.lower(body)
     }
-    return to_rgb(100, 100, 100)
+
+    # 3-digit shorthand: each digit is duplicated (f0a -> ff00aa)
+    if body.len() == 3 {
+        let r = hex_digit_value(body.slice(0, 1))
+        let g = hex_digit_value(body.slice(1, 2))
+        let b = hex_digit_value(body.slice(2, 3))
+        if r < 0 or g < 0 or b < 0 {
+            return to_rgba(0, 0, 0, 0.0)
+        }
+        return to_rgba(r * 17, g * 17, b * 17, 1.0)
+    }
+
+    # 6-digit RGB or 8-digit RGBA
+    if body.len() == 6 or body.len() == 8 {
+        let r = hex_pair(body, 0)
+        let g = hex_pair(body, 2)
+        let b = hex_pair(body, 4)
+        if r < 0 or g < 0 or b < 0 {
+            return to_rgba(0, 0, 0, 0.0)
+        }
+        if body.len() == 8 {
+            let a = hex_pair(body, 6)
+            if a < 0 {
+                return to_rgba(0, 0, 0, 0.0)
+            }
+            return to_rgba(r, g, b, a / 255.0)
+        }
+        return to_rgb(r, g, b)
+    }
+
+    return to_rgba(0, 0, 0, 0.0)
+}
+
+# Serializes a color to a "#rrggbb" or "#rrggbbaa" string.
+fn to_hex(c) -> String {
+    fn byte_hex(v: Float) -> String {
+        let digits = "0123456789abcdef"
+        let n = Int(math.clamp(v, 0.0, 1.0) * 255.0)
+        # Integer division: Aipo's `/` yields Float for Float operands, so the
+        # high nibble is computed with `Int(n / 16)` rather than relying on
+        # integer division being available.
+        let hi = Int((n + 0) / 16.0)
+        let lo = n - hi * 16
+        return f"{digits.slice(hi, hi + 1)}{digits.slice(lo, lo + 1)}"
+    }
+    let base = f"#{byte_hex(c.r)}{byte_hex(c.g)}{byte_hex(c.b)}"
+    if c.a < 0.999 {
+        return f"{base}{byte_hex(c.a)}"
+    }
+    return base
 }
 
 # Standard semantic constants
@@ -59,7 +160,7 @@ let pink = to_rgb(245, 194, 231)
 let flamingo = to_rgb(242, 205, 205)
 let rosewater = to_rgb(245, 224, 220)
 
-export to_rgb, to_rgba, parse_hex
+export to_rgb, to_rgba, parse_hex, to_hex
 export transparent, white, black
 export crust, mantle, base, surface_0, surface_1, surface_2, overlay_0, overlay_1, subtext, text
 export blue, lavender, sapphire, sky, teal, green, yellow, peach, maroon, red, mauve, pink, flamingo, rosewater

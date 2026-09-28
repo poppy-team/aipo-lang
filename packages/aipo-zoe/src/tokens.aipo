@@ -1,0 +1,149 @@
+# tokens.aipo — Design Tokens System for Zoe UI (`aipo.zoe`)
+# Centralized typographic scales, 4px/8px spacing grid, radii, and semantic surfaces.
+
+import color as color_mod
+
+# 1. Spacing Scale (4px / 8px Grid System)
+let space_xxs = 2.0
+let space_xs = 4.0
+let space_sm = 8.0
+let space_md = 12.0
+let space_lg = 16.0
+let space_xl = 24.0
+let space_xxl = 32.0
+
+# 2. Typography Scale
+let font_micro = 10.0
+let font_caption = 11.0
+let font_sm = 12.0
+let font_base = 13.0
+let font_lg = 14.0
+let font_title = 16.0
+let font_display = 18.0
+
+# 3. Border Radii
+let radius_xs = 2.0
+let radius_sm = 4.0
+let radius_md = 6.0
+let radius_lg = 8.0
+let radius_xl = 12.0
+let radius_full = 999.0
+
+# 4. Standard Control Heights
+let control_h_sm = 24.0
+let control_h_md = 28.0
+let control_h_lg = 34.0
+let control_h_xl = 40.0
+
+# 5. Soft-shadow Elevation Levels (M14)
+#
+# Continuous 0..5 level consumed by the GPU SDF shader, which interpolates
+# between discrete anchors (xs, sm, md, lg, xl) so elevation can be animated
+# without popping. Level 0 disables the shadow branch entirely, so unelevated
+# widgets cost nothing at render time.
+let elevation_none = 0.0
+let elevation_xs = 1.0
+let elevation_sm = 1.5
+let elevation_md = 2.0
+let elevation_lg = 3.0
+let elevation_xl = 4.0
+let elevation_max = 5.0
+
+# 6. Semantic Surface Elevation & Palette (Catppuccin Mocha)
+let bg_canvas = color_mod.crust
+let bg_panel = color_mod.mantle
+let bg_surface = color_mod.base
+let bg_subsurface = color_mod.surface_0
+let bg_input = color_mod.mantle
+let bg_hover = color_mod.surface_1
+let bg_active = color_mod.surface_2
+
+let border_subtle = color_mod.surface_0
+let border_strong = color_mod.surface_1
+let border_focus = color_mod.blue
+
+let text_primary = color_mod.text
+let text_secondary = color_mod.subtext
+let text_muted = color_mod.overlay_0
+
+let accent = color_mod.blue
+let accent_x = color_mod.peach
+let accent_y = color_mod.green
+let accent_z = color_mod.blue
+let success = color_mod.green
+let warning = color_mod.yellow
+let danger = color_mod.red
+
+# Token Bundle Dictionary for convenient lookup
+let zoe_tokens = {
+    "space_xxs": space_xxs,
+    "space_xs": space_xs,
+    "space_sm": space_sm,
+    "space_md": space_md,
+    "space_lg": space_lg,
+    "space_xl": space_xl,
+    "space_xxl": space_xxl,
+
+    "font_micro": font_micro,
+    "font_caption": font_caption,
+    "font_sm": font_sm,
+    "font_base": font_base,
+    "font_lg": font_lg,
+    "font_title": font_title,
+    "font_display": font_display,
+
+    "radius_xs": radius_xs,
+    "radius_sm": radius_sm,
+    "radius_md": radius_md,
+    "radius_lg": radius_lg,
+    "radius_xl": radius_xl,
+    "radius_full": radius_full,
+
+    "elevation_none": elevation_none,
+    "elevation_xs": elevation_xs,
+    "elevation_sm": elevation_sm,
+    "elevation_md": elevation_md,
+    "elevation_lg": elevation_lg,
+    "elevation_xl": elevation_xl,
+    "elevation_max": elevation_max,
+
+    "control_h_sm": control_h_sm,
+    "control_h_md": control_h_md,
+    "control_h_lg": control_h_lg,
+    "control_h_xl": control_h_xl,
+
+    "bg_canvas": bg_canvas,
+    "bg_panel": bg_panel,
+    "bg_surface": bg_surface,
+    "bg_subsurface": bg_subsurface,
+    "bg_input": bg_input,
+    "bg_hover": bg_hover,
+    "bg_active": bg_active,
+
+    "border_subtle": border_subtle,
+    "border_strong": border_strong,
+    "border_focus": border_focus,
+
+    "text_primary": text_primary,
+    "text_secondary": text_secondary,
+    "text_muted": text_muted,
+
+    "accent": accent,
+    "accent_x": accent_x,
+    "accent_y": accent_y,
+    "accent_z": accent_z,
+    "success": success,
+    "warning": warning,
+    "danger": danger
+}
+
+export space_xxs, space_xs, space_sm, space_md, space_lg, space_xl, space_xxl
+export font_micro, font_caption, font_sm, font_base, font_lg, font_title, font_display
+export radius_xs, radius_sm, radius_md, radius_lg, radius_xl, radius_full
+export control_h_sm, control_h_md, control_h_lg, control_h_xl
+export elevation_none, elevation_xs, elevation_sm, elevation_md, elevation_lg, elevation_xl, elevation_max
+export bg_canvas, bg_panel, bg_surface, bg_subsurface, bg_input, bg_hover, bg_active
+export border_subtle, border_strong, border_focus
+export text_primary, text_secondary, text_muted
+export accent, accent_x, accent_y, accent_z, success, warning, danger
+export zoe_tokens

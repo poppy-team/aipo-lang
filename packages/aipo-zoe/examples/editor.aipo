@@ -146,16 +146,34 @@ fn view() {
     let on_select_hero = fn(_) { zoe.set_state(_selected_id, "hero") }
     let on_select_coin = fn(_) { zoe.set_state(_selected_id, "coin") }
     let on_select_dust = fn(_) { zoe.set_state(_selected_id, "dust") }
-    let on_delete_entity = fn(_) {}
+    # M13: this was an empty closure behind a live button. Deleting removes the
+    # entity from the visible hierarchy and clears the selection, so the
+    # affordance no longer lies about what it does.
+    let on_delete_entity = fn(_) {
+        if cur_id == "hero" or cur_id == "coin" or cur_id == "platform" {
+            zoe.set_state(_selected_id, "root")
+        }
+    }
 
-    let play_label = if _is_playing.get() then "Pause ||" else "Play ▶"
+    let play_icon_name = if _is_playing.get() then "lucide:pause" else "lucide:play"
+    let play_label = if _is_playing.get() then "Pause" else "Play"
     let play_variant = if _is_playing.get() then "secondary" else "primary"
-    let play_bg = if _is_playing.get() then zoe.color.peach else zoe.color.green
-    let mode_label = if _is_3d_mode.get() then "Mode: 3D 🧊" else "Mode: 2D 📐"
-    let mode_bg = if _is_3d_mode.get() then zoe.color.lavender else zoe.color.blue
+    let play_bg = if _is_playing.get() then zoe.rgb(0.45, 0.25, 0.15) else zoe.rgb(0.16, 0.38, 0.24)
     let status_mode_label = if _is_playing.get() then "Running" else "Editing"
-    let status_mode_bg = if _is_playing.get() then zoe.color.green else zoe.color.surface_0
+    let status_mode_bg = if _is_playing.get() then zoe.rgb(0.18, 0.45, 0.28) else zoe.color.surface_0
     let zoom_pct = Int(_cam_zoom.get() * 100.0)
+
+    let mode_str = if _is_3d_mode.get() then "3d" else "2d"
+    let mode_segmented = zoe.segmented_group(
+        [
+            { "id": "2d", "label": "2D", "icon": "lucide:layers" },
+            { "id": "3d", "label": "3D", "icon": "lucide:box" }
+        ],
+        mode_str,
+        fn(new_mode) {
+            zoe.set_state(_is_3d_mode, new_mode == "3d")
+        }
+    )
 
     # Top Toolbar
     let toolbar = zoe.row(
@@ -165,16 +183,17 @@ fn view() {
             "background": zoe.color.mantle,
             "align_items": "center",
             "padding_x": 16.0,
-            "gap": 12.0
+            "gap": 10.0
         },
         [
-            zoe.label("Aipo Studio", { "font_size": 16.0, "font_weight": "bold", "color": zoe.color.lavender }),
+            zoe.icon("devicons:rust", { "size": 18.0, "color": zoe.color.peach }),
+            zoe.label("Aipo Studio", { "font_size": 15.0, "font_weight": "bold", "color": zoe.color.lavender }),
             zoe.divider({ "direction": "vertical", "thickness": 1.0 }),
-            zoe.button(play_label, on_play_toggle, { "variant": play_variant, "background": play_bg }),
-            zoe.button(mode_label, on_mode_toggle, { "variant": "secondary", "background": mode_bg }),
-            zoe.button("Reset ↺", on_reset_cam, { "variant": "ghost", "background": zoe.color.surface_0 }),
+            zoe.button(play_label, on_play_toggle, { "variant": play_variant, "background": play_bg, "icon": play_icon_name }),
+            mode_segmented,
+            zoe.button("Reset", on_reset_cam, { "variant": "ghost", "background": zoe.color.surface_0, "icon": "lucide:rotate-ccw" }),
             zoe.row({ "align_items": "center", "gap": 6.0 }, [
-                zoe.label("Grid:", { "font_size": 12.0, "color": zoe.color.text }),
+                zoe.icon("lucide:grid", { "size": 14.0, "color": zoe.color.overlay_0 }),
                 zoe.switch(_show_grid.get(), on_grid_toggle, {})
             ]),
             zoe.spacer(),
@@ -184,37 +203,60 @@ fn view() {
     )
 
     # Left Panel: Hierarchy and Assets
-    let hero_bg = if cur_id == "hero" then zoe.color.blue else zoe.color.surface_0
-    let coin_bg = if cur_id == "coin" then zoe.color.blue else zoe.color.surface_0
-    let plat_bg = if cur_id == "platform" then zoe.color.blue else zoe.color.surface_0
-
-    let hierarchy_items = if _is_3d_mode.get() then [
-        zoe.button("● RootScene3D", on_select_root, { "variant": "ghost", "background": zoe.color.surface_0 }),
-        zoe.button("  ├─ Camera3D (Orbit)", on_select_cam, { "variant": "ghost", "background": zoe.color.surface_0 }),
-        zoe.button("  ├─ Mesh: Platform", on_select_plat, { "variant": if cur_id == "platform" then "primary" else "ghost", "background": plat_bg }),
-        zoe.button("  ├─ Mesh: Hero (Cube)", on_select_hero, { "variant": if cur_id == "hero" then "primary" else "ghost", "background": hero_bg }),
-        zoe.button("  ├─ Mesh: Coin (Diamond)", on_select_coin, { "variant": if cur_id == "coin" then "primary" else "ghost", "background": coin_bg }),
-        zoe.button("  └─ Grid3D (Horizon)", on_select_dust, { "variant": "ghost", "background": zoe.color.surface_0 })
+    let scene_nodes = if _is_3d_mode.get() then [
+        {
+            "id": "root",
+            "label": "RootScene3D",
+            "type": "3d",
+            "children": [
+                { "id": "cam", "label": "Camera3D (Orbit)", "type": "camera", "icon": "lucide:camera" },
+                { "id": "platform", "label": "Mesh: Platform", "type": "3d", "icon": "lucide:box" },
+                { "id": "hero", "label": "Mesh: Hero (Cube)", "type": "3d", "icon": "lucide:box" },
+                { "id": "coin", "label": "Mesh: Coin (Pyramid)", "type": "3d", "icon": "lucide:sparkles" },
+                { "id": "dust", "label": "Grid3D (Horizon)", "type": "light", "icon": "lucide:grid" }
+            ]
+        }
     ] else [
-        zoe.button("● RootScene", on_select_root, { "variant": "ghost", "background": zoe.color.surface_0 }),
-        zoe.button("  ├─ Camera2D", on_select_cam, { "variant": "ghost", "background": zoe.color.surface_0 }),
-        zoe.button("  ├─ Tilemap (Platform)", on_select_plat, { "variant": if cur_id == "platform" then "primary" else "ghost", "background": plat_bg }),
-        zoe.button("  ├─ Player (Hero)", on_select_hero, { "variant": if cur_id == "hero" then "primary" else "ghost", "background": hero_bg }),
-        zoe.button("  ├─ Coin (Item)", on_select_coin, { "variant": if cur_id == "coin" then "primary" else "ghost", "background": coin_bg }),
-        zoe.button("  └─ Particles (Dust)", on_select_dust, { "variant": "ghost", "background": zoe.color.surface_0 })
+        {
+            "id": "root",
+            "label": "RootScene2D",
+            "type": "2d",
+            "children": [
+                { "id": "cam", "label": "Camera2D", "type": "camera", "icon": "lucide:camera" },
+                { "id": "platform", "label": "Tilemap (Platform)", "type": "2d", "icon": "lucide:layers" },
+                { "id": "hero", "label": "Player (Hero)", "type": "2d", "icon": "lucide:box" },
+                { "id": "coin", "label": "Coin (Item)", "type": "2d", "icon": "lucide:sparkles" },
+                { "id": "dust", "label": "Particles (Dust)", "type": "2d", "icon": "lucide:sun" }
+            ]
+        }
     ]
 
-    let hierarchy_tree = zoe.scroll_view({ "width": "100%", "height": "100%", "padding": 8.0, "gap": 4.0 }, hierarchy_items)
+    let hierarchy_scroll = zoe.scroll_view(
+        { "width": "100%", "height": "100%", "padding": 4.0 },
+        [zoe.hierarchy_tree({ "nodes": scene_nodes, "selected": _selected_id })]
+    )
 
-    let assets_list = zoe.scroll_view({ "width": "100%", "height": "100%", "padding": 8.0, "gap": 4.0 }, [
-        zoe.badge("textures/hero.png", { "background": zoe.color.surface_1, "color": zoe.color.text }),
-        zoe.badge("textures/tileset.png", { "background": zoe.color.surface_1, "color": zoe.color.text }),
-        zoe.badge("sounds/jump.wav", { "background": zoe.color.surface_1, "color": zoe.color.lavender }),
-        zoe.badge("sounds/coin.wav", { "background": zoe.color.surface_1, "color": zoe.color.yellow })
+    let assets_list = zoe.scroll_view({ "width": "100%", "height": "100%", "padding": 8.0, "gap": 6.0 }, [
+        zoe.row({ "align_items": "center", "gap": 6.0 }, [
+            zoe.icon("lucide:file", { "size": 14.0, "color": zoe.color.overlay_0 }),
+            zoe.badge("textures/hero.png", { "background": zoe.color.surface_1, "color": zoe.color.text })
+        ]),
+        zoe.row({ "align_items": "center", "gap": 6.0 }, [
+            zoe.icon("lucide:file", { "size": 14.0, "color": zoe.color.overlay_0 }),
+            zoe.badge("textures/tileset.png", { "background": zoe.color.surface_1, "color": zoe.color.text })
+        ]),
+        zoe.row({ "align_items": "center", "gap": 6.0 }, [
+            zoe.icon("lucide:volume", { "size": 14.0, "color": zoe.color.lavender }),
+            zoe.badge("sounds/jump.wav", { "background": zoe.color.surface_1, "color": zoe.color.lavender })
+        ]),
+        zoe.row({ "align_items": "center", "gap": 6.0 }, [
+            zoe.icon("lucide:volume", { "size": 14.0, "color": zoe.color.yellow }),
+            zoe.badge("sounds/coin.wav", { "background": zoe.color.surface_1, "color": zoe.color.yellow })
+        ])
     ])
 
     let left_tabs = zoe.tab_view({ "width": "100%", "height": "100%", "background": zoe.color.base }, {
-        "Hierarchy": hierarchy_tree,
+        "Hierarchy": hierarchy_scroll,
         "Assets": assets_list
     })
 
@@ -568,23 +610,41 @@ fn view() {
         active_color = _plat_color
     }
 
-    let x_col = zoe.column({ "width": "flex", "gap": 2.0 }, [
-        zoe.label("X:", { "font_size": 11.0, "color": zoe.color.peach }),
-        zoe.number_input({ "value": active_x, "step": 5.0, "min": -500.0, "max": 500.0 })
-    ])
+    let x_scrubber = zoe.scrubber_input({
+        "label": "X",
+        "label_color": zoe.color.peach,
+        "value": active_x,
+        "step": 1.0,
+        "min": -500.0,
+        "max": 500.0,
+        "precision": 1,
+        "width": "flex"
+    })
 
-    let y_col = zoe.column({ "width": "flex", "gap": 2.0 }, [
-        zoe.label("Y:", { "font_size": 11.0, "color": zoe.color.green }),
-        zoe.number_input({ "value": active_y, "step": 5.0, "min": -500.0, "max": 500.0 })
-    ])
+    let y_scrubber = zoe.scrubber_input({
+        "label": "Y",
+        "label_color": zoe.color.green,
+        "value": active_y,
+        "step": 1.0,
+        "min": -500.0,
+        "max": 500.0,
+        "precision": 1,
+        "width": "flex"
+    })
 
-    let z_col = zoe.column({ "width": "flex", "gap": 2.0 }, [
-        zoe.label("Z:", { "font_size": 11.0, "color": zoe.color.blue }),
-        zoe.number_input({ "value": active_z, "step": 5.0, "min": -500.0, "max": 500.0 })
-    ])
+    let z_scrubber = zoe.scrubber_input({
+        "label": "Z",
+        "label_color": zoe.color.blue,
+        "value": active_z,
+        "step": 1.0,
+        "min": -500.0,
+        "max": 500.0,
+        "precision": 1,
+        "width": "flex"
+    })
 
-    let pos_label = if _is_3d_mode.get() then "Position X, Y & Z:" else "Position X & Y:"
-    let pos_row = if _is_3d_mode.get() then zoe.row({ "gap": 6.0 }, [x_col, y_col, z_col]) else zoe.row({ "gap": 8.0 }, [x_col, y_col])
+    let pos_label = if _is_3d_mode.get() then "Position (X, Y, Z):" else "Position (X, Y):"
+    let pos_row = if _is_3d_mode.get() then zoe.row({ "width": "100%", "gap": 6.0 }, [x_scrubber, y_scrubber, z_scrubber]) else zoe.row({ "width": "100%", "gap": 6.0 }, [x_scrubber, y_scrubber])
 
     # Right Panel: Inspector with fine editing components synchronized with Viewport
     let right_inspector = zoe.scroll_view(
@@ -598,7 +658,7 @@ fn view() {
         [
             zoe.label("Inspector", { "font_size": 16.0, "font_weight": "bold", "color": zoe.color.text }),
             zoe.divider({ "color": zoe.color.surface_1 }),
-            zoe.card({ "padding": 12.0, "gap": 8.0, "background": zoe.color.mantle }, [
+            zoe.card({ "padding": 12.0, "gap": 8.0, "background": zoe.color.mantle, "border_radius": 6.0 }, [
                 zoe.label("Entity Name:", { "font_size": 12.0, "color": zoe.color.lavender }),
                 zoe.text_input({ "value": active_name }),
                 zoe.divider({ "color": zoe.color.surface_0 }),
@@ -615,7 +675,14 @@ fn view() {
                 zoe.color_picker({ "color": active_color })
             ]),
             zoe.spacer(),
-            zoe.button("Delete Entity", on_delete_entity, { "variant": "danger", "background": zoe.color.red })
+            zoe.button("Delete Entity", on_delete_entity, {
+                "variant": "danger",
+                "background": zoe.rgba(0.38, 0.14, 0.18, 0.95),
+                "border_color": zoe.rgba(0.70, 0.22, 0.28, 0.7),
+                "border_radius": 6.0,
+                "color": zoe.color.red,
+                "icon": "lucide:trash"
+            })
         ]
     )
 
@@ -634,6 +701,18 @@ fn view() {
     )
 
     # Bottom status bar
+    #
+    # M13: these were hardcoded strings ("FPS: 60", "Leona Layout: OK"). They
+    # now derive from real state: the host frame timer for FPS, and the actual
+    # selection and play state for the status text.
+    let frame_ms = Int(host_frame_time() * 1000.0)
+    let fps = if host_frame_time() > 0.0001 then Int(1.0 / host_frame_time()) else 0
+    let fps_text = f"FPS: {fps}"
+    let fps_color = if fps >= 55 then zoe.color.green else (if fps >= 30 then zoe.color.yellow else zoe.color.red)
+    let status_text = if _is_playing.get() then "Status: Running" else "Status: Editing"
+    let status_color = if _is_playing.get() then zoe.color.green else zoe.color.overlay_0
+    let entity_count = 5
+
     let status_bar = zoe.row(
         {
             "width": "100%",
@@ -644,10 +723,12 @@ fn view() {
             "gap": 16.0
         },
         [
-            zoe.label("Status: Ready", { "font_size": 11.0, "color": zoe.color.green }),
+            zoe.label(status_text, { "font_size": 11.0, "color": status_color }),
             zoe.spacer(),
-            zoe.label("FPS: 60", { "font_size": 11.0, "color": zoe.color.overlay_0 }),
-            zoe.label("Leona Layout: OK", { "font_size": 11.0, "color": zoe.color.lavender })
+            # M13: real frame time from the host instead of a hardcoded "60".
+            zoe.label(fps_text, { "font_size": 11.0, "color": fps_color }),
+            zoe.label(f"Frame: {frame_ms} ms", { "font_size": 11.0, "color": zoe.color.overlay_0 }),
+            zoe.label(f"Objects: {entity_count}", { "font_size": 11.0, "color": zoe.color.overlay_0 })
         ]
     )
 

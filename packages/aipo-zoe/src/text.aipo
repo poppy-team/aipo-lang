@@ -1,0 +1,234 @@
+# text.aipo — Text measurement and typography resolution for aipo.zoe (M13)
+#
+# Centralizes every place where the renderer needs to know "how wide and how
+# tall is this string", so measurement and rasterization can never disagree.
+# The host exposes two call shapes:
+#   host_measure_text(text, size)                 -- regular weight
+#   host_measure_text_weighted(text, size, weight)
+# and likewise for drawing. Weight arrives as a CSS-style number because the
+# host has no way to resolve Aipo string keywords.
+
+# Numeric weight keywords, in the order they are tested. Kept as parallel
+# lists so a single loop can resolve without a nested-branch chain per label.
+let WEIGHT_NAMES = [
+    "thin", "hairline",
+    "extralight", "ultralight",
+    "light",
+    "normal", "regular", "book",
+    "medium",
+    "semibold", "demibold",
+    "bold",
+    "extrabold", "ultrabold",
+    "black", "heavy"
+]
+
+let WEIGHT_VALUES = [100, 100, 200, 200, 300, 400, 400, 400, 500, 600, 600, 700, 800, 800, 900, 900]
+
+# Resolves a `font_weight` prop value to a CSS-style numeric weight.
+# Accepts keyword strings and numbers; anything else falls back to normal (400).
+fn text_resolve_weight(weight) -> Int {
+    if weight == none {
+        return 400
+    }
+    if (weight is Int) {
+        return weight
+    }
+    if (weight is Float) {
+        return Int(weight)
+    }
+    if not (weight is String) {
+        return 400
+    }
+    let name = string.lower(weight)
+    var i = 0
+    while i < WEIGHT_NAMES.len() {
+        if WEIGHT_NAMES[i] == name {
+            return WEIGHT_VALUES[i]
+        }
+        i += 1
+    }
+    return 400
+}
+
+# Returns the numeric weight for a props dict, honoring `font_weight`.
+fn text_weight_of(props: Dict) -> Int {
+    if props.has("font_weight") {
+        return text_resolve_weight(props["font_weight"])
+    }
+    return 400
+}
+
+# Returns the effective font size for a props dict.
+fn text_size_of(props: Dict, default_size: Float = 14.0) -> Float {
+    if props.has("font_size") {
+        return props["font_size"] + 0.0
+    }
+    return default_size
+}
+
+# Measures a string honoring weight. This is the single measurement entry
+# point: Leona, tooltips, the inspector and the code editor all route here.
+fn text_measure(s: String, size: Float, weight: Int) -> Float {
+    if weight > 500 {
+        return host_measure_text_weighted(s, size, weight) + 0.0
+    }
+    return host_measure_text(s, size) + 0.0
+}
+
+# Convenience wrapper that reads size and weight out of a label's props.
+fn text_measure_props(text: String, props: Dict, default_size: Float = 14.0) -> Float {
+    return text_measure(text, text_size_of(props, default_size), text_weight_of(props))
+}
+
+# Returns the resolved line height for a props dict.
+#
+# An explicit `line_height` prop wins. Otherwise a weight-dependent multiple of
+# the font size is used: heavier faces need more leading to stay legible, which
+# is why heading and body text need different defaults.
+fn text_line_height(props: Dict, default_size: Float = 14.0) -> Float {
+    if props.has("line_height") {
+        return props["line_height"] + 0.0
+    }
+    let size = text_size_of(props, default_size)
+    let weight = text_weight_of(props)
+    if weight >= 700 {
+        return size * 1.34
+    }
+    if size >= 16.0 {
+        return size * 1.32
+    }
+    return size * 1.42
+}
+
+# Returns the letter spacing for a props dict. Negative values tighten
+# display type; positive values are used for small uppercase labels.
+fn text_letter_spacing(props: Dict) -> Float {
+    if props.has("letter_spacing") {
+        return props["letter_spacing"] + 0.0
+    }
+    return 0.0
+}
+
+# Baseline offset for vertical centering of a line box inside `height`.
+# Uses real font metrics, so the optical center matches the typographic center
+# rather than an approximated one.
+fn text_baseline_y(box_y: Float, height: Float, size: Float) -> Float {
+    let fm = host_font_metrics(size)
+    let ascent = fm["ascent"]
+    let descent = fm["descent"]
+    let block = ascent - descent
+    return box_y + (height - block) / 2.0 + ascent
+}
+
+# Truncates `s` so it fits within `max_width`, appending an ellipsis when
+# content is dropped. Binary search over grapheme count keeps this O(log n)
+# measurements instead of O(n).
+fn text_ellipsize(s: String, max_width: Float, size: Float, weight: Int) -> String {
+    if max_width <= 0.0 {
+        return ""
+    }
+    if text_measure(s, size, weight) <= max_width {
+        return s
+    }
+    let dots = "\u{2026}"
+    if text_measure(dots, size, weight) > max_width {
+        return ""
+    }
+    let budget = max_width - text_measure(dots, size, weight)
+    let total = s.len()
+    var lo = 0
+    var hi = total
+    while lo < hi {
+        let mid = Int((lo + hi + 1) / 2.0)
+        if text_measure(s.slice(0, mid), size, weight) <= budget {
+            lo = mid
+        } else {
+            hi = mid - 1
+        }
+    }
+    if lo <= 0 {
+        return dots
+    }
+    return f"{s.slice(0, lo)}{dots}"
+}
+
+# Wraps `s` into at most `max_lines` lines of `max_width` each, breaking on
+# spaces where possible and breaking mid-word only for a single unbreakable
+# token. Returns the wrapped lines.
+fn text_wrap(s: String, max_width: Float, size: Float, weight: Int, max_lines: Int) -> List {
+    var lines = []
+    if max_width <= 0.0 or max_lines <= 0 {
+        return lines
+    }
+
+    let words = string.split(s, " ")
+    var current = ""
+    each w in words {
+        let candidate = if current == "" then w else f"{current} {w}"
+        if text_measure(candidate, size, weight) <= max_width {
+            current = candidate
+        } else {
+            if current != "" {
+                lines.add(current)
+                current = ""
+            }
+            # A single word longer than the line must break mid-token.
+            if text_measure(w, size, weight) > max_width {
+                var chunk = ""
+                var ci = 0
+                while ci < w.len() {
+                    let next = f"{chunk}{w.slice(ci, ci + 1)}"
+                    if text_measure(next, size, weight) > max_width and chunk != "" {
+                        lines.add(chunk)
+                        chunk = w.slice(ci, ci + 1)
+                    } else {
+                        chunk = next
+                    }
+                    ci += 1
+                }
+                current = chunk
+            } else {
+                current = w
+            }
+        }
+    }
+    if current != "" {
+        lines.add(current)
+    }
+
+    # Clamp to max_lines, ellipsizing the last kept line if we dropped content.
+    if lines.len() > max_lines {
+        var kept = []
+        var i = 0
+        while i < max_lines {
+            kept.add(lines[i])
+            i += 1
+        }
+        kept[max_lines - 1] = text_ellipsize(
+            f"{kept[max_lines - 1]}{lines[max_lines]}",
+            max_width,
+            size,
+            weight
+        )
+        return kept
+    }
+    return lines
+}
+
+# Resolves a text alignment prop to a horizontal offset inside a box.
+# `start` and `end` follow the inline axis; `center` and `justify` are absolute.
+fn text_align_offset(align: String, box_x: Float, box_w: Float, text_w: Float) -> Float {
+    if align == "center" {
+        return box_x + (box_w - text_w) / 2.0
+    }
+    if align == "end" or align == "right" {
+        return box_x + box_w - text_w
+    }
+    return box_x
+}
+
+export WEIGHT_NAMES, WEIGHT_VALUES
+export text_resolve_weight, text_weight_of, text_size_of
+export text_measure, text_measure_props
+export text_line_height, text_letter_spacing, text_baseline_y
+export text_ellipsize, text_wrap, text_align_offset

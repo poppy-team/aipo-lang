@@ -5,6 +5,7 @@ import types as types_mod
 import leona as leona_mod
 import hooks as hooks_mod
 import renderer as renderer_mod
+import overlay as overlay_mod
 
 var _root_component = none
 var _root_element = none
@@ -16,6 +17,15 @@ var _drag_end_handler = none
 var _prev_mx = 0.0
 var _prev_my = 0.0
 var _focused_node = none
+var _inspector_enabled = false
+
+fn app_toggle_inspector() {
+    _inspector_enabled = not _inspector_enabled
+}
+
+fn app_is_inspector_enabled() -> Bool {
+    return _inspector_enabled
+}
 
 fn app_get_root_element() {
     return _root_element
@@ -32,6 +42,20 @@ fn app_set_focused_node(node) {
     _focused_node = node
     if node != none {
         node.is_focused = true
+    }
+}
+
+fn collect_focusable_nodes(node, out: List) {
+    if node == none {
+        return
+    }
+    let p = node.props
+    let is_focusable = (p.has("focusable") and p["focusable"] == true) or p.has("on_char") or p.has("on_backspace") or node.tag == "button" or node.tag == "switch"
+    if is_focusable {
+        out.add(node)
+    }
+    each child in node.children {
+        collect_focusable_nodes(child, out)
     }
 }
 
@@ -109,8 +133,16 @@ fn app_mount(component_fn) {
 
 # Updates input, hit testing, click and continuous drag dispatch
 fn app_update(dt: Float) {
+    # Update active tween animations
+    hooks_mod.hooks_update_tweens(dt)
+
     if _root_component == none {
         return
+    }
+
+    # F12 key toggles DevTools Inspector Overlay
+    if host_key_pressed(293) {
+        _inspector_enabled = not _inspector_enabled
     }
 
     let mx = host_mouse_x()
@@ -136,8 +168,75 @@ fn app_update(dt: Float) {
         _dragged_node.is_active = true
     }
 
+    # Tooltip tracking
+    if _hovered_node != none and _hovered_node.props.has("tooltip") {
+        let cur_t = overlay_mod.overlay_get_tooltip_hover_time() + dt
+        overlay_mod.overlay_set_tooltip_hover_time(cur_t)
+        if cur_t >= 0.35 {
+            let tip_text = _hovered_node.props["tooltip"]
+            overlay_mod.overlay_set_tooltip(tip_text, mx + 12.0, my + 14.0)
+        }
+    } else {
+        overlay_mod.overlay_set_tooltip_hover_time(0.0)
+        overlay_mod.overlay_clear_tooltip()
+    }
+
+    let is_shift = host_key_down(340) or host_key_down(344)
+    let is_ctrl = host_key_down(341) or host_key_down(345)
+    let is_alt = host_key_down(342) or host_key_down(346)
+
     # 2. Click & Drag start dispatch (mouse press edge detection)
     if btn_down and not _prev_mouse_btn {
+        # Check active overlays first
+        if overlay_mod.overlay_has_overlays() {
+            let ov_target = overlay_mod.overlay_hit_test(mx, my, hit_test)
+            if ov_target != none {
+                let ov_rect = if ov_target.layout != none then {
+                    "x": ov_target.layout.x + 0.0,
+                    "y": ov_target.layout.y + 0.0,
+                    "width": ov_target.layout.width + 0.0,
+                    "height": ov_target.layout.height + 0.0
+                } else {
+                    "x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0
+                }
+                if ov_target.props.has("on_click") {
+                    let handler = ov_target.props["on_click"]
+                    if handler != none {
+                        (handler)({
+                            "x": mx,
+                            "y": my,
+                            "shift": is_shift,
+                            "ctrl": is_ctrl,
+                            "alt": is_alt,
+                            "rect": ov_rect,
+                            "target_id": ov_target.id
+                        })
+                    }
+                }
+                _prev_mouse_btn = btn_down
+                _prev_mx = mx
+                _prev_my = my
+                if hooks_mod.is_dirty() {
+                    rebuild_tree()
+                }
+                return
+            } else {
+                let top_ov = overlay_mod.overlay_get_top()
+                if top_ov != none and top_ov.dismissible {
+                    overlay_mod.overlay_pop()
+                    if top_ov.scrim {
+                        _prev_mouse_btn = btn_down
+                        _prev_mx = mx
+                        _prev_my = my
+                        if hooks_mod.is_dirty() {
+                            rebuild_tree()
+                        }
+                        return
+                    }
+                }
+            }
+        }
+
         # Focus management
         if target != none and (target.props.has("on_char") or target.props.has("on_backspace") or (target.props.has("focusable") and target.props["focusable"] == true)) {
             if _focused_node != none and _focused_node != target {
@@ -169,6 +268,9 @@ fn app_update(dt: Float) {
                     let event = {
                         "x": mx,
                         "y": my,
+                        "shift": is_shift,
+                        "ctrl": is_ctrl,
+                        "alt": is_alt,
                         "rect": target_rect,
                         "target_id": target.id
                     }
@@ -187,6 +289,9 @@ fn app_update(dt: Float) {
                         "y": my,
                         "dx": 0.0,
                         "dy": 0.0,
+                        "shift": is_shift,
+                        "ctrl": is_ctrl,
+                        "alt": is_alt,
                         "rect": target_rect,
                         "target_id": target.id,
                         "target": target
@@ -218,6 +323,9 @@ fn app_update(dt: Float) {
                 "y": my,
                 "dx": dx,
                 "dy": dy,
+                "shift": is_shift,
+                "ctrl": is_ctrl,
+                "alt": is_alt,
                 "rect": drag_rect,
                 "target_id": if _dragged_node != none then _dragged_node.id else 0,
                 "target": _dragged_node
@@ -277,42 +385,92 @@ fn app_update(dt: Float) {
         }
     }
 
-    # 6. Keyboard input dispatch to focused element
-    if _focused_node != none {
-        if host_key_pressed(256) {
-            # Escape key clears focus
+    # 6. Keyboard input dispatch & Tab focus navigation
+    if host_key_pressed(258) {
+        # Tab key: cycle focus among focusable elements
+        var focusables = []
+        collect_focusable_nodes(_root_element, focusables)
+        if focusables.len() > 0 {
+            let is_shift = host_key_down(340) or host_key_down(344)
+            var cur_idx = -1
+            var fi = 0
+            while fi < focusables.len() {
+                if focusables[fi] == _focused_node {
+                    cur_idx = fi
+                }
+                fi += 1
+            }
+            var next_idx = 0
+            if is_shift {
+                next_idx = if cur_idx <= 0 then (focusables.len() - 1) else (cur_idx - 1)
+            } else {
+                next_idx = if cur_idx < 0 or cur_idx >= (focusables.len() - 1) then 0 else (cur_idx + 1)
+            }
+            app_set_focused_node(focusables[next_idx])
+        }
+    } elif host_key_pressed(256) {
+        # Escape key: dismiss overlay if any, else clear focus
+        if overlay_mod.overlay_has_overlays() {
+            let top_ov = overlay_mod.overlay_get_top()
+            if top_ov != none and top_ov.dismissible {
+                overlay_mod.overlay_pop()
+            }
+        } elif _focused_node != none {
             _focused_node.is_focused = false
             _focused_node = none
-        } else {
-            # Process typed characters
-            var typed_char = host_get_char_pressed()
-            while typed_char.len() > 0 {
-                if _focused_node.props.has("on_char") {
-                    let char_fn = _focused_node.props["on_char"]
-                    if char_fn != none {
-                        (char_fn)(typed_char)
-                    }
-                }
-                typed_char = host_get_char_pressed()
-            }
-
-            # Backspace key
-            if host_key_pressed(259) {
-                if _focused_node.props.has("on_backspace") {
-                    let bs_fn = _focused_node.props["on_backspace"]
-                    if bs_fn != none {
-                        (bs_fn)()
-                    }
+        }
+    } elif _focused_node != none {
+        # Process typed characters
+        var typed_char = host_get_char_pressed()
+        while typed_char.len() > 0 {
+            if _focused_node.props.has("on_char") {
+                let char_fn = _focused_node.props["on_char"]
+                if char_fn != none {
+                    (char_fn)(typed_char)
                 }
             }
+            typed_char = host_get_char_pressed()
+        }
 
-            # Enter / Return key (submit)
-            if host_key_pressed(257) {
-                if _focused_node.props.has("on_submit") {
-                    let sub_fn = _focused_node.props["on_submit"]
-                    if sub_fn != none {
-                        (sub_fn)()
+        # Backspace key
+        if host_key_pressed(259) {
+            if _focused_node.props.has("on_backspace") {
+                let bs_fn = _focused_node.props["on_backspace"]
+                if bs_fn != none {
+                    (bs_fn)()
+                }
+            }
+        }
+
+        # Enter / Return key (submit)
+        if host_key_pressed(257) {
+            if _focused_node.props.has("on_submit") {
+                let sub_fn = _focused_node.props["on_submit"]
+                if sub_fn != none {
+                    (sub_fn)()
+                }
+            }
+        }
+
+        # Enter or Space triggers on_click on focused buttons / elements
+        if host_key_pressed(257) or host_key_pressed(32) {
+            if _focused_node.props.has("on_click") {
+                let clk = _focused_node.props["on_click"]
+                if clk != none {
+                    let rect_map = if _focused_node.layout != none then {
+                        "x": _focused_node.layout.x + 0.0,
+                        "y": _focused_node.layout.y + 0.0,
+                        "width": _focused_node.layout.width + 0.0,
+                        "height": _focused_node.layout.height + 0.0
+                    } else {
+                        "x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0
                     }
+                    (clk)({
+                        "x": rect_map["x"],
+                        "y": rect_map["y"],
+                        "rect": rect_map,
+                        "target_id": _focused_node.id
+                    })
                 }
             }
         }
@@ -331,6 +489,16 @@ fn app_render() {
     if _root_element != none {
         renderer_mod.render_tree(_root_element)
     }
+    if overlay_mod.overlay_has_overlays() {
+        renderer_mod.render_overlays(overlay_mod.overlay_get_all())
+    }
+    let tip = overlay_mod.overlay_get_active_tooltip()
+    if tip != none {
+        renderer_mod.render_tooltip(tip)
+    }
+    if _inspector_enabled and _root_element != none {
+        renderer_mod.render_inspector(_root_element, _prev_mx, _prev_my)
+    }
 }
 
-export app_mount, app_update, app_render, rebuild_tree, hit_test, app_get_root_element, find_wheel_target, app_get_focused_node, app_set_focused_node
+export app_mount, app_update, app_render, rebuild_tree, hit_test, app_get_root_element, find_wheel_target, app_get_focused_node, app_set_focused_node, collect_focusable_nodes, app_toggle_inspector, app_is_inspector_enabled

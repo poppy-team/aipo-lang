@@ -3,12 +3,18 @@
 
 import types as types_mod
 import color as color_mod
+import text as text_mod
 import leona as leona_mod
 import hooks as hooks_mod
 import elements as elements_mod
 import components as components_mod
 import app as app_mod
 import retro3d as retro3d_mod
+import overlay as overlay_mod
+import strings as strings_mod
+import tokens as tokens_mod
+import icons as icons_mod
+import widgets as widgets_mod
 
 # --- Ergonomic Layout Containers (Leona) ---
 
@@ -78,9 +84,20 @@ fn center(arg1, arg2 = none) {
 }
 
 fn spacer(flex: Float = 1.0) {
+    # M13: the flex argument is now honored. Leona treats a leading number in a
+    # "flex" dimension as a grow weight, so `spacer(3.0)` takes three times the
+    # leftover main-axis space of `spacer(1.0)`. The default keeps the bare
+    # "flex" spelling so existing trees and tests are unaffected.
+    if flex <= 1.0 {
+        return elements_mod.make_rect({
+            "tag": "spacer",
+            "width": "flex",
+            "height": "flex"
+        }, [])
+    }
     return elements_mod.make_rect({
         "tag": "spacer",
-        "width": "flex",
+        "width": f"flex{flex}",
         "height": "flex"
     }, [])
 }
@@ -212,12 +229,88 @@ fn number_input(props: Dict = {}) {
     return components_mod.make_number_input(props)
 }
 
+fn scrubber_input(props: Dict = {}) {
+    return components_mod.make_scrubber_input(props)
+}
+
+fn segmented_group(options: List, selected, on_change = none, props: Dict = {}) {
+    return components_mod.make_segmented_group(options, selected, on_change, props)
+}
+
+fn hierarchy_tree(props: Dict = {}) {
+    return components_mod.make_hierarchy_tree(props)
+}
+
+fn icon(name: String, props: Dict = {}) {
+    return icons_mod.icons_make_icon(name, props)
+}
+
+fn register_icon(name: String, path_data: String) {
+    icons_mod.icons_register_icon(name, path_data)
+}
+
 fn dropdown_select(props: Dict = {}) {
     return components_mod.make_dropdown_select(props)
 }
 
 fn color_picker(props: Dict = {}) {
     return components_mod.make_color_picker(props)
+}
+
+fn tree_view(props: Dict = {}) {
+    return components_mod.make_tree_view(props)
+}
+
+fn virtual_list(props: Dict = {}) {
+    return components_mod.make_virtual_list(props)
+}
+
+fn dialog(title: String, content_children: List, on_confirm = none, on_cancel = none, props: Dict = {}) {
+    return components_mod.make_dialog(title, content_children, on_confirm, on_cancel, props)
+}
+
+fn open_dialog(title: String, content_children: List, on_confirm = none, on_cancel = none, props: Dict = {}) {
+    let dismissible = if props.has("dismissible") then props["dismissible"] else false
+    let dlg = components_mod.make_dialog(title, content_children, on_confirm, on_cancel, props)
+    return overlay_mod.overlay_push(dlg, { "scrim": true, "dismissible": dismissible })
+}
+
+# --- Advanced Widgets (Code Editor, Node Graph, Modals) ---
+
+fn code_editor(props: Dict = {}) {
+    return widgets_mod.make_code_editor(props)
+}
+
+fn node_graph(props: Dict = {}) {
+    return widgets_mod.make_node_graph(props)
+}
+
+fn modal_dialog(title: String, content_children: List, on_confirm = none, on_cancel = none, props: Dict = {}) {
+    return widgets_mod.make_modal_dialog(title, content_children, on_confirm, on_cancel, props)
+}
+
+fn open_modal(title: String, content_children: List, on_confirm = none, on_cancel = none, props: Dict = {}) {
+    return widgets_mod.open_modal_dialog(title, content_children, on_confirm, on_cancel, props)
+}
+
+fn push_overlay(element, options: Dict = {}) {
+    return overlay_mod.overlay_push(element, options)
+}
+
+fn pop_overlay() {
+    return overlay_mod.overlay_pop()
+}
+
+fn clear_overlays() {
+    overlay_mod.overlay_clear()
+}
+
+fn has_overlays() {
+    return overlay_mod.overlay_has_overlays()
+}
+
+fn get_top_overlay() {
+    return overlay_mod.overlay_get_top()
 }
 
 # --- Reactive Hooks ---
@@ -230,7 +323,66 @@ fn set_state(sig, new_value) {
     hooks_mod.signal_set_value(sig, new_value)
 }
 
+fn use_memo(compute_fn, deps: List) {
+    return hooks_mod.signal_use_memo(compute_fn, deps)
+}
+
+fn use_effect(effect_fn, deps = none) {
+    hooks_mod.signal_use_effect(effect_fn, deps)
+}
+
+fn use_tween(initial_val: Float, target_val: Float, duration: Float = 0.3, easing: String = "ease_out") {
+    return hooks_mod.signal_use_tween(initial_val, target_val, duration, easing)
+}
+
+fn update_tweens(dt: Float) {
+    return hooks_mod.hooks_update_tweens(dt)
+}
+
 # --- Color Utilities & Palette ---
+
+# --- Runtime-resolved UI strings (M13) ---
+
+# Overrides or extends the built-in string table. Partial overrides are safe:
+# keys absent from `table` keep their previous value.
+fn set_strings(table: Dict) {
+    strings_mod.strings_set(table)
+}
+
+# Restores every key to its built-in default.
+fn reset_strings() {
+    strings_mod.strings_reset()
+}
+
+# Resolves a string key, e.g. "dialog.confirm".
+fn str(key: String) -> String {
+    return strings_mod.strings_get(key)
+}
+
+# --- Typography (M13) ---
+
+# Measures a string honoring weight and letter spacing. The single measurement
+# entry point: layout, tooltips and custom widgets all route through this.
+fn measure_text(s: String, size: Float = 14.0, weight = 400) -> Float {
+    return text_mod.text_measure(s, size, text_mod.text_resolve_weight(weight))
+}
+
+# Resolves a `font_weight` value to a CSS-style numeric weight (100..900).
+fn resolve_weight(weight) -> Int {
+    return text_mod.text_resolve_weight(weight)
+}
+
+# Truncates a string with an ellipsis so it fits `max_width`.
+fn ellipsize(s: String, max_width: Float, size: Float = 14.0, weight = 400) -> String {
+    return text_mod.text_ellipsize(s, max_width, size, text_mod.text_resolve_weight(weight))
+}
+
+# Wraps a string into at most `max_lines` lines of `max_width` each.
+fn wrap_text(s: String, max_width: Float, size: Float = 14.0, weight = 400, max_lines: Int = 3) -> List {
+    return text_mod.text_wrap(s, max_width, size, text_mod.text_resolve_weight(weight), max_lines)
+}
+
+# --- Color (M13) ---
 
 fn rgb(r, g, b) {
     return color_mod.to_rgb(r, g, b)
@@ -240,14 +392,22 @@ fn rgba(r, g, b, a) {
     return color_mod.to_rgba(r, g, b, a)
 }
 
+# Parses "#rgb", "#rrggbb" and "#rrggbbaa" (the leading "#" is optional).
+# Invalid input returns transparent rather than an arbitrary color.
 fn hex(code: String) {
     return color_mod.parse_hex(code)
+}
+
+# Serializes a color to "#rrggbb", or "#rrggbbaa" when not fully opaque.
+fn color_to_hex(c) -> String {
+    return color_mod.to_hex(c)
 }
 
 let color = {
     "rgb": color_mod.to_rgb,
     "rgba": color_mod.to_rgba,
     "hex": color_mod.parse_hex,
+    "transparent": color_mod.transparent,
     "white": color_mod.white,
     "black": color_mod.black,
     "crust": color_mod.crust,
@@ -266,6 +426,8 @@ let color = {
     "peach": color_mod.peach
 }
 
+let tokens = tokens_mod.zoe_tokens
+
 # --- Application Lifecycle ---
 
 fn mount(component_fn) {
@@ -282,6 +444,22 @@ fn draw_ui() {
 
 fn get_root_element() {
     return app_mod.app_get_root_element()
+}
+
+fn get_focused_node() {
+    return app_mod.app_get_focused_node()
+}
+
+fn set_focused_node(node) {
+    app_mod.app_set_focused_node(node)
+}
+
+fn toggle_inspector() {
+    app_mod.app_toggle_inspector()
+}
+
+fn is_inspector_enabled() -> Bool {
+    return app_mod.app_is_inspector_enabled()
 }
 
 fn compute_layout(root, screen_w, screen_h) {
@@ -349,10 +527,16 @@ fn test_gizmo_3d_hit(mx, my, pos, cam, rect, axis_len = 40.0) {
 export column, row, stack, center, spacer, divider
 export rect, label, container
 export button, switch, slider, progress_bar, card, badge, split_view, tab_bar, tab_view, scroll_view, viewport
-export text_input, number_input, dropdown_select, color_picker
+export text_input, number_input, scrubber_input, segmented_group, hierarchy_tree, dropdown_select, color_picker, dialog, open_dialog, tree_view, virtual_list
+export code_editor, node_graph, modal_dialog, open_modal
+export icon, register_icon
+export push_overlay, pop_overlay, clear_overlays, has_overlays, get_top_overlay
 export screen_to_world, world_to_screen, point_in_rect, test_gizmo_hit, draw_gizmo_2d, set_viewport_camera
 export vec3, vec3_add, vec3_sub, vec3_scale, camera_3d, project_3d, cube_mesh, pyramid_mesh, draw_grid_3d, render_mesh_3d, draw_gizmo_3d, test_gizmo_3d_hit
-export use_state, set_state
-export rgb, rgba, hex, color
-export mount, step, draw_ui, get_root_element, compute_layout
+export use_state, set_state, use_memo, use_effect, use_tween, update_tweens
+export rgb, rgba, hex, color_to_hex, color, tokens
+export set_strings, reset_strings, str
+export measure_text, resolve_weight, ellipsize, wrap_text
+export mount, step, draw_ui, get_root_element, compute_layout, get_focused_node, set_focused_node, toggle_inspector, is_inspector_enabled
 export create_rect, create_color
+

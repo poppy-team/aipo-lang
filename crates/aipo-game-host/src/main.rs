@@ -610,6 +610,11 @@ impl ScriptRuntime {
 }
 
 async fn run_script_game(script_path: &Path) {
+    // Initialize Inter font for GPU rendering (replaces default ProggyClean)
+    host_bridge::init_zoe_font();
+    // Initialize GPU SDF analytical UI shaders (M9)
+    host_bridge::init_zoe_shaders();
+
     let mut runtime_res = ScriptRuntime::load(script_path);
 
     loop {

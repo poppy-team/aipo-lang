@@ -127,16 +127,38 @@ cargo test -p aipo-game-host --test bridge_tests test_zoe_ui_editor_compilation_
 
 ---
 
-## Roadmap de Amadurecimento Arquitetural
+## Roadmap de Amadurecimento Arquitetural (M1 a M6 — Concluído)
 
-O desenvolvimento do Zoe UI segue um plano de evolução inspirado nas melhores práticas da indústria (Freya/Torin, Flutter, Egui, SolidJS e Slint), preservando a filosofia de ser 100% puro em Aipo e livre de dependências pesadas de UI do SO:
+O desenvolvimento do Zoe UI concluiu o plano de evolução inspirado nas melhores práticas da indústria (Freya/Torin, Flutter, Egui, SolidJS e Slint), preservando a filosofia de ser 100% puro em Aipo e livre de dependências pesadas de UI do SO:
 
-1. **M1 — Superfícies Flutuantes (Portals & Overlays):** Introdução da `OverlayStack` pós-clipping para habilitar dropdowns flutuantes reais com sombreamento, menus de contexto acionados por botão direito e balões de tooltip com atraso de hover.
-2. **M2 — Leona Constraints & Intrinsic Wrap:** Suporte a restrições `min_width`, `max_width`, `min_height`, `max_height`, quebra de fluxo com `wrap: true` e medição tipográfica precisa através da Host ABI (`host_measure_text`).
-3. **M3 — Reatividade Fina & Memoização de Sub-árvores:** Hooks `use_memo` e `use_effect`, com invalidação seletiva de nós para eliminar reconstruções globais desnecessárias da árvore de elementos.
-4. **M4 — Foco, Acessibilidade & Gestão Semântica de Cursor:** Navegação universal via `Tab`/`Shift+Tab`, anéis visuais de foco (*focus ring*) e sinais semânticos para o host alternar cursores (`pointer`, `ibeam`, `resize_ew`, `resize_ns`).
-5. **M5 — Componentes de Produtividade & Ferramentas:** Implementação do container de árvore hierárquica (`tree_view`) e lista virtualizada para grandes coleções (`virtual_list` em $O(1)$ de memória).
-6. **M6 — Micro-animações Conectadas ao Delta Time & Inspetor Visual:** Interpolações contínuas (`use_spring`, `use_tween`) sincronizadas com `step(dt)` e modo de inspeção de layout geométrico com sobreposição de bounding boxes (*Zoe Inspector Overlay*).
+1. **M1 — Superfícies Flutuantes (Portals & Overlays) [Implementado]:** Introdução da `OverlayStack` pós-clipping com suporte a diálogos modais (`dialog`, `open_dialog`), menus flutuantes reais com sombreamento (`dropdown_menu`, `dropdown_item`) e balões de tooltip com atraso de hover suave (350ms).
+2. **M2 — Leona Constraints & Intrinsic Wrap [Implementado]:** Suporte a restrições `min_width`, `max_width`, `min_height`, `max_height`, quebra de fluxo com `wrap: true` / `flex_wrap: true`, contêiner de sobreposição espacial `stack` e medições intrínsecas enxutas e eficientes.
+3. **M3 — Reatividade Fina & Memoização de Sub-árvores [Implementado]:** Hooks `use_memo` e `use_effect`, com cache de dependências e invalidação seletiva de nós para eliminar reconstruções globais desnecessárias da árvore de elementos.
+4. **M4 — Foco, Acessibilidade & Navegação por Teclado [Implementado]:** Navegação universal via `Tab`/`Shift+Tab`, anéis visuais de foco (*focus ring*) com halo neon Catppuccin, ativação com `Enter`/`Espaço`, descarte com `Escape` e gerenciamento de foco (`get_focused_node`, `set_focused_node`).
+5. **M5 — Componentes de Produtividade & Ferramentas [Implementado]:** Implementação do container de árvore hierárquica navegável (`tree_view`) com chevrons expansíveis e seleção ativa, e lista virtualizada para grandes coleções (`virtual_list` em $O(\text{viewport})$ de nós).
+6. **M6 — Micro-animações & Inspetor Visual DevTools [Implementado]:** Interpolações contínuas (`use_tween`) sincronizadas com `step(dt)` (curvas `linear`, `ease_in`, `ease_out`, `ease_in_out`) e inspetor de layout geométrico em tempo real (*DevTools Inspector Overlay* alternável via tecla `F12` ou `toggle_inspector`).
+7. **M7 — Design Tokens, Motor de Ícones Vetoriais e Componentes Modernos [Implementado]:**
+   - **Design Tokens (`zoe.tokens`):** Tipografia escalada (10px a 18px), grade de 4px/8px, raios de borda, alturas de controle e superfícies semânticas Catppuccin Mocha (`bg_canvas`, `bg_panel`, `bg_surface`, `accent_x`, `accent_y`, `accent_z`).
+   - **Motor de Ícones Vetoriais por Hardware:** Rasterização via `tiny-skia` + `svgtypes` com cache de texturas GPU LRU (`Texture2D`), suportando `zoe.icon` e `zoe.register_icon` compatíveis com Lucide, Heroicons, Phosphor, Tabler, Material Symbols e Devicons.
+   - **Componentes de Precisão:** `scrubber_input` (arrasto horizontal com `Shift` 0.1x micro e `Ctrl` 10x snap), `segmented_group` (controle em pílula com superfície elevada) e `hierarchy_tree` (árvore de cena com seleção total de largura, rails de guia e badges de tipo semântico).
+8. **M8 — Motor Tipográfico Subpixel & Fonte Inter [Implementado]:**
+   - **Fonte Inter Embutida:** Substituição da fonte padrão ProggyClean pela Inter Variable (860KB) com hinting subpixel profissional.
+   - **Medição Pixel-Perfect:** Novas primitivas nativas `host_measure_text` (largura exata com kerning via `fontdue`) e `host_font_metrics` (ascent, descent, line_gap, line_height) para layout Leona e rendering com alinhamento por baseline real.
+9. **M9 — Shaders Analíticos de UI (GPU SDF) [Implementado]:**
+   - **Fragment Shader SDF por Hardware:** Renderização matemática analítica (`sd_rounded_box`) de quads arredondados com *anti-aliasing* contínuo direto no pixel shader da GPU.
+   - **Primitiva Unificada `host_draw_sdf_rect`:** Integração de curvatura precisa (`border_radius`), borda interna contínua de 1px e *top inner highlight* simulando iluminação física ambiente com reflexão no chanfro superior.
+10. **M10 — Leona 2.0 & Alinhamento por Baseline Tipográfica [Implementado]:**
+   - **Layout Baseado em Métricas Reais da Fonte:** Eliminação de tamanhos arbitrários; contêineres medem conteúdos intrínsecos através de `host_font_metrics` e `host_measure_text`.
+   - **Suporte a `align_items: "baseline"`:** Alinhamento milimétrico de ícones e textos pela linha de base tipográfica em linhas horizontais.
+   - **Otimização Estrutural de Stack Frames:** Redução do consumo de slots da pilha do interpretador de 70 para ~18 slots por nível, permitindo árvores profundas (30+ níveis) com zero risco de overflow de operand stack.
+11. **M11 — Catálogo de Componentes Avançados [Implementado]:**
+   - **`code_editor`:** Editor de código virtualizado com gutter e numeração de linhas, realce sintático léxico completo para a linguagem Aipo (`fn`, `let`, `var`, `if`, strings, comentários, números), cursor com tween e culling vertical.
+   - **`node_graph`:** Canvas visual para grafos lógicos e shaders com grade sutil, cartões de nós com portas de soquete coloridas por tipo (float, vec, color, tex) e cabos suaves renderizados via `host_draw_bezier` com brilho e suavização.
+   - **`modal_dialog` & `open_modal`:** Sistema de diálogos modais flutuantes com backdrop scrim escurecido e botões de ação estilizados.
+12. **M12 — Site Documental Dedicado do Zoe UI & Playground [Implementado]:**
+   - **Hub Documental no VitePress:** Estrutura completa em `docs/zoe/` (e espelho bilíngue em `docs/en/zoe/`) com guias de arquitetura, Leona 2.0, reatividade e catálogo de componentes.
+   - **Playground Interativo:** Demonstrações e exemplos de código prontos para execução direta.
 
-Consulte o documento completo em [`docs/packages/aipo-zoe.md`](file:///home/raillen/Documentos/Projetos/aipo-lang/docs/packages/aipo-zoe.md).
+Consulte a documentação completa no hub do Zoe UI em [`docs/zoe/index.md`](file:///home/raillen/Documentos/Projetos/aipo-lang/docs/zoe/index.md) e [`docs/en/zoe/index.md`](file:///home/raillen/Documentos/Projetos/aipo-lang/docs/en/zoe/index.md).
+
 

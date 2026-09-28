@@ -12,8 +12,7 @@ import color as color_mod
 
 # --- 1. Vector3 Math ---
 
-fn r3d_vec3(x: Float, y: Float, z: Float) -> Dict {
-    return {
+fn r3d_vec3(x: Float, y: Float, z: Float) -> Dict {    return {
         "x": x + 0.0,
         "y": y + 0.0,
         "z": z + 0.0
@@ -44,24 +43,8 @@ fn r3d_vec3_cross(a: Dict, b: Dict) -> Dict {
     )
 }
 
-# Fast square root approximation or math.sqrt
-fn math_sqrt(val: Float) -> Float {
-    if val <= 0.0 {
-        return 0.0
-    }
-    # Babylonian method for deterministic root
-    var x = val
-    if x > 100.0 { x = x / 10.0 }
-    var iter = 0
-    while iter < 6 {
-        x = 0.5 * (x + val / x)
-        iter += 1
-    }
-    return x
-}
-
 fn r3d_vec3_length(v: Dict) -> Float {
-    return math_sqrt(r3d_vec3_dot(v, v))
+    return math.sqrt(r3d_vec3_dot(v, v))
 }
 
 fn r3d_vec3_normalize(v: Dict) -> Dict {
@@ -73,29 +56,18 @@ fn r3d_vec3_normalize(v: Dict) -> Dict {
 }
 
 # --- 2. Trigonometry & Rotation ---
-
-fn math_sin(rad: Float) -> Float {
-    var x = rad
-    while x > 3.14159265 {
-        x -= 6.2831853
-    }
-    while x < -3.14159265 {
-        x += 6.2831853
-    }
-    let x2 = x * x
-    return x * (1.0 - x2 / 6.0 * (1.0 - x2 / 20.0))
-}
-
-fn math_cos(rad: Float) -> Float {
-    return math_sin(rad + 1.5707963)
-}
+#
+# M13: sin/cos/sqrt/atan2 now delegate to the Aipo standard library, which
+# computes them in f64. The previous 3-term Taylor polynomial reached 4.22%
+# relative error at cos(0.6) -- the default orbit-camera yaw -- which visibly
+# distorted the 3D projection. See ADP-018.
 
 # Rotates a 3D point by yaw (around Y axis) and pitch (around X axis)
 fn r3d_rotate_point(p: Dict, yaw: Float, pitch: Float) -> Dict {
-    let cy = math_cos(yaw)
-    let sy = math_sin(yaw)
-    let cp = math_cos(pitch)
-    let sp = math_sin(pitch)
+    let cy = math.cos(yaw)
+    let sy = math.sin(yaw)
+    let cp = math.cos(pitch)
+    let sp = math.sin(pitch)
 
     # 1. Rotate around Y axis (yaw)
     let x1 = p["x"] * cy + p["z"] * sy
@@ -127,10 +99,10 @@ fn r3d_create_camera(yaw: Float = 0.6, pitch: Float = 0.45, distance: Float = 22
 # Projects a 3D point (wx, wy, wz) into 2D screen coordinates within viewport rect
 # Returns { "x": sx, "y": sy, "depth": cam_z, "visible": Bool }
 fn r3d_project_3d(wx: Float, wy: Float, wz: Float, cam: Dict, rect: Dict) -> Dict {
-    let cyaw = math_cos(cam["yaw"])
-    let syaw = math_sin(cam["yaw"])
-    let cpitch = math_cos(cam["pitch"])
-    let spitch = math_sin(cam["pitch"])
+    let cyaw = math.cos(cam["yaw"])
+    let syaw = math.sin(cam["yaw"])
+    let cpitch = math.cos(cam["pitch"])
+    let spitch = math.sin(cam["pitch"])
 
     # 1. Camera eye position in world space
     let eye_x = cam["tx"] + cam["dist"] * cyaw * cpitch
@@ -429,7 +401,7 @@ fn dist_to_segment(px: Float, py: Float, x1: Float, y1: Float, x2: Float, y2: Fl
     let l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)
     if l2 < 0.001 {
         let d = (px - x1) * (px - x1) + (py - y1) * (py - y1)
-        return math_sqrt(d)
+        return math.sqrt(d)
     }
     var t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2
     if t < 0.0 { t = 0.0 }
@@ -437,7 +409,7 @@ fn dist_to_segment(px: Float, py: Float, x1: Float, y1: Float, x2: Float, y2: Fl
     let proj_x = x1 + t * (x2 - x1)
     let proj_y = y1 + t * (y2 - y1)
     let dist_sq = (px - proj_x) * (px - proj_x) + (py - proj_y) * (py - proj_y)
-    return math_sqrt(dist_sq)
+    return math.sqrt(dist_sq)
 }
 
 # Hit-tests mouse screen point against 3D gizmo axes
@@ -484,7 +456,7 @@ fn r3d_test_gizmo_hit(mx: Float, my: Float, pos: Dict, cam: Dict, rect: Dict, ax
 }
 
 export r3d_vec3, r3d_vec3_add, r3d_vec3_sub, r3d_vec3_scale, r3d_vec3_dot, r3d_vec3_cross, r3d_vec3_length, r3d_vec3_normalize
-export math_sqrt, math_sin, math_cos, dist_to_segment
+export dist_to_segment
 export r3d_rotate_point, r3d_create_camera, r3d_project_3d
 export r3d_create_cube, r3d_create_pyramid
 export r3d_draw_grid, r3d_render_mesh, r3d_draw_gizmo, r3d_test_gizmo_hit

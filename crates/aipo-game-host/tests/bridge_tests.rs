@@ -34,16 +34,36 @@ fn test_host_surface_registration() {
     assert!(surface.contains("host_get_char_pressed"));
     assert!(surface.contains("host_draw_triangle"));
     assert!(surface.contains("host_draw_triangle_lines"));
+    assert!(surface.contains("host_draw_icon_path"));
 
     // Verify canonical __aipo_game_* aliases
     assert!(surface.contains("__aipo_game_draw_rect"));
     assert!(surface.contains("__aipo_game_key_down"));
     assert!(surface.contains("__aipo_game_load_texture"));
+    assert!(surface.contains("__aipo_game_draw_icon_path"));
     assert!(surface.contains("__aipo_game_play_preset"));
     assert!(surface.contains("__aipo_game_synth_sound"));
 
     // Verify game module symbol
     assert!(surface.contains("game"));
+}
+
+#[test]
+fn test_host_draw_icon_path() {
+    let play_icon_path = "M5 3l14 9-14 9V3z";
+    let args = [
+        Value::String(std::rc::Rc::new(play_icon_path.to_string())),
+        Value::Float(10.0),
+        Value::Float(20.0),
+        Value::Float(24.0),
+        Value::Float(2.0),
+        Value::Float(1.0),
+        Value::Float(1.0),
+        Value::Float(1.0),
+        Value::Float(1.0),
+    ];
+    let res = host_bridge::host_draw_icon_path(&args);
+    assert!(res.is_ok(), "host_draw_icon_path should succeed: {:?}", res);
 }
 
 #[test]
@@ -573,7 +593,11 @@ fn test_zoe_ui_editor_compilation_and_execution() {
         .cloned()
         .expect("setup function should exist in globals");
     let setup_res = vm.invoke(&module, setup_fn, &[]);
-    assert!(setup_res.is_ok(), "setup() should succeed");
+    assert!(
+        setup_res.is_ok(),
+        "setup() should succeed: {:?}",
+        setup_res.err()
+    );
 
     // 5. Verify update(dt) updates Zoe framework state
     let update_fn = vm
@@ -889,4 +913,404 @@ fn test_game_subsystems_unit_test_suite() {
             test_name
         );
     }
+}
+
+// =========================================================================
+// M14 — SDF SHADER v2 PARITY AND GEOMETRY CONTRACTS
+//
+// These tests lock the Rust side of the analytical UI renderer to the GLSL
+// side. The M14 shader and the `SHADOW_ANCHORS` table are two halves of one
+// contract; if they drift, shadows silently render at the wrong darkness and
+// nothing else would catch it.
+// =========================================================================
+
+/// The SDF fragment shader source, read at compile time so the parity test
+/// cannot be satisfied by a stale build artifact.
+const SDF_FRAGMENT_SHADER_SRC: &str = include_str!("../src/host_bridge.rs");
+
+/// Extracts the shader text between the `SDF_FRAGMENT_SHADER` raw string
+/// delimiters.
+fn sdf_fragment_shader() -> String {
+    const DECL: &str = "const SDF_FRAGMENT_SHADER: &str = r";
+    let start = SDF_FRAGMENT_SHADER_SRC
+        .find(DECL)
+        .expect("SDF_FRAGMENT_SHADER declaration must exist");
+    // Skip past `r"` to reach the opening hash of the raw string delimiter.
+    let body_start = start + DECL.len() + 2;
+    const TERMINATOR: &str = "\"#;";
+    let end = SDF_FRAGMENT_SHADER_SRC[body_start..]
+        .find(TERMINATOR)
+        .expect("SDF_FRAGMENT_SHADER must be terminated by a raw-string close");
+    SDF_FRAGMENT_SHADER_SRC[body_start..body_start + end].to_string()
+}
+
+#[test]
+fn test_sdf_shader_declares_every_uniform_it_uses() {
+    let shader = sdf_fragment_shader();
+
+    assert!(
+        shader.contains("uniform"),
+        "fragment shader must declare uniforms"
+    );
+    for uniform in [
+        "u_quad_size",
+        "u_box_half",
+        "u_radii",
+        "u_pixel_scale",
+        "u_border_width",
+        "u_border_color",
+        "u_inner_highlight",
+        "u_shadow1",
+        "u_shadow2",
+    ] {
+        assert!(
+            shader.contains(uniform),
+            "fragment shader must declare `{uniform}`"
+        );
+    }
+}
+
+#[test]
+fn test_sdf_shader_uses_scaled_antialiasing_not_fixed_band() {
+    let shader = sdf_fragment_shader();
+
+    // M14 fix: the anti-aliasing band must be derived from the device scale.
+    assert!(
+        shader.contains("1.0 / max(u_pixel_scale"),
+        "anti-aliasing must divide by u_pixel_scale, not assume 1.0px"
+    );
+
+    // The M9 defect must be gone: a bare `clamp(0.5 - dist, 0.0, 1.0)` on the
+    // primary edge is what broke under zoom.
+    assert!(
+        !shader.contains("float alpha = clamp(0.5 - dist"),
+        "the M9 fixed-width anti-aliasing band must be removed"
+    );
+}
+
+#[test]
+fn test_sdf_shader_border_uses_independent_sdf_and_premultiplied_output() {
+    let shader = sdf_fragment_shader();
+
+    // M14 fix: `abs(d) - w*0.5` places the stroke centred on the box
+    // boundary, which is what keeps the inner corner radius correct.
+    assert!(
+        shader.contains("abs(d) - bw * 0.5"),
+        "border must derive from an independent SDF, not `dist + width`"
+    );
+
+    // M9 defect: shifting the SDF by the border width broke the rounded-box
+    // interior term.
+    assert!(
+        !shader.contains("b_dist = dist +"),
+        "the M9 `dist + border_width` border must be removed"
+    );
+
+    // Premultiplied-alpha `over`: sa + fill_a * (1 - sa).
+    assert!(
+        shader.contains("sa + fill_a * (1.0 - sa)"),
+        "border must composite with a premultiplied-alpha over"
+    );
+}
+
+#[test]
+fn test_sdf_shader_composites_shadow_with_gamma_compensation() {
+    let shader = sdf_fragment_shader();
+
+    assert!(
+        shader.contains("float shadow_layer("),
+        "fragment shader must expose a per-layer shadow function"
+    );
+    assert!(
+        shader.contains("(1.0 - a1) * (1.0 - a2)"),
+        "two shadow layers must composite in CSS `over` order"
+    );
+    // Without the 2.2 power, a translucent black shadow lands at roughly half
+    // its intended darkness on light surfaces.
+    assert!(
+        shader.contains("pow(1.0 - a_css, 2.2)"),
+        "shadow must apply sRGB gamma compensation"
+    );
+}
+
+#[test]
+fn test_sdf_shader_supports_per_corner_radii() {
+    let shader = sdf_fragment_shader();
+
+    assert!(
+        shader.contains("float sd_rounded_box(vec2 p, vec2 b, vec4 r)"),
+        "rounded box must take per-corner radii as a vec4"
+    );
+    assert!(
+        shader.contains("u_radii"),
+        "per-corner radii must arrive as a uniform"
+    );
+    // The M9 shader clamped a single scalar radius.
+    assert!(
+        !shader.contains("float r = min(u_radius"),
+        "the M9 single scalar radius path must be removed"
+    );
+}
+
+#[test]
+fn test_sdf_elevation_anchor_parity() {
+    let shader = sdf_fragment_shader();
+    assert!(
+        shader.contains("u_shadow1.w > 0.0 || u_shadow2.w > 0.0"),
+        "shadow branch must be gated on both layers being present"
+    );
+    assert!(shader.contains("u_shadow1"), "shader must consume layer 1");
+    assert!(shader.contains("u_shadow2"), "shader must consume layer 2");
+}
+
+#[test]
+fn test_shadow_anchor_table_is_monotonic() {
+    // The interpolation between anchors is only well-behaved if blur, offset
+    // and alpha all increase with level and spread stays non-positive.
+    let anchors = host_bridge::shadow_anchors();
+    assert!(
+        anchors.len() >= 3,
+        "need at least three anchors to interpolate between"
+    );
+
+    for w in anchors.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        assert!(b[1] > a[1], "blur must increase: {} then {}", a[1], b[1]);
+        assert!(
+            b[0] >= a[0],
+            "offset must not decrease: {} then {}",
+            a[0],
+            b[0]
+        );
+        assert!(b[3] > a[3], "alpha must increase: {} then {}", a[3], b[3]);
+        assert!(
+            a[2] <= 0.0 && b[2] <= 0.0,
+            "spread must be non-positive (inset) on every anchor"
+        );
+    }
+}
+
+#[test]
+fn test_shadow_layers_zero_elevation_is_transparent() {
+    // Level 0 must disable the shader branch entirely rather than drawing a
+    // faint shadow on every widget in the tree.
+    let (a, b) = host_bridge::shadow_layers(0.0);
+    assert_eq!(a[3], 0.0, "layer 1 alpha must be zero at level 0");
+    assert_eq!(b[3], 0.0, "layer 2 alpha must be zero at level 0");
+}
+
+#[test]
+fn test_shadow_master_interpolates_between_anchors() {
+    let anchors = host_bridge::shadow_anchors();
+
+    // Halfway between anchor 0 and anchor 1 every channel must land strictly
+    // between the endpoints. This is the property that makes elevation
+    // animatable instead of popping at integer levels.
+    let mid = host_bridge::shadow_master(0.5);
+    for ch in 0..4 {
+        if anchors[0][ch] == anchors[1][ch] {
+            continue;
+        }
+        let lo = anchors[0][ch].min(anchors[1][ch]);
+        let hi = anchors[0][ch].max(anchors[1][ch]);
+        assert!(
+            mid[ch] > lo && mid[ch] < hi,
+            "channel {ch} at level 0.5 was {}, must be between {lo} and {hi}",
+            mid[ch]
+        );
+    }
+}
+
+#[test]
+fn test_shadow_layers_contact_is_tighter_and_denser_than_ambient() {
+    // The two-layer model only reads as depth if the contact layer is
+    // genuinely tighter and more opaque than the ambient one.
+    for level in [0.5, 1.5, 2.5, 3.5, 4.5] {
+        let (contact, ambient) = host_bridge::shadow_layers(level);
+        assert!(
+            contact[1] < ambient[1],
+            "contact blur {} must be tighter than ambient {} at level {level}",
+            contact[1],
+            ambient[1]
+        );
+        assert!(
+            contact[3] > ambient[3],
+            "contact alpha {} must be denser than ambient {} at level {level}",
+            contact[3],
+            ambient[3]
+        );
+    }
+}
+
+#[test]
+fn test_shadow_layers_is_continuous_across_anchor_boundaries() {
+    // A visible discontinuity at an integer level would show as a shadow
+    // "pop" while animating elevation.
+    for step in 1..40 {
+        let e = step as f32 / 16.0;
+        let a = host_bridge::shadow_master(e);
+        let b = host_bridge::shadow_master(e + 1.0 / 16.0);
+        let jump = (b[1] - a[1]).abs();
+        assert!(
+            jump < 2.0,
+            "blur must not jump by more than 2px between 1/16-level samples; jumped {jump} at level {e}"
+        );
+    }
+}
+
+#[test]
+fn test_shadow_layers_extrapolates_beyond_last_anchor() {
+    // Very high elevations must keep growing rather than clamping flat, and
+    // alpha must stay inside the representable range.
+    let xl = host_bridge::shadow_master(4.0);
+    let beyond = host_bridge::shadow_master(8.0);
+    assert!(
+        beyond[1] > xl[1],
+        "blur must exceed the xl anchor at level 8: {} vs {}",
+        beyond[1],
+        xl[1]
+    );
+
+    let (contact, ambient) = host_bridge::shadow_layers(8.0);
+    assert!(
+        contact[3] <= 1.0,
+        "contact alpha must stay bounded: {}",
+        contact[3]
+    );
+    assert!(
+        ambient[3] <= 1.0,
+        "ambient alpha must stay bounded: {}",
+        ambient[3]
+    );
+    assert!(contact[1] > 0.0 && ambient[1] > 0.0);
+}
+
+#[test]
+fn test_shadow_master_is_monotonic_across_the_whole_range() {
+    // Blur, offset and alpha must never decrease as elevation rises, or a
+    // raised panel would look like it sank.
+    let mut prev = host_bridge::shadow_master(0.0);
+    for step in 1..80 {
+        let cur = host_bridge::shadow_master(step as f32 / 10.0);
+        assert!(
+            cur[1] >= prev[1] - 1e-4,
+            "blur must not decrease: {} then {} at level {}",
+            prev[1],
+            cur[1],
+            step as f32 / 10.0
+        );
+        assert!(
+            cur[0] >= prev[0] - 1e-4,
+            "offset must not decrease: {} then {}",
+            prev[0],
+            cur[0]
+        );
+        prev = cur;
+    }
+}
+
+#[test]
+fn test_sdf_natives_registered_with_correct_arity() {
+    let mut surface = aipo_cli::prelude_surface();
+    host_bridge::register_surface_symbols(&mut surface);
+
+    // Legacy 15-argument form stays available so existing trees keep working.
+    assert!(surface.contains("host_draw_sdf_rect"));
+    // M14 extensions.
+    assert!(surface.contains("host_draw_sdf_rect_v2"));
+    assert!(surface.contains("host_draw_sdf_rect_corners"));
+}
+
+#[test]
+fn test_sdf_v2_native_accepts_valid_arguments_headless() {
+    // The headless software fallback must not fault. This exercises argument
+    // decoding, shadow-layer resolution and quad padding without a GPU.
+    let args = [
+        Value::Float(10.0),  // x
+        Value::Float(20.0),  // y
+        Value::Float(120.0), // w
+        Value::Float(40.0),  // h
+        Value::Float(6.0),   // radius
+        Value::Float(3.0),   // elevation
+        Value::Float(2.0),   // focus width
+        Value::Float(0.5),   // focus r
+        Value::Float(0.7),   // focus g
+        Value::Float(1.0),   // focus b
+        Value::Float(0.9),   // focus a
+        Value::Float(1.0),   // border w
+        Value::Float(0.2),   // border r
+        Value::Float(0.2),   // border g
+        Value::Float(0.3),   // border b
+        Value::Float(1.0),   // border a
+        Value::Float(0.0),   // inner highlight
+        Value::Float(0.1),   // bg r
+        Value::Float(0.1),   // bg g
+        Value::Float(0.15),  // bg b
+        Value::Float(1.0),   // bg a
+    ];
+    let res = host_bridge::host_draw_sdf_rect_v2(&args);
+    assert!(res.is_ok(), "sdf_v2 draw must succeed headless: {res:?}");
+
+    // Rejecting a short argument list is part of the contract.
+    let short = host_bridge::host_draw_sdf_rect_v2(&args[..10]);
+    assert!(short.is_err(), "sdf_v2 must reject fewer than 21 arguments");
+}
+
+#[test]
+fn test_sdf_corners_native_accepts_valid_arguments_headless() {
+    let mut args = Vec::new();
+    // x, y, w, h
+    args.extend([
+        Value::Float(0.0),
+        Value::Float(0.0),
+        Value::Float(50.0),
+        Value::Float(50.0),
+    ]);
+    // tl, tr, br, bl
+    args.extend([
+        Value::Float(12.0),
+        Value::Float(4.0),
+        Value::Float(4.0),
+        Value::Float(12.0),
+    ]);
+    // elevation, focus width
+    args.extend([Value::Float(2.0), Value::Float(0.0)]);
+    // focus rgba
+    for _ in 0..4 {
+        args.push(Value::Float(0.0));
+    }
+    // border width + rgba
+    args.extend([Value::Float(1.0)]);
+    args.extend([
+        Value::Float(0.0),
+        Value::Float(0.0),
+        Value::Float(0.0),
+        Value::Float(0.5),
+    ]);
+    // inner highlight
+    args.push(Value::Float(0.0));
+    // bg rgba
+    args.extend([
+        Value::Float(0.2),
+        Value::Float(0.2),
+        Value::Float(0.25),
+        Value::Float(1.0),
+    ]);
+
+    assert_eq!(
+        args.len(),
+        24,
+        "argument vector must match the declared arity"
+    );
+    let res = host_bridge::host_draw_sdf_rect_corners(&args);
+    assert!(
+        res.is_ok(),
+        "sdf_corners draw must succeed headless: {res:?}"
+    );
+
+    let short = host_bridge::host_draw_sdf_rect_corners(&args[..8]);
+    assert!(
+        short.is_err(),
+        "sdf_corners must reject fewer than 24 arguments"
+    );
 }

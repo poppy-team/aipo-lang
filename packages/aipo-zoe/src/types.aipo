@@ -62,6 +62,9 @@ struct Element {
     var is_hovered = false
     var is_active = false
     var is_focused = false
+    # M13: scrollable overflow measured by Leona, republished each layout pass.
+    # Zero when the element is not a scroll viewport.
+    var max_scroll = 0.0
 }
 
 fn create_element(id, tag, props, children) {
@@ -73,7 +76,8 @@ fn create_element(id, tag, props, children) {
         layout: none,
         is_hovered: false,
         is_active: false,
-        is_focused: false
+        is_focused: false,
+        max_scroll: 0.0
     }
 }
 
@@ -95,6 +99,56 @@ fn create_signal(id, value) {
     }
 }
 
+struct MemoSignal {
+    id
+    var value
+    var deps
+    var compute_fn
+}
+
+impl MemoSignal {
+    fn get(self) {
+        return self.value
+    }
+}
+
+fn create_memo(id, value, deps, compute_fn) {
+    return MemoSignal {
+        id: id,
+        value: value,
+        deps: deps,
+        compute_fn: compute_fn
+    }
+}
+
+struct TweenSignal {
+    id
+    var value
+    var start_val
+    var target_val
+    var elapsed
+    var duration
+    var easing
+}
+
+impl TweenSignal {
+    fn get(self) {
+        return self.value
+    }
+}
+
+fn create_tween(id, value, target_val, duration, easing) {
+    return TweenSignal {
+        id: id,
+        value: value,
+        start_val: value,
+        target_val: target_val,
+        elapsed: 0.0,
+        duration: duration,
+        easing: easing
+    }
+}
+
 export next_element_id, reset_element_counter
-export Rect, Color, Element, StateSignal
-export types_make_rect, types_make_color, create_element, create_signal
+export Rect, Color, Element, StateSignal, MemoSignal, TweenSignal
+export types_make_rect, types_make_color, create_element, create_signal, create_memo, create_tween

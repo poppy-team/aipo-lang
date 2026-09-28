@@ -1,0 +1,137 @@
+# strings.aipo — Runtime-resolved UI strings for aipo.zoe (M13)
+#
+# A globally-scoped GUI framework must not hardcode one language. English is
+# the default because it is the lingua franca of software tooling; every key is
+# overridable at runtime through `set_strings` so an application can localize
+# without forking components.
+#
+# Usage:
+#   zoe.set_strings({ "dialog.confirm": "Confirmar", "dialog.cancel": "Cancelar" })
+#   zoe.str("dialog.confirm")
+
+let DEFAULTS = {
+    "dialog.confirm": "Confirm",
+    "dialog.cancel": "Cancel",
+    "dialog.close": "Close",
+    "dialog.ok": "OK",
+    "dialog.apply": "Apply",
+    "dialog.retry": "Retry",
+    "dialog.delete": "Delete",
+    "dialog.save": "Save",
+    "dialog.discard": "Discard",
+
+    "action.new": "New",
+    "action.open": "Open",
+    "action.close": "Close",
+    "action.add": "Add",
+    "action.remove": "Remove",
+    "action.rename": "Rename",
+    "action.duplicate": "Duplicate",
+    "action.undo": "Undo",
+    "action.redo": "Redo",
+    "action.copy": "Copy",
+    "action.paste": "Paste",
+    "action.cut": "Cut",
+    "action.select_all": "Select All",
+    "action.find": "Find",
+    "action.find_replace": "Find and Replace",
+    "action.search": "Search",
+    "action.settings": "Settings",
+    "action.preferences": "Preferences",
+    "action.reset": "Reset",
+    "action.revert": "Revert",
+    "action.refresh": "Refresh",
+    "action.import": "Import",
+    "action.export": "Export",
+    "action.run": "Run",
+    "action.build": "Build",
+    "action.debug": "Debug",
+    "action.help": "Help",
+
+    "state.loading": "Loading...",
+    "state.empty": "Nothing here yet",
+    "state.error": "Something went wrong",
+    "state.saved": "Saved",
+    "state.modified": "Modified",
+    "state.unsaved": "Unsaved changes",
+    "state.readonly": "Read only",
+    "state.disabled": "Unavailable",
+
+    "nav.scene": "Scene",
+    "nav.hierarchy": "Hierarchy",
+    "nav.assets": "Assets",
+    "nav.inspector": "Inspector",
+    "nav.console": "Console",
+    "nav.output": "Output",
+    "nav.profiler": "Profiler",
+    "nav.animation": "Animation",
+    "nav.audio": "Audio",
+    "nav.shader": "Shader",
+    "nav.scripts": "Scripts",
+
+    "field.name": "Name",
+    "field.position": "Position",
+    "field.rotation": "Rotation",
+    "field.scale": "Scale",
+    "field.color": "Color",
+    "field.size": "Size",
+    "field.visible": "Visible",
+    "field.locked": "Locked",
+    "field.opacity": "Opacity",
+    "field.tags": "Tags",
+    "field.type": "Type",
+    "field.value": "Value",
+
+    "palette.search": "Type a command...",
+    "palette.no_results": "No matching commands",
+
+    "tooltip.shortcut_hint": "Shortcuts appear here",
+
+    "status.fps": "FPS",
+    "status.frame_time": "Frame",
+    "status.objects": "Objects",
+    "status.triangles": "Triangles",
+    "status.draw_calls": "Draw calls",
+    "status.memory": "Memory"
+}
+
+# Active overrides, merged over DEFAULTS by `str`.
+var _overrides = {}
+
+# Replaces or extends the string table. Keys absent from `table` keep their
+# previous value, so partial overrides are safe.
+fn strings_set(table: Dict) {
+    each key in table.keys() {
+        _overrides[key] = table[key]
+    }
+}
+
+# Restores every key to its built-in default.
+fn strings_reset() {
+    _overrides = {}
+}
+
+# Resolves a key, falling back to the default and then to the key itself so a
+# missing translation is visible rather than blank.
+fn strings_get(key: String) -> String {
+    if _overrides.has(key) {
+        return f"{_overrides[key]}"
+    }
+    if DEFAULTS.has(key) {
+        return f"{DEFAULTS[key]}"
+    }
+    return key
+}
+
+# True when the key has a built-in default, for test assertions.
+fn strings_has(key: String) -> Bool {
+    return DEFAULTS.has(key)
+}
+
+# Number of keys in the built-in table.
+fn strings_default_count() -> Int {
+    return DEFAULTS.keys().len()
+}
+
+export DEFAULTS
+export strings_set, strings_reset, strings_get, strings_has, strings_default_count
