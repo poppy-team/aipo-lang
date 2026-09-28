@@ -166,6 +166,18 @@ fn safe_draw_circle(cx: f32, cy: f32, radius: f32, color: Color) {
     }));
 }
 
+fn safe_draw_triangle(v1: Vec2, v2: Vec2, v3: Vec2, color: Color) {
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        draw_triangle(v1, v2, v3, color);
+    }));
+}
+
+fn safe_draw_triangle_lines(v1: Vec2, v2: Vec2, v3: Vec2, th: f32, color: Color) {
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        draw_triangle_lines(v1, v2, v3, th, color);
+    }));
+}
+
 fn safe_draw_text(text: &str, x: f32, y: f32, size: f32, color: Color) {
     if let Some(clip) = current_clip() {
         if y < clip.y || (y - size) > (clip.y + clip.h) || x > (clip.x + clip.w) {
@@ -594,6 +606,62 @@ pub fn host_draw_line(args: &[Value]) -> Result<Value, VmFault> {
     Ok(Value::None)
 }
 
+/// host_draw_triangle(x1, y1, x2, y2, x3, y3, r, g, b, a)
+pub fn host_draw_triangle(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 10 {
+        return Err(VmFault::TypeMismatch {
+            expected: "10 arguments (x1, y1, x2, y2, x3, y3, r, g, b, a)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let x1 = to_f32(&args[0])?;
+    let y1 = to_f32(&args[1])?;
+    let x2 = to_f32(&args[2])?;
+    let y2 = to_f32(&args[3])?;
+    let x3 = to_f32(&args[4])?;
+    let y3 = to_f32(&args[5])?;
+    let r = to_f32(&args[6])?;
+    let g = to_f32(&args[7])?;
+    let b = to_f32(&args[8])?;
+    let a = to_f32(&args[9])?;
+    safe_draw_triangle(
+        vec2(x1, y1),
+        vec2(x2, y2),
+        vec2(x3, y3),
+        Color::new(r, g, b, a),
+    );
+    Ok(Value::None)
+}
+
+/// host_draw_triangle_lines(x1, y1, x2, y2, x3, y3, thickness, r, g, b, a)
+pub fn host_draw_triangle_lines(args: &[Value]) -> Result<Value, VmFault> {
+    if args.len() < 11 {
+        return Err(VmFault::TypeMismatch {
+            expected: "11 arguments (x1, y1, x2, y2, x3, y3, thickness, r, g, b, a)".to_string(),
+            actual: format!("{} arguments", args.len()),
+        });
+    }
+    let x1 = to_f32(&args[0])?;
+    let y1 = to_f32(&args[1])?;
+    let x2 = to_f32(&args[2])?;
+    let y2 = to_f32(&args[3])?;
+    let x3 = to_f32(&args[4])?;
+    let y3 = to_f32(&args[5])?;
+    let th = to_f32(&args[6])?;
+    let r = to_f32(&args[7])?;
+    let g = to_f32(&args[8])?;
+    let b = to_f32(&args[9])?;
+    let a = to_f32(&args[10])?;
+    safe_draw_triangle_lines(
+        vec2(x1, y1),
+        vec2(x2, y2),
+        vec2(x3, y3),
+        th,
+        Color::new(r, g, b, a),
+    );
+    Ok(Value::None)
+}
+
 /// host_draw_text(text, x, y, font_size, r, g, b)
 pub fn host_draw_text(args: &[Value]) -> Result<Value, VmFault> {
     if args.len() < 7 {
@@ -917,6 +985,8 @@ const NATIVES: &[NativeEntry] = &[
     ("host_draw_rect_lines", 9, host_draw_rect_lines),
     ("host_draw_circle", 7, host_draw_circle),
     ("host_draw_line", 9, host_draw_line),
+    ("host_draw_triangle", 10, host_draw_triangle),
+    ("host_draw_triangle_lines", 11, host_draw_triangle_lines),
     ("host_draw_text", 7, host_draw_text),
     ("host_load_texture", 1, host_load_texture),
     ("host_draw_sprite", 7, host_draw_sprite),

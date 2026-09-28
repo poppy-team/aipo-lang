@@ -3,18 +3,23 @@
 #
 # Demonstrates extreme dogfooding of Zoe UI:
 # - Leona Layout Engine (split_view, tab_view, scroll_view, column, row, spacer, divider)
-# - Sub-rect Viewport with GPU clipping and custom Camera2D integration
-# - Interactive pan (on_drag) and zoom (on_wheel) inside the viewport
-# - Viewport Object Picking & 2D Transformation Gizmo (X, Y, Center handles)
+# - Sub-rect Viewport with GPU clipping and custom Camera2D / Orbit Camera3D integration
+# - Interactive pan (on_drag) and zoom (on_wheel) in 2D mode
+# - Interactive orbit (on_drag) and dolly zoom (on_wheel) in 3D mode
+# - Viewport Object Picking & 2D / 3D Transformation Gizmos (X, Y, Z, Center handles)
 # - Real-time two-way synchronization between Viewport, Hierarchy, and Inspector
 # - Catppuccin Mocha theme with buttons, switches, badges, cards, labels, and fine inputs
 
 import aipo.zoe as zoe
 
 # Global editor camera & workspace signals
+var _is_3d_mode = none
 var _cam_x = none
 var _cam_y = none
 var _cam_zoom = none
+var _cam3d_yaw = none
+var _cam3d_pitch = none
+var _cam3d_dist = none
 var _show_grid = none
 var _is_playing = none
 var _selected_id = none
@@ -26,6 +31,8 @@ var _right_split = none
 var _hero_name = none
 var _hero_x = none
 var _hero_y = none
+var _hero_z = none
+var _hero_rot = none
 var _hero_layer = none
 var _hero_color = none
 
@@ -33,6 +40,8 @@ var _hero_color = none
 var _coin_name = none
 var _coin_x = none
 var _coin_y = none
+var _coin_z = none
+var _coin_rot = none
 var _coin_layer = none
 var _coin_color = none
 
@@ -40,6 +49,8 @@ var _coin_color = none
 var _plat_name = none
 var _plat_x = none
 var _plat_y = none
+var _plat_z = none
+var _plat_rot = none
 var _plat_layer = none
 var _plat_color = none
 
@@ -58,9 +69,13 @@ fn draw_grid(w: Float, h: Float, cell_size: Float) {
 
 fn view() {
     if _cam_x == none {
+        _is_3d_mode = zoe.use_state(false)
         _cam_x = zoe.use_state(0.0)
         _cam_y = zoe.use_state(0.0)
         _cam_zoom = zoe.use_state(1.0)
+        _cam3d_yaw = zoe.use_state(0.6)
+        _cam3d_pitch = zoe.use_state(0.45)
+        _cam3d_dist = zoe.use_state(240.0)
         _show_grid = zoe.use_state(true)
         _is_playing = zoe.use_state(false)
         _selected_id = zoe.use_state("hero")
@@ -72,20 +87,26 @@ fn view() {
         _hero_name = zoe.use_state("Player (Hero)")
         _hero_x = zoe.use_state(0.0)
         _hero_y = zoe.use_state(0.0)
+        _hero_z = zoe.use_state(0.0)
+        _hero_rot = zoe.use_state(0.0)
         _hero_layer = zoe.use_state("Player")
         _hero_color = zoe.use_state(zoe.color.blue)
 
         # Entity 2: Coin
         _coin_name = zoe.use_state("Coin (Item)")
-        _coin_x = zoe.use_state(80.0)
-        _coin_y = zoe.use_state(-40.0)
+        _coin_x = zoe.use_state(70.0)
+        _coin_y = zoe.use_state(-35.0)
+        _coin_z = zoe.use_state(15.0)
+        _coin_rot = zoe.use_state(0.0)
         _coin_layer = zoe.use_state("Default")
         _coin_color = zoe.use_state(zoe.color.yellow)
 
         # Entity 3: Platform
         _plat_name = zoe.use_state("Tilemap (Platform)")
         _plat_x = zoe.use_state(0.0)
-        _plat_y = zoe.use_state(50.0)
+        _plat_y = zoe.use_state(45.0)
+        _plat_z = zoe.use_state(0.0)
+        _plat_rot = zoe.use_state(0.0)
         _plat_layer = zoe.use_state("Background")
         _plat_color = zoe.use_state(zoe.color.green)
     }
@@ -94,10 +115,20 @@ fn view() {
         zoe.set_state(_is_playing, not _is_playing.get())
     }
 
+    let on_mode_toggle = fn(_) {
+        zoe.set_state(_is_3d_mode, not _is_3d_mode.get())
+    }
+
     let on_reset_cam = fn(_) {
-        zoe.set_state(_cam_x, 0.0)
-        zoe.set_state(_cam_y, 0.0)
-        zoe.set_state(_cam_zoom, 1.0)
+        if _is_3d_mode.get() {
+            zoe.set_state(_cam3d_yaw, 0.6)
+            zoe.set_state(_cam3d_pitch, 0.45)
+            zoe.set_state(_cam3d_dist, 240.0)
+        } else {
+            zoe.set_state(_cam_x, 0.0)
+            zoe.set_state(_cam_y, 0.0)
+            zoe.set_state(_cam_zoom, 1.0)
+        }
     }
 
     let on_grid_toggle = fn(_) {
@@ -116,6 +147,8 @@ fn view() {
     let play_label = if _is_playing.get() then "Pause ||" else "Play ▶"
     let play_variant = if _is_playing.get() then "secondary" else "primary"
     let play_bg = if _is_playing.get() then zoe.color.peach else zoe.color.green
+    let mode_label = if _is_3d_mode.get() then "Mode: 3D 🧊" else "Mode: 2D 📐"
+    let mode_bg = if _is_3d_mode.get() then zoe.color.lavender else zoe.color.blue
     let status_mode_label = if _is_playing.get() then "Running" else "Editing"
     let status_mode_bg = if _is_playing.get() then zoe.color.green else zoe.color.surface_0
     let zoom_pct = Int(_cam_zoom.get() * 100.0)
@@ -134,13 +167,14 @@ fn view() {
             zoe.label("Aipo Studio", { "font_size": 16.0, "font_weight": "bold", "color": zoe.color.lavender }),
             zoe.divider({ "direction": "vertical", "thickness": 1.0 }),
             zoe.button(play_label, on_play_toggle, { "variant": play_variant, "background": play_bg }),
+            zoe.button(mode_label, on_mode_toggle, { "variant": "secondary", "background": mode_bg }),
             zoe.button("Reset ↺", on_reset_cam, { "variant": "ghost", "background": zoe.color.surface_0 }),
             zoe.row({ "align_items": "center", "gap": 6.0 }, [
                 zoe.label("Grid:", { "font_size": 12.0, "color": zoe.color.text }),
                 zoe.switch(_show_grid.get(), on_grid_toggle, {})
             ]),
             zoe.spacer(),
-            zoe.badge(f"Zoom: {zoom_pct}%", { "background": zoe.color.surface_1, "color": zoe.color.blue }),
+            zoe.badge(if _is_3d_mode.get() then f"Dist: {Int(_cam3d_dist.get())}" else f"Zoom: {zoom_pct}%", { "background": zoe.color.surface_1, "color": zoe.color.blue }),
             zoe.badge(status_mode_label, { "background": status_mode_bg, "color": zoe.color.white })
         ]
     )
@@ -150,14 +184,23 @@ fn view() {
     let coin_bg = if cur_id == "coin" then zoe.color.blue else zoe.color.surface_0
     let plat_bg = if cur_id == "platform" then zoe.color.blue else zoe.color.surface_0
 
-    let hierarchy_tree = zoe.scroll_view({ "width": "100%", "height": "100%", "padding": 8.0, "gap": 4.0 }, [
+    let hierarchy_items = if _is_3d_mode.get() then [
+        zoe.button("● RootScene3D", on_select_root, { "variant": "ghost", "background": zoe.color.surface_0 }),
+        zoe.button("  ├─ Camera3D (Orbit)", on_select_cam, { "variant": "ghost", "background": zoe.color.surface_0 }),
+        zoe.button("  ├─ Mesh: Platform", on_select_plat, { "variant": if cur_id == "platform" then "primary" else "ghost", "background": plat_bg }),
+        zoe.button("  ├─ Mesh: Hero (Cube)", on_select_hero, { "variant": if cur_id == "hero" then "primary" else "ghost", "background": hero_bg }),
+        zoe.button("  ├─ Mesh: Coin (Diamond)", on_select_coin, { "variant": if cur_id == "coin" then "primary" else "ghost", "background": coin_bg }),
+        zoe.button("  └─ Grid3D (Horizon)", on_select_dust, { "variant": "ghost", "background": zoe.color.surface_0 })
+    ] else [
         zoe.button("● RootScene", on_select_root, { "variant": "ghost", "background": zoe.color.surface_0 }),
         zoe.button("  ├─ Camera2D", on_select_cam, { "variant": "ghost", "background": zoe.color.surface_0 }),
         zoe.button("  ├─ Tilemap (Platform)", on_select_plat, { "variant": if cur_id == "platform" then "primary" else "ghost", "background": plat_bg }),
         zoe.button("  ├─ Player (Hero)", on_select_hero, { "variant": if cur_id == "hero" then "primary" else "ghost", "background": hero_bg }),
         zoe.button("  ├─ Coin (Item)", on_select_coin, { "variant": if cur_id == "coin" then "primary" else "ghost", "background": coin_bg }),
         zoe.button("  └─ Particles (Dust)", on_select_dust, { "variant": "ghost", "background": zoe.color.surface_0 })
-    ])
+    ]
+
+    let hierarchy_tree = zoe.scroll_view({ "width": "100%", "height": "100%", "padding": 8.0, "gap": 4.0 }, hierarchy_items)
 
     let assets_list = zoe.scroll_view({ "width": "100%", "height": "100%", "padding": 8.0, "gap": 4.0 }, [
         zoe.badge("textures/hero.png", { "background": zoe.color.surface_1, "color": zoe.color.text }),
@@ -173,150 +216,274 @@ fn view() {
 
     # Center Viewport with interactive scene
     let viewport_render = fn(rect) {
-        let cam_x = _cam_x.get()
-        let cam_y = _cam_y.get()
-        let cam_z = _cam_zoom.get()
-        let z = if cam_z > 0.01 then cam_z else 1.0
+        if _is_3d_mode.get() {
+            let cam3d = zoe.camera_3d(_cam3d_yaw.get(), _cam3d_pitch.get(), _cam3d_dist.get())
 
-        zoe.set_viewport_camera(rect, cam_x, cam_y, cam_z)
+            if _show_grid.get() {
+                zoe.draw_grid_3d(cam3d, rect, 220.0, 40.0)
+            }
 
-        if _show_grid.get() {
-            draw_grid(rect["width"], rect["height"], 32.0 * z)
-        }
+            # 1. Draw Platform 3D
+            let plat_pos = zoe.vec3(_plat_x.get(), -_plat_y.get(), _plat_z.get())
+            let plat_mesh = zoe.cube_mesh(160.0, 14.0, 60.0, _plat_color.get())
+            zoe.render_mesh_3d(plat_mesh, plat_pos, _plat_rot.get(), 0.0, cam3d, rect)
 
-        # 1. Draw Platform entity
-        let plat_s = zoe.world_to_screen(rect, _plat_x.get(), _plat_y.get(), cam_x, cam_y, cam_z)
-        let plat_col = _plat_color.get()
-        host_draw_rect(plat_s["x"] - 100.0 * z, plat_s["y"] - 8.0 * z, 200.0 * z, 16.0 * z, plat_col.r, plat_col.g, plat_col.b, plat_col.a)
+            # 2. Draw Coin 3D
+            let coin_pos = zoe.vec3(_coin_x.get(), -_coin_y.get(), _coin_z.get())
+            let coin_mesh = zoe.pyramid_mesh(24.0, 32.0, _coin_color.get())
+            zoe.render_mesh_3d(coin_mesh, coin_pos, _coin_rot.get(), 0.0, cam3d, rect)
 
-        # 2. Draw Coin entity
-        let coin_s = zoe.world_to_screen(rect, _coin_x.get(), _coin_y.get(), cam_x, cam_y, cam_z)
-        let coin_col = _coin_color.get()
-        host_draw_circle(coin_s["x"], coin_s["y"], 14.0 * z, coin_col.r, coin_col.g, coin_col.b, coin_col.a)
-        host_draw_text(_coin_name.get(), coin_s["x"] - 18.0 * z, coin_s["y"] - 22.0 * z, 11.0, 1.0, 1.0, 1.0)
+            # 3. Draw Hero 3D
+            let hero_pos = zoe.vec3(_hero_x.get(), -_hero_y.get(), _hero_z.get())
+            let hero_mesh = zoe.cube_mesh(36.0, 36.0, 36.0, _hero_color.get())
+            zoe.render_mesh_3d(hero_mesh, hero_pos, _hero_rot.get(), 0.0, cam3d, rect)
 
-        # 3. Draw Hero entity
-        let hero_s = zoe.world_to_screen(rect, _hero_x.get(), _hero_y.get(), cam_x, cam_y, cam_z)
-        let hero_col = _hero_color.get()
-        host_draw_rect(hero_s["x"] - 24.0 * z, hero_s["y"] - 24.0 * z, 48.0 * z, 48.0 * z, hero_col.r, hero_col.g, hero_col.b, hero_col.a)
-        host_draw_text(_hero_name.get(), hero_s["x"] - 20.0 * z, hero_s["y"] - 32.0 * z, 13.0, 1.0, 1.0, 1.0)
+            # 4. Draw 3D Transform Gizmo for Selected Entity
+            var sel_pos = none
+            if cur_id == "hero" {
+                sel_pos = hero_pos
+            } elif cur_id == "coin" {
+                sel_pos = coin_pos
+            } elif cur_id == "platform" {
+                sel_pos = plat_pos
+            }
 
-        # 4. Draw Selection Bounding Box & 2D Transform Gizmo on the Selected Entity
-        var active_gx = 0.0
-        var active_gy = 0.0
-        var has_gizmo = false
+            if sel_pos != none {
+                zoe.draw_gizmo_3d(sel_pos, cam3d, rect, 45.0, _drag_mode.get())
+            }
+        } else {
+            let cam_x = _cam_x.get()
+            let cam_y = _cam_y.get()
+            let cam_z = _cam_zoom.get()
+            let z = if cam_z > 0.01 then cam_z else 1.0
 
-        if cur_id == "hero" {
-            active_gx = hero_s["x"]
-            active_gy = hero_s["y"]
-            has_gizmo = true
-            host_draw_rect_lines(hero_s["x"] - 26.0 * z, hero_s["y"] - 26.0 * z, 52.0 * z, 52.0 * z, 1.5, 0.53, 0.75, 0.98, 0.9)
-        } elif cur_id == "coin" {
-            active_gx = coin_s["x"]
-            active_gy = coin_s["y"]
-            has_gizmo = true
-            host_draw_rect_lines(coin_s["x"] - 16.0 * z, coin_s["y"] - 16.0 * z, 32.0 * z, 32.0 * z, 1.5, 0.53, 0.75, 0.98, 0.9)
-        } elif cur_id == "platform" {
-            active_gx = plat_s["x"]
-            active_gy = plat_s["y"]
-            has_gizmo = true
-            host_draw_rect_lines(plat_s["x"] - 102.0 * z, plat_s["y"] - 10.0 * z, 204.0 * z, 20.0 * z, 1.5, 0.53, 0.75, 0.98, 0.9)
-        }
+            zoe.set_viewport_camera(rect, cam_x, cam_y, cam_z)
 
-        if has_gizmo {
-            zoe.draw_gizmo_2d(active_gx, active_gy, 50.0, _drag_mode.get())
+            if _show_grid.get() {
+                draw_grid(rect["width"], rect["height"], 32.0 * z)
+            }
+
+            # 1. Draw Platform entity
+            let plat_s = zoe.world_to_screen(rect, _plat_x.get(), _plat_y.get(), cam_x, cam_y, cam_z)
+            let plat_col = _plat_color.get()
+            host_draw_rect(plat_s["x"] - 100.0 * z, plat_s["y"] - 8.0 * z, 200.0 * z, 16.0 * z, plat_col.r, plat_col.g, plat_col.b, plat_col.a)
+
+            # 2. Draw Coin entity
+            let coin_s = zoe.world_to_screen(rect, _coin_x.get(), _coin_y.get(), cam_x, cam_y, cam_z)
+            let coin_col = _coin_color.get()
+            host_draw_circle(coin_s["x"], coin_s["y"], 14.0 * z, coin_col.r, coin_col.g, coin_col.b, coin_col.a)
+            host_draw_text(_coin_name.get(), coin_s["x"] - 18.0 * z, coin_s["y"] - 22.0 * z, 11.0, 1.0, 1.0, 1.0)
+
+            # 3. Draw Hero entity
+            let hero_s = zoe.world_to_screen(rect, _hero_x.get(), _hero_y.get(), cam_x, cam_y, cam_z)
+            let hero_col = _hero_color.get()
+            host_draw_rect(hero_s["x"] - 24.0 * z, hero_s["y"] - 24.0 * z, 48.0 * z, 48.0 * z, hero_col.r, hero_col.g, hero_col.b, hero_col.a)
+            host_draw_text(_hero_name.get(), hero_s["x"] - 20.0 * z, hero_s["y"] - 32.0 * z, 13.0, 1.0, 1.0, 1.0)
+
+            # 4. Draw Selection Bounding Box & 2D Transform Gizmo on the Selected Entity
+            var active_gx = 0.0
+            var active_gy = 0.0
+            var has_gizmo = false
+
+            if cur_id == "hero" {
+                active_gx = hero_s["x"]
+                active_gy = hero_s["y"]
+                has_gizmo = true
+                host_draw_rect_lines(hero_s["x"] - 26.0 * z, hero_s["y"] - 26.0 * z, 52.0 * z, 52.0 * z, 1.5, 0.53, 0.75, 0.98, 0.9)
+            } elif cur_id == "coin" {
+                active_gx = coin_s["x"]
+                active_gy = coin_s["y"]
+                has_gizmo = true
+                host_draw_rect_lines(coin_s["x"] - 16.0 * z, coin_s["y"] - 16.0 * z, 32.0 * z, 32.0 * z, 1.5, 0.53, 0.75, 0.98, 0.9)
+            } elif cur_id == "platform" {
+                active_gx = plat_s["x"]
+                active_gy = plat_s["y"]
+                has_gizmo = true
+                host_draw_rect_lines(plat_s["x"] - 102.0 * z, plat_s["y"] - 10.0 * z, 204.0 * z, 20.0 * z, 1.5, 0.53, 0.75, 0.98, 0.9)
+            }
+
+            if has_gizmo {
+                zoe.draw_gizmo_2d(active_gx, active_gy, 50.0, _drag_mode.get())
+            }
         }
     }
 
     let vp_drag = fn(e) {
         let rect = e["rect"]
-        let zoom = _cam_zoom.get()
-        let z = if zoom > 0.01 then zoom else 1.0
-        let cam_x = _cam_x.get()
-        let cam_y = _cam_y.get()
 
-        # Start of drag or click down
-        if _drag_mode.get() == "none" or (e["dx"] == 0.0 and e["dy"] == 0.0) {
-            # 1. Test hit on the active entity's Gizmo
-            var sel_sx = 0.0
-            var sel_sy = 0.0
-            var can_have_gizmo = false
+        if _is_3d_mode.get() {
+            let cam3d = zoe.camera_3d(_cam3d_yaw.get(), _cam3d_pitch.get(), _cam3d_dist.get())
 
-            if cur_id == "hero" {
-                let s = zoe.world_to_screen(rect, _hero_x.get(), _hero_y.get(), cam_x, cam_y, zoom)
-                sel_sx = s["x"]
-                sel_sy = s["y"]
-                can_have_gizmo = true
-            } elif cur_id == "coin" {
-                let s = zoe.world_to_screen(rect, _coin_x.get(), _coin_y.get(), cam_x, cam_y, zoom)
-                sel_sx = s["x"]
-                sel_sy = s["y"]
-                can_have_gizmo = true
-            } elif cur_id == "platform" {
-                let s = zoe.world_to_screen(rect, _plat_x.get(), _plat_y.get(), cam_x, cam_y, zoom)
-                sel_sx = s["x"]
-                sel_sy = s["y"]
-                can_have_gizmo = true
-            }
-
-            var hit_axis = "none"
-            if can_have_gizmo {
-                hit_axis = zoe.test_gizmo_hit(e["x"], e["y"], sel_sx, sel_sy, 50.0)
-            }
-
-            if hit_axis != "none" {
-                zoe.set_state(_drag_mode, hit_axis)
-            } else {
-                # 2. Gizmo missed: Test Picking on World Entities
-                let s_coin = zoe.world_to_screen(rect, _coin_x.get(), _coin_y.get(), cam_x, cam_y, zoom)
-                let s_hero = zoe.world_to_screen(rect, _hero_x.get(), _hero_y.get(), cam_x, cam_y, zoom)
-                let s_plat = zoe.world_to_screen(rect, _plat_x.get(), _plat_y.get(), cam_x, cam_y, zoom)
-
-                if zoe.point_in_rect(e["x"], e["y"], s_coin["x"] - 14.0 * z, s_coin["y"] - 14.0 * z, 28.0 * z, 28.0 * z) {
-                    zoe.set_state(_selected_id, "coin")
-                    zoe.set_state(_drag_mode, "center")
-                } elif zoe.point_in_rect(e["x"], e["y"], s_hero["x"] - 24.0 * z, s_hero["y"] - 24.0 * z, 48.0 * z, 48.0 * z) {
-                    zoe.set_state(_selected_id, "hero")
-                    zoe.set_state(_drag_mode, "center")
-                } elif zoe.point_in_rect(e["x"], e["y"], s_plat["x"] - 100.0 * z, s_plat["y"] - 8.0 * z, 200.0 * z, 16.0 * z) {
-                    zoe.set_state(_selected_id, "platform")
-                    zoe.set_state(_drag_mode, "center")
-                } else {
-                    # 3. Empty space: Pan Camera
-                    zoe.set_state(_drag_mode, "pan")
-                }
-            }
-        }
-
-        # Continuous drag dispatch
-        if e["dx"] != 0.0 or e["dy"] != 0.0 {
-            let world_dx = (e["dx"] + 0.0) / z
-            let world_dy = (e["dy"] + 0.0) / z
-            let mode = _drag_mode.get()
-
-            if mode == "pan" {
-                zoe.set_state(_cam_x, cam_x - world_dx)
-                zoe.set_state(_cam_y, cam_y - world_dy)
-            } elif mode == "x" {
-                if cur_id == "hero" { zoe.set_state(_hero_x, _hero_x.get() + world_dx) }
-                if cur_id == "coin" { zoe.set_state(_coin_x, _coin_x.get() + world_dx) }
-                if cur_id == "platform" { zoe.set_state(_plat_x, _plat_x.get() + world_dx) }
-            } elif mode == "y" {
-                if cur_id == "hero" { zoe.set_state(_hero_y, _hero_y.get() + world_dy) }
-                if cur_id == "coin" { zoe.set_state(_coin_y, _coin_y.get() + world_dy) }
-                if cur_id == "platform" { zoe.set_state(_plat_y, _plat_y.get() + world_dy) }
-            } elif mode == "center" {
+            if _drag_mode.get() == "none" or (e["dx"] == 0.0 and e["dy"] == 0.0) {
+                # 1. Test hit on selected entity's 3D Gizmo
+                var sel_pos = none
                 if cur_id == "hero" {
-                    zoe.set_state(_hero_x, _hero_x.get() + world_dx)
-                    zoe.set_state(_hero_y, _hero_y.get() + world_dy)
+                    sel_pos = zoe.vec3(_hero_x.get(), -_hero_y.get(), _hero_z.get())
+                } elif cur_id == "coin" {
+                    sel_pos = zoe.vec3(_coin_x.get(), -_coin_y.get(), _coin_z.get())
+                } elif cur_id == "platform" {
+                    sel_pos = zoe.vec3(_plat_x.get(), -_plat_y.get(), _plat_z.get())
                 }
-                if cur_id == "coin" {
-                    zoe.set_state(_coin_x, _coin_x.get() + world_dx)
-                    zoe.set_state(_coin_y, _coin_y.get() + world_dy)
+
+                var hit_axis = "none"
+                if sel_pos != none {
+                    hit_axis = zoe.test_gizmo_3d_hit(e["x"], e["y"], sel_pos, cam3d, rect, 45.0)
                 }
-                if cur_id == "platform" {
-                    zoe.set_state(_plat_x, _plat_x.get() + world_dx)
-                    zoe.set_state(_plat_y, _plat_y.get() + world_dy)
+
+                if hit_axis != "none" {
+                    zoe.set_state(_drag_mode, hit_axis)
+                } else {
+                    # 2. Test Picking on World 3D Entities
+                    let s_coin = zoe.project_3d(_coin_x.get(), -_coin_y.get(), _coin_z.get(), cam3d, rect)
+                    let s_hero = zoe.project_3d(_hero_x.get(), -_hero_y.get(), _hero_z.get(), cam3d, rect)
+                    let s_plat = zoe.project_3d(_plat_x.get(), -_plat_y.get(), _plat_z.get(), cam3d, rect)
+
+                    if s_coin["visible"] and zoe.point_in_rect(e["x"], e["y"], s_coin["x"] - 20.0, s_coin["y"] - 20.0, 40.0, 40.0) {
+                        zoe.set_state(_selected_id, "coin")
+                        zoe.set_state(_drag_mode, "center")
+                    } elif s_hero["visible"] and zoe.point_in_rect(e["x"], e["y"], s_hero["x"] - 25.0, s_hero["y"] - 25.0, 50.0, 50.0) {
+                        zoe.set_state(_selected_id, "hero")
+                        zoe.set_state(_drag_mode, "center")
+                    } elif s_plat["visible"] and zoe.point_in_rect(e["x"], e["y"], s_plat["x"] - 60.0, s_plat["y"] - 15.0, 120.0, 30.0) {
+                        zoe.set_state(_selected_id, "platform")
+                        zoe.set_state(_drag_mode, "center")
+                    } else {
+                        # 3. Orbit Camera
+                        zoe.set_state(_drag_mode, "orbit")
+                    }
+                }
+            }
+
+            if e["dx"] != 0.0 or e["dy"] != 0.0 {
+                let mode = _drag_mode.get()
+                if mode == "orbit" {
+                    let new_yaw = _cam3d_yaw.get() + (e["dx"] + 0.0) * 0.008
+                    var new_pitch = _cam3d_pitch.get() + (e["dy"] + 0.0) * 0.008
+                    if new_pitch < 0.05 { new_pitch = 0.05 }
+                    if new_pitch > 1.50 { new_pitch = 1.50 }
+                    zoe.set_state(_cam3d_yaw, new_yaw)
+                    zoe.set_state(_cam3d_pitch, new_pitch)
+                } elif mode == "x" {
+                    let dx_world = (e["dx"] + 0.0) * 0.8
+                    if cur_id == "hero" { zoe.set_state(_hero_x, _hero_x.get() + dx_world) }
+                    if cur_id == "coin" { zoe.set_state(_coin_x, _coin_x.get() + dx_world) }
+                    if cur_id == "platform" { zoe.set_state(_plat_x, _plat_x.get() + dx_world) }
+                } elif mode == "y" {
+                    let dy_world = (e["dy"] + 0.0) * 0.8
+                    if cur_id == "hero" { zoe.set_state(_hero_y, _hero_y.get() + dy_world) }
+                    if cur_id == "coin" { zoe.set_state(_coin_y, _coin_y.get() + dy_world) }
+                    if cur_id == "platform" { zoe.set_state(_plat_y, _plat_y.get() + dy_world) }
+                } elif mode == "z" {
+                    let dz_world = ((e["dx"] + 0.0) - (e["dy"] + 0.0)) * 0.6
+                    if cur_id == "hero" { zoe.set_state(_hero_z, _hero_z.get() + dz_world) }
+                    if cur_id == "coin" { zoe.set_state(_coin_z, _coin_z.get() + dz_world) }
+                    if cur_id == "platform" { zoe.set_state(_plat_z, _plat_z.get() + dz_world) }
+                } elif mode == "center" {
+                    let dx_world = (e["dx"] + 0.0) * 0.8
+                    let dz_world = (e["dy"] + 0.0) * 0.8
+                    if cur_id == "hero" {
+                        zoe.set_state(_hero_x, _hero_x.get() + dx_world)
+                        zoe.set_state(_hero_z, _hero_z.get() + dz_world)
+                    }
+                    if cur_id == "coin" {
+                        zoe.set_state(_coin_x, _coin_x.get() + dx_world)
+                        zoe.set_state(_coin_z, _coin_z.get() + dz_world)
+                    }
+                    if cur_id == "platform" {
+                        zoe.set_state(_plat_x, _plat_x.get() + dx_world)
+                        zoe.set_state(_plat_z, _plat_z.get() + dz_world)
+                    }
+                }
+            }
+        } else {
+            let zoom = _cam_zoom.get()
+            let z = if zoom > 0.01 then zoom else 1.0
+            let cam_x = _cam_x.get()
+            let cam_y = _cam_y.get()
+
+            # Start of drag or click down
+            if _drag_mode.get() == "none" or (e["dx"] == 0.0 and e["dy"] == 0.0) {
+                # 1. Test hit on the active entity's Gizmo
+                var sel_sx = 0.0
+                var sel_sy = 0.0
+                var can_have_gizmo = false
+
+                if cur_id == "hero" {
+                    let s = zoe.world_to_screen(rect, _hero_x.get(), _hero_y.get(), cam_x, cam_y, zoom)
+                    sel_sx = s["x"]
+                    sel_sy = s["y"]
+                    can_have_gizmo = true
+                } elif cur_id == "coin" {
+                    let s = zoe.world_to_screen(rect, _coin_x.get(), _coin_y.get(), cam_x, cam_y, zoom)
+                    sel_sx = s["x"]
+                    sel_sy = s["y"]
+                    can_have_gizmo = true
+                } elif cur_id == "platform" {
+                    let s = zoe.world_to_screen(rect, _plat_x.get(), _plat_y.get(), cam_x, cam_y, zoom)
+                    sel_sx = s["x"]
+                    sel_sy = s["y"]
+                    can_have_gizmo = true
+                }
+
+                var hit_axis = "none"
+                if can_have_gizmo {
+                    hit_axis = zoe.test_gizmo_hit(e["x"], e["y"], sel_sx, sel_sy, 50.0)
+                }
+
+                if hit_axis != "none" {
+                    zoe.set_state(_drag_mode, hit_axis)
+                } else {
+                    # 2. Gizmo missed: Test Picking on World Entities
+                    let s_coin = zoe.world_to_screen(rect, _coin_x.get(), _coin_y.get(), cam_x, cam_y, zoom)
+                    let s_hero = zoe.world_to_screen(rect, _hero_x.get(), _hero_y.get(), cam_x, cam_y, zoom)
+                    let s_plat = zoe.world_to_screen(rect, _plat_x.get(), _plat_y.get(), cam_x, cam_y, zoom)
+
+                    if zoe.point_in_rect(e["x"], e["y"], s_coin["x"] - 14.0 * z, s_coin["y"] - 14.0 * z, 28.0 * z, 28.0 * z) {
+                        zoe.set_state(_selected_id, "coin")
+                        zoe.set_state(_drag_mode, "center")
+                    } elif zoe.point_in_rect(e["x"], e["y"], s_hero["x"] - 24.0 * z, s_hero["y"] - 24.0 * z, 48.0 * z, 48.0 * z) {
+                        zoe.set_state(_selected_id, "hero")
+                        zoe.set_state(_drag_mode, "center")
+                    } elif zoe.point_in_rect(e["x"], e["y"], s_plat["x"] - 100.0 * z, s_plat["y"] - 8.0 * z, 200.0 * z, 16.0 * z) {
+                        zoe.set_state(_selected_id, "platform")
+                        zoe.set_state(_drag_mode, "center")
+                    } else {
+                        # 3. Empty space: Pan Camera
+                        zoe.set_state(_drag_mode, "pan")
+                    }
+                }
+            }
+
+            # Continuous drag dispatch
+            if e["dx"] != 0.0 or e["dy"] != 0.0 {
+                let world_dx = (e["dx"] + 0.0) / z
+                let world_dy = (e["dy"] + 0.0) / z
+                let mode = _drag_mode.get()
+
+                if mode == "pan" {
+                    zoe.set_state(_cam_x, cam_x - world_dx)
+                    zoe.set_state(_cam_y, cam_y - world_dy)
+                } elif mode == "x" {
+                    if cur_id == "hero" { zoe.set_state(_hero_x, _hero_x.get() + world_dx) }
+                    if cur_id == "coin" { zoe.set_state(_coin_x, _coin_x.get() + world_dx) }
+                    if cur_id == "platform" { zoe.set_state(_plat_x, _plat_x.get() + world_dx) }
+                } elif mode == "y" {
+                    if cur_id == "hero" { zoe.set_state(_hero_y, _hero_y.get() + world_dy) }
+                    if cur_id == "coin" { zoe.set_state(_coin_y, _coin_y.get() + world_dy) }
+                    if cur_id == "platform" { zoe.set_state(_plat_y, _plat_y.get() + world_dy) }
+                } elif mode == "center" {
+                    if cur_id == "hero" {
+                        zoe.set_state(_hero_x, _hero_x.get() + world_dx)
+                        zoe.set_state(_hero_y, _hero_y.get() + world_dy)
+                    }
+                    if cur_id == "coin" {
+                        zoe.set_state(_coin_x, _coin_x.get() + world_dx)
+                        zoe.set_state(_coin_y, _coin_y.get() + world_dy)
+                    }
+                    if cur_id == "platform" {
+                        zoe.set_state(_plat_x, _plat_x.get() + world_dx)
+                        zoe.set_state(_plat_y, _plat_y.get() + world_dy)
+                    }
                 }
             }
         }
@@ -327,11 +494,30 @@ fn view() {
     }
 
     let vp_wheel = fn(e) {
-        let factor = if (e["wheel_y"] + 0.0) > 0.0 then 1.15 else 0.87
-        let new_z = (_cam_zoom.get() + 0.0) * factor
-        let clamped = if new_z < 0.2 then 0.2 else (if new_z > 5.0 then 5.0 else new_z)
-        zoe.set_state(_cam_zoom, clamped)
+        if _is_3d_mode.get() {
+            let factor = if (e["wheel_y"] + 0.0) > 0.0 then 0.9 else 1.11
+            let new_dist = (_cam3d_dist.get() + 0.0) * factor
+            let clamped = if new_dist < 60.0 then 60.0 else (if new_dist > 800.0 then 800.0 else new_dist)
+            zoe.set_state(_cam3d_dist, clamped)
+        } else {
+            let factor = if (e["wheel_y"] + 0.0) > 0.0 then 1.15 else 0.87
+            let new_z = (_cam_zoom.get() + 0.0) * factor
+            let clamped = if new_z < 0.2 then 0.2 else (if new_z > 5.0 then 5.0 else new_z)
+            zoe.set_state(_cam_zoom, clamped)
+        }
     }
+
+    let cam_info_badge = if _is_3d_mode.get() then (
+        zoe.badge(f"Cam3D: (yaw {Int(_cam3d_yaw.get() * 57.3)}°, pitch {Int(_cam3d_pitch.get() * 57.3)}°)", {
+            "background": zoe.color.surface_0,
+            "color": zoe.color.text
+        })
+    ) else (
+        zoe.badge(f"Cam: ({Int(_cam_x.get())}, {Int(_cam_y.get())})", {
+            "background": zoe.color.surface_0,
+            "color": zoe.color.text
+        })
+    )
 
     let center_viewport = zoe.viewport({
         "width": "flex",
@@ -344,10 +530,7 @@ fn view() {
     }, [
         # Floating HUD badge overlay on viewport
         zoe.row({ "padding": 12.0, "gap": 8.0 }, [
-            zoe.badge(f"Cam: ({Int(_cam_x.get())}, {Int(_cam_y.get())})", {
-                "background": zoe.color.surface_0,
-                "color": zoe.color.text
-            }),
+            cam_info_badge,
             zoe.badge(f"Selected: {cur_id}", {
                 "background": zoe.color.surface_0,
                 "color": zoe.color.lavender
@@ -363,6 +546,7 @@ fn view() {
     var active_name = _hero_name
     var active_x = _hero_x
     var active_y = _hero_y
+    var active_z = _hero_z
     var active_layer = _hero_layer
     var active_color = _hero_color
 
@@ -370,15 +554,35 @@ fn view() {
         active_name = _coin_name
         active_x = _coin_x
         active_y = _coin_y
+        active_z = _coin_z
         active_layer = _coin_layer
         active_color = _coin_color
     } elif cur_id == "platform" {
         active_name = _plat_name
         active_x = _plat_x
         active_y = _plat_y
+        active_z = _plat_z
         active_layer = _plat_layer
         active_color = _plat_color
     }
+
+    let x_col = zoe.column({ "width": "flex", "gap": 2.0 }, [
+        zoe.label("X:", { "font_size": 11.0, "color": zoe.color.peach }),
+        zoe.number_input({ "value": active_x, "step": 5.0, "min": -500.0, "max": 500.0 })
+    ])
+
+    let y_col = zoe.column({ "width": "flex", "gap": 2.0 }, [
+        zoe.label("Y:", { "font_size": 11.0, "color": zoe.color.green }),
+        zoe.number_input({ "value": active_y, "step": 5.0, "min": -500.0, "max": 500.0 })
+    ])
+
+    let z_col = zoe.column({ "width": "flex", "gap": 2.0 }, [
+        zoe.label("Z:", { "font_size": 11.0, "color": zoe.color.blue }),
+        zoe.number_input({ "value": active_z, "step": 5.0, "min": -500.0, "max": 500.0 })
+    ])
+
+    let pos_label = if _is_3d_mode.get() then "Position X, Y & Z:" else "Position X & Y:"
+    let pos_row = if _is_3d_mode.get() then zoe.row({ "gap": 6.0 }, [x_col, y_col, z_col]) else zoe.row({ "gap": 8.0 }, [x_col, y_col])
 
     # Right Panel: Inspector with fine editing components synchronized with Viewport
     let right_inspector = zoe.column(
@@ -396,17 +600,8 @@ fn view() {
                 zoe.label("Entity Name:", { "font_size": 12.0, "color": zoe.color.lavender }),
                 zoe.text_input({ "value": active_name }),
                 zoe.divider({ "color": zoe.color.surface_0 }),
-                zoe.label("Position X & Y:", { "font_size": 12.0, "color": zoe.color.text }),
-                zoe.row({ "gap": 8.0 }, [
-                    zoe.column({ "width": "flex", "gap": 2.0 }, [
-                        zoe.label("X:", { "font_size": 11.0, "color": zoe.color.peach }),
-                        zoe.number_input({ "value": active_x, "step": 5.0, "min": -500.0, "max": 500.0 })
-                    ]),
-                    zoe.column({ "width": "flex", "gap": 2.0 }, [
-                        zoe.label("Y:", { "font_size": 11.0, "color": zoe.color.green }),
-                        zoe.number_input({ "value": active_y, "step": 5.0, "min": -500.0, "max": 500.0 })
-                    ])
-                ]),
+                zoe.label(pos_label, { "font_size": 12.0, "color": zoe.color.text }),
+                pos_row,
                 zoe.divider({ "color": zoe.color.surface_0 }),
                 zoe.label("Layer:", { "font_size": 12.0, "color": zoe.color.overlay_0 }),
                 zoe.dropdown_select({
@@ -466,6 +661,11 @@ fn setup() {
 }
 
 fn update(dt) {
+    if _is_playing != none and _is_playing.get() {
+        if _coin_rot != none {
+            zoe.set_state(_coin_rot, _coin_rot.get() + dt * 2.0)
+        }
+    }
     zoe.step(dt)
 }
 

@@ -8,6 +8,7 @@ import hooks as hooks_mod
 import elements as elements_mod
 import components as components_mod
 import app as app_mod
+import retro3d as retro3d_mod
 
 # --- Ergonomic Layout Containers (Leona) ---
 
@@ -295,11 +296,62 @@ fn create_color(r, g, b, a) {
     return types_mod.types_make_color(r, g, b, a)
 }
 
+# --- 3D Engine Subsystem (Retro 3D) ---
+
+fn vec3(x: Float, y: Float, z: Float) {
+    return retro3d_mod.r3d_vec3(x, y, z)
+}
+
+fn vec3_add(a, b) {
+    return retro3d_mod.r3d_vec3_add(a, b)
+}
+
+fn vec3_sub(a, b) {
+    return retro3d_mod.r3d_vec3_sub(a, b)
+}
+
+fn vec3_scale(v, s) {
+    return retro3d_mod.r3d_vec3_scale(v, s)
+}
+
+fn camera_3d(yaw = 0.6, pitch = 0.45, distance = 220.0, tx = 0.0, ty = 0.0, tz = 0.0, fov = 360.0) {
+    return retro3d_mod.r3d_create_camera(yaw, pitch, distance, tx, ty, tz, fov)
+}
+
+fn project_3d(x, y, z, cam, rect) {
+    return retro3d_mod.r3d_project_3d(x, y, z, cam, rect)
+}
+
+fn cube_mesh(sx, sy, sz, color_val = none) {
+    return retro3d_mod.r3d_create_cube(sx, sy, sz, color_val)
+}
+
+fn pyramid_mesh(base_size, height, color_val = none) {
+    return retro3d_mod.r3d_create_pyramid(base_size, height, color_val)
+}
+
+fn draw_grid_3d(cam, rect, extent = 200.0, step = 40.0) {
+    retro3d_mod.r3d_draw_grid(cam, rect, extent, step)
+}
+
+fn render_mesh_3d(mesh, pos, yaw, pitch, cam, rect, wireframe = false) {
+    retro3d_mod.r3d_render_mesh(mesh, pos, yaw, pitch, cam, rect, wireframe)
+}
+
+fn draw_gizmo_3d(pos, cam, rect, axis_len = 40.0, active_axis = "none") {
+    retro3d_mod.r3d_draw_gizmo(pos, cam, rect, axis_len, active_axis)
+}
+
+fn test_gizmo_3d_hit(mx, my, pos, cam, rect, axis_len = 40.0) {
+    return retro3d_mod.r3d_test_gizmo_hit(mx, my, pos, cam, rect, axis_len)
+}
+
 export column, row, stack, center, spacer, divider
 export rect, label, container
 export button, switch, slider, progress_bar, card, badge, split_view, tab_bar, tab_view, scroll_view, viewport
 export text_input, number_input, dropdown_select, color_picker
 export screen_to_world, world_to_screen, point_in_rect, test_gizmo_hit, draw_gizmo_2d, set_viewport_camera
+export vec3, vec3_add, vec3_sub, vec3_scale, camera_3d, project_3d, cube_mesh, pyramid_mesh, draw_grid_3d, render_mesh_3d, draw_gizmo_3d, test_gizmo_3d_hit
 export use_state, set_state
 export rgb, rgba, hex, color
 export mount, step, draw_ui, get_root_element, compute_layout

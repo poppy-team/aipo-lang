@@ -622,4 +622,84 @@ test("viewport entity picking and constrained transform gizmo motion") do
     expect.equal(entity_y, -25.0)
 end
 
+test("retro3d vector math operations") do
+    let a = zoe.vec3(1.0, 2.0, 3.0)
+    let b = zoe.vec3(4.0, 5.0, 6.0)
+
+    let sum = zoe.vec3_add(a, b)
+    expect.equal(sum["x"], 5.0)
+    expect.equal(sum["y"], 7.0)
+    expect.equal(sum["z"], 9.0)
+
+    let diff = zoe.vec3_sub(b, a)
+    expect.equal(diff["x"], 3.0)
+    expect.equal(diff["y"], 3.0)
+    expect.equal(diff["z"], 3.0)
+
+    let scaled = zoe.vec3_scale(a, 2.0)
+    expect.equal(scaled["x"], 2.0)
+    expect.equal(scaled["y"], 4.0)
+    expect.equal(scaled["z"], 6.0)
+end
+
+test("retro3d camera pinhole perspective projection") do
+    let rect = { "x": 0.0, "y": 0.0, "width": 800.0, "height": 600.0 }
+    let cam = zoe.camera_3d(0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 300.0)
+
+    # Point at world origin (target of camera)
+    let p = zoe.project_3d(0.0, 0.0, 0.0, cam, rect)
+    expect.true(p["visible"])
+    # Should project directly at viewport center
+    expect.equal(p["x"], 400.0)
+    expect.equal(p["y"], 300.0)
+    expect.true(p["depth"] > 0.0)
+end
+
+test("retro3d mesh primitives creation") do
+    let cube = zoe.cube_mesh(20.0, 20.0, 20.0, zoe.color.blue)
+    expect.equal(cube["vertices"].len(), 8)
+    expect.equal(cube["triangles"].len(), 12)
+
+    let pyr = zoe.pyramid_mesh(16.0, 24.0, zoe.color.yellow)
+    expect.equal(pyr["vertices"].len(), 5)
+    expect.equal(pyr["triangles"].len(), 6)
+end
+
+test("retro3d 3D grid and mesh rasterization execution") do
+    let rect = { "x": 50.0, "y": 50.0, "width": 640.0, "height": 480.0 }
+    let cam = zoe.camera_3d(0.5, 0.4, 180.0, 0.0, 0.0, 0.0, 320.0)
+
+    # Grid
+    zoe.draw_grid_3d(cam, rect, 150.0, 30.0)
+
+    # Solid mesh rendering (with lighting and painter's algorithm)
+    let cube = zoe.cube_mesh(30.0, 30.0, 30.0, zoe.color.blue)
+    zoe.render_mesh_3d(cube, zoe.vec3(0.0, 15.0, 0.0), 0.2, 0.1, cam, rect, false)
+
+    # Wireframe mesh rendering
+    let pyr = zoe.pyramid_mesh(20.0, 30.0, zoe.color.green)
+    zoe.render_mesh_3d(pyr, zoe.vec3(40.0, 15.0, 0.0), 0.0, 0.0, cam, rect, true)
+end
+
+test("retro3d 3D gizmo rendering and hit detection") do
+    let rect = { "x": 0.0, "y": 0.0, "width": 800.0, "height": 600.0 }
+    let cam = zoe.camera_3d(0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 300.0)
+    let obj_pos = zoe.vec3(0.0, 0.0, 0.0)
+
+    # Draw gizmo
+    zoe.draw_gizmo_3d(obj_pos, cam, rect, 40.0, "none")
+    zoe.draw_gizmo_3d(obj_pos, cam, rect, 40.0, "x")
+    zoe.draw_gizmo_3d(obj_pos, cam, rect, 40.0, "y")
+    zoe.draw_gizmo_3d(obj_pos, cam, rect, 40.0, "z")
+
+    # Center handle is at screen (400, 300)
+    let hit_center = zoe.test_gizmo_3d_hit(400.0, 300.0, obj_pos, cam, rect, 40.0)
+    expect.equal(hit_center, "center")
+
+    # Miss
+    let hit_miss = zoe.test_gizmo_3d_hit(100.0, 100.0, obj_pos, cam, rect, 40.0)
+    expect.equal(hit_miss, "none")
+end
+
+
 

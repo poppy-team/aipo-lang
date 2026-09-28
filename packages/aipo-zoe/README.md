@@ -32,6 +32,15 @@ O **Zoe UI** foi concebido para o ecossistema Aipo com arquitetura pura, declara
 6. **Ferramentas de Viewport & Edição Visual (Picking e Gizmos):**
    Suporte a sub-retângulo GPU Scissor e câmera 2D (`set_viewport_camera`), transformações bidirecionais de tela/mundo (`world_to_screen`, `screen_to_world`), detecção espacial AABB (`point_in_rect`), hit-testing de manipuladores (`test_gizmo_hit`) e renderização de Gizmos de translação 2D (`draw_gizmo_2d`) com restrição de eixos (X, Y e Centro livre).
 
+7. **Motor 3D Retro Completo (`retro3d`):**
+   Renderização 3D completa com estética retro sem sobrecarga de pipelines pesados:
+   - **Matemática Vetorial 3D:** Funções nativas `vec3`, `vec3_add`, `vec3_sub`, `vec3_scale`, produto escalar/vetorial e normalização.
+   - **Câmera Orbital Perspectiva:** `camera_3d` e `project_3d` com rotação `yaw` (horizontal) e `pitch` (vertical), distância orbital e *near-plane clipping*.
+   - **Primitivas de Malha:** Criação de malhas tridimensionais com vetores normais (`cube_mesh`, `pyramid_mesh`).
+   - **Grade de Chão Infinita:** `draw_grid_3d` com linhas convergentes ao horizonte.
+   - **Rasterizador Sólido com Flat-Shading:** `render_mesh_3d` com iluminação difusa direcional (Lambertian), descarte de faces traseiras (*backface culling*) em screen space e ordenação de triângulos pelo Algoritmo do Pintor (*Painter's depth sorting*).
+   - **Gizmo 3D e Picking:** Manipulador de 3 eixos (`draw_gizmo_3d`, `test_gizmo_3d_hit`) com X (Pêssego), Y (Verde), Z (Azul) e cubo central para manipulação direta de entidades 3D no espaço.
+
 ---
 
 ## Instalação
@@ -94,7 +103,7 @@ fn draw() {
 cargo run -p aipo-game-host -- packages/aipo-zoe/examples/dashboard.aipo
 ```
 
-- Um editor visual de game engine completo com splitters redimensionáveis, abas de hierarquia e assets, viewport 2D interativa com picking de objetos, manipulador de transformação visual (Gizmo de translação nos eixos X, Y e centro), câmera GPU (pan e zoom) e inspetor com edição bidirecional em tempo real está disponível em `examples/editor.aipo`:
+- Um editor visual de game engine completo com alternância de modos **2D e 3D**, splitters redimensionáveis, abas de hierarquia e assets, viewport com picking de objetos, manipulador de transformação visual (Gizmo 2D e Gizmo 3D de 3 eixos), câmeras interativas (Pan/Zoom 2D e Órbita/Dolly Zoom 3D), renderização retro 3D com iluminação flat e inspetor com edição bidirecional em tempo real (coordenadas X, Y e Z) está disponível em `examples/editor.aipo`:
 ```bash
 cargo run -p aipo-game-host -- packages/aipo-zoe/examples/editor.aipo
 ```

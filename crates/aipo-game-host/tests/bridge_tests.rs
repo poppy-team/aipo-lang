@@ -32,6 +32,8 @@ fn test_host_surface_registration() {
     assert!(surface.contains("host_pop_clip_rect"));
     assert!(surface.contains("host_set_viewport_camera"));
     assert!(surface.contains("host_get_char_pressed"));
+    assert!(surface.contains("host_draw_triangle"));
+    assert!(surface.contains("host_draw_triangle_lines"));
 
     // Verify canonical __aipo_game_* aliases
     assert!(surface.contains("__aipo_game_draw_rect"));
@@ -599,7 +601,7 @@ fn test_zoe_ui_editor_compilation_and_execution() {
         draw_res.err()
     );
 
-    // 7. Verify multi-frame execution stability
+    // 7. Verify multi-frame execution stability in 2D mode
     for _ in 0..5 {
         assert!(
             vm.invoke(&module, update_fn.clone(), &[Value::Float(0.016)])
@@ -607,6 +609,38 @@ fn test_zoe_ui_editor_compilation_and_execution() {
         );
         assert!(vm.invoke(&module, draw_fn.clone(), &[]).is_ok());
     }
+
+    // 8. Toggle 3D mode in the editor
+    let is_3d_sig = vm
+        .globals
+        .get("_is_3d_mode")
+        .cloned()
+        .expect("_is_3d_mode exists");
+    if let Value::Struct(struct_ref) = is_3d_sig {
+        if let Some((_, val)) = struct_ref
+            .borrow_mut()
+            .fields
+            .iter_mut()
+            .find(|(k, _)| k == "value")
+        {
+            *val = Value::Bool(true);
+        }
+    }
+
+    // 9. Multi-frame simulation and 3D rendering in editor
+    for _ in 0..5 {
+        assert!(
+            vm.invoke(&module, update_fn.clone(), &[Value::Float(0.016)])
+                .is_ok(),
+            "update in 3D mode should succeed"
+        );
+    }
+    let draw_res_3d = vm.invoke(&module, draw_fn.clone(), &[]);
+    assert!(
+        draw_res_3d.is_ok(),
+        "draw() in 3D mode failed: {:?}",
+        draw_res_3d.err()
+    );
 }
 
 #[test]
