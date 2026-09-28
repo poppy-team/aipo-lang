@@ -470,9 +470,24 @@ fn make_tab_bar(props: Dict) {
 
 # High-level Tab View component (tab_bar + active content view)
 fn make_tab_view(props: Dict, views: Dict) {
+    let tabs_list = if props.has("tabs") then props["tabs"] else views.keys()
+    var default_active = ""
+    if tabs_list.len() > 0 {
+        let first = tabs_list[0]
+        if (first is Dict) and first.has("id") {
+            let id_val = first["id"]
+            default_active = f"{id_val}"
+        } else {
+            default_active = f"{first}"
+        }
+    }
+
+    let active_prop = if props.has("active") and props["active"] != "" then props["active"] else default_active
+    let cur_active = if (active_prop is String) then active_prop else (active_prop.get() + "")
+
     let bar_props = {
-        "active": if props.has("active") then props["active"] else "",
-        "tabs": if props.has("tabs") then props["tabs"] else [],
+        "active": active_prop,
+        "tabs": tabs_list,
         "height": if props.has("bar_height") then props["bar_height"] else 34.0,
         "active_color": if props.has("active_color") then props["active_color"] else color_mod.blue
     }
@@ -480,8 +495,6 @@ fn make_tab_view(props: Dict, views: Dict) {
         bar_props["background"] = props["tab_bar_background"]
     }
     let tab_bar_node = make_tab_bar(bar_props)
-    let active_prop = if props.has("active") then props["active"] else ""
-    let cur_active = if (active_prop is String) then active_prop else (active_prop.get() + "")
 
     var content_node = elements_mod.make_rect({
         "tag": "tab_empty",
@@ -856,7 +869,7 @@ fn make_number_input(props: Dict = {}) {
     let step = if props.has("step") then (props["step"] + 0.0) else 1.0
     let min_val = if props.has("min") then props["min"] else none
     let max_val = if props.has("max") then props["max"] else none
-    let width_val = if props.has("width") then props["width"] else 140.0
+    let width_val = if props.has("width") then props["width"] else "100%"
     let height_val = if props.has("height") then props["height"] else 32.0
 
     let cur_num = if (value_prop is Float or value_prop is Int) then (value_prop + 0.0) else (value_prop.get() + 0.0)

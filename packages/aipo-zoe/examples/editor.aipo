@@ -54,15 +54,19 @@ var _plat_rot = none
 var _plat_layer = none
 var _plat_color = none
 
-fn draw_grid(w: Float, h: Float, cell_size: Float) {
-    var x = 0.0
-    while x <= w {
-        host_draw_line(x, 0.0, x, h, 1.0, 0.25, 0.27, 0.35, 0.4)
+fn draw_grid(rect: Dict, cell_size: Float) {
+    let rx = rect["x"] + 0.0
+    let ry = rect["y"] + 0.0
+    let rw = rect["width"] + 0.0
+    let rh = rect["height"] + 0.0
+    var x = rx
+    while x <= rx + rw {
+        host_draw_line(x, ry, x, ry + rh, 1.0, 0.25, 0.27, 0.35, 0.4)
         x += cell_size
     }
-    var y = 0.0
-    while y <= h {
-        host_draw_line(0.0, y, w, y, 1.0, 0.25, 0.27, 0.35, 0.4)
+    var y = ry
+    while y <= ry + rh {
+        host_draw_line(rx, y, rx + rw, y, 1.0, 0.25, 0.27, 0.35, 0.4)
         y += cell_size
     }
 }
@@ -257,10 +261,8 @@ fn view() {
             let cam_z = _cam_zoom.get()
             let z = if cam_z > 0.01 then cam_z else 1.0
 
-            zoe.set_viewport_camera(rect, cam_x, cam_y, cam_z)
-
             if _show_grid.get() {
-                draw_grid(rect["width"], rect["height"], 32.0 * z)
+                draw_grid(rect, 32.0 * z)
             }
 
             # 1. Draw Platform entity
@@ -585,7 +587,7 @@ fn view() {
     let pos_row = if _is_3d_mode.get() then zoe.row({ "gap": 6.0 }, [x_col, y_col, z_col]) else zoe.row({ "gap": 8.0 }, [x_col, y_col])
 
     # Right Panel: Inspector with fine editing components synchronized with Viewport
-    let right_inspector = zoe.column(
+    let right_inspector = zoe.scroll_view(
         {
             "width": "100%",
             "height": "100%",

@@ -33,22 +33,58 @@ fn is_flex(val) -> Bool {
     return false
 }
 
-# Resolve intrinsic size of a leaf node (e.g. text label)
-fn measure_leaf_node(node) {
-    if node.tag == "label" {
-        let text = get_prop(node.props, "text", "")
-        let font_size = get_prop(node.props, "font_size", 14.0) + 0.0
+# Resolve intrinsic size of a node (e.g. text label, button, badge, switch, divider)
+fn measure_node_intrinsic(node) {
+    let tag = node.tag
+    let props = node.props
+
+    if tag == "label" {
+        let text = get_prop(props, "text", "")
+        let font_size = get_prop(props, "font_size", 14.0) + 0.0
         let text_w = (text.len() + 0.0) * (font_size * 0.55)
         let text_h = font_size * 1.35
         
-        let w_prop = get_prop(node.props, "width", "auto")
-        let h_prop = get_prop(node.props, "height", "auto")
+        let w_prop = get_prop(props, "width", "auto")
+        let h_prop = get_prop(props, "height", "auto")
 
         if w_prop == "auto" {
             node.layout.width = text_w
         }
         if h_prop == "auto" {
             node.layout.height = text_h
+        }
+    } elif tag == "button" or tag == "badge" {
+        var text_w = 30.0
+        if node.children.len() > 0 {
+            let label_child = node.children[0]
+            let text = get_prop(label_child.props, "text", "")
+            let fs = get_prop(label_child.props, "font_size", 13.0) + 0.0
+            text_w = (text.len() + 0.0) * (fs * 0.55)
+        }
+        let pad_x = get_prop(props, "padding_x", 14.0) + 0.0
+        let w_prop = get_prop(props, "width", "auto")
+        let h_prop = get_prop(props, "height", "auto")
+        if w_prop == "auto" {
+            node.layout.width = text_w + pad_x * 2.0
+        }
+        if h_prop == "auto" {
+            node.layout.height = if tag == "badge" then 22.0 else 36.0
+        }
+    } elif tag == "switch" {
+        let w_prop = get_prop(props, "width", "auto")
+        let h_prop = get_prop(props, "height", "auto")
+        if w_prop == "auto" { node.layout.width = 46.0 }
+        if h_prop == "auto" { node.layout.height = 24.0 }
+    } elif tag == "divider" {
+        let dir = get_prop(props, "direction", "horizontal")
+        let th = get_prop(props, "thickness", 1.0) + 0.0
+        let w_prop = get_prop(props, "width", "auto")
+        let h_prop = get_prop(props, "height", "auto")
+        if dir == "vertical" {
+            if w_prop == "auto" { node.layout.width = th }
+            if h_prop == "auto" { node.layout.height = 20.0 }
+        } else {
+            if h_prop == "auto" { node.layout.height = th }
         }
     }
 }
@@ -62,6 +98,9 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
         node.layout.y = parent_y
     }
 
+    # Measure leaf intrinsic bounds first if auto
+    measure_node_intrinsic(node)
+
     let w_prop = get_prop(node.props, "width", "auto")
     let h_prop = get_prop(node.props, "height", "auto")
 
@@ -74,7 +113,7 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
     } elif is_flex(w_prop) {
         computed_w = avail_w
     } else {
-        computed_w = avail_w # auto fallback
+        computed_w = if node.layout.width > 0.0 then node.layout.width else avail_w
     }
 
     # Resolve height
@@ -86,14 +125,11 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
     } elif is_flex(h_prop) {
         computed_h = avail_h
     } else {
-        computed_h = avail_h # auto fallback
+        computed_h = if node.layout.height > 0.0 then node.layout.height else avail_h
     }
 
     node.layout.width = computed_w
     node.layout.height = computed_h
-
-    # Measure leaf intrinsic bounds
-    measure_leaf_node(node)
 
     let children = node.children
     if children.len() == 0 {
@@ -123,6 +159,7 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
         if child.layout == none {
             child.layout = types_mod.types_make_rect(0.0, 0.0, 0.0, 0.0)
         }
+        measure_node_intrinsic(child)
 
         let cw = get_prop(child.props, "width", "auto")
         let ch = get_prop(child.props, "height", "auto")
@@ -136,6 +173,8 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
                     child_w = cw + 0.0
                 } elif is_pct(cw) {
                     child_w = inner_avail_w * (parse_pct(cw) / 100.0)
+                } elif child.layout.width > 0.0 {
+                    child_w = child.layout.width
                 } else {
                     child_w = 40.0 # auto fallback
                 }
@@ -152,6 +191,8 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
                     child_h = ch + 0.0
                 } elif is_pct(ch) {
                     child_h = inner_avail_h * (parse_pct(ch) / 100.0)
+                } elif child.layout.height > 0.0 {
+                    child_h = child.layout.height
                 } else {
                     child_h = 30.0 # auto fallback
                 }
@@ -231,7 +272,7 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
                 cy = parent_y + pad_y + off_y
             }
 
-            let child_avail_w = if is_flex(prop_w) then flex_size else inner_avail_w
+            let child_avail_w = if is_flex(prop_w) then flex_size else (if prop_w == "auto" then child.layout.width else inner_avail_w)
             layout_node(child, cx, cy, child_avail_w, inner_avail_h)
             main_cursor = main_cursor + child.layout.width + gap
         } else {
@@ -246,9 +287,22 @@ fn layout_node(node, parent_x: Float, parent_y: Float, avail_w: Float, avail_h: 
                 cx = parent_x + pad_x + off_x
             }
 
-            let child_avail_h = if is_flex(prop_h) then flex_size else inner_avail_h
+            let child_avail_h = if is_flex(prop_h) then flex_size else (if prop_h == "auto" then child.layout.height else inner_avail_h)
             layout_node(child, cx, cy, inner_avail_w, child_avail_h)
             main_cursor = main_cursor + child.layout.height + gap
+        }
+    }
+
+    # If container itself had auto dimensions, hug its children!
+    if is_row {
+        if w_prop == "auto" {
+            let total_w = if children.len() > 0 then (main_cursor - gap + pad_x) else (pad_x * 2.0)
+            node.layout.width = if total_w > 0.0 then total_w else 0.0
+        }
+    } else {
+        if h_prop == "auto" {
+            let total_h = if children.len() > 0 then (main_cursor - gap + pad_y) else (pad_y * 2.0)
+            node.layout.height = if total_h > 0.0 then total_h else 0.0
         }
     }
 }

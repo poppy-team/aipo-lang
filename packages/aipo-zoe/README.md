@@ -124,3 +124,19 @@ cargo test -p aipo-game-host --test bridge_tests test_zoe_ui_dashboard_compilati
 # Executa o teste de compilação e execução estável multi-frame do Editor Visual
 cargo test -p aipo-game-host --test bridge_tests test_zoe_ui_editor_compilation_and_execution
 ```
+
+---
+
+## Roadmap de Amadurecimento Arquitetural
+
+O desenvolvimento do Zoe UI segue um plano de evolução inspirado nas melhores práticas da indústria (Freya/Torin, Flutter, Egui, SolidJS e Slint), preservando a filosofia de ser 100% puro em Aipo e livre de dependências pesadas de UI do SO:
+
+1. **M1 — Superfícies Flutuantes (Portals & Overlays):** Introdução da `OverlayStack` pós-clipping para habilitar dropdowns flutuantes reais com sombreamento, menus de contexto acionados por botão direito e balões de tooltip com atraso de hover.
+2. **M2 — Leona Constraints & Intrinsic Wrap:** Suporte a restrições `min_width`, `max_width`, `min_height`, `max_height`, quebra de fluxo com `wrap: true` e medição tipográfica precisa através da Host ABI (`host_measure_text`).
+3. **M3 — Reatividade Fina & Memoização de Sub-árvores:** Hooks `use_memo` e `use_effect`, com invalidação seletiva de nós para eliminar reconstruções globais desnecessárias da árvore de elementos.
+4. **M4 — Foco, Acessibilidade & Gestão Semântica de Cursor:** Navegação universal via `Tab`/`Shift+Tab`, anéis visuais de foco (*focus ring*) e sinais semânticos para o host alternar cursores (`pointer`, `ibeam`, `resize_ew`, `resize_ns`).
+5. **M5 — Componentes de Produtividade & Ferramentas:** Implementação do container de árvore hierárquica (`tree_view`) e lista virtualizada para grandes coleções (`virtual_list` em $O(1)$ de memória).
+6. **M6 — Micro-animações Conectadas ao Delta Time & Inspetor Visual:** Interpolações contínuas (`use_spring`, `use_tween`) sincronizadas com `step(dt)` e modo de inspeção de layout geométrico com sobreposição de bounding boxes (*Zoe Inspector Overlay*).
+
+Consulte o documento completo em [`docs/packages/aipo-zoe.md`](file:///home/raillen/Documentos/Projetos/aipo-lang/docs/packages/aipo-zoe.md).
+
