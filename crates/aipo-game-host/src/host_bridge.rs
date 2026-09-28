@@ -8,11 +8,16 @@
 use crate::audio_system::{AUDIO, SynthConfig};
 use aipo_sema::PreludeSurface;
 use aipo_vm::{Value, Vm, VmFault};
+/// Re-exported so integration tests can construct `SdfQuad` values without
+/// depending on macroquad directly.
+pub use macroquad::color::Color;
 use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation};
 use macroquad::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
+
 use std::sync::Mutex;
+use std::sync::atomic::Ordering;
 
 /// Texture cache for storing GPU textures loaded by scripts.
 struct TextureCache {
@@ -334,6 +339,16 @@ uniform float u_inner_highlight; // 0 disables the chamfer light
 uniform vec4  u_shadow1;         // (dy, blur, spread, alpha)
 uniform vec4  u_shadow2;         // (dy, blur, spread, alpha)
 
+// Focus ring. 0 width disables the branch. The ring is drawn in the SAME pass
+// as the fill, border and shadow, so a focused widget costs no extra draw call.
+uniform float u_focus_width;    // 0 disables the ring
+uniform vec4  u_focus_color;
+
+// Distance between the box boundary and the ring, in pixels. A ring flush
+// against the border reads as a thicker border, not as a focus indicator.
+// Must stay equal to `FOCUS_GAP_PX` in this file.
+const float FOCUS_GAP = 1.5;
+
 // Signed distance to a rounded box with independent per-corner radii.
 float sd_rounded_box(vec2 p, vec2 b, vec4 r) {
     float r_top = (p.x > 0.0) ? r.y : r.x;  // tr : tl
@@ -383,6 +398,21 @@ void main() {
         col = vec4(0.0, 0.0, 0.0, sa);
     }
 
+    // Focus ring, placed OUTSIDE the box boundary. Its own SDF, so it follows
+    // the same corner curvature as the border instead of being a screen-space
+    // outline. Composited before the fill so the fill wins any overlap.
+    if (u_focus_width > 0.0 && u_focus_color.a > 0.0) {
+        float ring_mid = FOCUS_GAP + u_focus_width * 0.5;
+        float fr = abs(d - ring_mid) - u_focus_width * 0.5;
+        float fa = (1.0 - smoothstep(-aa, aa, fr)) * u_focus_color.a;
+        float out_a = fa + col.a * (1.0 - fa);
+        col = vec4(
+            (out_a > 1e-5) ? (u_focus_color.rgb * fa + col.rgb * col.a * (1.0 - fa)) / out_a
+                           : u_focus_color.rgb,
+            out_a
+        );
+    }
+
     // Fill over the shadow: never shrink the alpha already contributed by
     // the shadow, so a translucent panel still casts a readable shadow.
     if (color.a > 0.0) {
@@ -425,6 +455,70 @@ static ZOE_SDF_MATERIAL: Mutex<Option<Material>> = Mutex::new(None);
 static ZOE_SDF_INITIALIZED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// SDF quads that reached a real GPU draw call.
+static SDF_DRAWS_ISSUED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// SDF quads rejected before drawing (off-screen, zero-area, or fully
+/// transparent). Exposed for tests and for the perf harness.
+static SDF_DRAWS_CULLED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Per-instance SDF styling, remembered so consecutive quads only re-upload
+/// the uniforms that actually changed. Reset whenever the GL context changes.
+#[derive(Clone, Copy, PartialEq)]
+struct SdfUniformState {
+    quad_size: (f32, f32),
+    box_half: (f32, f32),
+    radii: [f32; 4],
+    pixel_scale: f32,
+    border_width: f32,
+    border_color: (f32, f32, f32, f32),
+    inner_highlight: f32,
+    shadow1: (f32, f32, f32, f32),
+    shadow2: (f32, f32, f32, f32),
+    focus_width: f32,
+    focus_color: (f32, f32, f32, f32),
+}
+
+impl SdfUniformState {
+    const fn empty() -> Self {
+        Self {
+            // `f32::NAN` never compares equal, so the first quad after a reset
+            // always uploads every uniform.
+            quad_size: (f32::NAN, f32::NAN),
+            box_half: (f32::NAN, f32::NAN),
+            radii: [f32::NAN; 4],
+            pixel_scale: f32::NAN,
+            border_width: f32::NAN,
+            border_color: (f32::NAN, f32::NAN, f32::NAN, f32::NAN),
+            inner_highlight: f32::NAN,
+            shadow1: (f32::NAN, f32::NAN, f32::NAN, f32::NAN),
+            shadow2: (f32::NAN, f32::NAN, f32::NAN, f32::NAN),
+            focus_width: f32::NAN,
+            focus_color: (f32::NAN, f32::NAN, f32::NAN, f32::NAN),
+        }
+    }
+}
+
+static LAST_SDF_UNIFORMS: Mutex<SdfUniformState> = Mutex::new(SdfUniformState::empty());
+
+/// Number of SDF quads that reached the GPU since process start.
+pub fn sdf_draws_issued() -> u64 {
+    SDF_DRAWS_ISSUED.load(Ordering::Relaxed)
+}
+
+/// Number of SDF quads culled before drawing since process start.
+pub fn sdf_draws_culled() -> u64 {
+    SDF_DRAWS_CULLED.load(Ordering::Relaxed)
+}
+
+/// Clears the remembered uniform state. Must be called whenever the GL context
+/// is recreated, because a new context invalidates cached uniform locations.
+fn reset_sdf_uniform_state() {
+    if let Ok(mut prev) = LAST_SDF_UNIFORMS.lock() {
+        *prev = SdfUniformState::empty();
+    }
+}
+
 /// Soft-shadow elevation levels.
 ///
 /// `(dy, blur, spread, alpha)` per level, mirroring Tailwind's discrete
@@ -449,6 +543,13 @@ pub const SHADOW_ANCHORS: [[f32; 4]; 5] = [
 pub fn shadow_anchors() -> &'static [[f32; 4]] {
     &SHADOW_ANCHORS
 }
+
+/// Gap between a box edge and its focus ring, in logical pixels.
+///
+/// Duplicated in `SDF_FRAGMENT_SHADER` as `FOCUS_GAP`, because the shader is
+/// compiled from a raw string and cannot reference Rust constants. The parity
+/// test `test_sdf_focus_gap_parity` fails if the two drift apart.
+pub const FOCUS_GAP_PX: f32 = 1.5;
 
 /// Interpolates the master shadow curve at a continuous elevation level.
 ///
@@ -509,6 +610,9 @@ pub fn init_zoe_shaders() {
     if ZOE_SDF_INITIALIZED.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
+    // A fresh context invalidates the remembered uniform state, so force the
+    // first quad to upload everything.
+    reset_sdf_uniform_state();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let shader = ShaderSource::Glsl {
             vertex: SDF_VERTEX_SHADER,
@@ -538,6 +642,8 @@ pub fn init_zoe_shaders() {
                 UniformDesc::new("u_inner_highlight", UniformType::Float1),
                 UniformDesc::new("u_shadow1", UniformType::Float4),
                 UniformDesc::new("u_shadow2", UniformType::Float4),
+                UniformDesc::new("u_focus_width", UniformType::Float1),
+                UniformDesc::new("u_focus_color", UniformType::Float4),
             ],
             textures: vec![],
         };
@@ -560,7 +666,7 @@ fn safe_is_key_down(key: KeyCode) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| is_key_down(key))).unwrap_or(false)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClipRect {
     pub x: f32,
     pub y: f32,
@@ -843,21 +949,34 @@ fn safe_draw_round_rect_lines(x: f32, y: f32, w: f32, h: f32, radius: f32, th: f
 /// fills all four. `elevation` selects the soft-shadow level and `focus_width`
 /// draws the focus ring in the same pass, so a widget with a border, a shadow
 /// and a focus ring still costs exactly one draw call.
-#[derive(Clone, Copy)]
-struct SdfQuad {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    radius: f32,
-    radii: [f32; 4],
-    border_width: f32,
-    border_color: Color,
-    inner_highlight: f32,
-    bg_color: Color,
-    elevation: f32,
-    focus_width: f32,
-    focus_color: Color,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SdfQuad {
+    /// Left edge, in logical pixels.
+    pub x: f32,
+    /// Top edge, in logical pixels.
+    pub y: f32,
+    /// Fill width, in logical pixels.
+    pub w: f32,
+    /// Fill height, in logical pixels.
+    pub h: f32,
+    /// Uniform corner radius. Ignored per corner where `radii` is positive.
+    pub radius: f32,
+    /// Per-corner radii `(tl, tr, br, bl)`; `0.0` means "use `radius`".
+    pub radii: [f32; 4],
+    /// Border thickness, in logical pixels. `0.0` disables the border.
+    pub border_width: f32,
+    /// Border color. Fully transparent disables the border.
+    pub border_color: Color,
+    /// Strength of the inner top highlight that fakes a Bevel.
+    pub inner_highlight: f32,
+    /// Fill color. Fully transparent means "paint nothing".
+    pub bg_color: Color,
+    /// Elevation level selecting the soft-shadow curve. `0.0` casts no shadow.
+    pub elevation: f32,
+    /// Focus-ring thickness, in logical pixels. `0.0` disables the ring.
+    pub focus_width: f32,
+    /// Focus-ring color. Fully transparent disables the ring.
+    pub focus_color: Color,
 }
 
 impl SdfQuad {
@@ -882,12 +1001,18 @@ impl SdfQuad {
 
     /// Padding the rasterized quad needs on each side so the outward parts
     /// (shadow blur and an outward focus ring) are not clipped away.
-    fn padding(&self) -> f32 {
+    ///
+    /// Public because three call sites must agree on it: the draw path grows
+    /// the quad by this much, the clip-culling predicate tests against the
+    /// grown rectangle, and tests assert the two have not drifted.
+    pub fn padding(&self) -> f32 {
         let (s1, s2) = shadow_layers(self.elevation);
         let blur = s1[1].max(s2[1]);
         let spread = s1[2].min(s2[2]);
+        // The ring sits `FOCUS_GAP` away from the box edge, so it reaches one
+        // gap further out than its own thickness.
         let focus = if self.focus_width > 0.0 {
-            self.focus_width
+            self.focus_width + FOCUS_GAP_PX
         } else {
             0.0
         };
@@ -909,6 +1034,60 @@ fn pixel_scale() -> f32 {
     .unwrap_or(1.0)
 }
 
+/// Why a quad can be skipped without touching the GPU.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum SdfCull {
+    /// Entirely outside the active clip rectangle.
+    OffScreen,
+    /// Zero or negative rasterized area.
+    ZeroArea,
+    /// No fill, no border, no shadow and no focus ring: paints nothing.
+    Invisible,
+}
+
+/// Decides whether a quad is worth a draw call.
+///
+/// Pure, so the decision can be tested without a GL context. `clip` is the
+/// active clip rectangle, if any. `shadow_alpha` is the strongest shadow layer
+/// alpha, which the caller derives from the elevation curve.
+///
+/// The padded rectangle is derived here rather than passed in, so a caller
+/// cannot test a clip against a rectangle that differs from the one actually
+/// rasterized.
+pub fn sdf_cull_reason(
+    quad: &SdfQuad,
+    shadow_alpha: f32,
+    clip: Option<ClipRect>,
+) -> Option<SdfCull> {
+    let pad = quad.padding();
+    if quad.w <= 0.0 || quad.h <= 0.0 {
+        return Some(SdfCull::ZeroArea);
+    }
+    if let Some(c) = clip {
+        // A shadow and an outward focus ring bleed past the box, so the test
+        // uses the grown rectangle: a box just outside the clip can still
+        // paint inside it.
+        let x = quad.x - pad;
+        let y = quad.y - pad;
+        if x + quad.w + pad * 2.0 < c.x
+            || x > (c.x + c.w)
+            || y + quad.h + pad * 2.0 < c.y
+            || y > (c.y + c.h)
+        {
+            return Some(SdfCull::OffScreen);
+        }
+    }
+    if quad.bg_color.a <= 0.0
+        && quad.border_width <= 0.0
+        && quad.border_color.a <= 0.0
+        && shadow_alpha <= 0.0
+        && quad.focus_width <= 0.0
+    {
+        return Some(SdfCull::Invisible);
+    }
+    None
+}
+
 fn safe_draw_sdf_rect(quad: &SdfQuad) {
     let (x, y, w, h) = (quad.x, quad.y, quad.w, quad.h);
     let radii = quad.effective_radii();
@@ -927,15 +1106,11 @@ fn safe_draw_sdf_rect(quad: &SdfQuad) {
     let quad_x = x - pad;
     let quad_y = y - pad;
 
-    if let Some(clip) = current_clip() {
-        if quad_x + quad_w < clip.x
-            || quad_x > (clip.x + clip.w)
-            || quad_y + quad_h < clip.y
-            || quad_y > (clip.y + clip.h)
-        {
-            return;
-        }
+    if sdf_cull_reason(quad, shadow1[3].max(shadow2[3]), current_clip()).is_some() {
+        SDF_DRAWS_CULLED.fetch_add(1, Ordering::Relaxed);
+        return;
     }
+
     let drawn = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         if let Ok(lock) = ZOE_SDF_MATERIAL.lock() {
             if let Some(ref mat) = *lock {
@@ -946,32 +1121,73 @@ fn safe_draw_sdf_rect(quad: &SdfQuad) {
                     radii[2].min(max_r),
                     radii[3].min(max_r),
                 ];
-                mat.set_uniform("u_quad_size", vec2(quad_w, quad_h));
-                mat.set_uniform("u_box_half", vec2(w * 0.5, h * 0.5));
-                mat.set_uniform(
-                    "u_radii",
-                    vec4(clamped[0], clamped[1], clamped[2], clamped[3]),
+                let focus_w = quad.focus_width;
+                let focus_c = quad.focus_color;
+                // Consecutive quads usually share most of their styling, so
+                // only upload what actually changed. Each `set_uniform` is a GL
+                // call, and a screen full of same-styled rows used to issue
+                // nine per row even when nothing differed.
+                let Ok(mut prev) = LAST_SDF_UNIFORMS.lock() else {
+                    return false;
+                };
+                if prev.quad_size != (quad_w, quad_h) {
+                    mat.set_uniform("u_quad_size", vec2(quad_w, quad_h));
+                    prev.quad_size = (quad_w, quad_h);
+                }
+                if prev.box_half != (w * 0.5, h * 0.5) {
+                    mat.set_uniform("u_box_half", vec2(w * 0.5, h * 0.5));
+                    prev.box_half = (w * 0.5, h * 0.5);
+                }
+                if prev.radii != clamped {
+                    mat.set_uniform(
+                        "u_radii",
+                        vec4(clamped[0], clamped[1], clamped[2], clamped[3]),
+                    );
+                    prev.radii = clamped;
+                }
+                let ps = pixel_scale();
+                if prev.pixel_scale != ps {
+                    mat.set_uniform("u_pixel_scale", ps);
+                    prev.pixel_scale = ps;
+                }
+                if prev.border_width != border_width {
+                    mat.set_uniform("u_border_width", border_width);
+                    prev.border_width = border_width;
+                }
+                let bc = (
+                    border_color.r,
+                    border_color.g,
+                    border_color.b,
+                    border_color.a,
                 );
-                mat.set_uniform("u_pixel_scale", pixel_scale());
-                mat.set_uniform("u_border_width", border_width);
-                mat.set_uniform(
-                    "u_border_color",
-                    vec4(
-                        border_color.r,
-                        border_color.g,
-                        border_color.b,
-                        border_color.a,
-                    ),
-                );
-                mat.set_uniform("u_inner_highlight", inner_highlight);
-                mat.set_uniform(
-                    "u_shadow1",
-                    vec4(shadow1[0], shadow1[1], shadow1[2], shadow1[3]),
-                );
-                mat.set_uniform(
-                    "u_shadow2",
-                    vec4(shadow2[0], shadow2[1], shadow2[2], shadow2[3]),
-                );
+                if prev.border_color != bc {
+                    mat.set_uniform("u_border_color", vec4(bc.0, bc.1, bc.2, bc.3));
+                    prev.border_color = bc;
+                }
+                if prev.inner_highlight != inner_highlight {
+                    mat.set_uniform("u_inner_highlight", inner_highlight);
+                    prev.inner_highlight = inner_highlight;
+                }
+                let s1 = (shadow1[0], shadow1[1], shadow1[2], shadow1[3]);
+                if prev.shadow1 != s1 {
+                    mat.set_uniform("u_shadow1", vec4(s1.0, s1.1, s1.2, s1.3));
+                    prev.shadow1 = s1;
+                }
+                let s2 = (shadow2[0], shadow2[1], shadow2[2], shadow2[3]);
+                if prev.shadow2 != s2 {
+                    mat.set_uniform("u_shadow2", vec4(s2.0, s2.1, s2.2, s2.3));
+                    prev.shadow2 = s2;
+                }
+                if prev.focus_width != focus_w {
+                    mat.set_uniform("u_focus_width", focus_w);
+                    prev.focus_width = focus_w;
+                }
+                let fc = (focus_c.r, focus_c.g, focus_c.b, focus_c.a);
+                if prev.focus_color != fc {
+                    mat.set_uniform("u_focus_color", vec4(fc.0, fc.1, fc.2, fc.3));
+                    prev.focus_color = fc;
+                }
+                drop(prev);
                 gl_use_material(mat);
                 draw_rectangle(quad_x, quad_y, quad_w, quad_h, bg_color);
                 gl_use_default_material();

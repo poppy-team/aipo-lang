@@ -1314,3 +1314,248 @@ fn test_sdf_corners_native_accepts_valid_arguments_headless() {
         "sdf_corners must reject fewer than 24 arguments"
     );
 }
+
+// ---------------------------------------------------------------------------
+// M15: draw-call reduction on the SDF path
+// ---------------------------------------------------------------------------
+
+/// Pulls the fragment shader body out of the host source, so shader-level
+/// regressions are caught by reading the real source instead of a copy.
+fn sdf_fragment_shader_source() -> String {
+    const DECL: &str = "const SDF_FRAGMENT_SHADER: &str = r";
+    const TERMINATOR: &str = "\"#;";
+    let src = include_str!("../src/host_bridge.rs");
+    let start = src.find(DECL).expect("SDF_FRAGMENT_SHADER declaration");
+    let body_start = start + DECL.len() + 2;
+    let end = src[body_start..]
+        .find(TERMINATOR)
+        .expect("raw string terminator")
+        + body_start;
+    src[body_start..end].to_string()
+}
+
+#[test]
+fn test_sdf_shader_composes_the_focus_ring_in_the_same_pass() {
+    let shader = sdf_fragment_shader_source();
+    for uniform in ["u_focus_width", "u_focus_color"] {
+        assert!(
+            shader.contains(uniform),
+            "fragment shader must declare `{uniform}` so the focus ring needs no extra draw call"
+        );
+    }
+    assert!(
+        shader.contains("u_focus_width > 0.0"),
+        "the ring must be branch-skipped when the width is zero"
+    );
+    assert!(
+        shader.contains("FOCUS_GAP"),
+        "the ring must be offset from the box edge, otherwise it reads as a thicker border"
+    );
+}
+
+#[test]
+fn test_sdf_shader_ring_uses_its_own_sdf_not_the_border_distance() {
+    let shader = sdf_fragment_shader_source();
+    // The border uses `abs(d) - bw*0.5`; the ring must use its own expression
+    // so the two can never alias into one another.
+    assert!(shader.contains("abs(d) - bw * 0.5"), "border SDF must stay");
+    assert!(
+        shader.contains("abs(d - ring_mid)"),
+        "focus ring must have an independent SDF centred outside the box"
+    );
+}
+
+#[test]
+fn test_sdf_shader_keeps_scaled_aa_and_gamma() {
+    let shader = sdf_fragment_shader_source();
+    assert!(
+        shader.contains("1.0 / max(u_pixel_scale, 0.0001)"),
+        "AA width must stay derived from the device scale"
+    );
+    assert!(
+        !shader.contains("0.5 - dist"),
+        "the fixed 1px AA band must not come back"
+    );
+    assert!(
+        shader.contains("2.2"),
+        "shadow gamma compensation must stay"
+    );
+}
+
+fn quad_with(bg_a: f32, elevation: f32) -> host_bridge::SdfQuad {
+    host_bridge::SdfQuad {
+        x: 10.0,
+        y: 10.0,
+        w: 40.0,
+        h: 20.0,
+        radius: 6.0,
+        radii: [0.0; 4],
+        border_width: 0.0,
+        border_color: host_bridge::Color::new(0.0, 0.0, 0.0, 0.0),
+        inner_highlight: 0.0,
+        bg_color: host_bridge::Color::new(0.2, 0.2, 0.2, bg_a),
+        elevation,
+        focus_width: 0.0,
+        focus_color: host_bridge::Color::new(0.0, 0.0, 0.0, 0.0),
+    }
+}
+
+fn clip(x: f32, y: f32, w: f32, h: f32) -> Option<host_bridge::ClipRect> {
+    Some(host_bridge::ClipRect { x, y, w, h })
+}
+
+#[test]
+fn test_sdf_culling_keeps_a_fully_styled_visible_quad() {
+    let q = quad_with(1.0, 2.0);
+    assert_eq!(
+        host_bridge::sdf_cull_reason(&q, 0.1, None),
+        None,
+        "a visible quad with fill and elevation must draw"
+    );
+}
+
+#[test]
+fn test_sdf_culling_rejects_zero_area_quads() {
+    // A collapsed flex child or a zero-height divider still carries style but
+    // rasterizes nothing, so it must not cost a draw call.
+    let mut q = quad_with(1.0, 0.0);
+    q.h = 0.0;
+    assert_eq!(
+        host_bridge::sdf_cull_reason(&q, 0.0, None),
+        Some(host_bridge::SdfCull::ZeroArea)
+    );
+
+    let mut q = quad_with(1.0, 0.0);
+    q.w = 0.0;
+    assert_eq!(
+        host_bridge::sdf_cull_reason(&q, 0.0, None),
+        Some(host_bridge::SdfCull::ZeroArea)
+    );
+}
+
+#[test]
+fn test_sdf_culling_rejects_quads_with_nothing_to_paint() {
+    // Fully transparent spacers: the fragment shader would discard every
+    // pixel after evaluating the whole SDF and both shadow layers.
+    let q = quad_with(0.0, 0.0);
+    assert_eq!(
+        host_bridge::sdf_cull_reason(&q, 0.0, None),
+        Some(host_bridge::SdfCull::Invisible)
+    );
+
+    // A transparent fill still casts a shadow, so it must NOT be culled.
+    assert_eq!(
+        host_bridge::sdf_cull_reason(&q, 0.08, None),
+        None,
+        "an invisible fill with a visible shadow is not invisible"
+    );
+}
+
+#[test]
+fn test_sdf_culling_keeps_a_transparent_quad_that_has_a_border() {
+    let mut q = quad_with(0.0, 0.0);
+    q.border_width = 1.0;
+    q.border_color = host_bridge::Color::new(1.0, 1.0, 1.0, 0.4);
+    assert_eq!(
+        host_bridge::sdf_cull_reason(&q, 0.0, None),
+        None,
+        "a border-only quad paints pixels and must draw"
+    );
+}
+
+#[test]
+fn test_sdf_culling_keeps_a_transparent_quad_that_has_a_focus_ring() {
+    let mut q = quad_with(0.0, 0.0);
+    q.focus_width = 2.0;
+    q.focus_color = host_bridge::Color::new(0.4, 0.6, 1.0, 0.9);
+    assert_eq!(
+        host_bridge::sdf_cull_reason(&q, 0.0, None),
+        None,
+        "a focus ring on a transparent surface is exactly how keyboard focus is shown"
+    );
+}
+
+#[test]
+fn test_sdf_culling_rejects_quads_outside_the_clip_rect() {
+    // Elevation 0 casts no shadow, so the only padding left is the 1px guard
+    // for the antialiasing band.
+    let q = quad_with(1.0, 0.0);
+    assert_eq!(
+        host_bridge::sdf_cull_reason(&q, 0.0, clip(-100.0, -100.0, 50.0, 50.0)),
+        Some(host_bridge::SdfCull::OffScreen)
+    );
+    // Clip overlapping the quad: must draw.
+    assert_eq!(
+        host_bridge::sdf_cull_reason(&q, 0.0, clip(0.0, 0.0, 100.0, 100.0)),
+        None
+    );
+}
+
+#[test]
+fn test_sdf_culling_accounts_for_shadow_padding_when_clipping() {
+    // A shadow bleeds well past its box, so a quad whose BOX lies entirely
+    // outside the clip can still paint inside it. The predicate must pad by
+    // the same amount the draw path does.
+    let q = quad_with(0.0, 4.0);
+    let pad = q.padding();
+    assert!(
+        pad > 40.0,
+        "shadow-xl blurs 48px, so the padding must be large; got {pad}"
+    );
+
+    // Clip starts just past the box's right edge, but inside the padded quad.
+    let box_right = q.x + q.w;
+    assert_eq!(
+        host_bridge::sdf_cull_reason(
+            &q,
+            0.1,
+            clip(box_right + 1.0, q.y - pad, 20.0, q.h + pad * 2.0)
+        ),
+        None,
+        "a clip inside the shadow padding must not cull the quad"
+    );
+
+    // Started one pixel beyond the padded edge: nothing can be painted.
+    assert_eq!(
+        host_bridge::sdf_cull_reason(
+            &q,
+            0.1,
+            clip(box_right + pad + 1.0, q.y - pad, 20.0, q.h + pad * 2.0)
+        ),
+        Some(host_bridge::SdfCull::OffScreen)
+    );
+}
+
+#[test]
+fn test_sdf_focus_padding_covers_the_whole_ring() {
+    // The ring's outer edge sits `FOCUS_GAP_PX` beyond the box, so the padding
+    // must include the gap or the rasterized quad clips the ring away.
+    let mut q = quad_with(1.0, 0.0);
+    q.focus_width = 2.0;
+    assert!(
+        q.padding() >= 2.0 + host_bridge::FOCUS_GAP_PX,
+        "padding {} must cover ring width plus gap",
+        q.padding()
+    );
+}
+
+#[test]
+fn test_sdf_focus_gap_parity() {
+    // The shader is compiled from a raw string, so its gap literal cannot
+    // reference the Rust constant. Reading the shader source keeps the two
+    // honest: a change on either side without the other fails here.
+    let shader = sdf_fragment_shader_source();
+    let literal = format!("const float FOCUS_GAP = {};", host_bridge::FOCUS_GAP_PX);
+    assert!(
+        shader.contains(&literal),
+        "shader must declare `{literal}` to match FOCUS_GAP_PX"
+    );
+}
+
+#[test]
+fn test_sdf_draw_counters_are_independent_and_exported() {
+    // Both counters are part of the public surface used by the perf harness,
+    // so a rename must break this test rather than silently disable metrics.
+    let _: fn() -> u64 = host_bridge::sdf_draws_issued;
+    let _: fn() -> u64 = host_bridge::sdf_draws_culled;
+}

@@ -488,6 +488,60 @@ usa hoje (`host_bridge.rs:653-658`).
 
 **Ganho esperado**: 400 draw calls → 1-3. Ordem de grandeza.
 
+**Status e viabilidade verificada (2026-09-28):**
+
+Uma análise anterior desta iniciativa concluiu que o F1 era **bloqueado** pelo
+macroquad, porque `Context::camera_matrix` é privado e um pipeline miniquad cru
+não poderia reusar a projeção da câmera. **Essa conclusão está incorreta** e foi
+verificada contra o código-fonte de `macroquad 0.4.16`:
+
+| Necessidade | Primitiva real | Onde |
+|:--|:--|:--|
+| Desenhar com miniquad cru no meio de um quadro macroquad | `get_internal_gl()` (público) devolve `quad_gl` + `quad_context`, e `InternalGlContext::flush()` é documentado como "útil para combinar o desenho do macroquad com chamadas miniquad/OpenGL cruas" | `macroquad/src/window.rs` |
+| Obter a projeção corrente, incluindo a câmera | `QuadGl::get_projection_matrix()` — existe explicitamente para plugins de terceiros | `macroquad/src/quad_gl.rs` |
+| Atributos por instância | `miniquad::VertexStep::PerInstance` | backend GL/WebGL |
+| Buffer de instâncias e índice por instância | `draw_elements_instanced` / `draw(base, count, instances)` | `miniquad` |
+
+O que **não** é possível é fazer batching mantendo a API `Material`: em
+`QuadGl::set_uniform` e em `QuadGl::pipeline` o macroquad marca
+`break_batching = true`, e `gl_use_material()` é um `pipeline()` — logo **cada
+`set_uniform` e cada troca de material força um novo draw call**. Como a
+geometria de cada quad viaja em uniforms (`u_quad_size`, `u_box_half`) e o
+formato de vértice do macroquad é fixo (`position` vec2 + `texcoord` vec2 +
+`color0` vec4, 32 bytes por vértice), os 36 floats por instância **não cabem em
+atributos**. O F1 integral exige mesmo sair da API `Material` (ADP-014), como o
+dossiê já previa.
+
+**O que já está entregue (M15-A)**, sem trocar o caminho de desenho:
+
+- culling puro de quads que não pintam (`sdf_cull_reason`: `OffScreen`,
+  `ZeroArea`, `Invisible`), com 10 testes;
+- contadores públicos `sdf_draws_issued` / `sdf_draws_culled`, sem os quais o
+  alvo "≤ 8 draw calls por quadro" não é mensurável;
+- elisão de uploads de uniform por `SdfUniformState`, invalidado no
+  `init_zoe_shaders()`;
+- o anel de foco no fragment shader, fechando a lacuna deixada pelo M14.
+
+**O que falta (M15-B)** — e as duas barreiras que precisam de decisão antes do
+código:
+
+1. **`#![forbid(unsafe_code)]`**: declarado em `crates/aipo-game-host/src/lib.rs`
+   **e** em `main.rs`, e `get_internal_gl()` é `unsafe`. `forbid` não pode ser
+   afrouxado por `#[allow]` em nenhum módulo filho — nem em `host_bridge.rs`,
+   que também repete o atributo. O caminho exige trocar para
+   `#![deny(unsafe_code)]` com **um único** `#[allow(unsafe_code)]` em módulo
+   isolado e auditado, ou extrair o renderizador para um crate próprio. É uma
+   decisão de postura de segurança, portanto cabe como ADP antes do código.
+2. **Verificação**: nenhum teste headless prova que o lote é rasterizado na
+   ordem, no clip e no viewport corretos (o scissor do viewport passa por
+   `Camera2D` + `apply_scissor_rect`, e o material é trocado no meio do quadro).
+   M15-B só pode ser declarada concluída com a GUI rodada numa máquina com
+   display; sem isso, a troca do caminho de desenho é uma regressão não
+   verificada em cima de um renderizador que hoje funciona.
+
+O restante é implementação: pipeline instanciado, VBO de instâncias com o layout
+de 9 × vec4 espelhado no shader, e descarga por lote.
+
 ---
 
 ### F2 — Shader SDF v2 (AA, sombra, borda correta, MSAA) 🔴 Crítico
@@ -846,6 +900,8 @@ Cada fase é um PR. Sequenciamento respeita dependências.
 | **M13** | Fundamentos numéricos e Correções de API | natives `sin/cos/sqrt/atan2/pow`; `hex()` completo; `font_weight` lido; remover i18N hardcoded; `spacer(flex)`; clamp de scroll; C4 slider drag; C8 LRU real; C10/C11 editor | — | 3-5 dias | 🟢 Baixo |
 | **M14** | SDF v2 (AA + sombra + borda + MSAA) | F2 integral; testes de paridade Rust↔GLSL | M13 | 5-8 dias | 🟡 Médio |
 | **M15** | Batch de draw calls | F1 integral; display list; métricas de draw calls | M14 | 8-12 dias | 🔴 Alto |
+| *M15-A* | *Redução e medição do que dá para fazer sem trocar de pipeline* | *Culling puro, contadores de draw call, elisão de uniforms, anel de foco no shader* | *M14* | *2 dias* | *🟢 Baixo* — **concluída** |
+| *M15-B* | *Instancing por material (resto do F1)* | *Pipeline miniquad cru, VBO de instâncias, layout 9 × vec4, descarga por lote* | *M15-A* | *6-10 dias* | *🔴 Alto — requer ADP de `unsafe` e verificação com display* |
 | **M16** | Tipografia de produção | F3: shaping, subpixel, peso real, MSDF atlas; `text_wrap`/`align`/`ellipsis` | M15 | 10-15 dias | 🟠 Médio |
 | **M17** | Tema em runtime + tokens | F5 integral; OKLCH; contraste automatizado; densidade | M16 | 6-9 dias | 🟡 Médio |
 | **M18** | Layout memoizado + reatividade fina | F4 integral; cache; reconciliação; flags separadas | M15 | 8-12 dias | 🔴 Alto |
@@ -975,6 +1031,8 @@ Decisões que **precisam** ser registradas como ADP, porque restringem o futuro:
 | R6 | Regressão de performance no VM | Média | Alto | Benchmark por fase; budget de stack frames |
 | R7 | Documentação dessincroniza do código | Alta | Médio | Páginas geradas de testes; CI checa exemplos |
 | R8 | Acessibilidade exige mudança de API pública | Alta | Médio | Fazer na M23 cedo o *design*, implementar junto de M20 |
+| R9 | M15-B exige `unsafe` e o crate é `#![forbid(unsafe_code)]` | Certa | Médio | ADP de postura de segurança antes do código; isolar o `unsafe` num único módulo auditado ou extrair o renderizador para um crate próprio |
+| R10 | M15-B troca o caminho de desenho sem poder ser verificada pelo gate headless | Alta | Alto | Não trocar o caminho vivo sem rodar a GUI com display; manter o caminho atual atrás da mesma interface |
 
 ---
 
