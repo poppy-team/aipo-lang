@@ -11,9 +11,12 @@ fn test_version_query() {
     unsafe {
         aipo_version(&mut major, &mut minor, &mut patch);
     }
-    assert_eq!(major, 0);
-    assert_eq!(minor, 1);
-    assert_eq!(patch, 0);
+    // Pinned on purpose rather than compared against the constants: the point of
+    // this test is that a version bump is a deliberate, visible change. 0.2.0 is
+    // the pooled-string lifetime replaced by runtime-owned snapshots. A consumer
+    // that compiled against 0.1.0 must be able to detect the break, so the value
+    // may not drift silently.
+    assert_eq!((major, minor, patch), (0, 2, 0), "documented ABI version");
 
     // Null pointer resilience
     unsafe {

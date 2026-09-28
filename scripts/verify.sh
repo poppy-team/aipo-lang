@@ -3,9 +3,9 @@
 # verification gates. The package digest covers source files, so any edit
 # under packages/*/src invalidates aipo.lock until it is regenerated.
 #
-# Scope note: `aipo-c-abi` has uncommitted in-flight work in this tree and its
-# P0 tests do not pass at baseline. It is excluded here deliberately; use
-# `--all` to include the whole workspace when that work lands.
+# `--all` widens the scope to the whole workspace. The default stays narrow only
+# to keep the inner loop fast; every crate in the workspace is expected to pass,
+# including `aipo-c-abi`, whose P0 boundary tests were fixed and are green now.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

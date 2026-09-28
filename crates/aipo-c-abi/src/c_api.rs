@@ -1,16 +1,21 @@
 //! C ABI exports for Aipo (ADP-009).
 
 use crate::runtime::AipoRuntime;
-use crate::types::{aipo_handle_t, aipo_host_fn_t, aipo_runtime_t, aipo_status_t, aipo_value_t};
-use aipo_host::HostValue;
+use crate::types::{
+    aipo_handle_t, aipo_host_fn_t, aipo_runtime_t, aipo_status_t, aipo_val_tag_t, aipo_value_t,
+};
+use aipo_vm::host_value_to_value;
 use std::ffi::c_char;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-/// Major version component (0 for v0.1.0).
+/// Major version component (0 for v0.2.0).
 pub const AIPO_VERSION_MAJOR: u32 = 0;
-/// Minor version component (1 for v0.1.0).
-pub const AIPO_VERSION_MINOR: u32 = 1;
-/// Patch version component (0 for v0.1.0).
+/// Minor version component (1 before 0.2.0, 2 from 0.2.0).
+///
+/// 0.2.0 replaces the pooled-string lifetime with runtime-owned snapshots released
+/// by [`aipo_value_release`], and refuses re-entrant calls from host callbacks.
+pub const AIPO_VERSION_MINOR: u32 = 2;
+/// Patch version component (0 for v0.2.0).
 pub const AIPO_VERSION_PATCH: u32 = 0;
 
 /// Returns the runtime version.
@@ -57,6 +62,11 @@ pub extern "C" fn aipo_runtime_create() -> *mut aipo_runtime_t {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aipo_runtime_destroy(rt: *mut aipo_runtime_t) {
     if rt.is_null() {
+        return;
+    }
+    // Destroying the runtime from inside a host callback would free the VM while
+    // the dispatcher is still holding it borrowed.
+    if crate::runtime::in_host_callback() {
         return;
     }
     let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
@@ -146,6 +156,9 @@ pub unsafe extern "C" fn aipo_runtime_load_module(
     if rt.is_null() || name.is_null() || source.is_null() {
         return aipo_status_t::AIPO_ERR_NULL_POINTER;
     }
+    if crate::runtime::in_host_callback() {
+        return aipo_status_t::AIPO_ERR_USAGE;
+    }
     let result = catch_unwind(AssertUnwindSafe(|| {
         let runtime = unsafe { &mut *rt };
         let name_str = match unsafe { std::ffi::CStr::from_ptr(name) }.to_str() {
@@ -192,6 +205,9 @@ pub unsafe extern "C" fn aipo_runtime_call(
     if rt.is_null() || module_name.is_null() || func_name.is_null() {
         return aipo_status_t::AIPO_ERR_NULL_POINTER;
     }
+    if crate::runtime::in_host_callback() {
+        return aipo_status_t::AIPO_ERR_USAGE;
+    }
     let result = catch_unwind(AssertUnwindSafe(|| {
         let runtime = unsafe { &mut *rt };
         let mod_str = match unsafe { std::ffi::CStr::from_ptr(module_name) }.to_str() {
@@ -209,7 +225,14 @@ pub unsafe extern "C" fn aipo_runtime_call(
             }
         };
 
-        let arg_slice = if argc == 0 || args.is_null() {
+        if argc > 0 && args.is_null() {
+            runtime.last_error = Some(format!(
+                "argc is {argc} but args is NULL; the argument array is required"
+            ));
+            return aipo_status_t::AIPO_ERR_NULL_POINTER;
+        }
+
+        let arg_slice = if argc == 0 {
             &[]
         } else {
             unsafe { std::slice::from_raw_parts(args, argc) }
@@ -277,25 +300,97 @@ pub unsafe extern "C" fn aipo_runtime_register_host_fn(
     result.unwrap_or(aipo_status_t::AIPO_ERR_FAULT)
 }
 
-/// Creates a new generational handle for an integer object identifier.
+/// Creates a generational handle for a host value, reporting conversion failures.
+///
+/// This is the checked form of [`aipo_handle_create`]. A value that violates a
+/// host contract yields an error and no handle; the legacy entrypoint below is
+/// retained for source compatibility and is defined in terms of this one.
 ///
 /// # Safety
 ///
-/// `rt` must point to a live [`aipo_runtime_t`]. If `val` contains pointers (`str_ptr` or `bytes_ptr`), they must be valid for the duration of the call.
+/// `rt` must point to a live [`aipo_runtime_t`]. If `val` contains pointers
+/// (`str_ptr` or `bytes_ptr`), they must be valid for the duration of the call.
+/// If non-null, `out_handle` must point to a writable [`aipo_handle_t`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aipo_handle_create_checked(
+    rt: *mut aipo_runtime_t,
+    val: aipo_value_t,
+    out_handle: *mut aipo_handle_t,
+) -> aipo_status_t {
+    if rt.is_null() {
+        return aipo_status_t::AIPO_ERR_NULL_POINTER;
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let runtime = unsafe { &mut *rt };
+        match val.to_host_value() {
+            Ok(host_val) => {
+                let handle = runtime.handle_create(host_val);
+                if !out_handle.is_null() {
+                    unsafe {
+                        *out_handle = handle;
+                    }
+                }
+                aipo_status_t::AIPO_OK
+            }
+            Err(e) => {
+                // No handle is created: a rejected value must not become a
+                // valid handle to `none`.
+                runtime.last_error = Some(format!("cannot handle this value: {e}"));
+                aipo_status_t::AIPO_ERR_USAGE
+            }
+        }
+    }));
+    result.unwrap_or(aipo_status_t::AIPO_ERR_FAULT)
+}
+
+/// Creates a generational handle, returning a default handle on failure.
+///
+/// Prefer [`aipo_handle_create_checked`], which reports why the value was
+/// rejected. This wrapper cannot distinguish success from failure, so it is kept
+/// only so existing 0.1.x hosts keep compiling.
+///
+/// # Safety
+///
+/// `rt` must point to a live [`aipo_runtime_t`]. If `val` contains pointers,
+/// they must be valid for the duration of the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aipo_handle_create(
     rt: *mut aipo_runtime_t,
     val: aipo_value_t,
 ) -> aipo_handle_t {
+    let mut handle = aipo_handle_t::default();
+    let _ = unsafe { aipo_handle_create_checked(rt, val, &mut handle) };
+    handle
+}
+
+/// Releases the runtime-owned snapshot backing a returned value.
+///
+/// Strings and bytes crossing the boundary are copied into a runtime-owned
+/// snapshot. A value with `AIPO_VAL_STRING`, `AIPO_VAL_BYTES` or
+/// `AIPO_VAL_FAILURE` must be released once the host is done reading it. Calling
+/// this on a value with no heap payload is a no-op, and calling it twice is
+/// harmless: the snapshot is gone and the pointer is already invalid.
+///
+/// # Safety
+///
+/// `val` must be a value that was returned by this runtime and not yet released.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aipo_value_release(rt: *mut aipo_runtime_t, val: aipo_value_t) {
     if rt.is_null() {
-        return aipo_handle_t::default();
+        return;
     }
-    let result = catch_unwind(AssertUnwindSafe(|| {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
         let runtime = unsafe { &mut *rt };
-        let host_val = val.to_host_value().unwrap_or(HostValue::None);
-        runtime.handle_create(host_val)
+        match val.tag {
+            aipo_val_tag_t::AIPO_VAL_STRING | aipo_val_tag_t::AIPO_VAL_FAILURE => {
+                runtime.release_snapshot_at(val.str_ptr.cast::<u8>());
+            }
+            aipo_val_tag_t::AIPO_VAL_BYTES => {
+                runtime.release_snapshot_at(val.bytes_ptr);
+            }
+            _ => {}
+        }
     }));
-    result.unwrap_or_default()
 }
 
 /// Resolves a generational handle to its host value.
@@ -316,11 +411,11 @@ pub unsafe extern "C" fn aipo_handle_resolve(
         let runtime = unsafe { &mut *rt };
         match runtime.handle_resolve(handle) {
             Ok(val) => {
-                let vm_val = match aipo_vm::host_value_to_value(&val) {
+                let vm_val = match host_value_to_value(&val) {
                     Ok(v) => v,
                     Err(_) => return aipo_status_t::AIPO_ERR_FAULT,
                 };
-                let c_val = aipo_value_t::from_vm_value(&vm_val, |s| runtime.pool_string(s));
+                let c_val = aipo_value_t::from_vm_value(&vm_val, runtime.snapshotter());
                 unsafe {
                     *out_value = c_val;
                 }

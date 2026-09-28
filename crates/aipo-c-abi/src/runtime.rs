@@ -9,10 +9,12 @@ use aipo_source::{Source, SourceId};
 use aipo_vm::{Value, Vm, VmError, VmFault};
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::ffi::{CStr, CString};
 
 thread_local! {
     static CURRENT_RUNTIME: Cell<*mut AipoRuntime> = const { Cell::new(std::ptr::null_mut()) };
+    /// Set while a host callback is on the C stack. Any attempt to re-enter the
+    /// runtime from inside that callback is refused before a `&mut` is formed.
+    static IN_HOST_CALLBACK: Cell<bool> = const { Cell::new(false) };
 }
 
 struct CurrentRuntimeGuard(*mut AipoRuntime);
@@ -31,6 +33,41 @@ impl Drop for CurrentRuntimeGuard {
     }
 }
 
+/// Refuses re-entry while a host callback owns the VM.
+///
+/// A C host receives a context, not the runtime, so the only way back into the
+/// runtime is through a stored pointer. That is still possible, so the dispatcher
+/// checks this flag before forming any `&mut` and fails closed.
+struct CallbackDepthGuard;
+
+impl CallbackDepthGuard {
+    fn acquire() -> Result<Self, VmFault> {
+        if IN_HOST_CALLBACK.get() {
+            return Err(VmFault::NotCallable {
+                type_name: "re-entrant call into a busy runtime".to_string(),
+            });
+        }
+        IN_HOST_CALLBACK.set(true);
+        Ok(Self)
+    }
+}
+
+impl Drop for CallbackDepthGuard {
+    fn drop(&mut self) {
+        IN_HOST_CALLBACK.set(false);
+    }
+}
+
+/// Whether a host callback is currently on the C stack.
+///
+/// Every entrypoint that takes `&mut AipoRuntime` checks this first. While a
+/// callback runs, the VM is already mutably borrowed from the dispatcher, so
+/// forming a second `&mut` would alias it.
+#[must_use]
+pub fn in_host_callback() -> bool {
+    IN_HOST_CALLBACK.get()
+}
+
 /// Registration metadata for a host-provided C function.
 #[derive(Clone, Copy)]
 pub struct HostFnEntry {
@@ -39,6 +76,14 @@ pub struct HostFnEntry {
     /// Function pointer to C callback.
     pub callback: aipo_host_fn_t,
 }
+
+/// Owns a snapshot handed across the C boundary.
+///
+/// Strings and bytes are copied out of the VM, so a returned `aipo_value_t` never
+/// borrows from a value the guest can still mutate. The host releases the snapshot
+/// with `aipo_value_release`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SnapshotId(u64);
 
 /// Safe, self-contained Aipo runtime for host embedders.
 pub struct AipoRuntime {
@@ -50,8 +95,9 @@ pub struct AipoRuntime {
     pub modules: HashMap<String, BytecodeModule>,
     /// Last error or fault message recorded.
     pub last_error: Option<String>,
-    /// Pool of null-terminated C strings to ensure memory remains valid across C calls.
-    pub string_pool: Vec<CString>,
+    /// Owned snapshots for strings and bytes returned across the C boundary.
+    snapshots: HashMap<SnapshotId, Box<[u8]>>,
+    next_snapshot: u64,
     /// Registered host functions by name.
     pub host_functions: HashMap<String, (HostFnEntry, Option<String>)>,
 }
@@ -75,17 +121,64 @@ impl AipoRuntime {
             capabilities: CapabilitySet::none(),
             modules: HashMap::new(),
             last_error: None,
-            string_pool: Vec::new(),
+            snapshots: HashMap::new(),
+            next_snapshot: 1,
             host_functions: HashMap::new(),
         }
     }
 
-    /// Allocates and pins a string in the pool, returning its C pointer.
-    pub fn pool_string(&mut self, s: &str) -> *const std::ffi::c_char {
-        let c_str = CString::new(s).unwrap_or_else(|_| CString::new("<invalid string>").unwrap());
-        let ptr = c_str.as_ptr();
-        self.string_pool.push(c_str);
-        ptr
+    /// Copies `data` into a runtime-owned snapshot and returns its address.
+    ///
+    /// The copy is what makes a returned pointer independent of the value it came
+    /// from, and it is length-delimited: an embedded NUL is preserved rather than
+    /// replaced by a placeholder whose length the caller would still trust.
+    ///
+    /// The buffer carries one extra `0` byte after the payload. A C consumer that
+    /// reaches for `strlen`, `strcmp` or `printf("%s")` instead of the explicit
+    /// `str_len` would otherwise read past the allocation looking for a
+    /// terminator — the defect this snapshot mechanism exists to remove. Reported
+    /// lengths come from the payload, never from the buffer, so the sentinel is
+    /// never counted as data, including when the payload itself ends in `0`.
+    pub fn alloc_snapshot(&mut self, data: &[u8]) -> SnapshotId {
+        let id = SnapshotId(self.next_snapshot);
+        self.next_snapshot = self.next_snapshot.wrapping_add(1);
+        let mut buf = Vec::with_capacity(data.len() + 1);
+        buf.extend_from_slice(data);
+        buf.push(0);
+        self.snapshots.insert(id, buf.into_boxed_slice());
+        id
+    }
+
+    /// Frees a snapshot previously returned to the C boundary.
+    pub fn release_snapshot(&mut self, id: SnapshotId) -> bool {
+        self.snapshots.remove(&id).is_some()
+    }
+
+    /// Frees the snapshot backing `ptr`, if it belongs to this runtime.
+    ///
+    /// `aipo_value_t` is plain C and carries no owner field, so a released value
+    /// is identified by the address it already exposes. Lookup is linear, which
+    /// is fine: release is not a hot path and the map is small.
+    pub fn release_snapshot_at(&mut self, ptr: *const u8) -> bool {
+        if ptr.is_null() {
+            return false;
+        }
+        let id = self
+            .snapshots
+            .iter()
+            .find(|(_, buf)| buf.as_ptr() == ptr)
+            .map(|(id, _)| *id);
+        id.is_some_and(|id| self.snapshots.remove(&id).is_some())
+    }
+
+    /// Builds a closure that snapshots heap payloads for [`aipo_value_t::from_vm_value`].
+    pub fn snapshotter(&mut self) -> impl FnMut(&[u8]) -> *const u8 + '_ {
+        move |data: &[u8]| {
+            let id = self.alloc_snapshot(data);
+            self.snapshots
+                .get(&id)
+                .map_or(std::ptr::null(), |b| b.as_ptr())
+        }
     }
 
     /// Grants a host capability path (e.g. `"clock"`, `"io"`, `"poppy"`).
@@ -217,8 +310,9 @@ impl AipoRuntime {
         let mut vm_args = Vec::with_capacity(args.len());
         for arg in args {
             let v = arg.to_vm_value().map_err(|e| {
-                self.last_error = Some(e.clone());
-                (aipo_status_t::AIPO_ERR_USAGE, e)
+                let msg = e.to_string();
+                self.last_error = Some(msg.clone());
+                (aipo_status_t::AIPO_ERR_USAGE, msg)
             })?;
             vm_args.push(v);
         }
@@ -234,7 +328,7 @@ impl AipoRuntime {
             (status, msg)
         })?;
 
-        let c_val = aipo_value_t::from_vm_value(&result, |s| self.pool_string(s));
+        let c_val = aipo_value_t::from_vm_value(&result, self.snapshotter());
         Ok(c_val)
     }
 
@@ -300,7 +394,9 @@ fn host_native_dispatcher(vm: &mut Vm, args: &[Value]) -> Result<Value, VmError>
 
     let rt = unsafe { &mut *rt_ptr };
 
-    // Resolve function name from the callee on the VM stack
+    // Identity comes from the callee itself, never from its arity. Two host
+    // functions can share an arity and require different capabilities, so
+    // guessing by shape would run the wrong operation under the wrong grant.
     let callee_name = vm
         .stack
         .len()
@@ -309,29 +405,24 @@ fn host_native_dispatcher(vm: &mut Vm, args: &[Value]) -> Result<Value, VmError>
         .and_then(|val| match val {
             Value::Native(data) => Some(data.name.clone()),
             _ => None,
-        });
-
-    let (name, entry, required_cap) = if let Some(ref c_name) = callee_name {
-        rt.host_functions
-            .get(c_name)
-            .map(|(e, cap)| (c_name.clone(), *e, cap.clone()))
-            .or_else(|| {
-                rt.host_functions
-                    .iter()
-                    .find(|(_, (e, _))| e.arity == args.len())
-                    .map(|(n, (e, cap))| (n.clone(), *e, cap.clone()))
-            })
-    } else {
-        rt.host_functions
-            .iter()
-            .find(|(_, (e, _))| e.arity == args.len())
-            .map(|(n, (e, cap))| (n.clone(), *e, cap.clone()))
-    }
-    .ok_or_else(|| {
-        VmError::from(VmFault::NotCallable {
-            type_name: "unregistered host function".to_string(),
         })
-    })?;
+        .ok_or_else(|| {
+            VmError::from(VmFault::NotCallable {
+                type_name: "host function reached without an identifiable callee".to_string(),
+            })
+        })?;
+
+    let (entry, required_cap) = rt
+        .host_functions
+        .get(&callee_name)
+        .map(|(e, cap)| (*e, cap.clone()))
+        .ok_or_else(|| {
+            VmError::from(VmFault::NotCallable {
+                type_name: format!("unregistered host function '{callee_name}'"),
+            })
+        })?;
+
+    let name = callee_name;
 
     // Capability check
     if let Some(ref cap_name) = required_cap {
@@ -348,19 +439,24 @@ fn host_native_dispatcher(vm: &mut Vm, args: &[Value]) -> Result<Value, VmError>
         }
     }
 
-    // Convert arguments to aipo_value_t
+    // Convert arguments to aipo_value_t, each heap payload copied into a snapshot
+    // so the callback can keep the pointers past the end of this call.
     let c_args: Vec<aipo_value_t> = args
         .iter()
-        .map(|v| aipo_value_t::from_vm_value(v, |s| rt.pool_string(s)))
+        .map(|v| aipo_value_t::from_vm_value(v, rt.snapshotter()))
         .collect();
 
     let mut out_result = aipo_value_t::none();
+    // Refuse re-entry before the callback can reach the runtime again through a
+    // stored pointer, and before any further `&mut` is formed.
+    let _depth = CallbackDepthGuard::acquire()?;
     let status = (entry.callback)(
         rt_ptr as *mut crate::types::aipo_runtime_t,
         c_args.as_ptr(),
         c_args.len(),
         &mut out_result,
     );
+    drop(_depth);
 
     match status {
         aipo_status_t::AIPO_OK => {
@@ -368,24 +464,24 @@ fn host_native_dispatcher(vm: &mut Vm, args: &[Value]) -> Result<Value, VmError>
                 .to_vm_value()
                 .map_err(|e| VmFault::TypeMismatch {
                     expected: "valid return value".to_string(),
-                    actual: e,
+                    actual: e.to_string(),
                 })?;
             Ok(val)
         }
         aipo_status_t::AIPO_ERR_UNCAUGHT_FAILURE => {
-            let msg = if out_result.str_ptr.is_null() {
-                "host failure".to_string()
-            } else {
-                unsafe { CStr::from_ptr(out_result.str_ptr) }
-                    .to_str()
-                    .unwrap_or("host failure")
-                    .to_string()
-            };
+            let msg = out_result
+                .to_vm_value()
+                .ok()
+                .and_then(|v| match v {
+                    Value::Failure(f) => Some(f.message.to_string()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| "host failure".to_string());
             Ok(Value::failure(msg))
         }
         aipo_status_t::AIPO_ERR_CAPABILITY_DENIED => Err(VmFault::CapabilityDenied {
             capability: required_cap.unwrap_or_default(),
-            operation: name.to_string(),
+            operation: name,
         }
         .into()),
         aipo_status_t::AIPO_ERR_STALE_HANDLE => Err(VmFault::StaleHandle {

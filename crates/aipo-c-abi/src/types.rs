@@ -3,6 +3,71 @@
 use aipo_host::{Handle, HostValue};
 use aipo_vm::Value;
 use std::ffi::c_char;
+use unicode_normalization::UnicodeNormalization;
+
+/// Largest integer the Aipo value model accepts: 2^53 - 1.
+pub const MAX_SAFE_INT: i64 = (1_i64 << 53) - 1;
+/// Smallest integer the Aipo value model accepts: -(2^53 - 1).
+pub const MIN_SAFE_INT: i64 = -MAX_SAFE_INT;
+
+/// Errors produced while validating a value crossing the C boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundaryError {
+    /// The C `aipo_val_tag_t` carried a discriminant outside the declared enum.
+    UnknownTag(i32),
+    /// Integer outside ±(2^53 − 1).
+    IntegerOutOfRange(i64),
+    /// Float was NaN or infinite.
+    NonFiniteFloat,
+    /// The string bytes were not valid UTF-8.
+    InvalidUtf8,
+    /// A handle or failure value cannot be converted into the requested type.
+    UnsupportedConversion(&'static str),
+    /// A null pointer was supplied where a value was required.
+    NullPointer,
+    /// The tag was valid but the payload slot for it was absent.
+    MissingPayload,
+}
+
+impl std::fmt::Display for BoundaryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownTag(t) => write!(f, "unknown value tag discriminant {t}"),
+            Self::IntegerOutOfRange(n) => {
+                write!(f, "integer {n} is outside ±{MAX_SAFE_INT}")
+            }
+            Self::NonFiniteFloat => write!(f, "float is not finite; NaN and infinity are faults"),
+            Self::InvalidUtf8 => write!(f, "string data is not valid UTF-8"),
+            Self::UnsupportedConversion(what) => write!(f, "{what}"),
+            Self::NullPointer => write!(f, "null pointer where a value was required"),
+            Self::MissingPayload => write!(f, "value tag has no payload in the required slot"),
+        }
+    }
+}
+
+impl std::error::Error for BoundaryError {}
+
+/// Validates a raw C tag discriminant before it is turned into a Rust enum.
+///
+/// The C side is free to pass any integer, so reading the discriminant as the
+/// `#[repr(C)]` enum directly would be undefined behaviour for out-of-range values.
+///
+/// # Errors
+/// Returns [`BoundaryError::UnknownTag`] when `raw` is not a declared tag.
+pub fn checked_tag(raw: i32) -> Result<aipo_val_tag_t, BoundaryError> {
+    let tag = match raw {
+        0 => aipo_val_tag_t::AIPO_VAL_NONE,
+        1 => aipo_val_tag_t::AIPO_VAL_BOOL,
+        2 => aipo_val_tag_t::AIPO_VAL_INT,
+        3 => aipo_val_tag_t::AIPO_VAL_FLOAT,
+        4 => aipo_val_tag_t::AIPO_VAL_STRING,
+        5 => aipo_val_tag_t::AIPO_VAL_BYTES,
+        6 => aipo_val_tag_t::AIPO_VAL_HANDLE,
+        7 => aipo_val_tag_t::AIPO_VAL_FAILURE,
+        other => return Err(BoundaryError::UnknownTag(other)),
+    };
+    Ok(tag)
+}
 
 /// Return / status code for C ABI operations.
 #[repr(C)]
@@ -189,115 +254,145 @@ impl aipo_value_t {
         v
     }
 
-    /// Converts a VM [`Value`] to an [`aipo_value_t`].
+    /// Converts a VM [`Value`] into an [`aipo_value_t`] using an owned snapshot.
     ///
-    /// If the value contains a heap string or failure, `on_string` is called to pool
-    /// the null-terminated `CString` and return its raw pointer.
-    pub fn from_vm_value<F>(val: &Value, mut on_string: F) -> Self
+    /// Heap payloads are copied into a freshly allocated buffer handed back through
+    /// `on_bytes` together with its length. The returned pointer does not borrow
+    /// from `val`, so it stays valid after the value that produced it is dropped.
+    /// The caller owns the result and releases it with [`crate::aipo_value_release`].
+    pub fn from_vm_value<F>(val: &Value, mut on_bytes: F) -> Self
     where
-        F: FnMut(&str) -> *const c_char,
+        F: FnMut(&[u8]) -> *const u8,
     {
+        let mut string = |s: &str| -> Self {
+            let mut v = Self::none();
+            v.tag = aipo_val_tag_t::AIPO_VAL_STRING;
+            v.str_ptr = on_bytes(s.as_bytes()).cast::<c_char>();
+            v.str_len = s.len();
+            v
+        };
+
         match val {
             Value::None => Self::none(),
             Value::Bool(b) => Self::bool_val(*b),
             Value::Int(i) => Self::int_val(*i),
             Value::Float(f) => Self::float_val(*f),
-            Value::String(s) => {
-                let mut v = Self::none();
-                v.tag = aipo_val_tag_t::AIPO_VAL_STRING;
-                v.str_ptr = on_string(s.as_str());
-                v.str_len = s.len();
-                v
-            }
+            Value::String(s) => string(s.as_str()),
             Value::Bytes(b) => {
-                let borrow = b.borrow();
+                // Snapshot: the `RefCell<Vec<u8>>` can be mutated or reallocated by
+                // Aipo code, so borrowing its buffer would dangle or alias.
+                let snapshot = b.borrow().clone();
                 let mut v = Self::none();
                 v.tag = aipo_val_tag_t::AIPO_VAL_BYTES;
-                v.bytes_ptr = borrow.as_ptr();
-                v.bytes_len = borrow.len();
+                v.bytes_len = snapshot.len();
+                v.bytes_ptr = on_bytes(&snapshot);
                 v
             }
             Value::HostHandle(h) => Self::handle((*h).into()),
             Value::Failure(f) => {
-                let mut v = Self::none();
+                let mut v = string(&f.message);
                 v.tag = aipo_val_tag_t::AIPO_VAL_FAILURE;
-                v.str_ptr = on_string(&f.message);
-                v.str_len = f.message.len();
                 v
             }
-            other => {
-                let s = other.to_string();
-                let mut v = Self::none();
-                v.tag = aipo_val_tag_t::AIPO_VAL_STRING;
-                v.str_ptr = on_string(&s);
-                v.str_len = s.len();
-                v
-            }
+            other => string(&other.to_string()),
         }
     }
 
-    /// Converts an [`aipo_value_t`] to an [`aipo_host::HostValue`].
+    /// Reads a length-delimited string, normalizing it to NFC.
+    ///
+    /// Reading `str_len` bytes instead of scanning for a NUL keeps an embedded NUL
+    /// intact and makes a wrong `str_len` a wrong string rather than a read past
+    /// the end of the allocation.
+    fn read_str(&self) -> Result<String, BoundaryError> {
+        if self.str_ptr.is_null() {
+            return if self.str_len == 0 {
+                Ok(String::new())
+            } else {
+                Err(BoundaryError::NullPointer)
+            };
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(self.str_ptr.cast::<u8>(), self.str_len) };
+        let text = std::str::from_utf8(bytes).map_err(|_| BoundaryError::InvalidUtf8)?;
+        Ok(text.nfc().collect())
+    }
+
+    /// Converts an [`aipo_value_t`] into an [`aipo_host::HostValue`], validating
+    /// every contract the VM holds internally.
     ///
     /// # Errors
-    /// Returns `Err` if numeric bounds or UTF-8 invariants are violated.
-    pub fn to_host_value(&self) -> Result<HostValue, String> {
+    /// Returns [`BoundaryError`] when a numeric range, finiteness, or UTF-8
+    /// invariant is violated, or the conversion is not defined for that tag.
+    pub fn to_host_value(&self) -> Result<HostValue, BoundaryError> {
         match self.tag {
             aipo_val_tag_t::AIPO_VAL_NONE => Ok(HostValue::None),
             aipo_val_tag_t::AIPO_VAL_BOOL => Ok(HostValue::Bool(self.bool_val)),
-            aipo_val_tag_t::AIPO_VAL_INT => HostValue::int(self.int_val)
-                .map_err(|e| format!("integer {} out of range: {e}", self.int_val)),
-            aipo_val_tag_t::AIPO_VAL_FLOAT => HostValue::float(self.float_val)
-                .map_err(|e| format!("float {} is non-finite: {e}", self.float_val)),
-            aipo_val_tag_t::AIPO_VAL_STRING => {
-                if self.str_ptr.is_null() {
-                    return Ok(HostValue::String(String::new()));
+            aipo_val_tag_t::AIPO_VAL_INT => {
+                if !(MIN_SAFE_INT..=MAX_SAFE_INT).contains(&self.int_val) {
+                    return Err(BoundaryError::IntegerOutOfRange(self.int_val));
                 }
-                let c_str = unsafe { std::ffi::CStr::from_ptr(self.str_ptr) };
-                let s = c_str
-                    .to_str()
-                    .map_err(|e| format!("invalid UTF-8 in string: {e}"))?;
-                Ok(HostValue::String(s.to_string()))
+                Ok(HostValue::Int(self.int_val))
             }
+            aipo_val_tag_t::AIPO_VAL_FLOAT => {
+                if !self.float_val.is_finite() {
+                    return Err(BoundaryError::NonFiniteFloat);
+                }
+                Ok(HostValue::Float(self.float_val))
+            }
+            aipo_val_tag_t::AIPO_VAL_STRING => Ok(HostValue::String(self.read_str()?)),
             aipo_val_tag_t::AIPO_VAL_BYTES => {
-                if self.bytes_ptr.is_null() || self.bytes_len == 0 {
-                    return Ok(HostValue::Bytes(Vec::new()));
+                if self.bytes_ptr.is_null() {
+                    return if self.bytes_len == 0 {
+                        Ok(HostValue::Bytes(Vec::new()))
+                    } else {
+                        Err(BoundaryError::NullPointer)
+                    };
                 }
                 let slice = unsafe { std::slice::from_raw_parts(self.bytes_ptr, self.bytes_len) };
                 Ok(HostValue::Bytes(slice.to_vec()))
             }
-            aipo_val_tag_t::AIPO_VAL_HANDLE => {
-                // Synthesize handle from index and generation
-                // The table will check index and generation on resolution
-                Err("cannot convert handle directly to HostValue without table lookup".to_string())
-            }
-            aipo_val_tag_t::AIPO_VAL_FAILURE => {
-                Err("failure value cannot be passed as a normal host argument".to_string())
-            }
+            aipo_val_tag_t::AIPO_VAL_HANDLE => Err(BoundaryError::UnsupportedConversion(
+                "a handle cannot become a host value without resolving it first",
+            )),
+            aipo_val_tag_t::AIPO_VAL_FAILURE => Err(BoundaryError::UnsupportedConversion(
+                "a failure cannot be passed as a host argument",
+            )),
         }
     }
 
-    /// Converts an [`aipo_value_t`] to a VM [`Value`].
-    pub fn to_vm_value(&self) -> Result<Value, String> {
+    /// Converts an [`aipo_value_t`] into a VM [`Value`], validating every contract
+    /// the VM holds internally.
+    ///
+    /// # Errors
+    /// Returns [`BoundaryError`] when a numeric range, finiteness, or UTF-8
+    /// invariant is violated.
+    pub fn to_vm_value(&self) -> Result<Value, BoundaryError> {
         match self.tag {
             aipo_val_tag_t::AIPO_VAL_NONE => Ok(Value::None),
             aipo_val_tag_t::AIPO_VAL_BOOL => Ok(Value::Bool(self.bool_val)),
-            aipo_val_tag_t::AIPO_VAL_INT => Ok(Value::Int(self.int_val)),
-            aipo_val_tag_t::AIPO_VAL_FLOAT => Ok(Value::Float(self.float_val)),
-            aipo_val_tag_t::AIPO_VAL_STRING => {
-                if self.str_ptr.is_null() {
-                    return Ok(Value::String(std::rc::Rc::new(String::new())));
+            aipo_val_tag_t::AIPO_VAL_INT => {
+                if !(MIN_SAFE_INT..=MAX_SAFE_INT).contains(&self.int_val) {
+                    return Err(BoundaryError::IntegerOutOfRange(self.int_val));
                 }
-                let c_str = unsafe { std::ffi::CStr::from_ptr(self.str_ptr) };
-                let s = c_str
-                    .to_str()
-                    .map_err(|e| format!("invalid UTF-8 in string: {e}"))?;
-                Ok(Value::String(std::rc::Rc::new(s.to_string())))
+                Ok(Value::Int(self.int_val))
+            }
+            aipo_val_tag_t::AIPO_VAL_FLOAT => {
+                if !self.float_val.is_finite() {
+                    return Err(BoundaryError::NonFiniteFloat);
+                }
+                Ok(Value::Float(self.float_val))
+            }
+            aipo_val_tag_t::AIPO_VAL_STRING => {
+                Ok(Value::String(std::rc::Rc::new(self.read_str()?)))
             }
             aipo_val_tag_t::AIPO_VAL_BYTES => {
-                if self.bytes_ptr.is_null() || self.bytes_len == 0 {
-                    return Ok(Value::Bytes(std::rc::Rc::new(std::cell::RefCell::new(
-                        Vec::new(),
-                    ))));
+                if self.bytes_ptr.is_null() {
+                    return if self.bytes_len == 0 {
+                        Ok(Value::Bytes(std::rc::Rc::new(std::cell::RefCell::new(
+                            Vec::new(),
+                        ))))
+                    } else {
+                        Err(BoundaryError::NullPointer)
+                    };
                 }
                 let slice = unsafe { std::slice::from_raw_parts(self.bytes_ptr, self.bytes_len) };
                 Ok(Value::Bytes(std::rc::Rc::new(std::cell::RefCell::new(
@@ -305,14 +400,7 @@ impl aipo_value_t {
                 ))))
             }
             aipo_val_tag_t::AIPO_VAL_HANDLE => Ok(Value::HostHandle(self.handle_val.into())),
-            aipo_val_tag_t::AIPO_VAL_FAILURE => {
-                if self.str_ptr.is_null() {
-                    return Ok(Value::failure("failure"));
-                }
-                let c_str = unsafe { std::ffi::CStr::from_ptr(self.str_ptr) };
-                let s = c_str.to_str().unwrap_or("failure");
-                Ok(Value::failure(s.to_string()))
-            }
+            aipo_val_tag_t::AIPO_VAL_FAILURE => Ok(Value::failure(self.read_str()?)),
         }
     }
 }
