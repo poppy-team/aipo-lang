@@ -840,7 +840,7 @@ impl<'a> Parser<'a> {
         let start = self.advance().span; // 'export'
         let mut names = Vec::new();
         loop {
-            names.push(self.parse_ident()?);
+            names.push(self.parse_ident_or_contextual()?);
             if !self.match_token(&TokenKind::Comma) {
                 break;
             }
@@ -1489,7 +1489,7 @@ impl<'a> Parser<'a> {
         start: SourceSpan,
         is_async: bool,
     ) -> Option<FunctionDecl> {
-        let name = self.parse_ident()?;
+        let name = self.parse_ident_or_contextual()?;
         self.expect(
             &TokenKind::LParen,
             "expected '(' in function parameter list",
@@ -1545,7 +1545,7 @@ impl<'a> Parser<'a> {
                 .span;
             (fn_span, false)
         };
-        let name = self.parse_ident()?;
+        let name = self.parse_ident_or_contextual()?;
         self.expect(&TokenKind::LParen, "expected '(' in method signature")?;
         let params = self.parse_params()?;
         self.expect(&TokenKind::RParen, "expected ')' after parameters")?;
@@ -2034,6 +2034,10 @@ impl<'a> Parser<'a> {
                 Some(Expr::Unary(UnaryOp::Not, Box::new(operand), full_span))
             }
             TokenKind::Fn => self.parse_fn_expr(),
+            TokenKind::Div => {
+                let span = self.advance().span;
+                Some(Expr::Identifier(Ident::new("div".into(), span)))
+            }
             TokenKind::Async => self.parse_async_fn_expr(),
             TokenKind::Await => self.parse_await_expr(),
             TokenKind::Fail => {
@@ -2752,6 +2756,14 @@ impl<'a> Parser<'a> {
                     return Some(Ident::new(text.to_string(), tok.span));
                 }
             }
+        }
+        self.parse_ident()
+    }
+
+    fn parse_ident_or_contextual(&mut self) -> Option<Ident> {
+        if self.check(&TokenKind::Div) {
+            let span = self.advance().span;
+            return Some(Ident::new("div".into(), span));
         }
         self.parse_ident()
     }

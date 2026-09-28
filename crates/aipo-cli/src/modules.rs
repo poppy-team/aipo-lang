@@ -163,10 +163,12 @@ pub(crate) fn resolve(
             match item {
                 HirItem::Import(_) | HirItem::Export(_) => {}
                 HirItem::Fn(mut decl) => {
+                    decl.name = scope.rewrite_identifier(decl.name);
                     rewrite_function(&mut decl, &scope);
                     items.push(HirItem::Fn(decl));
                 }
                 HirItem::Struct(mut decl) => {
+                    decl.name = scope.rewrite_identifier(decl.name);
                     for field in &mut decl.fields {
                         if let Some(default) = field.default.take() {
                             field.default = Some(rewrite_expr(default, &scope));
@@ -175,6 +177,7 @@ pub(crate) fn resolve(
                     items.push(HirItem::Struct(decl));
                 }
                 HirItem::Impl(mut block) => {
+                    block.target = scope.rewrite_identifier(block.target);
                     rewrite_impl(&mut block, &scope);
                     items.push(HirItem::Impl(block));
                 }
@@ -692,7 +695,7 @@ fn rewrite_expr(expr: HirExpr, scope: &ModuleScope) -> HirExpr {
             span,
         ),
         HirExpr::Construct(name, fields, span) => HirExpr::Construct(
-            name,
+            scope.rewrite_identifier(name),
             fields
                 .into_iter()
                 .map(|(field, value)| (field, rewrite_expr(value, scope)))
