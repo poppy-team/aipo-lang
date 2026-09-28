@@ -1,124 +1,186 @@
-# aipo.http — Web Backend Framework & APIs
+# aipo.http — HTTP Microservices Framework & Router
 
-`aipo.http` is the official backend framework of the Aipo programming language for building HTTP servers, microservices, and APIs with native WebSocket support. It is engineered to leverage Aipo's structured async concurrency and the raw performance of the native Wasm JIT compiler.
+`aipo.http` is the official backend framework for the Aipo programming language, designed for high-performance REST APIs, microservices, and web servers.
 
-Drawing inspiration from the speed and elegance of **Hono** and **FastAPI**, `aipo.http` strips away traditional boilerplate, embracing a declarative, secure-by-default architecture.
+It is built following Aipo's core minimalist and deterministic philosophy:
+1. **Zero-Regex Segment/Radix Router:** Static paths, dynamic parameters (`:param`), and wildcards (`*wildcard`) without runtime regular expression parsing.
+2. **Onion-Style Middleware Pipeline:** Pre- and post-processing with chained `next()` calls, enabling response transformations, audit trails, and short-circuit controls.
+3. **Built-in Canonical Middlewares:**
+   - `cors`: Cross-Origin Resource Sharing with automatic preflight OPTIONS (204).
+   - `logger`: Structured logging for request methods, paths, and status codes.
+   - `recover`: Traps unhandled runtime faults, returning 500 JSON without crashing the runtime.
+4. **Typed Context Engine (`Context`):** High-ergonomics access to query strings, route parameters, headers, JSON body decoding, and immediate response builders (`json`, `text`, `html`, `status`).
+5. **Route Grouping (`group`):** Nested prefixes (`/api/v1`) with group-scoped middlewares.
+6. **Pure Decoupled Testing:** Handlers operate via `app.handle_request(req_dict)`, allowing deterministic unit tests without binding OS sockets.
 
 ---
 
-## 1. Overview & Core Philosophy
+## 1. Installation
 
-Unlike legacy frameworks burdened by transpilers, decorators, or complex mutable middleware chains, `aipo.http` takes full advantage of Aipo's first-class capabilities:
+In your project's `aipo.toml`:
 
-1. **Radix Tree Routing:** Blazing-fast dispatch for parameterized routes (`/users/:id`).
-2. **Clean Context (`ctx`):** Ergonomic access to parameters, headers, query strings, and JSON payloads with immutable, chainable helpers.
-3. **Schema & Contract Integration:** First-class compatibility with Aipo contracts for automated payload validation and standardized HTTP 422 error responses.
-4. **Native WebSockets:** High-throughput bidirectional real-time communication with zero external dependencies.
-5. **Fullstack Unification with `aipo.html`:** The same Aipo codebase renders on the server (SSR) and powers client-side reactivity (Fine-Grained MVU).
-
-```mermaid
-graph TD
-    Client["HTTP Client / Browser / Mobile App"] --> Listener["Concurrent Connection Listener (Async Tasks)"]
-    Listener --> Router["High-Velocity Radix Tree Router"]
-    Router --> Middlewares["Middleware Pipeline (CORS, Auth, Logger)"]
-    Middlewares --> Handler["Route Handler (async ctx => ...)"]
-    Handler --> JSON["Response Payload (JSON / HTML / SSE / WebSockets)"]
+```toml
+[dependencies]
+"aipo.http" = { path = "packages/aipo-http" }
 ```
 
 ---
 
-## 2. Quickstart: REST API with Validation
+## 2. Basic Setup and Routing
 
 ```aipo
-import aipo.http as web
+import aipo.http as http
 
-let app = web.create()
+let app = http.create()
 
-# Logging Middleware
-app.use(async (ctx, next) => {
-    let start = time.now()
-    await next()
-    let elapsed = time.elapsed_ms(start)
-    io.println(f"[{ctx.method}] {ctx.path} — {ctx.status} ({elapsed}ms)")
+# Plain text response
+app.get("/", fn (c) {
+    c.text("Welcome to Aipo HTTP!")
 })
 
-# Simple Route
-app.get("/", ctx => {
-    return ctx.json({ "message": "Aipo HTTP service online!" })
+# JSON response
+app.get("/api/health", fn (c) {
+    c.json({
+        "status": "healthy",
+        "uptime": 3600
+    })
 })
 
-# Parameterized Route
-app.get("/users/:id", async ctx => {
-    let user_id = ctx.param("id")
-    let user = await fetch_user_from_db(user_id)
-    
-    if user == none {
-        return ctx.status(404).json({ "error": "User not found" })
-    }
-    
-    return ctx.json(user)
-})
-
-# POST Route with JSON Parsing
-app.post("/users", async ctx => {
-    let body = await ctx.req.json()
-    
-    # Input validation
-    if not body.contains("name") or not body.contains("email") {
-        return ctx.status(400).json({ "error": "Fields 'name' and 'email' are required" })
-    }
-    
-    let new_user = await create_user(body.name, body.email)
-    return ctx.status(201).json(new_user)
-})
-
-# Start server on port 3000
-app.listen(port: 3000, host: "0.0.0.0", _ => {
-    io.println("🚀 Server running on http://localhost:3000")
+# HTML response
+app.get("/welcome", fn (c) {
+    c.html("<h1>Aipo HTTP Portal</h1>")
 })
 ```
 
 ---
 
-## 3. Real-Time WebSockets
-
-Native WebSocket support is baked directly into the core of `aipo.http`, enabling real-time chat, multiplayer rooms, and streaming data feeds in just a few lines of code:
+## 3. Path Parameters and Wildcards
 
 ```aipo
-app.ws("/ws/room/:room_id", {
-    on_connect: (socket, ctx) => {
-        let room = ctx.param("room_id")
-        socket.join(room)
-        socket.broadcast_to(room, "A new participant joined the room!")
-    },
+# Single parameter
+app.get("/users/:id", fn (c) {
+    let user_id = c.param("id")
+    c.json({ "id": user_id, "name": "Developer" })
+})
 
-    on_message: (socket, message) => {
-        # Broadcast message to everyone in the room
-        socket.broadcast_to(socket.current_room, message)
-    },
+# Nested parameters
+app.get("/orgs/:org/repos/:repo", fn (c) {
+    let org = c.param("org")
+    let repo = c.param("repo")
+    c.text(f"Repository: {org}/{repo}")
+})
 
-    on_disconnect: (socket, reason) => {
-        io.println(f"Disconnected: {reason}")
-    }
+# Wildcard catch-all for static assets
+app.get("/static/*filepath", fn (c) {
+    let file = c.param("filepath")
+    c.text(f"Serving file: {file}")
 })
 ```
 
 ---
 
-## 4. Fullstack SSR with `aipo.html`
-
-`aipo.http` renders components authored with [`aipo.html`](/en/packages/aipo-html) on the server natively, serving instant static HTML paired with seamless client hydration:
+## 4. Query Strings & JSON Body Parsing
 
 ```aipo
-import aipo.http as web
-import aipo.html as h
-
-app.get("/page", ctx => {
-    return ctx.html(
-        h.div(class: "container mx-auto p-4") {
-            h.h1("Rendered on the Server with Aipo!", class: "text-2xl font-bold")
-            h.p("Zero Node.js, Webpack, or Babel dependencies.")
-        }
-    )
+# Query parameters (?q=search&page=2)
+app.get("/search", fn (c) {
+    let query = c.query_param("q")
+    let page = c.query_param("page")
+    c.json({ "query": query, "page": page })
 })
+
+# POST request with JSON payload
+app.post("/users", fn (c) {
+    let payload = c.body_json()
+    c.status(201)
+    c.set_header("x-created-by", "aipo-http")
+    c.json({
+        "created": true,
+        "username": payload["username"]
+    })
+})
+```
+
+---
+
+## 5. Onion Middleware Pipeline
+
+Middlewares follow the `fn (ctx, next)` signature:
+
+```aipo
+let app = http.create()
+
+# Audit & custom header middleware
+app.use(fn (c, next) {
+    c.set_header("x-server", "aipo-engine")
+    let res = next()
+    return res
+})
+
+# Auth guard with short-circuit
+app.use(fn (c, next) {
+    let token = c.header("Authorization")
+    if token != "Bearer secret-token" {
+        c.status(401)
+        c.json({ "error": "Unauthorized" })
+        return none # Halts pipeline execution
+    }
+    return next()
+})
+```
+
+### Built-in Middlewares
+
+```aipo
+# CORS configuration
+app.use(http.cors({
+    "origin": "https://example.com",
+    "methods": "GET, POST, PUT, DELETE"
+}))
+
+# Request logger
+app.use(http.logger())
+
+# Panic / runtime fault recovery
+app.use(http.recover())
+```
+
+---
+
+## 6. Route Grouping (`group`)
+
+```aipo
+let api_v1 = app.group("/api/v1")
+
+# Registered as /api/v1/status
+api_v1.get("/status", fn (c) {
+    c.json({ "version": "1.0.0" })
+})
+
+# Registered as /api/v1/users
+api_v1.get("/users", fn (c) {
+    c.json([])
+})
+```
+
+---
+
+## 7. Zero-Network Testability
+
+Execute tests in memory with pure dictionaries:
+
+```aipo
+let app = http.create()
+
+app.get("/ping", fn (c) {
+    c.text("pong")
+})
+
+let response = app.handle_request({
+    "method": "GET",
+    "path": "/ping"
+})
+
+expect.equal(response["status"], 200)
+expect.equal(response["body"], "pong")
 ```

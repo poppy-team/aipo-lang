@@ -1,0 +1,241 @@
+# http_test.aipo — Comprehensive tests for aipo.http router, middlewares, context, and app
+
+import aipo.http as http
+
+test("basic routing and context responses (text, json, html)") do
+    let app = http.create()
+
+    app.get("/", fn (c) {
+        c.text("Hello, Aipo HTTP!")
+    })
+
+    app.get("/api/health", fn (c) {
+        c.json({ "status": "ok", "uptime": 120 })
+    })
+
+    app.get("/welcome", fn (c) {
+        c.html("<h1>Bem-vindo!</h1>")
+    })
+
+    # Test root text response
+    let res1 = app.handle_request({ "method": "GET", "path": "/" })
+    expect.equal(res1["status"], 200)
+    expect.equal(res1["body"], "Hello, Aipo HTTP!")
+    expect.equal(res1["headers"]["content-type"], "text/plain; charset=utf-8")
+
+    # Test health JSON response
+    let res2 = app.handle_request({ "method": "GET", "path": "/api/health" })
+    expect.equal(res2["status"], 200)
+    expect.true(res2["body"].contains("\"status\": \"ok\""))
+    expect.true(res2["body"].contains("\"uptime\": 120"))
+    expect.equal(res2["headers"]["content-type"], "application/json")
+
+    # Test HTML response
+    let res3 = app.handle_request({ "method": "GET", "path": "/welcome" })
+    expect.equal(res3["status"], 200)
+    expect.equal(res3["body"], "<h1>Bem-vindo!</h1>")
+    expect.equal(res3["headers"]["content-type"], "text/html; charset=utf-8")
+end
+
+test("route parameters and wildcards") do
+    let app = http.create()
+
+    app.get("/users/:id", fn (c) {
+        let user_id = c.param("id")
+        c.json({ "id": user_id, "name": "Dev Aipo" })
+    })
+
+    app.get("/orgs/:org/repos/:repo", fn (c) {
+        let org_val = c.param("org")
+        let repo_val = c.param("repo")
+        c.text(f"{org_val}/{repo_val}")
+    })
+
+    app.get("/static/*filepath", fn (c) {
+        let file = c.param("filepath")
+        c.text(f"serving: {file}")
+    })
+
+    # Single param
+    let res1 = app.handle_request({ "method": "GET", "path": "/users/99" })
+    expect.equal(res1["status"], 200)
+    expect.true(res1["body"].contains("\"id\": \"99\""))
+
+    # Multi param
+    let res2 = app.handle_request({ "method": "GET", "path": "/orgs/poppy-team/repos/aipo-lang" })
+    expect.equal(res2["status"], 200)
+    expect.equal(res2["body"], "poppy-team/aipo-lang")
+
+    # Wildcard catch-all
+    let res3 = app.handle_request({ "method": "GET", "path": "/static/css/theme/dark.css" })
+    expect.equal(res3["status"], 200)
+    expect.equal(res3["body"], "serving: css/theme/dark.css")
+end
+
+test("query parameters and json body parsing") do
+    let app = http.create()
+
+    app.get("/search", fn (c) {
+        let q = c.query_param("q")
+        let page = c.query_param("page")
+        c.json({ "query": q, "page": page })
+    })
+
+    app.post("/users", fn (c) {
+        let payload = c.body_json()
+        c.status(201)
+        c.set_header("x-created-by", "aipo-engine")
+        c.json({
+            "created": true,
+            "username": payload["username"],
+            "email": payload["email"]
+        })
+    })
+
+    # Query string extraction
+    let res1 = app.handle_request({ "method": "GET", "path": "/search?q=compiler&page=2" })
+    expect.equal(res1["status"], 200)
+    expect.true(res1["body"].contains("\"query\": \"compiler\""))
+    expect.true(res1["body"].contains("\"page\": \"2\""))
+
+    # POST body parsing
+    let post_body = "{\"username\":\"alice\",\"email\":\"alice@aipo.dev\"}"
+    let res2 = app.handle_request({
+        "method": "POST",
+        "path": "/users",
+        "body": post_body
+    })
+    expect.equal(res2["status"], 201)
+    expect.equal(res2["headers"]["x-created-by"], "aipo-engine")
+    expect.true(res2["body"].contains("\"username\": \"alice\""))
+    expect.true(res2["body"].contains("\"created\": true"))
+end
+
+test("onion middleware pipeline execution and short-circuit") do
+    let app = http.create()
+    var order_log = []
+
+    # Middleware 1: tracks before & after
+    app.use(fn (c, next) {
+        order_log.add("m1_start")
+        let res = next()
+        order_log.add("m1_end")
+        return res
+    })
+
+    # Middleware 2: adds custom header
+    app.use(fn (c, next) {
+        order_log.add("m2_start")
+        c.set_header("x-trace-id", "trace-12345")
+        let res = next()
+        order_log.add("m2_end")
+        return res
+    })
+
+    app.get("/flow", fn (c) {
+        order_log.add("handler")
+        c.text("flow complete")
+    })
+
+    let res = app.handle_request({ "method": "GET", "path": "/flow" })
+    expect.equal(res["status"], 200)
+    expect.equal(res["headers"]["x-trace-id"], "trace-12345")
+    expect.equal(order_log.len(), 5)
+    expect.equal(order_log[0], "m1_start")
+    expect.equal(order_log[1], "m2_start")
+    expect.equal(order_log[2], "handler")
+    expect.equal(order_log[3], "m2_end")
+    expect.equal(order_log[4], "m1_end")
+
+    # Short-circuit authentication middleware test
+    let auth_app = http.create()
+    auth_app.use(fn (c, next) {
+        let auth = c.header("Authorization")
+        if auth != "Bearer secret-token" {
+            c.status(401)
+            c.json({ "error": "Unauthorized" })
+            return none
+        }
+        return next()
+    })
+
+    auth_app.get("/secret", fn (c) {
+        c.text("top secret data")
+    })
+
+    # Unauthorized request (short circuits)
+    let denied = auth_app.handle_request({ "method": "GET", "path": "/secret" })
+    expect.equal(denied["status"], 401)
+    expect.true(denied["body"].contains("\"Unauthorized\""))
+
+    # Authorized request
+    let allowed = auth_app.handle_request({
+        "method": "GET",
+        "path": "/secret",
+        "headers": { "Authorization": "Bearer secret-token" }
+    })
+    expect.equal(allowed["status"], 200)
+    expect.equal(allowed["body"], "top secret data")
+end
+
+test("built-in middlewares: cors and recover") do
+    # 1. CORS middleware
+    let app = http.create()
+    app.use(http.cors({
+        "origin": "https://aipo.dev",
+        "methods": "GET, POST"
+    }))
+
+    app.get("/cors-test", fn (c) {
+        c.text("cors ok")
+    })
+
+    # Preflight OPTIONS request
+    let preflight = app.handle_request({ "method": "OPTIONS", "path": "/cors-test" })
+    expect.equal(preflight["status"], 204)
+    expect.equal(preflight["headers"]["Access-Control-Allow-Origin"], "https://aipo.dev")
+    expect.equal(preflight["headers"]["Access-Control-Allow-Methods"], "GET, POST")
+
+    # Normal GET with CORS headers
+    let res = app.handle_request({ "method": "GET", "path": "/cors-test" })
+    expect.equal(res["status"], 200)
+    expect.equal(res["headers"]["Access-Control-Allow-Origin"], "https://aipo.dev")
+
+    # 2. Recover middleware
+    let err_app = http.create()
+    err_app.use(http.recover())
+
+    err_app.get("/crash", fn (c) {
+        fail "divisao por zero simulada"
+    })
+
+    let crashed_res = err_app.handle_request({ "method": "GET", "path": "/crash" })
+    expect.equal(crashed_res["status"], 500)
+    expect.true(crashed_res["body"].contains("Internal Server Error"))
+end
+
+test("route grouping and 404 handling") do
+    let app = http.create()
+
+    # Route group /api/v1
+    let v1 = app.group("/api/v1")
+    v1.get("/status", fn (c) {
+        c.json({ "version": "v1.0.0" })
+    })
+    v1.get("/products", fn (c) {
+        c.json([{ "id": 1, "title": "Aipo Book" }])
+    })
+
+    let res1 = app.handle_request({ "method": "GET", "path": "/api/v1/status" })
+    expect.equal(res1["status"], 200)
+    expect.true(res1["body"].contains("\"version\": \"v1.0.0\""))
+
+    let res2 = app.handle_request({ "method": "GET", "path": "/api/v1/products" })
+    expect.equal(res2["status"], 200)
+    expect.true(res2["body"].contains("\"title\": \"Aipo Book\""))
+
+    # 404 for unknown route
+    let not_found = app.handle_request({ "method": "GET", "path": "/api/v1/unknown" })
+    expect.equal(not_found["status"], 404)
+    expect.true(not_found["body"].contains("Not Found"))
+end

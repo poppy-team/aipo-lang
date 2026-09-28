@@ -1,19 +1,83 @@
 # lib.aipo — Entrypoint for `aipo.html`
-# Declarative HTML & CSS DSL with Fine-Grained MVU reactivity.
+# Declarative HTML5, CSS-in-Aipo DSL, SSR Serializer, and Fine-Grained MVU reactivity.
 
-import.tags as tags
-import.css as css_mod
-import.mvu as mvu_mod
+import tags as tags_mod
+import css as css_mod
+import mvu as mvu_mod
 
-# Re-export tags
-export tags.div, tags.section, tags.article, tags.header, tags.footer, tags.nav, tags.main, tags.aside
-export tags.h1, tags.h2, tags.h3, tags.h4, tags.h5, tags.h6, tags.p, tags.span, tags.strong, tags.em, tags.code, tags.pre, tags.a
-export tags.ul, tags.ol, tags.li, tags.form, tags.label, tags.button, tags.input, tags.textarea, tags.select, tags.option
-export tags.img, tags.hr, tags.br, tags.table, tags.thead, tags.tbody, tags.tr, tags.th, tags.td
-export tags.VNode
+# --- Layout & Container Tags ---
+fn div(arg1 = none, arg2 = none) { return tags_mod.make_div(arg1, arg2) }
+fn section(arg1 = none, arg2 = none) { return tags_mod.make_section(arg1, arg2) }
+fn article(arg1 = none, arg2 = none) { return tags_mod.make_article(arg1, arg2) }
+fn header(arg1 = none, arg2 = none) { return tags_mod.make_header(arg1, arg2) }
+fn footer(arg1 = none, arg2 = none) { return tags_mod.make_footer(arg1, arg2) }
+fn nav(arg1 = none, arg2 = none) { return tags_mod.make_nav(arg1, arg2) }
+fn main(arg1 = none, arg2 = none) { return tags_mod.make_main(arg1, arg2) }
+fn aside(arg1 = none, arg2 = none) { return tags_mod.make_aside(arg1, arg2) }
 
-# Re-export CSS
-export css_mod.css, css_mod.StyleRule
+# --- Typography Tags ---
+fn h1(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_h1(arg1, arg2, arg3) }
+fn h2(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_h2(arg1, arg2, arg3) }
+fn h3(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_h3(arg1, arg2, arg3) }
+fn h4(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_h4(arg1, arg2, arg3) }
+fn h5(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_h5(arg1, arg2, arg3) }
+fn h6(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_h6(arg1, arg2, arg3) }
+fn p(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_p(arg1, arg2, arg3) }
+fn span(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_span(arg1, arg2, arg3) }
+fn strong(text: String = "", attrs: Dict = {}) { return tags_mod.make_strong(text, attrs) }
+fn em(text: String = "", attrs: Dict = {}) { return tags_mod.make_em(text, attrs) }
+fn code(text: String = "", attrs: Dict = {}) { return tags_mod.make_code(text, attrs) }
+fn pre(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_pre(arg1, arg2, arg3) }
+fn a(text: String = "", href: String = "#", attrs: Dict = {}, body = none) { return tags_mod.make_a(text, href, attrs, body) }
 
-# Re-export MVU
-export mvu_mod.mount, mvu_mod.dispatch, mvu_mod.ReactiveApp
+# --- Lists ---
+fn ul(arg1 = none, arg2 = none) { return tags_mod.make_ul(arg1, arg2) }
+fn ol(arg1 = none, arg2 = none) { return tags_mod.make_ol(arg1, arg2) }
+fn li(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_li(arg1, arg2, arg3) }
+
+# --- Forms & Inputs ---
+fn form(arg1 = none, arg2 = none) { return tags_mod.make_form(arg1, arg2) }
+fn label(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_label(arg1, arg2, arg3) }
+fn button(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_button(arg1, arg2, arg3) }
+fn input(attrs: Dict = {}) { return tags_mod.make_input(attrs) }
+fn textarea(text: String = "", attrs: Dict = {}) { return tags_mod.make_textarea(text, attrs) }
+fn select(arg1 = none, arg2 = none) { return tags_mod.make_select(arg1, arg2) }
+fn option(text: String = "", value: String = "", attrs: Dict = {}) { return tags_mod.make_option(text, value, attrs) }
+
+# --- Media & Void Elements ---
+fn img(src: String = "", alt: String = "", attrs: Dict = {}) { return tags_mod.make_img(src, alt, attrs) }
+fn hr(attrs: Dict = {}) { return tags_mod.make_hr(attrs) }
+fn br() { return tags_mod.make_br() }
+
+# --- Tables ---
+fn table(arg1 = none, arg2 = none) { return tags_mod.make_table(arg1, arg2) }
+fn thead(arg1 = none, arg2 = none) { return tags_mod.make_thead(arg1, arg2) }
+fn tbody(arg1 = none, arg2 = none) { return tags_mod.make_tbody(arg1, arg2) }
+fn tr(arg1 = none, arg2 = none) { return tags_mod.make_tr(arg1, arg2) }
+fn th(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_th(arg1, arg2, arg3) }
+fn td(arg1 = none, arg2 = none, arg3 = none) { return tags_mod.make_td(arg1, arg2, arg3) }
+
+# --- Fragments, Iteration & SSR ---
+fn fragment(body = none) { return tags_mod.make_fragment(body) }
+fn each_item(items: List, render_fn) { tags_mod.run_each_item(items, render_fn) }
+fn render_to_string(vnode) { return tags_mod.serialize_to_html(vnode) }
+
+# --- CSS-in-Aipo DSL ---
+fn css(properties: Dict) { return css_mod.make_css(properties) }
+fn get_injected_css() { return css_mod.css_get_injected() }
+fn clear_css_registry() { css_mod.css_clear_registry() }
+
+# --- Elm/TEA MVU Runtime ---
+fn mount(selector: String, initial_model, update, view) { return mvu_mod.make_mount(selector, initial_model, update, view) }
+fn dispatch(msg) { mvu_mod.run_dispatch(msg) }
+fn cmd_none() { return mvu_mod.make_cmd_none() }
+fn cmd_msg(msg) { return mvu_mod.make_cmd_msg(msg) }
+fn cmd_task(async_fn, on_success, on_error = none) { return mvu_mod.make_cmd_task(async_fn, on_success, on_error) }
+
+export div, section, article, header, footer, nav, main, aside
+export h1, h2, h3, h4, h5, h6, p, span, strong, em, code, pre, a
+export ul, ol, li, form, label, button, input, textarea, select, option
+export img, hr, br, table, thead, tbody, tr, th, td
+export fragment, each_item, render_to_string
+export css, get_injected_css, clear_css_registry
+export mount, dispatch, cmd_none, cmd_msg, cmd_task

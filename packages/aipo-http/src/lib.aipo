@@ -1,0 +1,43 @@
+# lib.aipo — Entrypoint for `aipo.http`
+# Lightweight, zero-regex HTTP router, onion middlewares, and context engine for Aipo
+
+import app as app_mod
+import router as router_mod
+import context as context_mod
+import middleware as middleware_mod
+
+# --- Application Factory ---
+fn create(prefix: String = "") {
+    return app_mod.create_app(prefix)
+}
+
+fn router() {
+    return router_mod.router_create()
+}
+
+# --- Built-in Middlewares ---
+fn logger(custom_logger = none) {
+    return middleware_mod.make_logger_middleware(custom_logger)
+}
+
+fn cors(options: Dict = {}) {
+    return middleware_mod.make_cors_middleware(options)
+}
+
+fn recover(on_error = none) {
+    return middleware_mod.make_recover_middleware(on_error)
+}
+
+# --- Context & Request Helpers ---
+fn status(ctx, code: Int) { context_mod.ctx_status(ctx, code) }
+fn set_header(ctx, key: String, val: String) { context_mod.ctx_set_header(ctx, key, val) }
+fn header(ctx, key: String) { return context_mod.ctx_header(ctx, key) }
+fn param(ctx, name: String) { return context_mod.ctx_param(ctx, name) }
+fn query(ctx, name: String) { return context_mod.ctx_query(ctx, name) }
+fn json_response(ctx, data) { context_mod.ctx_json(ctx, data) }
+fn text_response(ctx, text: String) { context_mod.ctx_text(ctx, text) }
+fn html_response(ctx, html_str: String) { context_mod.ctx_html(ctx, html_str) }
+fn body_json(ctx) { return context_mod.ctx_body_json(ctx) }
+
+export create, router, logger, cors, recover
+export status, set_header, header, param, query, json_response, text_response, html_response, body_json

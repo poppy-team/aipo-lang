@@ -1,0 +1,11 @@
+[[packages]]
+coordinate = "aipo.egui"
+version = "0.1.0"
+digest = "22c1aec458b771e6dd28ba9e8d2b12846e7118dc5762df74c75bc28b5eb9b40b"
+dependencies = []
+capabilities = []
+targets = ["native"]
+
+[packages.source]
+type = "path"
+path = "."

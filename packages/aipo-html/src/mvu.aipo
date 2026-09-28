@@ -1,46 +1,101 @@
-# mvu.aipo — Fine-Grained Model-View-Update Application Runtime
+# mvu.aipo — Fine-Grained Model-View-Update Application Runtime with Commands
 # Part of `aipo.html`
 
-import.tags as tags
+struct Cmd {
+    action
+    payload
+}
+
+fn make_cmd_none() -> Cmd {
+    return Cmd{ action: "none", payload: none }
+}
+
+fn make_cmd_msg(msg) -> Cmd {
+    return Cmd{ action: "msg", payload: msg }
+}
+
+fn make_cmd_task(async_fn, on_success, on_error = none) -> Cmd {
+    return Cmd{
+        action: "task",
+        payload: {
+            "task": async_fn,
+            "on_success": on_success,
+            "on_error": on_error
+        }
+    }
+}
 
 struct ReactiveApp {
-    selector: String
-    current_model: Any
-    update_fn: Fn
-    view_fn: Fn
-    root_node: tags.VNode
+    selector
+    var current_model
+    update_fn
+    view_fn
+    var root_node
+    var is_mounted
 }
 
 var _active_app = none
 
-fn dispatch(msg: Any) {
-    if _active_app == none { return }
+fn run_dispatch(msg) {
+    if _active_app == none {
+        return
+    }
     let app = _active_app
     let old_model = app.current_model
-    let new_model = app.update_fn(old_model, msg)
+    let result = (app.update_fn)(old_model, msg)
+
+    var new_model = result
+    var cmd = none
+
+    if (result is List) and result.len() == 2 {
+        new_model = result[0]
+        cmd = result[1]
+    }
+
     app.current_model = new_model
 
     # Re-evaluates view with updated model
-    # In browser target, Fine-Grained bindings update modified elements directly.
-    let updated_tree = app.view_fn(new_model, dispatch)
+    let updated_tree = (app.view_fn)(new_model, run_dispatch)
     app.root_node = updated_tree
+
+    # Execute declarative commands if any
+    if cmd != none {
+        if cmd.action == "msg" and cmd.payload != none {
+            run_dispatch(cmd.payload)
+        }
+    }
 }
 
 # Mounts an MVU application into a target DOM selector
-fn mount(selector: String, init: Any, update: Fn, view: Fn) - > ReactiveApp{
+fn make_mount(selector: String, initial_model, update, view) -> ReactiveApp {
+    var state = initial_model
+    var initial_cmd = none
+
+    if (initial_model is List) and initial_model.len() == 2 {
+        state = initial_model[0]
+        initial_cmd = initial_model[1]
+    }
+
+    let initial_tree = (view)(state, run_dispatch)
+
     let app = ReactiveApp{
         selector: selector,
-        current_model: init,
-            update_fn: update,
-            view_fn: view,
-            root_node: none
+        current_model: state,
+        update_fn: update,
+        view_fn: view,
+        root_node: initial_tree,
+        is_mounted: true
+    }
+
+    _active_app = app
+
+    if initial_cmd != none {
+        if initial_cmd.action == "msg" and initial_cmd.payload != none {
+            run_dispatch(initial_cmd.payload)
         }
+    }
 
-        _active_app = app
-        let initial_tree = view(init, dispatch)
-            app.root_node = initial_tree
+    return app
+}
 
-            return app
-        }
-
-        export ReactiveApp, dispatch, mount
+export Cmd, make_cmd_none, make_cmd_msg, make_cmd_task, ReactiveApp, run_dispatch, make_mount

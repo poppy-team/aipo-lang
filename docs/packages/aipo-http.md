@@ -1,124 +1,191 @@
-# aipo.http — Framework Web Backend & APIs
+# aipo.http — Framework HTTP e Roteador de Microsserviços
 
-`aipo.http` é o framework oficial da linguagem Aipo para construção de servidores HTTP, microsserviços e APIs com suporte nativo a WebSockets, projetado para alavancar a concorrência assíncrona da linguagem e a performance extrema do compilador Wasm JIT.
+`aipo.http` é o framework oficial da linguagem Aipo para construção de APIs REST, microsserviços e aplicações web backend de alta performance.
 
-Inspirado na velocidade e elegância do **Hono** e do **FastAPI**, o `aipo.http` elimina o boilerplate tradicional e adota uma arquitetura declarativa e segura por padrão.
+O framework é desenhado seguindo a filosofia minimalista e determinística do Aipo:
+1. **Roteador Zero-Regex em Árvore de Segmentos (*Segment/Radix Trie*):** busca estática, parâmetros dinâmicos (`:param`) e coringas (`*wildcard`) sem compilar ou executar expressões regulares em runtime.
+2. **Pipeline de Middlewares Estilo Cebola (*Onion-Style*):** execução de middlewares antes e depois dos handlers com encadeamento de `next()`, permitindo transformações de resposta e controle de fluxo.
+3. **Middlewares Canônicos Embutidos:**
+   - `cors`: suporte completo a Cross-Origin Resource Sharing com preflight OPTIONS (204).
+   - `logger`: auditoria estruturada de requisições e respostas.
+   - `recover`: interceptação segura de erros e exceções não tratadas retornando status 500 JSON.
+4. **Context Engine Tipado (`Context`):** métodos ergonômicos para leitura de query strings, parâmetros de rota, cabeçalhos, corpo JSON e respostas imediatas (`json`, `text`, `html`, `status`).
+5. **Agrupamento de Rotas (*Route Groups*):** prefixos aninhados (`/api/v1`) com middlewares específicos por grupo.
+6. **Desacoplamento e Testabilidade Pura:** o dispatcher `app.handle_request(req_dict)` aceita dicionários e devolve dicionários sem acoplamento a sockets do sistema operacional, tornando testes unitários ultrarrápidos e facilitando adaptadores para qualquer runtime (Node/Bun via backend JS ou Sockets nativos via Host).
 
 ---
 
-## 1. Visão Geral & Filosofia
+## 1. Instalação e Configuração
 
-Ao contrário de frameworks legados que dependem de transpiladores, decorators ou middlewares mutáveis complexos, o `aipo.http` tira proveito dos recursos de primeira classe da Aipo:
+No arquivo `aipo.toml` do seu projeto:
 
-1. **Roteamento Baseado em Radix Tree:** Despacho ultrarrápido de rotas parametrizadas (`/usuarios/:id`).
-2. **Contexto Limpo (`ctx`):** Acesso simples a parâmetros, headers, queries e body JSON com métodos encadeáveis e imutáveis.
-3. **Validação de Schemas e Contratos:** Integração direta com schemas da linguagem para validação automática de payloads com erro HTTP 422 padronizado.
-4. **WebSockets Nativos:** Conexões bidirecionais em tempo real sem bibliotecas externas.
-5. **Fullstack com `aipo.html`:** O mesmo código Aipo roda no servidor (renderização SSR) e no cliente (reatividade com MVU de Granularidade Fina).
-
-```mermaid
-graph TD
-    Client["Cliente HTTP / Navegador / App"] --> Listener["Listener de Conexões Concorrentes (Async Tasks)"]
-    Listener --> Router["Roteador Radix Tree de Alta Velocidade"]
-    Router --> Middlewares["Pipeline de Middlewares (CORS, Auth, Logger)"]
-    Middlewares --> Handler["Handler da Rota (async ctx => ...)"]
-    Handler --> JSON["Resposta JSON / HTML / SSE / WebSockets"]
+```toml
+[dependencies]
+"aipo.http" = { path = "packages/aipo-http" }
 ```
 
 ---
 
-## 2. Exemplo Rápido: API REST com Schemas
+## 2. Inicialização e Roteamento Básico
 
 ```aipo
-import aipo.http as web
+import aipo.http as http
 
-let app = web.create()
+let app = http.create()
 
-# Middleware de Logger
-app.use(async (ctx, next) => {
-    let inicio = time.now()
-    await next()
-    let duracao = time.elapsed_ms(inicio)
-    io.println(f"[{ctx.method}] {ctx.path} — {ctx.status} ({duracao}ms)")
+# Resposta em texto puro
+app.get("/", fn (c) {
+    c.text("Bem-vindo à API Aipo!")
 })
 
-# Rota Simples
-app.get("/", ctx => {
-    return ctx.json({ "mensagem": "Servidor Aipo HTTP ativo!" })
+# Resposta em JSON
+app.get("/api/health", fn (c) {
+    c.json({
+        "status": "healthy",
+        "uptime": 3600
+    })
 })
 
-# Rota com Parâmetros de URL
-app.get("/usuarios/:id", async ctx => {
-    let user_id = ctx.param("id")
-    let usuario = await buscar_usuario_no_banco(user_id)
-    
-    if usuario == none {
-        return ctx.status(404).json({ "erro": "Usuário não encontrado" })
-    }
-    
-    return ctx.json(usuario)
-})
-
-# Rota POST com Body JSON
-app.post("/usuarios", async ctx => {
-    let body = await ctx.req.json()
-    
-    # Validação de dados
-    if not body.contains("nome") or not body.contains("email") {
-        return ctx.status(400).json({ "erro": "Campos 'nome' e 'email' são obrigatórios" })
-    }
-    
-    let novo_usuario = await criar_usuario(body.nome, body.email)
-    return ctx.status(201).json(novo_usuario)
-})
-
-# Iniciar servidor na porta 3000
-app.listen(port: 3000, host: "0.0.0.0", _ => {
-    io.println("🚀 Servidor rodando em http://localhost:3000")
+# Resposta em HTML
+app.get("/welcome", fn (c) {
+    c.html("<h1>Portal Aipo HTTP</h1>")
 })
 ```
 
 ---
 
-## 3. WebSockets em Tempo Real
+## 3. Parâmetros de Rota e Coringas
 
-O suporte a WebSockets é embutido diretamente no núcleo do `aipo.http`, permitindo construir chats, salas de jogos multiplayer e feeds de dados em poucas linhas:
+O roteador suporta parâmetros dinâmicos iniciados por `:` e coringas iniciados por `*`:
 
 ```aipo
-app.ws("/ws/sala/:sala_id", {
-    on_connect: (socket, ctx) => {
-        let sala = ctx.param("sala_id")
-        socket.join(sala)
-        socket.broadcast_to(sala, "Um novo participante entrou na sala!")
-    },
+# Parâmetro simples
+app.get("/users/:id", fn (c) {
+    let user_id = c.param("id")
+    c.json({ "id": user_id, "name": "Desenvolvedor" })
+})
 
-    on_message: (socket, mensagem) => {
-        # Enviar mensagem para todos na sala
-        socket.broadcast_to(socket.current_room, mensagem)
-    },
+# Parâmetros múltiplos aninhados
+app.get("/orgs/:org/repos/:repo", fn (c) {
+    let org = c.param("org")
+    let repo = c.param("repo")
+    c.text(f"Repositório: {org}/{repo}")
+})
 
-    on_disconnect: (socket, motivo) => {
-        io.println(f"Desconectado: {motivo}")
-    }
+# Rota coringa (catch-all) para arquivos estáticos
+app.get("/static/*filepath", fn (c) {
+    let file = c.param("filepath")
+    c.text(f"Servindo arquivo: {file}")
 })
 ```
 
 ---
 
-## 4. Integração Fullstack (SSR com `aipo.html`)
-
-O `aipo.http` renderiza nativamente componentes construídos com o pacote [`aipo.html`](/packages/aipo-html) no lado do servidor, entregando HTML estático instantâneo com hidratação no cliente:
+## 4. Query Strings e Corpo da Requisição (JSON)
 
 ```aipo
-import aipo.http as web
-import aipo.html as h
-
-app.get("/pagina", ctx => {
-    return ctx.html(
-        h.div(class: "container mx-auto p-4") {
-            h.h1("Renderizado no Servidor com Aipo!", class: "text-2xl font-bold")
-            h.p("Zero dependência de Node.js, Webpack ou Babel.")
-        }
-    )
+# Leitura de query parameters (?q=busca&page=2)
+app.get("/search", fn (c) {
+    let query = c.query_param("q")
+    let page = c.query_param("page")
+    c.json({ "query": query, "page": page })
 })
+
+# Criação de recursos com corpo JSON
+app.post("/users", fn (c) {
+    let payload = c.body_json()
+    c.status(201)
+    c.set_header("x-created-by", "aipo-http")
+    c.json({
+        "created": true,
+        "username": payload["username"]
+    })
+})
+```
+
+---
+
+## 5. Pipeline de Middlewares Estilo Cebola
+
+Middlewares são funções `fn (ctx, next)` que podem inspecionar ou alterar a requisição antes e depois da execução:
+
+```aipo
+let app = http.create()
+
+# Middleware de auditoria de tempo e cabeçalho
+app.use(fn (c, next) {
+    c.set_header("x-server", "aipo-engine")
+    let res = next()
+    # Executado no retorno (fase de saída da cebola)
+    return res
+})
+
+# Middleware de proteção com curto-circuito (Auth)
+app.use(fn (c, next) {
+    let token = c.header("Authorization")
+    if token != "Bearer meu-token-secreto" {
+        c.status(401)
+        c.json({ "error": "Não autorizado" })
+        return none # Interrompe a cadeia imediatamente
+    }
+    return next()
+})
+```
+
+### Middlewares Embutidos
+
+```aipo
+# CORS configurável com suporte a preflight OPTIONS
+app.use(http.cors({
+    "origin": "https://meudominio.com",
+    "methods": "GET, POST, PUT, DELETE"
+}))
+
+# Logger padrão
+app.use(http.logger())
+
+# Recuperação de pânico/falhas com status 500 JSON
+app.use(http.recover())
+```
+
+---
+
+## 6. Agrupamento de Rotas (`group`)
+
+Organize rotas em submódulos com prefixos comuns e regras dedicadas:
+
+```aipo
+let api_v1 = app.group("/api/v1")
+
+# Rota registrada como /api/v1/status
+api_v1.get("/status", fn (c) {
+    c.json({ "version": "1.0.0" })
+})
+
+# Rota registrada como /api/v1/users
+api_v1.get("/users", fn (c) {
+    c.json([])
+})
+```
+
+---
+
+## 7. Testabilidade Pura sem Portas ou Rede
+
+Qualquer aplicação pode ser testada em milissegundos sem abrir portas locais:
+
+```aipo
+let app = http.create()
+
+app.get("/ping", fn (c) {
+    c.text("pong")
+})
+
+let response = app.handle_request({
+    "method": "GET",
+    "path": "/ping"
+})
+
+expect.equal(response["status"], 200)
+expect.equal(response["body"], "pong")
 ```

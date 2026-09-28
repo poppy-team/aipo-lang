@@ -1,0 +1,164 @@
+# app.aipo — Application container, route grouping and request dispatcher for aipo.http
+# Part of `aipo.http`
+
+import router as router_mod
+import context as context_mod
+import middleware as middleware_mod
+
+struct App {
+    router
+    var middlewares
+    prefix
+    var group_middlewares
+}
+
+fn combine_path(prefix: String, path: String) -> String {
+    if prefix == "" {
+        return path
+    }
+    if path == "" or path == "/" {
+        return prefix
+    }
+    var clean_prefix = prefix
+    if clean_prefix.ends_with("/") {
+        clean_prefix = clean_prefix.slice(0, clean_prefix.len() - 1)
+    }
+    var clean_path = path
+    if not clean_path.starts_with("/") {
+        clean_path = "/" + clean_path
+    }
+    return clean_prefix + clean_path
+}
+
+fn create_app(prefix: String = "") -> App {
+    return App{
+        router: router_mod.router_create(),
+        middlewares: [],
+        prefix: prefix,
+        group_middlewares: []
+    }
+}
+
+fn app_use(app: App, mw) {
+    if app.prefix != "" {
+        app.group_middlewares.add(mw)
+    } else {
+        app.middlewares.add(mw)
+    }
+}
+
+fn register_route(app: App, method: String, path: String, handler) {
+    let full_path = combine_path(app.prefix, path)
+    var final_handler = handler
+
+    if app.group_middlewares.len() > 0 {
+        let group_mws = router_mod.copy_dict({ "list": app.group_middlewares })["list"]
+        final_handler = fn (ctx) {
+            return middleware_mod.run_middleware_chain(ctx, group_mws, 0, handler)
+        }
+    }
+
+    router_mod.router_add_route(app.router, method, full_path, final_handler)
+}
+
+fn app_get(app: App, path: String, handler) {
+    register_route(app, "GET", path, handler)
+}
+
+fn app_post(app: App, path: String, handler) {
+    register_route(app, "POST", path, handler)
+}
+
+fn app_put(app: App, path: String, handler) {
+    register_route(app, "PUT", path, handler)
+}
+
+fn app_delete(app: App, path: String, handler) {
+    register_route(app, "DELETE", path, handler)
+}
+
+fn app_patch(app: App, path: String, handler) {
+    register_route(app, "PATCH", path, handler)
+}
+
+fn app_group(app: App, prefix: String) -> App {
+    let sub_prefix = combine_path(app.prefix, prefix)
+    var inherited_group_mws = []
+    each m in app.group_middlewares {
+        inherited_group_mws.add(m)
+    }
+
+    return App{
+        router: app.router,
+        middlewares: app.middlewares,
+        prefix: sub_prefix,
+        group_middlewares: inherited_group_mws
+    }
+}
+
+fn app_handle_request(app: App, req_dict: Dict) -> Dict {
+    let method = if req_dict.has("method") then req_dict["method"] else "GET"
+    let path = if req_dict.has("path") then req_dict["path"] else "/"
+    let headers = if req_dict.has("headers") then req_dict["headers"] else {}
+    let body = if req_dict.has("body") then req_dict["body"] else ""
+
+    let ctx = context_mod.make_context(method, path, headers, body)
+
+    let final_dispatcher = fn (c) {
+        let match_res = router_mod.router_match_route(app.router, c.req_method, c.req_path)
+        if match_res["matched"] {
+            c.params = match_res["params"]
+            let h = match_res["handler"]
+            h(c)
+        } else {
+            context_mod.ctx_status(c, 404)
+            context_mod.ctx_set_header(c, "content-type", "application/json")
+            c.res_body = "{\"error\": \"Not Found\", \"code\": 404}"
+            c.is_handled = true
+        }
+    }
+
+    middleware_mod.run_middleware_chain(ctx, app.middlewares, 0, final_dispatcher)
+
+    return {
+        "status": ctx.status_code,
+        "headers": ctx.res_headers,
+        "body": ctx.res_body
+    }
+}
+
+impl App {
+    fn use(self, mw) {
+        app_use(self, mw)
+    }
+
+    fn get(self, path: String, handler) {
+        app_get(self, path, handler)
+    }
+
+    fn post(self, path: String, handler) {
+        app_post(self, path, handler)
+    }
+
+    fn put(self, path: String, handler) {
+        app_put(self, path, handler)
+    }
+
+    fn delete(self, path: String, handler) {
+        app_delete(self, path, handler)
+    }
+
+    fn patch(self, path: String, handler) {
+        app_patch(self, path, handler)
+    }
+
+    fn group(self, prefix: String) -> App {
+        return app_group(self, prefix)
+    }
+
+    fn handle_request(self, req_dict: Dict) -> Dict {
+        return app_handle_request(self, req_dict)
+    }
+}
+
+export App, create_app, app_use, app_get, app_post, app_put, app_delete, app_patch, app_group, app_handle_request, combine_path

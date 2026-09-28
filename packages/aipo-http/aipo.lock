@@ -1,0 +1,14 @@
+[[packages]]
+coordinate = "aipo.http"
+version = "0.1.0"
+digest = "7eac93ea4c0c270cb3de064c4bb224df6e7ff6ecbb8d14e31eb3d7cfe344c826"
+dependencies = []
+capabilities = []
+targets = [
+    "js",
+    "native",
+]
+
+[packages.source]
+type = "path"
+path = "."

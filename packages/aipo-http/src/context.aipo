@@ -1,0 +1,147 @@
+# context.aipo — Request and Response context lifecycle for aipo.http
+# Part of `aipo.http`
+
+struct Context {
+    req_method
+    req_path
+    var params
+    query
+    headers
+    body_raw
+    var status_code
+    var res_headers
+    var res_body
+    var is_handled
+}
+
+fn make_context(method: String, raw_path: String, headers: Dict = {}, body_raw: String = "") -> Context {
+    var path = raw_path
+    var query = {}
+
+    if raw_path.contains("?") {
+        let parts = raw_path.split("?")
+        path = parts[0]
+        if parts.len() > 1 {
+            let pairs = parts[1].split("&")
+            each pair in pairs {
+                if pair.contains("=") {
+                    let kv = pair.split("=")
+                    query[kv[0]] = kv[1]
+                } elif pair != "" {
+                    query[pair] = ""
+                }
+            }
+        }
+    }
+
+    return Context{
+        req_method: method.upper(),
+        req_path: path,
+        params: {},
+        query: query,
+        headers: headers,
+        body_raw: body_raw,
+        status_code: 200,
+        res_headers: {},
+        res_body: "",
+        is_handled: false
+    }
+}
+
+fn ctx_status(ctx: Context, code: Int) {
+    ctx.status_code = code
+}
+
+fn ctx_set_header(ctx: Context, key: String, val: String) {
+    ctx.res_headers[key] = val
+}
+
+fn ctx_header(ctx: Context, key: String) {
+    if ctx.headers.has(key) {
+        return ctx.headers[key]
+    }
+    let lower_k = key.lower()
+    if ctx.headers.has(lower_k) {
+        return ctx.headers[lower_k]
+    }
+    return none
+}
+
+fn ctx_param(ctx: Context, name: String) {
+    if ctx.params.has(name) {
+        return ctx.params[name]
+    }
+    return none
+}
+
+fn ctx_query(ctx: Context, name: String) {
+    if ctx.query.has(name) {
+        return ctx.query[name]
+    }
+    return none
+}
+
+fn ctx_json(ctx: Context, data) {
+    ctx.res_headers["content-type"] = "application/json"
+    ctx.res_body = json.stringify(data)
+    ctx.is_handled = true
+}
+
+fn ctx_text(ctx: Context, text: String) {
+    ctx.res_headers["content-type"] = "text/plain; charset=utf-8"
+    ctx.res_body = text
+    ctx.is_handled = true
+}
+
+fn ctx_html(ctx: Context, html_str: String) {
+    ctx.res_headers["content-type"] = "text/html; charset=utf-8"
+    ctx.res_body = html_str
+    ctx.is_handled = true
+}
+
+fn ctx_body_json(ctx: Context) {
+    if ctx.body_raw == "" {
+        return none
+    }
+    return json.parse(ctx.body_raw)
+}
+
+impl Context {
+    fn status(self, code: Int) {
+        ctx_status(self, code)
+    }
+
+    fn set_header(self, key: String, val: String) {
+        ctx_set_header(self, key, val)
+    }
+
+    fn header(self, key: String) {
+        return ctx_header(self, key)
+    }
+
+    fn param(self, name: String) {
+        return ctx_param(self, name)
+    }
+
+    fn query_param(self, name: String) {
+        return ctx_query(self, name)
+    }
+
+    fn json(self, data) {
+        ctx_json(self, data)
+    }
+
+    fn text(self, text_str: String) {
+        ctx_text(self, text_str)
+    }
+
+    fn html(self, html_str: String) {
+        ctx_html(self, html_str)
+    }
+
+    fn body_json(self) {
+        return ctx_body_json(self)
+    }
+}
+
+export Context, make_context, ctx_status, ctx_set_header, ctx_header, ctx_param, ctx_query, ctx_json, ctx_text, ctx_html, ctx_body_json

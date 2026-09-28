@@ -1,0 +1,10 @@
+[package]
+name = "aipo.http"
+version = "0.1.0"
+entry = "src/lib.aipo"
+authors = ["Aipo Core Team <core@aipo-lang.org>"]
+description = "Lightweight, zero-regex HTTP router, onion middlewares, and context engine for Aipo"
+license = "MIT"
+repository = "https://github.com/poppy-team/aipo-lang"
+
+targets = ["js", "native"]

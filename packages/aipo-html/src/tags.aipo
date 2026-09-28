@@ -2,18 +2,18 @@
 # Part of `aipo.html`
 
 struct VNode {
-    id: Int
-    tag: String
-    attrs: Dict
-    children: List
-    is_text: Bool
-    text_content: String
+    id
+    tag
+    attrs
+    children
+    is_text
+    text_content
 }
 
 var _node_id_counter = 0
 var _parent_stack = []
 
-fn next_node_id() - > Int{
+fn next_node_id() -> Int {
     _node_id_counter += 1
     return _node_id_counter
 }
@@ -25,8 +25,30 @@ fn register_child(child: VNode) {
     }
 }
 
+fn copy_dict(d: Dict) -> Dict {
+    var out = {}
+    each k, v in d {
+        out[k] = v
+    }
+    return out
+}
+
 # Container tag constructor helper
-fn container_tag(tag_name: String, attrs: Dict = {}, body: Fn = none) - > VNode{
+fn container_tag(tag_name: String, arg1 = none, arg2 = none) -> VNode {
+    var attrs = {}
+    var body = none
+
+    if arg1 != none {
+        if (arg1 is Dict) {
+            attrs = arg1
+            if arg2 != none {
+                body = arg2
+            }
+        } else {
+            body = arg1
+        }
+    }
+
     let node = VNode{
         id: next_node_id(),
         tag: tag_name,
@@ -41,14 +63,39 @@ fn container_tag(tag_name: String, attrs: Dict = {}, body: Fn = none) - > VNode{
     if body != none {
         _parent_stack.add(node)
         body()
-        _parent_stack.pop()
+        _parent_stack.remove_last()
     }
 
     return node
 }
 
 # Leaf or text tag constructor helper
-fn text_or_leaf_tag(tag_name: String, content: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{
+fn text_or_leaf_tag(tag_name: String, arg1 = none, arg2 = none, arg3 = none) -> VNode {
+    var content = ""
+    var attrs = {}
+    var body = none
+
+    if (arg1 is String) {
+        content = arg1
+        if arg2 != none {
+            if (arg2 is Dict) {
+                attrs = arg2
+                if arg3 != none {
+                    body = arg3
+                }
+            } else {
+                body = arg2
+            }
+        }
+    } elif (arg1 is Dict) {
+        attrs = arg1
+        if arg2 != none {
+            body = arg2
+        }
+    } elif arg1 != none {
+        body = arg1
+    }
+
     let node = VNode{
         id: next_node_id(),
         tag: tag_name,
@@ -75,80 +122,145 @@ fn text_or_leaf_tag(tag_name: String, content: String = "", attrs: Dict = {}, bo
     if body != none {
         _parent_stack.add(node)
         body()
-        _parent_stack.pop()
+        _parent_stack.remove_last()
     }
 
     return node
 }
 
-# HTML5 Standard Tags
+# HTML5 Standard Tag Factories
 
 # Layout & Containers
-fn div (attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("div", attrs, body) }
-fn section(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("section", attrs, body) }
-fn article(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("article", attrs, body) }
-fn header(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("header", attrs, body) }
-fn footer(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("footer", attrs, body) }
-fn nav(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("nav", attrs, body) }
-fn main(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("main", attrs, body) }
-fn aside(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("aside", attrs, body) }
+fn make_div(arg1 = none, arg2 = none) -> VNode { return container_tag("div", arg1, arg2) }
+fn make_section(arg1 = none, arg2 = none) -> VNode { return container_tag("section", arg1, arg2) }
+fn make_article(arg1 = none, arg2 = none) -> VNode { return container_tag("article", arg1, arg2) }
+fn make_header(arg1 = none, arg2 = none) -> VNode { return container_tag("header", arg1, arg2) }
+fn make_footer(arg1 = none, arg2 = none) -> VNode { return container_tag("footer", arg1, arg2) }
+fn make_nav(arg1 = none, arg2 = none) -> VNode { return container_tag("nav", arg1, arg2) }
+fn make_main(arg1 = none, arg2 = none) -> VNode { return container_tag("main", arg1, arg2) }
+fn make_aside(arg1 = none, arg2 = none) -> VNode { return container_tag("aside", arg1, arg2) }
 
 # Typography
-fn h1(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("h1", text, attrs, body) }
-fn h2(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("h2", text, attrs, body) }
-fn h3(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("h3", text, attrs, body) }
-fn h4(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("h4", text, attrs, body) }
-fn h5(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("h5", text, attrs, body) }
-fn h6(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("h6", text, attrs, body) }
-fn p(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("p", text, attrs, body) }
-fn span(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("span", text, attrs, body) }
-fn strong(text: String = "", attrs: Dict = {}) - > VNode{ return text_or_leaf_tag("strong", text, attrs) }
-fn em(text: String = "", attrs: Dict = {}) - > VNode{ return text_or_leaf_tag("em", text, attrs) }
-fn code(text: String = "", attrs: Dict = {}) - > VNode{ return text_or_leaf_tag("code", text, attrs) }
-fn pre(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("pre", text, attrs, body) }
-fn a(text: String = "", href: String = "#", attrs: Dict = {}, body: Fn = none) - > VNode{
-    let combined = attrs.clone()
+fn make_h1(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("h1", arg1, arg2, arg3) }
+fn make_h2(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("h2", arg1, arg2, arg3) }
+fn make_h3(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("h3", arg1, arg2, arg3) }
+fn make_h4(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("h4", arg1, arg2, arg3) }
+fn make_h5(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("h5", arg1, arg2, arg3) }
+fn make_h6(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("h6", arg1, arg2, arg3) }
+fn make_p(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("p", arg1, arg2, arg3) }
+fn make_span(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("span", arg1, arg2, arg3) }
+fn make_strong(text: String = "", attrs: Dict = {}) -> VNode { return text_or_leaf_tag("strong", text, attrs) }
+fn make_em(text: String = "", attrs: Dict = {}) -> VNode { return text_or_leaf_tag("em", text, attrs) }
+fn make_code(text: String = "", attrs: Dict = {}) -> VNode { return text_or_leaf_tag("code", text, attrs) }
+fn make_pre(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("pre", arg1, arg2, arg3) }
+fn make_a(text: String = "", href: String = "#", attrs: Dict = {}, body = none) -> VNode {
+    let combined = copy_dict(attrs)
     combined["href"] = href
     return text_or_leaf_tag("a", text, combined, body)
 }
 
 # Lists
-fn ul(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("ul", attrs, body) }
-fn ol(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("ol", attrs, body) }
-fn li(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("li", text, attrs, body) }
+fn make_ul(arg1 = none, arg2 = none) -> VNode { return container_tag("ul", arg1, arg2) }
+fn make_ol(arg1 = none, arg2 = none) -> VNode { return container_tag("ol", arg1, arg2) }
+fn make_li(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("li", arg1, arg2, arg3) }
 
 # Forms & Inputs
-fn form(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("form", attrs, body) }
-fn label(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("label", text, attrs, body) }
-fn button(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("button", text, attrs, body) }
-fn input(attrs: Dict = {}) - > VNode{ return container_tag("input", attrs) }
-fn textarea(text: String = "", attrs: Dict = {}) - > VNode{ return text_or_leaf_tag("textarea", text, attrs) }
-fn select(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("select", attrs, body) }
-fn option(text: String = "", value: String = "", attrs: Dict = {}) - > VNode{
-    let combined = attrs.clone()
+fn make_form(arg1 = none, arg2 = none) -> VNode { return container_tag("form", arg1, arg2) }
+fn make_label(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("label", arg1, arg2, arg3) }
+fn make_button(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("button", arg1, arg2, arg3) }
+fn make_input(attrs: Dict = {}) -> VNode { return container_tag("input", attrs) }
+fn make_textarea(text: String = "", attrs: Dict = {}) -> VNode { return text_or_leaf_tag("textarea", text, attrs) }
+fn make_select(arg1 = none, arg2 = none) -> VNode { return container_tag("select", arg1, arg2) }
+fn make_option(text: String = "", value: String = "", attrs: Dict = {}) -> VNode {
+    let combined = copy_dict(attrs)
     combined["value"] = value
     return text_or_leaf_tag("option", text, combined)
 }
 
 # Media & Void Elements
-fn img(src: String = "", alt: String = "", attrs: Dict = {}) - > VNode{
-    let combined = attrs.clone()
+fn make_img(src: String = "", alt: String = "", attrs: Dict = {}) -> VNode {
+    let combined = copy_dict(attrs)
     combined["src"] = src
     combined["alt"] = alt
     return container_tag("img", combined)
 }
-fn hr(attrs: Dict = {}) - > VNode{ return container_tag("hr", attrs) }
-fn br() - > VNode{ return container_tag("br", {}) }
+fn make_hr(attrs: Dict = {}) -> VNode { return container_tag("hr", attrs) }
+fn make_br() -> VNode { return container_tag("br", {}) }
 
 # Tables
-fn table(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("table", attrs, body) }
-fn thead(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("thead", attrs, body) }
-fn tbody(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("tbody", attrs, body) }
-fn tr(attrs: Dict = {}, body: Fn = none) - > VNode{ return container_tag("tr", attrs, body) }
-fn th(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("th", text, attrs, body) }
-fn td(text: String = "", attrs: Dict = {}, body: Fn = none) - > VNode{ return text_or_leaf_tag("td", text, attrs, body) }
+fn make_table(arg1 = none, arg2 = none) -> VNode { return container_tag("table", arg1, arg2) }
+fn make_thead(arg1 = none, arg2 = none) -> VNode { return container_tag("thead", arg1, arg2) }
+fn make_tbody(arg1 = none, arg2 = none) -> VNode { return container_tag("tbody", arg1, arg2) }
+fn make_tr(arg1 = none, arg2 = none) -> VNode { return container_tag("tr", arg1, arg2) }
+fn make_th(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("th", arg1, arg2, arg3) }
+fn make_td(arg1 = none, arg2 = none, arg3 = none) -> VNode { return text_or_leaf_tag("td", arg1, arg2, arg3) }
 
-export VNode, div, section, article, header, footer, nav, main, aside,
-h1, h2, h3, h4, h5, h6, p, span, strong, em, code, pre, a,
-ul, ol, li, form, label, button, input, textarea, select, option,
-img, hr, br, table, thead, tbody, tr, th, td
+# Fragments
+fn make_fragment(body = none) -> VNode { return container_tag("fragment", {}, body) }
+
+# Helper for keyed / dynamic iteration
+fn run_each_item(items: List, render_fn) {
+    each item in items {
+        render_fn(item)
+    }
+}
+
+# Pure SSR HTML Serializer
+fn escape_html(text: String) -> String {
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+}
+
+fn escape_attr(val) -> String {
+    let s = f"{val}"
+    return s.replace("&", "&amp;").replace("\"", "&quot;")
+}
+
+fn serialize_to_html(node: VNode) -> String {
+    if node == none {
+        return ""
+    }
+    if node.is_text {
+        return escape_html(node.text_content)
+    }
+
+    if node.tag == "fragment" {
+        var frag_html = ""
+        each child in node.children {
+            frag_html = frag_html + serialize_to_html(child)
+        }
+        return frag_html
+    }
+
+    var html = f"<{node.tag}"
+    each k, v in node.attrs {
+        if (not k.starts_with("on_")) and (not k.starts_with("on")) {
+            if v == true {
+                html = html + f" {k}"
+            } elif v != false and v != none {
+                let escaped = escape_attr(v)
+                html = html + f" {k}=\"{escaped}\""
+            }
+        }
+    }
+
+    let is_void = node.tag == "img" or node.tag == "input" or node.tag == "hr" or node.tag == "br" or node.tag == "meta" or node.tag == "link"
+    if is_void {
+        return html + " />"
+    }
+
+    html = html + ">"
+    if node.text_content != "" and node.children.len() == 0 {
+        html = html + escape_html(node.text_content)
+    }
+    each child in node.children {
+        html = html + serialize_to_html(child)
+    }
+    html = html + f"</{node.tag}>"
+    return html
+}
+
+export VNode, make_div, make_section, make_article, make_header, make_footer, make_nav, make_main, make_aside
+export make_h1, make_h2, make_h3, make_h4, make_h5, make_h6, make_p, make_span, make_strong, make_em, make_code, make_pre, make_a
+export make_ul, make_ol, make_li, make_form, make_label, make_button, make_input, make_textarea, make_select, make_option
+export make_img, make_hr, make_br, make_table, make_thead, make_tbody, make_tr, make_th, make_td
+export make_fragment, run_each_item, serialize_to_html

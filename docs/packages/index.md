@@ -10,10 +10,11 @@ Conforme estabelecido pela governança da linguagem, **recursos de domínio espe
 
 | Pacote | Versão | Domínio | Descrição |
 |---|:---:|---|---|
-| **[`aipo.html`](/packages/aipo-html)** | `v0.1.0` | **Web & DOM** | DSL declarativa para HTML5, CSS-in-Aipo tipado e reatividade com **MVU de Granularidade Fina** no navegador. |
+| **[`aipo.html`](/packages/aipo-html)** | `v0.1.0` | **Web, SSR & DOM** | DSL declarativa para HTML5, serializador SSR, CSS-in-Aipo com media queries e reatividade com **MVU/TEA com Comandos**. |
+| **[`aipo.http`](/packages/aipo-http)** | `v0.1.0` | **Web Server & APIs** | Framework HTTP com roteador zero-regex em árvore de segmentos, pipeline estilo cebola, context engine e dispatch desacoplado. |
+| **[`aipo.zoe`](/packages/aipo-zoe)** | `v0.1.0` | **GUI Declarativa & Leona** | Framework declarativo de interface de usuário em Aipo puro, com aceleração GPU a 60+ FPS, hooks de estado e engine de layout Leona. |
 | **[`aipo.ui`](/packages/aipo-ui)** | `v0.1.0` | **UI Multiplataforma** | Framework declarativo de interface universal (Desktop GPU via Skia/Freya, WebGL e Terminal TUI) com layout Flexbox/Taffy. |
 | **[`aipo.game`](/packages/aipo-game)** | `v0.1.0` | **Game Engine 2D** | Micro-engine 2D orientada a Atores e Cenas com comportamentos em 1 linha, nós visuais e determinismo de simulação. |
-| **[`aipo.http`](/packages/aipo-http)** *(Roadmap)* | `v0.1.0-alpha` | **Web Server & APIs** | Microframework HTTP/WebSocket assíncrono com roteamento Radix tree tipo-seguro inspirado em Hono e FastAPI. |
 
 ---
 

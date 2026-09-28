@@ -1,0 +1,164 @@
+# router.aipo — Zero-regex Radix/Segment tree router for aipo.http
+# Part of `aipo.http`
+
+struct RouteNode {
+    segment
+    is_param
+    param_name
+    is_wildcard
+    handlers
+    children
+}
+
+struct Router {
+    root
+}
+
+fn copy_dict(d: Dict) -> Dict {
+    var out = {}
+    each k, v in d {
+        out[k] = v
+    }
+    return out
+}
+
+fn join_segments(segs: List, sep: String) -> String {
+    var out = ""
+    var first = true
+    each s in segs {
+        if not first {
+            out = out + sep
+        }
+        out = out + s
+        first = false
+    }
+    return out
+}
+
+fn make_route_node(segment: String = "") -> RouteNode {
+    let is_p = segment.starts_with(":")
+    let is_w = segment.starts_with("*")
+    var p_name = ""
+    if is_p or is_w {
+        p_name = segment.slice(1, segment.len())
+    }
+
+    return RouteNode{
+        segment: segment,
+        is_param: is_p,
+        param_name: p_name,
+        is_wildcard: is_w,
+        handlers: {},
+        children: []
+    }
+}
+
+fn router_create() -> Router {
+    return Router{
+        root: make_route_node("")
+    }
+}
+
+fn router_split_path(path: String) -> List {
+    let raw = path.split("/")
+    var clean = []
+    each s in raw {
+        if s != "" {
+            clean.add(s)
+        }
+    }
+    return clean
+}
+
+fn router_add_route(router: Router, method: String, path: String, handler) {
+    let segments = router_split_path(path)
+    var current = router.root
+
+    each seg in segments {
+        var found_child = none
+        each child in current.children {
+            if child.segment == seg {
+                found_child = child
+            }
+        }
+
+        if found_child != none {
+            current = found_child
+        } else {
+            let new_node = make_route_node(seg)
+            current.children.add(new_node)
+            current = new_node
+        }
+    }
+
+    let m = method.upper()
+    current.handlers[m] = handler
+}
+
+fn match_node(node: RouteNode, method: String, segments: List, index: Int, params: Dict) -> Dict {
+    if index == segments.len() {
+        if node.handlers.has(method) {
+            return {
+                "matched": true,
+                "handler": node.handlers[method],
+                "params": params
+            }
+        }
+        return { "matched": false }
+    }
+
+    let seg = segments[index]
+
+    # 1. Exact static match
+    each child in node.children {
+        if (not child.is_param) and (not child.is_wildcard) and child.segment == seg {
+            let res = match_node(child, method, segments, index + 1, params)
+            if res["matched"] {
+                return res
+            }
+        }
+    }
+
+    # 2. Dynamic parameter match (:id)
+    each child in node.children {
+        if child.is_param {
+            var child_params = copy_dict(params)
+            child_params[child.param_name] = seg
+            let res = match_node(child, method, segments, index + 1, child_params)
+            if res["matched"] {
+                return res
+            }
+        }
+    }
+
+    # 3. Wildcard / Catch-all match (*filepath)
+    each child in node.children {
+        if child.is_wildcard {
+            var child_params = copy_dict(params)
+            var rest_segments = []
+            var k = index
+            while k < segments.len() {
+                rest_segments.add(segments[k])
+                k += 1
+            }
+            child_params[child.param_name] = join_segments(rest_segments, "/")
+            if child.handlers.has(method) {
+                return {
+                    "matched": true,
+                    "handler": child.handlers[method],
+                    "params": child_params
+                }
+            }
+        }
+    }
+
+    return { "matched": false }
+}
+
+fn router_match_route(router: Router, method: String, path: String) -> Dict {
+    let segments = router_split_path(path)
+    let m = method.upper()
+    return match_node(router.root, m, segments, 0, {})
+}
+
+export RouteNode, Router, make_route_node, router_create, router_split_path, router_add_route, router_match_route, copy_dict, join_segments

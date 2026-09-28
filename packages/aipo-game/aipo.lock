@@ -1,0 +1,14 @@
+[[packages]]
+coordinate = "aipo.game"
+version = "0.1.0"
+digest = "37fd35450e42e8bc86bdb0bc2c76d21390ff5655c72039a696e0321d07e529fd"
+dependencies = []
+capabilities = []
+targets = [
+    "js",
+    "native",
+]
+
+[packages.source]
+type = "path"
+path = "."
