@@ -5,23 +5,43 @@
 # - Leona Layout Engine (split_view, tab_view, scroll_view, column, row, spacer, divider)
 # - Sub-rect Viewport with GPU clipping and custom Camera2D integration
 # - Interactive pan (on_drag) and zoom (on_wheel) inside the viewport
-# - Catppuccin Mocha theme with buttons, switches, badges, cards and labels
+# - Viewport Object Picking & 2D Transformation Gizmo (X, Y, Center handles)
+# - Real-time two-way synchronization between Viewport, Hierarchy, and Inspector
+# - Catppuccin Mocha theme with buttons, switches, badges, cards, labels, and fine inputs
 
 import aipo.zoe as zoe
 
-# Global editor state signals
+# Global editor camera & workspace signals
 var _cam_x = none
 var _cam_y = none
 var _cam_zoom = none
 var _show_grid = none
 var _is_playing = none
-var _selected_node = none
+var _selected_id = none
+var _drag_mode = none
 var _left_split = none
 var _right_split = none
+
+# Scene Entity 1: Player (Hero)
+var _hero_name = none
 var _hero_x = none
 var _hero_y = none
 var _hero_layer = none
 var _hero_color = none
+
+# Scene Entity 2: Coin (Item)
+var _coin_name = none
+var _coin_x = none
+var _coin_y = none
+var _coin_layer = none
+var _coin_color = none
+
+# Scene Entity 3: Platform (Tilemap)
+var _plat_name = none
+var _plat_x = none
+var _plat_y = none
+var _plat_layer = none
+var _plat_color = none
 
 fn draw_grid(w: Float, h: Float, cell_size: Float) {
     var x = 0.0
@@ -43,13 +63,31 @@ fn view() {
         _cam_zoom = zoe.use_state(1.0)
         _show_grid = zoe.use_state(true)
         _is_playing = zoe.use_state(false)
-        _selected_node = zoe.use_state("Hero")
+        _selected_id = zoe.use_state("hero")
+        _drag_mode = zoe.use_state("none")
         _left_split = zoe.use_state(0.22)
         _right_split = zoe.use_state(0.72)
+
+        # Entity 1: Hero
+        _hero_name = zoe.use_state("Player (Hero)")
         _hero_x = zoe.use_state(0.0)
         _hero_y = zoe.use_state(0.0)
         _hero_layer = zoe.use_state("Player")
         _hero_color = zoe.use_state(zoe.color.blue)
+
+        # Entity 2: Coin
+        _coin_name = zoe.use_state("Coin (Item)")
+        _coin_x = zoe.use_state(80.0)
+        _coin_y = zoe.use_state(-40.0)
+        _coin_layer = zoe.use_state("Default")
+        _coin_color = zoe.use_state(zoe.color.yellow)
+
+        # Entity 3: Platform
+        _plat_name = zoe.use_state("Tilemap (Platform)")
+        _plat_x = zoe.use_state(0.0)
+        _plat_y = zoe.use_state(50.0)
+        _plat_layer = zoe.use_state("Background")
+        _plat_color = zoe.use_state(zoe.color.green)
     }
 
     let on_play_toggle = fn(_) {
@@ -66,18 +104,18 @@ fn view() {
         zoe.set_state(_show_grid, not _show_grid.get())
     }
 
-    let on_select_root = fn(_) { zoe.set_state(_selected_node, "RootScene") }
-    let on_select_cam = fn(_) { zoe.set_state(_selected_node, "Camera2D") }
-    let on_select_tilemap = fn(_) { zoe.set_state(_selected_node, "Tilemap (Level 1)") }
-    let on_select_hero = fn(_) { zoe.set_state(_selected_node, "Player (Hero)") }
-    let on_select_coin = fn(_) { zoe.set_state(_selected_node, "Coin (Item)") }
-    let on_select_dust = fn(_) { zoe.set_state(_selected_node, "Particles (Dust)") }
+    let cur_id = _selected_id.get()
+    let on_select_root = fn(_) { zoe.set_state(_selected_id, "root") }
+    let on_select_cam = fn(_) { zoe.set_state(_selected_id, "cam") }
+    let on_select_plat = fn(_) { zoe.set_state(_selected_id, "platform") }
+    let on_select_hero = fn(_) { zoe.set_state(_selected_id, "hero") }
+    let on_select_coin = fn(_) { zoe.set_state(_selected_id, "coin") }
+    let on_select_dust = fn(_) { zoe.set_state(_selected_id, "dust") }
     let on_delete_entity = fn(_) {}
 
     let play_label = if _is_playing.get() then "Pause ||" else "Play ▶"
     let play_variant = if _is_playing.get() then "secondary" else "primary"
     let play_bg = if _is_playing.get() then zoe.color.peach else zoe.color.green
-    let hero_bg = if _selected_node.get() == "Player (Hero)" then zoe.color.blue else zoe.color.surface_0
     let status_mode_label = if _is_playing.get() then "Running" else "Editing"
     let status_mode_bg = if _is_playing.get() then zoe.color.green else zoe.color.surface_0
     let zoom_pct = Int(_cam_zoom.get() * 100.0)
@@ -108,12 +146,16 @@ fn view() {
     )
 
     # Left Panel: Hierarchy and Assets
+    let hero_bg = if cur_id == "hero" then zoe.color.blue else zoe.color.surface_0
+    let coin_bg = if cur_id == "coin" then zoe.color.blue else zoe.color.surface_0
+    let plat_bg = if cur_id == "platform" then zoe.color.blue else zoe.color.surface_0
+
     let hierarchy_tree = zoe.scroll_view({ "width": "100%", "height": "100%", "padding": 8.0, "gap": 4.0 }, [
         zoe.button("● RootScene", on_select_root, { "variant": "ghost", "background": zoe.color.surface_0 }),
         zoe.button("  ├─ Camera2D", on_select_cam, { "variant": "ghost", "background": zoe.color.surface_0 }),
-        zoe.button("  ├─ Tilemap (Level 1)", on_select_tilemap, { "variant": "ghost", "background": zoe.color.surface_0 }),
-        zoe.button("  ├─ Player (Hero)", on_select_hero, { "variant": "primary", "background": hero_bg }),
-        zoe.button("  ├─ Coin (Item)", on_select_coin, { "variant": "ghost", "background": zoe.color.surface_0 }),
+        zoe.button("  ├─ Tilemap (Platform)", on_select_plat, { "variant": if cur_id == "platform" then "primary" else "ghost", "background": plat_bg }),
+        zoe.button("  ├─ Player (Hero)", on_select_hero, { "variant": if cur_id == "hero" then "primary" else "ghost", "background": hero_bg }),
+        zoe.button("  ├─ Coin (Item)", on_select_coin, { "variant": if cur_id == "coin" then "primary" else "ghost", "background": coin_bg }),
         zoe.button("  └─ Particles (Dust)", on_select_dust, { "variant": "ghost", "background": zoe.color.surface_0 })
     ])
 
@@ -131,35 +173,157 @@ fn view() {
 
     # Center Viewport with interactive scene
     let viewport_render = fn(rect) {
-        zoe.set_viewport_camera(rect, _cam_x.get(), _cam_y.get(), _cam_zoom.get())
+        let cam_x = _cam_x.get()
+        let cam_y = _cam_y.get()
+        let cam_z = _cam_zoom.get()
+        let z = if cam_z > 0.01 then cam_z else 1.0
+
+        zoe.set_viewport_camera(rect, cam_x, cam_y, cam_z)
 
         if _show_grid.get() {
-            draw_grid(rect["width"], rect["height"], 32.0 * _cam_zoom.get())
+            draw_grid(rect["width"], rect["height"], 32.0 * z)
         }
 
-        # Draw World Entities
-        let cx = rect["x"] + rect["width"] / 2.0
-        let cy = rect["y"] + rect["height"] / 2.0
+        # 1. Draw Platform entity
+        let plat_s = zoe.world_to_screen(rect, _plat_x.get(), _plat_y.get(), cam_x, cam_y, cam_z)
+        let plat_col = _plat_color.get()
+        host_draw_rect(plat_s["x"] - 100.0 * z, plat_s["y"] - 8.0 * z, 200.0 * z, 16.0 * z, plat_col.r, plat_col.g, plat_col.b, plat_col.a)
 
-        # Player (Hero) with dynamic position, color, and name from Inspector
-        let hx = cx + _hero_x.get()
-        let hy = cy + _hero_y.get()
-        let hc = _hero_color.get()
-        host_draw_rect(hx - 24.0, hy - 24.0, 48.0, 48.0, hc.r, hc.g, hc.b, hc.a)
-        host_draw_text(_selected_node.get(), hx - 18.0, hy - 32.0, 14.0, 1.0, 1.0, 1.0)
+        # 2. Draw Coin entity
+        let coin_s = zoe.world_to_screen(rect, _coin_x.get(), _coin_y.get(), cam_x, cam_y, cam_z)
+        let coin_col = _coin_color.get()
+        host_draw_circle(coin_s["x"], coin_s["y"], 14.0 * z, coin_col.r, coin_col.g, coin_col.b, coin_col.a)
+        host_draw_text(_coin_name.get(), coin_s["x"] - 18.0 * z, coin_s["y"] - 22.0 * z, 11.0, 1.0, 1.0, 1.0)
 
-        # Star / Coin
-        host_draw_circle(cx + 80.0, cy - 40.0, 14.0, 0.95, 0.85, 0.3, 1.0)
+        # 3. Draw Hero entity
+        let hero_s = zoe.world_to_screen(rect, _hero_x.get(), _hero_y.get(), cam_x, cam_y, cam_z)
+        let hero_col = _hero_color.get()
+        host_draw_rect(hero_s["x"] - 24.0 * z, hero_s["y"] - 24.0 * z, 48.0 * z, 48.0 * z, hero_col.r, hero_col.g, hero_col.b, hero_col.a)
+        host_draw_text(_hero_name.get(), hero_s["x"] - 20.0 * z, hero_s["y"] - 32.0 * z, 13.0, 1.0, 1.0, 1.0)
 
-        # Platform
-        host_draw_rect(cx - 100.0, cy + 40.0, 200.0, 16.0, 0.4, 0.7, 0.4, 1.0)
+        # 4. Draw Selection Bounding Box & 2D Transform Gizmo on the Selected Entity
+        var active_gx = 0.0
+        var active_gy = 0.0
+        var has_gizmo = false
+
+        if cur_id == "hero" {
+            active_gx = hero_s["x"]
+            active_gy = hero_s["y"]
+            has_gizmo = true
+            host_draw_rect_lines(hero_s["x"] - 26.0 * z, hero_s["y"] - 26.0 * z, 52.0 * z, 52.0 * z, 1.5, 0.53, 0.75, 0.98, 0.9)
+        } elif cur_id == "coin" {
+            active_gx = coin_s["x"]
+            active_gy = coin_s["y"]
+            has_gizmo = true
+            host_draw_rect_lines(coin_s["x"] - 16.0 * z, coin_s["y"] - 16.0 * z, 32.0 * z, 32.0 * z, 1.5, 0.53, 0.75, 0.98, 0.9)
+        } elif cur_id == "platform" {
+            active_gx = plat_s["x"]
+            active_gy = plat_s["y"]
+            has_gizmo = true
+            host_draw_rect_lines(plat_s["x"] - 102.0 * z, plat_s["y"] - 10.0 * z, 204.0 * z, 20.0 * z, 1.5, 0.53, 0.75, 0.98, 0.9)
+        }
+
+        if has_gizmo {
+            zoe.draw_gizmo_2d(active_gx, active_gy, 50.0, _drag_mode.get())
+        }
     }
 
     let vp_drag = fn(e) {
+        let rect = e["rect"]
         let zoom = _cam_zoom.get()
         let z = if zoom > 0.01 then zoom else 1.0
-        zoe.set_state(_cam_x, _cam_x.get() - (e["dx"] + 0.0) / z)
-        zoe.set_state(_cam_y, _cam_y.get() - (e["dy"] + 0.0) / z)
+        let cam_x = _cam_x.get()
+        let cam_y = _cam_y.get()
+
+        # Start of drag or click down
+        if _drag_mode.get() == "none" or (e["dx"] == 0.0 and e["dy"] == 0.0) {
+            # 1. Test hit on the active entity's Gizmo
+            var sel_sx = 0.0
+            var sel_sy = 0.0
+            var can_have_gizmo = false
+
+            if cur_id == "hero" {
+                let s = zoe.world_to_screen(rect, _hero_x.get(), _hero_y.get(), cam_x, cam_y, zoom)
+                sel_sx = s["x"]
+                sel_sy = s["y"]
+                can_have_gizmo = true
+            } elif cur_id == "coin" {
+                let s = zoe.world_to_screen(rect, _coin_x.get(), _coin_y.get(), cam_x, cam_y, zoom)
+                sel_sx = s["x"]
+                sel_sy = s["y"]
+                can_have_gizmo = true
+            } elif cur_id == "platform" {
+                let s = zoe.world_to_screen(rect, _plat_x.get(), _plat_y.get(), cam_x, cam_y, zoom)
+                sel_sx = s["x"]
+                sel_sy = s["y"]
+                can_have_gizmo = true
+            }
+
+            var hit_axis = "none"
+            if can_have_gizmo {
+                hit_axis = zoe.test_gizmo_hit(e["x"], e["y"], sel_sx, sel_sy, 50.0)
+            }
+
+            if hit_axis != "none" {
+                zoe.set_state(_drag_mode, hit_axis)
+            } else {
+                # 2. Gizmo missed: Test Picking on World Entities
+                let s_coin = zoe.world_to_screen(rect, _coin_x.get(), _coin_y.get(), cam_x, cam_y, zoom)
+                let s_hero = zoe.world_to_screen(rect, _hero_x.get(), _hero_y.get(), cam_x, cam_y, zoom)
+                let s_plat = zoe.world_to_screen(rect, _plat_x.get(), _plat_y.get(), cam_x, cam_y, zoom)
+
+                if zoe.point_in_rect(e["x"], e["y"], s_coin["x"] - 14.0 * z, s_coin["y"] - 14.0 * z, 28.0 * z, 28.0 * z) {
+                    zoe.set_state(_selected_id, "coin")
+                    zoe.set_state(_drag_mode, "center")
+                } elif zoe.point_in_rect(e["x"], e["y"], s_hero["x"] - 24.0 * z, s_hero["y"] - 24.0 * z, 48.0 * z, 48.0 * z) {
+                    zoe.set_state(_selected_id, "hero")
+                    zoe.set_state(_drag_mode, "center")
+                } elif zoe.point_in_rect(e["x"], e["y"], s_plat["x"] - 100.0 * z, s_plat["y"] - 8.0 * z, 200.0 * z, 16.0 * z) {
+                    zoe.set_state(_selected_id, "platform")
+                    zoe.set_state(_drag_mode, "center")
+                } else {
+                    # 3. Empty space: Pan Camera
+                    zoe.set_state(_drag_mode, "pan")
+                }
+            }
+        }
+
+        # Continuous drag dispatch
+        if e["dx"] != 0.0 or e["dy"] != 0.0 {
+            let world_dx = (e["dx"] + 0.0) / z
+            let world_dy = (e["dy"] + 0.0) / z
+            let mode = _drag_mode.get()
+
+            if mode == "pan" {
+                zoe.set_state(_cam_x, cam_x - world_dx)
+                zoe.set_state(_cam_y, cam_y - world_dy)
+            } elif mode == "x" {
+                if cur_id == "hero" { zoe.set_state(_hero_x, _hero_x.get() + world_dx) }
+                if cur_id == "coin" { zoe.set_state(_coin_x, _coin_x.get() + world_dx) }
+                if cur_id == "platform" { zoe.set_state(_plat_x, _plat_x.get() + world_dx) }
+            } elif mode == "y" {
+                if cur_id == "hero" { zoe.set_state(_hero_y, _hero_y.get() + world_dy) }
+                if cur_id == "coin" { zoe.set_state(_coin_y, _coin_y.get() + world_dy) }
+                if cur_id == "platform" { zoe.set_state(_plat_y, _plat_y.get() + world_dy) }
+            } elif mode == "center" {
+                if cur_id == "hero" {
+                    zoe.set_state(_hero_x, _hero_x.get() + world_dx)
+                    zoe.set_state(_hero_y, _hero_y.get() + world_dy)
+                }
+                if cur_id == "coin" {
+                    zoe.set_state(_coin_x, _coin_x.get() + world_dx)
+                    zoe.set_state(_coin_y, _coin_y.get() + world_dy)
+                }
+                if cur_id == "platform" {
+                    zoe.set_state(_plat_x, _plat_x.get() + world_dx)
+                    zoe.set_state(_plat_y, _plat_y.get() + world_dy)
+                }
+            }
+        }
+    }
+
+    let vp_drag_end = fn(_) {
+        zoe.set_state(_drag_mode, "none")
     }
 
     let vp_wheel = fn(e) {
@@ -175,6 +339,7 @@ fn view() {
         "background": zoe.color.crust,
         "on_render": viewport_render,
         "on_drag": vp_drag,
+        "on_drag_end": vp_drag_end,
         "on_wheel": vp_wheel
     }, [
         # Floating HUD badge overlay on viewport
@@ -183,14 +348,39 @@ fn view() {
                 "background": zoe.color.surface_0,
                 "color": zoe.color.text
             }),
-            zoe.badge("2D Retro Viewport", {
+            zoe.badge(f"Selected: {cur_id}", {
                 "background": zoe.color.surface_0,
                 "color": zoe.color.lavender
+            }),
+            zoe.badge(f"Gizmo: {_drag_mode.get()}", {
+                "background": zoe.color.surface_0,
+                "color": zoe.color.peach
             })
         ])
     ])
 
-    # Right Panel: Inspector with fine editing components (text_input, number_input, dropdown_select, color_picker)
+    # Dynamic Inspector Signals depending on selected entity
+    var active_name = _hero_name
+    var active_x = _hero_x
+    var active_y = _hero_y
+    var active_layer = _hero_layer
+    var active_color = _hero_color
+
+    if cur_id == "coin" {
+        active_name = _coin_name
+        active_x = _coin_x
+        active_y = _coin_y
+        active_layer = _coin_layer
+        active_color = _coin_color
+    } elif cur_id == "platform" {
+        active_name = _plat_name
+        active_x = _plat_x
+        active_y = _plat_y
+        active_layer = _plat_layer
+        active_color = _plat_color
+    }
+
+    # Right Panel: Inspector with fine editing components synchronized with Viewport
     let right_inspector = zoe.column(
         {
             "width": "100%",
@@ -204,28 +394,28 @@ fn view() {
             zoe.divider({ "color": zoe.color.surface_1 }),
             zoe.card({ "padding": 12.0, "gap": 8.0, "background": zoe.color.mantle }, [
                 zoe.label("Entity Name:", { "font_size": 12.0, "color": zoe.color.lavender }),
-                zoe.text_input({ "value": _selected_node }),
+                zoe.text_input({ "value": active_name }),
                 zoe.divider({ "color": zoe.color.surface_0 }),
                 zoe.label("Position X & Y:", { "font_size": 12.0, "color": zoe.color.text }),
                 zoe.row({ "gap": 8.0 }, [
                     zoe.column({ "width": "flex", "gap": 2.0 }, [
                         zoe.label("X:", { "font_size": 11.0, "color": zoe.color.peach }),
-                        zoe.number_input({ "value": _hero_x, "step": 5.0, "min": -500.0, "max": 500.0 })
+                        zoe.number_input({ "value": active_x, "step": 5.0, "min": -500.0, "max": 500.0 })
                     ]),
                     zoe.column({ "width": "flex", "gap": 2.0 }, [
                         zoe.label("Y:", { "font_size": 11.0, "color": zoe.color.green }),
-                        zoe.number_input({ "value": _hero_y, "step": 5.0, "min": -500.0, "max": 500.0 })
+                        zoe.number_input({ "value": active_y, "step": 5.0, "min": -500.0, "max": 500.0 })
                     ])
                 ]),
                 zoe.divider({ "color": zoe.color.surface_0 }),
                 zoe.label("Layer:", { "font_size": 12.0, "color": zoe.color.overlay_0 }),
                 zoe.dropdown_select({
                     "options": ["Default", "Player", "Enemy", "Foreground", "Background"],
-                    "selected": _hero_layer
+                    "selected": active_layer
                 }),
                 zoe.divider({ "color": zoe.color.surface_0 }),
                 zoe.label("Tint / Color:", { "font_size": 12.0, "color": zoe.color.text }),
-                zoe.color_picker({ "color": _hero_color })
+                zoe.color_picker({ "color": active_color })
             ]),
             zoe.spacer(),
             zoe.button("Delete Entity", on_delete_entity, { "variant": "danger", "background": zoe.color.red })

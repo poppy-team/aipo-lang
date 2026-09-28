@@ -29,6 +29,9 @@ O **Zoe UI** foi concebido para o ecossistema Aipo com arquitetura pura, declara
 5. **Aceleração por GPU Nativa:**
    Renderização com 60+ FPS no desktop nativo conectada diretamente ao host Miniquad através do `aipo-game-host`.
 
+6. **Ferramentas de Viewport & Edição Visual (Picking e Gizmos):**
+   Suporte a sub-retângulo GPU Scissor e câmera 2D (`set_viewport_camera`), transformações bidirecionais de tela/mundo (`world_to_screen`, `screen_to_world`), detecção espacial AABB (`point_in_rect`), hit-testing de manipuladores (`test_gizmo_hit`) e renderização de Gizmos de translação 2D (`draw_gizmo_2d`) com restrição de eixos (X, Y e Centro livre).
+
 ---
 
 ## Instalação
@@ -91,7 +94,7 @@ fn draw() {
 cargo run -p aipo-game-host -- packages/aipo-zoe/examples/dashboard.aipo
 ```
 
-- Um editor visual de game engine completo com splitters redimensionáveis, painéis laterais de abas, viewport 2D interativa com câmera GPU (pan e zoom) e inspetor de nós está disponível em `examples/editor.aipo`:
+- Um editor visual de game engine completo com splitters redimensionáveis, abas de hierarquia e assets, viewport 2D interativa com picking de objetos, manipulador de transformação visual (Gizmo de translação nos eixos X, Y e centro), câmera GPU (pan e zoom) e inspetor com edição bidirecional em tempo real está disponível em `examples/editor.aipo`:
 ```bash
 cargo run -p aipo-game-host -- packages/aipo-zoe/examples/editor.aipo
 ```

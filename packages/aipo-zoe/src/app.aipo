@@ -151,12 +151,25 @@ fn app_update(dt: Float) {
         }
 
         if target != none {
+            let target_rect = if target.layout != none then {
+                "x": target.layout.x + 0.0,
+                "y": target.layout.y + 0.0,
+                "width": target.layout.width + 0.0,
+                "height": target.layout.height + 0.0
+            } else {
+                "x": 0.0,
+                "y": 0.0,
+                "width": 0.0,
+                "height": 0.0
+            }
+
             if target.props.has("on_click") {
                 let handler = target.props["on_click"]
                 if handler != none {
                     let event = {
                         "x": mx,
                         "y": my,
+                        "rect": target_rect,
                         "target_id": target.id
                     }
                     (handler)(event)
@@ -174,6 +187,7 @@ fn app_update(dt: Float) {
                         "y": my,
                         "dx": 0.0,
                         "dy": 0.0,
+                        "rect": target_rect,
                         "target_id": target.id,
                         "target": target
                     }
@@ -188,11 +202,23 @@ fn app_update(dt: Float) {
         let dx = mx - _prev_mx
         let dy = my - _prev_my
         if dx != 0.0 or dy != 0.0 {
+            let drag_rect = if _dragged_node != none and _dragged_node.layout != none then {
+                "x": _dragged_node.layout.x + 0.0,
+                "y": _dragged_node.layout.y + 0.0,
+                "width": _dragged_node.layout.width + 0.0,
+                "height": _dragged_node.layout.height + 0.0
+            } else {
+                "x": 0.0,
+                "y": 0.0,
+                "width": 0.0,
+                "height": 0.0
+            }
             let drag_event = {
                 "x": mx,
                 "y": my,
                 "dx": dx,
                 "dy": dy,
+                "rect": drag_rect,
                 "target_id": if _dragged_node != none then _dragged_node.id else 0,
                 "target": _dragged_node
             }
@@ -202,6 +228,17 @@ fn app_update(dt: Float) {
 
     # 4. Drag release (mouse release edge detection)
     if not btn_down and _prev_mouse_btn {
+        let end_rect = if _dragged_node != none and _dragged_node.layout != none then {
+            "x": _dragged_node.layout.x + 0.0,
+            "y": _dragged_node.layout.y + 0.0,
+            "width": _dragged_node.layout.width + 0.0,
+            "height": _dragged_node.layout.height + 0.0
+        } else {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 0.0,
+            "height": 0.0
+        }
         if _dragged_node != none {
             _dragged_node.is_active = false
         }
@@ -209,6 +246,7 @@ fn app_update(dt: Float) {
             let end_event = {
                 "x": mx,
                 "y": my,
+                "rect": end_rect,
                 "target_id": if _dragged_node != none then _dragged_node.id else 0
             }
             (_drag_end_handler)(end_event)

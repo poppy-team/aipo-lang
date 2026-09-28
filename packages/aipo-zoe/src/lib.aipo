@@ -183,6 +183,22 @@ fn screen_to_world(rect, screen_x, screen_y, cam_x, cam_y, zoom) {
     return components_mod.calc_screen_to_world(rect, screen_x, screen_y, cam_x, cam_y, zoom)
 }
 
+fn world_to_screen(rect, world_x, world_y, cam_x, cam_y, zoom) {
+    return components_mod.calc_world_to_screen(rect, world_x, world_y, cam_x, cam_y, zoom)
+}
+
+fn point_in_rect(px, py, rx, ry, rw, rh) {
+    return components_mod.is_point_in_rect(px, py, rx, ry, rw, rh)
+}
+
+fn test_gizmo_hit(mx, my, gx, gy, size = 45.0) {
+    return components_mod.calc_gizmo_hit(mx, my, gx, gy, size)
+}
+
+fn draw_gizmo_2d(gx, gy, size = 45.0, active_axis = "none") {
+    components_mod.render_gizmo_2d(gx, gy, size, active_axis)
+}
+
 fn set_viewport_camera(rect, target_x, target_y, zoom) {
     components_mod.apply_viewport_camera(rect, target_x, target_y, zoom)
 }
@@ -283,7 +299,7 @@ export column, row, stack, center, spacer, divider
 export rect, label, container
 export button, switch, slider, progress_bar, card, badge, split_view, tab_bar, tab_view, scroll_view, viewport
 export text_input, number_input, dropdown_select, color_picker
-export screen_to_world, set_viewport_camera
+export screen_to_world, world_to_screen, point_in_rect, test_gizmo_hit, draw_gizmo_2d, set_viewport_camera
 export use_state, set_state
 export rgb, rgba, hex, color
 export mount, step, draw_ui, get_root_element, compute_layout

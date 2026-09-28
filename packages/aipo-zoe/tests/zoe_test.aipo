@@ -499,3 +499,127 @@ test("color_picker cycles through palette") do
     # Next color after blue is green
     expect.equal(col_sig.get().g, zoe.color.green.g)
 end
+
+test("world_to_screen and screen_to_world roundtrip") do
+    let rect = { "x": 100.0, "y": 50.0, "width": 400.0, "height": 300.0 }
+    let cam_x = 25.0
+    let cam_y = -10.0
+    let zoom = 1.5
+
+    # Center of viewport in screen space
+    let screen_center_x = 100.0 + 200.0
+    let screen_center_y = 50.0 + 150.0
+
+    # Camera target in world space should be exactly at the center of viewport
+    let s = zoe.world_to_screen(rect, cam_x, cam_y, cam_x, cam_y, zoom)
+    expect.equal(s["x"], screen_center_x)
+    expect.equal(s["y"], screen_center_y)
+
+    # Invert back to world
+    let w = zoe.screen_to_world(rect, s["x"], s["y"], cam_x, cam_y, zoom)
+    expect.equal(w["x"], cam_x)
+    expect.equal(w["y"], cam_y)
+
+    # Arbitrary point roundtrip
+    let orig_wx = 120.0
+    let orig_wy = -75.0
+    let pt_screen = zoe.world_to_screen(rect, orig_wx, orig_wy, cam_x, cam_y, zoom)
+    let pt_world = zoe.screen_to_world(rect, pt_screen["x"], pt_screen["y"], cam_x, cam_y, zoom)
+    expect.equal(pt_world["x"], orig_wx)
+    expect.equal(pt_world["y"], orig_wy)
+end
+
+test("point_in_rect bounding box testing") do
+    expect.true(zoe.point_in_rect(15.0, 25.0, 10.0, 20.0, 50.0, 50.0))
+    expect.true(zoe.point_in_rect(10.0, 20.0, 10.0, 20.0, 50.0, 50.0))
+    expect.true(zoe.point_in_rect(60.0, 70.0, 10.0, 20.0, 50.0, 50.0))
+
+    expect.false(zoe.point_in_rect(5.0, 25.0, 10.0, 20.0, 50.0, 50.0))
+    expect.false(zoe.point_in_rect(15.0, 15.0, 10.0, 20.0, 50.0, 50.0))
+    expect.false(zoe.point_in_rect(65.0, 25.0, 10.0, 20.0, 50.0, 50.0))
+    expect.false(zoe.point_in_rect(15.0, 75.0, 10.0, 20.0, 50.0, 50.0))
+end
+
+test("test_gizmo_hit detection for center, x, and y axes") do
+    let gx = 200.0
+    let gy = 150.0
+
+    # Center handle hit
+    expect.equal(zoe.test_gizmo_hit(200.0, 150.0, gx, gy), "center")
+    expect.equal(zoe.test_gizmo_hit(204.0, 153.0, gx, gy), "center")
+
+    # X axis handle hit (horizontal to the right)
+    expect.equal(zoe.test_gizmo_hit(225.0, 150.0, gx, gy), "x")
+    expect.equal(zoe.test_gizmo_hit(245.0, 152.0, gx, gy), "x")
+
+    # Y axis handle hit (vertical upwards: -Y)
+    expect.equal(zoe.test_gizmo_hit(200.0, 125.0, gx, gy), "y")
+    expect.equal(zoe.test_gizmo_hit(198.0, 110.0, gx, gy), "y")
+
+    # Miss / empty space
+    expect.equal(zoe.test_gizmo_hit(250.0, 250.0, gx, gy), "none")
+    expect.equal(zoe.test_gizmo_hit(150.0, 150.0, gx, gy), "none")
+    expect.equal(zoe.test_gizmo_hit(200.0, 200.0, gx, gy), "none")
+end
+
+test("draw_gizmo_2d execution without error") do
+    zoe.draw_gizmo_2d(100.0, 100.0, 45.0, "none")
+    zoe.draw_gizmo_2d(100.0, 100.0, 45.0, "x")
+    zoe.draw_gizmo_2d(100.0, 100.0, 45.0, "y")
+    zoe.draw_gizmo_2d(100.0, 100.0, 45.0, "center")
+end
+
+test("viewport entity picking and constrained transform gizmo motion") do
+    let rect = { "x": 100.0, "y": 50.0, "width": 800.0, "height": 600.0 }
+    let cam_x = 0.0
+    let cam_y = 0.0
+    let zoom = 1.0
+
+    # Entity states
+    var entity_x = 0.0
+    var entity_y = 0.0
+    let entity_w = 48.0
+    let entity_h = 48.0
+
+    # 1. World to screen position
+    let s = zoe.world_to_screen(rect, entity_x, entity_y, cam_x, cam_y, zoom)
+    let cx = s["x"]
+    let cy = s["y"]
+
+    # 2. Picking test: click inside entity box should hit
+    let hit_center = zoe.point_in_rect(cx, cy, cx - entity_w / 2.0, cy - entity_h / 2.0, entity_w, entity_h)
+    expect.true(hit_center)
+
+    let hit_outside = zoe.point_in_rect(cx + 100.0, cy + 100.0, cx - entity_w / 2.0, cy - entity_h / 2.0, entity_w, entity_h)
+    expect.false(hit_outside)
+
+    # 3. Gizmo hit test on X handle (gx + 30.0, gy)
+    let mode_x = zoe.test_gizmo_hit(cx + 30.0, cy, cx, cy, 50.0)
+    expect.equal(mode_x, "x")
+
+    # 4. Constrained motion in X: dragging by dx = 15.0, dy = 10.0 should ONLY update entity_x
+    let dx = 15.0
+    let dy = 10.0
+    if mode_x == "x" or mode_x == "center" {
+        entity_x += dx / zoom
+    }
+    if mode_x == "y" or mode_x == "center" {
+        entity_y += dy / zoom
+    }
+    expect.equal(entity_x, 15.0)
+    expect.equal(entity_y, 0.0)
+
+    # 5. Constrained motion in Y: dragging by dx = 20.0, dy = -25.0 on Y handle
+    let mode_y = zoe.test_gizmo_hit(cx + 15.0, cy - 30.0, cx + 15.0, cy, 50.0)
+    expect.equal(mode_y, "y")
+    if mode_y == "x" or mode_y == "center" {
+        entity_x += 20.0 / zoom
+    }
+    if mode_y == "y" or mode_y == "center" {
+        entity_y += -25.0 / zoom
+    }
+    expect.equal(entity_x, 15.0)
+    expect.equal(entity_y, -25.0)
+end
+
+

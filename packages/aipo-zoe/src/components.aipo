@@ -696,6 +696,72 @@ fn calc_screen_to_world(rect: Dict, screen_x: Float, screen_y: Float, cam_x: Flo
     }
 }
 
+# Translates viewport world coordinates to window screen coordinates given camera target and zoom
+fn calc_world_to_screen(rect: Dict, world_x: Float, world_y: Float, cam_x: Float, cam_y: Float, zoom: Float) -> Dict {
+    let z = if zoom > 0.001 then zoom else 1.0
+    let local_x = ((world_x + 0.0) - (cam_x + 0.0)) * z + (rect["width"] + 0.0) / 2.0
+    let local_y = ((world_y + 0.0) - (cam_y + 0.0)) * z + (rect["height"] + 0.0) / 2.0
+    return {
+        "x": (rect["x"] + 0.0) + local_x,
+        "y": (rect["y"] + 0.0) + local_y
+    }
+}
+
+# Helper to test if a point (px, py) is inside a bounding box (rx, ry, rw, rh)
+fn is_point_in_rect(px: Float, py: Float, rx: Float, ry: Float, rw: Float, rh: Float) -> Bool {
+    return (px + 0.0) >= (rx + 0.0) and (px + 0.0) <= ((rx + 0.0) + (rw + 0.0)) and (py + 0.0) >= (ry + 0.0) and (py + 0.0) <= ((ry + 0.0) + (rh + 0.0))
+}
+
+# Tests hit on a 2D transform gizmo located at screen position (gx, gy)
+# Returns "center", "x", "y", or "none"
+fn calc_gizmo_hit(mx: Float, my: Float, gx: Float, gy: Float, size: Float = 45.0) -> String {
+    let cr = 8.0
+    # 1. Center handle (box around gx, gy)
+    if (mx + 0.0) >= ((gx + 0.0) - cr) and (mx + 0.0) <= ((gx + 0.0) + cr) and (my + 0.0) >= ((gy + 0.0) - cr) and (my + 0.0) <= ((gy + 0.0) + cr) {
+        return "center"
+    }
+    # 2. X axis handle (horizontal line to the right: gx to gx + size)
+    if (mx + 0.0) >= (gx + 0.0) and (mx + 0.0) <= ((gx + 0.0) + (size + 0.0) + 8.0) and (my + 0.0) >= ((gy + 0.0) - 7.0) and (my + 0.0) <= ((gy + 0.0) + 7.0) {
+        return "x"
+    }
+    # 3. Y axis handle (vertical line upwards: gy - size to gy)
+    if (mx + 0.0) >= ((gx + 0.0) - 7.0) and (mx + 0.0) <= ((gx + 0.0) + 7.0) and (my + 0.0) >= ((gy + 0.0) - (size + 0.0) - 8.0) and (my + 0.0) <= (gy + 0.0) {
+        return "y"
+    }
+    return "none"
+}
+
+# Renders a 2D transform gizmo with X and Y axes, handles, and active highlight
+fn render_gizmo_2d(gx: Float, gy: Float, size: Float = 45.0, active_axis: String = "none") {
+    let x_color_r = if active_axis == "x" then 1.0 else 0.95
+    let x_color_g = if active_axis == "x" then 0.9 else 0.4
+    let x_color_b = if active_axis == "x" then 0.4 else 0.4
+
+    let y_color_r = if active_axis == "y" then 0.7 else 0.4
+    let y_color_g = if active_axis == "y" then 1.0 else 0.9
+    let y_color_b = if active_axis == "y" then 0.7 else 0.4
+
+    let center_color_r = if active_axis == "center" then 1.0 else 0.8
+    let center_color_g = if active_axis == "center" then 1.0 else 0.85
+    let center_color_b = if active_axis == "center" then 0.4 else 0.95
+
+    # X axis shaft
+    host_draw_line(gx + 0.0, gy + 0.0, (gx + 0.0) + (size + 0.0), gy + 0.0, 2.5, x_color_r, x_color_g, x_color_b, 1.0)
+    # X arrowhead (square/arrow handle at tip)
+    host_draw_rect((gx + 0.0) + (size + 0.0) - 2.0, (gy + 0.0) - 4.0, 8.0, 8.0, x_color_r, x_color_g, x_color_b, 1.0)
+    host_draw_text("X", (gx + 0.0) + (size + 0.0) + 8.0, (gy + 0.0) - 4.0, 11.0, x_color_r, x_color_g, x_color_b)
+
+    # Y axis shaft (pointing up in viewport: -Y)
+    host_draw_line(gx + 0.0, gy + 0.0, gx + 0.0, (gy + 0.0) - (size + 0.0), 2.5, y_color_r, y_color_g, y_color_b, 1.0)
+    # Y arrowhead (square/arrow handle at tip)
+    host_draw_rect((gx + 0.0) - 4.0, (gy + 0.0) - (size + 0.0) - 6.0, 8.0, 8.0, y_color_r, y_color_g, y_color_b, 1.0)
+    host_draw_text("Y", (gx + 0.0) - 4.0, (gy + 0.0) - (size + 0.0) - 16.0, 11.0, y_color_r, y_color_g, y_color_b)
+
+    # Center handle (free translation)
+    host_draw_rect((gx + 0.0) - 5.0, (gy + 0.0) - 5.0, 10.0, 10.0, center_color_r, center_color_g, center_color_b, 1.0)
+    host_draw_rect_lines((gx + 0.0) - 5.0, (gy + 0.0) - 5.0, 10.0, 10.0, 1.0, 0.1, 0.1, 0.15, 0.8)
+}
+
 # Configures the GPU camera viewport and scissor sub-rect for the active viewport
 fn apply_viewport_camera(rect: Dict, target_x: Float, target_y: Float, zoom: Float) {
     let vx = rect["x"] + 0.0
@@ -1032,3 +1098,4 @@ fn make_color_picker(props: Dict = {}) {
 
 export make_button, make_switch, make_slider, make_progress_bar, make_card, make_badge, make_split_view, make_tab_bar, make_tab_view, make_scroll_view, make_viewport, calc_screen_to_world, apply_viewport_camera
 export make_text_input, make_number_input, make_dropdown_select, make_color_picker
+export calc_world_to_screen, is_point_in_rect, calc_gizmo_hit, render_gizmo_2d
