@@ -1,10 +1,10 @@
-# Evidence — P03-G02 / Poppy Adapter and Deterministic Headless Demo
+# Evidência — P03-G02 / Adapter Poppy e Demo Headless Determinística
 
-**Goal:** `P03-G02` — Implement `aipo-poppy` crate as the Poppy Game Engine adapter over `aipo-host` (ECS scopes, command buffer, behaviors/events, deterministic simulation) and prove it with a deterministic headless demo game fixture.
-**Phase:** P03 (Wave 4 — Host ABI + Poppy) · **Recorded:** 2026-09-21
-**Environment:** Linux x86_64, rustc/cargo 1.98.1, Node v24.18.0
+**Goal:** `P03-G02` — Implementar a crate `aipo-poppy` como o adapter da Poppy Game Engine sobre `aipo-host` (escopos ECS, command buffer, behaviors/events, simulação determinística) e prová-la com uma fixture de jogo de demonstração headless determinística.
+**Fase:** P03 (Wave 4 — Host ABI + Poppy) · **Registrado em:** 2026-09-21
+**Ambiente:** Linux x86_64, rustc/cargo 1.98.1, Node v24.18.0
 
-## Gates (all executed, all green)
+## Gates (todos executados, todos verdes)
 
 ```
 $ cargo fmt --all -- --check                                           # exit 0
@@ -16,39 +16,39 @@ $ cargo test -p aipo-cli --test conformance                            # program
 $ cargo test -p aipo-poppy                                             # 14 passed (11 unit + 3 integration)
 ```
 
-## Acceptance Criteria Verification
+## Verificação dos Critérios de Aceitação
 
-| # | Criterion | Status | Evidence |
+| # | Critério | Status | Evidência |
 |---|---|---|---|
-| 1 | Crate `aipo-poppy` with `#![forbid(unsafe_code)]` over `aipo-host` | ✅ | `crates/aipo-poppy/` created, `#![forbid(unsafe_code)]`, imports `aipo-host`, clean workspace layer |
-| 2 | Poppy host surface described as data via AHS (`HostSchema`) under `poppy` capability tree | ✅ | `poppy_schema()` in `schema.rs` exposes types (`Vec2`, `Transform`), handle `Entity`, functions (`spawn`, `despawn`, `query`, `get_position`, `set_position`, `get_velocity`, `set_velocity`, `random_float`, `random_int`, `step`, `digest`), requiring `poppy.ecs` and `poppy.random` |
-| 3 | Entity identities use generational `Handle`s from `aipo-host` with stale handle detection | ✅ | Entities stored in `HandleTable<EntityRecord>`; post-safe-point access to despawned entities faults with `AIPO_RT_STALE_HANDLE` |
-| 4 | Structural ECS mutations recorded in command buffer, deferred to safe points | ✅ | `CommandBuffer` queues `Spawn`, `Despawn`, `SetPosition`, `SetVelocity`; applied in `World::apply_deferred()` during `step()` |
-| 5 | Behavior lifecycle adheres to plain interface semantics without language keywords | ✅ | Behavior logic in game script operates on regular functions/methods, inspecting entities and issuing commands |
-| 6 | Headless Poppy simulation is completely deterministic (fixed tick, seeded PRNG, command buffer ordering, identical digests across runs) | ✅ | `World::digest()` produces 64-bit FNV-1a state digest over sorted entity slots, components, tick, and RNG state; tests verify bit-exact digest matching across runs |
-| 7 | Executable headless demo fixture verifies deterministic multi-tick simulation and command buffer execution | ✅ | `crates/aipo-poppy/tests/headless_demo.rs` compiles and executes multi-tick game script, asserting digest identity across runs with same seed, digest variation with different seeds, stale handle faults, and capability denial |
-| 8 | cargo fmt, clippy, test, doc all green | ✅ | See gates above |
+| 1 | Crate `aipo-poppy` com `#![forbid(unsafe_code)]` sobre `aipo-host` | ✅ | `crates/aipo-poppy/` criada, `#![forbid(unsafe_code)]`, importa `aipo-host`, camada limpa no workspace |
+| 2 | Superfície do host Poppy descrita como dado via AHS (`HostSchema`) sob a árvore de capabilities `poppy` | ✅ | `poppy_schema()` em `schema.rs` expõe tipos (`Vec2`, `Transform`), o handle `Entity`, funções (`spawn`, `despawn`, `query`, `get_position`, `set_position`, `get_velocity`, `set_velocity`, `random_float`, `random_int`, `step`, `digest`), exigindo `poppy.ecs` e `poppy.random` |
+| 3 | As identidades de entidades usam `Handle`s geracionais de `aipo-host` com detecção de handle obsoleto | ✅ | Entidades armazenadas em `HandleTable<EntityRecord>`; o acesso após o safe point a entidades removidas gera fault com `AIPO_RT_STALE_HANDLE` |
+| 4 | Mutações estruturais do ECS registradas no command buffer, adiadas até os safe points | ✅ | `CommandBuffer` enfileira `Spawn`, `Despawn`, `SetPosition`, `SetVelocity`; aplicados em `World::apply_deferred()` durante `step()` |
+| 5 | O ciclo de vida de behaviors segue a semântica de interface simples, sem keywords na linguagem | ✅ | A lógica de behavior no script do jogo opera sobre funções/métodos comuns, inspecionando entidades e emitindo comandos |
+| 6 | A simulação Poppy headless é completamente determinística (tick fixo, PRNG com seed, ordenação do command buffer, digests idênticos entre execuções) | ✅ | `World::digest()` produz um digest de estado FNV-1a de 64 bits sobre slots de entidades ordenados, componentes, tick e estado do RNG; os testes verificam a igualdade bit a bit dos digests entre execuções |
+| 7 | Fixture de demonstração headless executável verifica a simulação determinística de múltiplos ticks e a execução do command buffer | ✅ | `crates/aipo-poppy/tests/headless_demo.rs` compila e executa um script de jogo de múltiplos ticks, verificando a identidade de digests entre execuções com a mesma seed, a variação de digests com seeds diferentes, faults de handle obsoleto e a negação de capability |
+| 8 | cargo fmt, clippy, test, doc todos verdes | ✅ | Veja os gates acima |
 
-## Summary of Implementation
+## Resumo da Implementação
 
-| Component | Responsibility |
+| Componente | Responsabilidade |
 |---|---|
-| **`schema.rs`** | Canonical `poppy_schema()` implementing the Aipo Host Schema (AHS) for Poppy. Validates without errors against `HostSchema::validate()`. |
-| **`prng.rs`** | `PoppyRng`: deterministic xorshift64* pseudo-random number generator with float/int generation methods. |
-| **`commands.rs`** | `CommandBuffer`: queues structural mutations (`Spawn`, `Despawn`, `SetPosition`, `SetVelocity`) to defer entity table modifications until safe points. |
-| **`world.rs`** | `World`: entity storage backed by generational `HandleTable`, query filter by tag, velocity integration, and deterministic 64-bit FNV-1a state digest computation. |
-| **`simulation.rs`** | `Simulation`: fixed-rate game loop coordinator advancing ticks, physics, command flushes, and digest calculation. |
-| **`adapter.rs`** | VM integration: provides `poppy` module in `Vm.globals`, gating operations behind `poppy.ecs` and `poppy.random` capabilities, translating entity handles to `Value::HostHandle`. |
-| **`tests/headless_demo.rs`** | End-to-end integration test driving a 10-tick game simulation on the Aipo VM, verifying determinism, stale handle detection, and capability enforcement. |
+| **`schema.rs`** | `poppy_schema()` canônico, que implementa o Aipo Host Schema (AHS) para o Poppy. Valida sem erros contra `HostSchema::validate()`. |
+| **`prng.rs`** | `PoppyRng`: gerador de números pseudoaleatórios xorshift64* determinístico, com métodos de geração de float/int. |
+| **`commands.rs`** | `CommandBuffer`: enfileira mutações estruturais (`Spawn`, `Despawn`, `SetPosition`, `SetVelocity`) para adiar modificações na tabela de entidades até os safe points. |
+| **`world.rs`** | `World`: armazenamento de entidades apoiado por `HandleTable` geracional, filtro de query por tag, integração de velocidade e cálculo determinístico do digest de estado FNV-1a de 64 bits. |
+| **`simulation.rs`** | `Simulation`: coordenador do game loop de taxa fixa, que avança ticks, física, flushes de comandos e o cálculo do digest. |
+| **`adapter.rs`** | Integração com a VM: fornece o módulo `poppy` em `Vm.globals`, controlando as operações por trás das capabilities `poppy.ecs` e `poppy.random`, e traduzindo handles de entidades para `Value::HostHandle`. |
+| **`tests/headless_demo.rs`** | Teste de integração end-to-end que conduz uma simulação de jogo de 10 ticks na VM do Aipo, verificando determinismo, detecção de handle obsoleto e imposição de capabilities. |
 
-## Test Inventory & Verification
+## Inventário de Testes & Verificação
 
-Unit and integration tests:
+Testes unitários e de integração:
 
-- `crates/aipo-poppy/src/schema.rs` — schema clean validation, capability declaration.
-- `crates/aipo-poppy/src/prng.rs` — determinism test, float range `[0.0, 1.0)`.
-- `crates/aipo-poppy/src/commands.rs` — command buffer FIFO queuing and draining.
-- `crates/aipo-poppy/src/world.rs` — entity spawn, tag query, deferred despawn, digest determinism.
-- `crates/aipo-poppy/src/simulation.rs` — 60-tick simulation reproducibility across instances.
-- `crates/aipo-poppy/src/adapter.rs` — capability denial fault, granted execution, safe-point stale handle fault.
-- `crates/aipo-poppy/tests/headless_demo.rs` — full VM pipeline execution of game script: identical digests with seed 1337, different digests with seed 9999, stale handle fault post-despawn, capability denial fault on ungranted environment.
+- `crates/aipo-poppy/src/schema.rs` — validação limpa do schema, declaração de capabilities.
+- `crates/aipo-poppy/src/prng.rs` — teste de determinismo, faixa de float `[0.0, 1.0)`.
+- `crates/aipo-poppy/src/commands.rs` — enfileiramento e drenagem FIFO do command buffer.
+- `crates/aipo-poppy/src/world.rs` — spawn de entidade, query por tag, despawn adiado, determinismo do digest.
+- `crates/aipo-poppy/src/simulation.rs` — reprodutibilidade de simulação de 60 ticks entre instâncias.
+- `crates/aipo-poppy/src/adapter.rs` — fault de negação de capability, execução concedida, fault de handle obsoleto no safe point.
+- `crates/aipo-poppy/tests/headless_demo.rs` — execução do pipeline completo da VM com o script do jogo: digests idênticos com a seed 1337, digests diferentes com a seed 9999, fault de handle obsoleto após despawn, fault de negação de capability em ambiente sem concessão.

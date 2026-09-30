@@ -392,6 +392,12 @@ export default defineConfig({
                 { text: 'Navigation & Hierarchy', link: '/en/zoe/components/navigation' },
                 { text: 'Advanced Widgets', link: '/en/zoe/components/advanced' }
               ]
+            },
+            {
+              text: 'Design & Roadmap',
+              items: [
+                { text: 'Visual Modernization Dossier', link: '/en/design/zoe-visual-modernization-dossier' }
+              ]
             }
           ],
           '/en/packages/': [

@@ -1,40 +1,40 @@
-# Evidence — P00-G12 / Slice S11 (Conformance Hardening & MVP Gate)
+# Evidência — P00-G12 / Slice S11 (Hardening de Conformidade & Gate do MVP)
 
-**Goal:** `P00-G12` — Conformance hardening: fixtures, snapshots, gauntlet and MVP gate
-**Phase:** P00 (Foundation) · **Slice:** S11 · **Recorded:** 2026-09-15
-**Environment:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
+**Goal:** `P00-G12` — Hardening de conformidade: fixtures, snapshots, gauntlet e gate do MVP
+**Fase:** P00 (Foundation) · **Slice:** S11 · **Registrado em:** 2026-09-15
+**Ambiente:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
 
-Proof attachments for the required gates. Commands are reproducible from the repository root.
-The corpus layout and snapshot matrix live in `docs/conformance/README.md`; this record is the
-score, not the specification.
+Anexos de prova dos gates exigidos. Os comandos são reproduzíveis a partir da raiz do repositório.
+O layout do corpus e a matriz de snapshots estão em `docs/conformance/README.md`; este registro é a
+pontuação, não a especificação.
 
-## Deliverable
+## Entregável
 
-The slice turns "the MVP works" into a claim a command can falsify. Everything the MVP subset
-claims is either executed with a committed output, or rejected with a committed diagnostic code:
+O slice transforma "o MVP funciona" em uma afirmação que um comando pode falsificar. Tudo o que o subset do MVP
+afirma é ou executado com uma saída commitada, ou rejeitado com um código de diagnóstico commitado:
 
-| Kind | Count | Location |
+| Tipo | Quantidade | Local |
 |---|---|---|
-| Runnable programs + stdout snapshots | 11 + 11 | `docs/conformance/programs/` |
-| Diagnostic fixtures + expected codes | 10 + 10 | `docs/conformance/diagnostics/` |
-| Formatter golden pairs | 8 + 8 | `docs/conformance/formatting/` |
-| Module cases | 3 | `docs/conformance/modules/` |
+| Programas executáveis + snapshots de stdout | 11 + 11 | `docs/conformance/programs/` |
+| Fixtures de diagnóstico + códigos esperados | 10 + 10 | `docs/conformance/diagnostics/` |
+| Pares golden do formatter | 8 + 8 | `docs/conformance/formatting/` |
+| Casos de módulos | 3 | `docs/conformance/modules/` |
 
-Snapshots are observations and are regenerated only on request
-(`AIPO_UPDATE_SNAPSHOTS=1`); diagnostic codes, formatter expectations and module fixtures are
-hand-authored because they are specifications.
+Os snapshots são observações e só são regenerados sob demanda
+(`AIPO_UPDATE_SNAPSHOTS=1`); os códigos de diagnóstico, as expectativas do formatter e as fixtures de módulos são
+escritos à mão porque são especificações.
 
-## Gauntlet rubric
+## Rubric do gauntlet
 
-| Gate | Weight | Command | Result |
+| Gate | Peso | Comando | Resultado |
 |---|---|---|---|
-| Executable MVP | 30% | `cargo test -p aipo-cli --test conformance` | **pass** — 13/13, all program and module fixtures match committed stdout |
-| Diagnostic discipline | 20% | same suite, failure tests | **pass** — every fixture fails with its committed code, including the guard that a parse fixture reports an `AIPO_PARSE_*` code |
-| Determinism | 20% | `cargo test -p aipo-formatter` | **pass** — 11/11; formatter idempotent, canonical sources report no drift, `fmt --check` never rewrites |
-| Robustness | 15% | `cargo test -p aipo-cli --test fuzz_smoke` | **pass** — 3/3; random bytes, mutated programs and truncated programs never panic the pipeline |
-| Repository gates | 15% | `cargo fmt --check`, `clippy -D warnings`, `test --workspace`, `doc` | **pass** — all four green |
+| MVP executável | 30% | `cargo test -p aipo-cli --test conformance` | **aprovado** — 13/13, todas as fixtures de programas e módulos coincidem com o stdout commitado |
+| Disciplina de diagnósticos | 20% | mesma suíte, testes de falha | **aprovado** — toda fixture falha com seu código commitado, incluindo a guarda de que uma fixture de parse reporta um código `AIPO_PARSE_*` |
+| Determinismo | 20% | `cargo test -p aipo-formatter` | **aprovado** — 11/11; formatter idempotente, fontes canônicas não reportam drift, `fmt --check` nunca reescreve |
+| Robustez | 15% | `cargo test -p aipo-cli --test fuzz_smoke` | **aprovado** — 3/3; bytes aleatórios, programas mutados e programas truncados nunca causam panic no pipeline |
+| Gates do repositório | 15% | `cargo fmt --check`, `clippy -D warnings`, `test --workspace`, `doc` | **aprovado** — os quatro verdes |
 
-Command output:
+Saída dos comandos:
 
 ```
 $ cargo test -p aipo-cli --test conformance
@@ -68,17 +68,17 @@ $ cargo doc --workspace --no-deps
    Generated /home/raillen/Documentos/Projetos/aipo-lang/target/doc/aipo_ast/index.html and 14 other files
 ```
 
-## MVP exit gate
+## Gate de saída do MVP
 
-`docs/waves/wave-1-mvp.md` lists five exit conditions. Status against each:
+`docs/waves/wave-1-mvp.md` lista cinco condições de saída. Status de cada uma:
 
-| Exit condition | Status | Evidence |
+| Condição de saída | Status | Evidência |
 |---|---|---|
-| `aipo run` executes real small programs | **met** | `programs/*` snapshots, `modules/*` cases |
-| `aipo check` reports diagnostics; `aipo fmt` idempotent | **met** | `diagnostics/*` fixtures; formatter golden + idempotency tests |
-| pass/fail fixtures green; snapshots committed; integration tests green | **met** | conformance suite 13/13 |
-| No Rust panic escapes as user error (fuzz smoke) | **met** | `fuzz_smoke` 3/3 |
-| CI: fmt/clippy/test/doc green; `prumo validate` and `prumo doctor` green; docs delta resolved | **met** | gates above; `prumo` outputs below |
+| `aipo run` executa programas pequenos reais | **atendida** | snapshots de `programs/*`, casos de `modules/*` |
+| `aipo check` reporta diagnósticos; `aipo fmt` idempotente | **atendida** | fixtures de `diagnostics/*`; testes golden e de idempotência do formatter |
+| fixtures de pass/fail verdes; snapshots commitados; testes de integração verdes | **atendida** | suíte de conformidade 13/13 |
+| Nenhum panic do Rust escapa como erro de usuário (fuzz smoke) | **atendida** | `fuzz_smoke` 3/3 |
+| CI: fmt/clippy/test/doc verdes; `prumo validate` e `prumo doctor` verdes; delta de docs resolvido | **atendida** | gates acima; saídas do `prumo` abaixo |
 
 ```
 $ prumo validate
@@ -88,31 +88,31 @@ $ prumo doctor
 Prumo Doctor: all checks passed cleanly.
 ```
 
-## Verified gaps (gate is partial, and says why)
+## Lacunas verificadas (o gate é parcial, e diz por quê)
 
-The corpus found four places where canon and the implementation still differ. Exercising them is
-the point of the corpus — the S11 gate does not hide them. Each is recorded in
-`docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md` with a minimal demonstrating
-program, and each is carried as an acceptance criterion of `P00-G13`:
+O corpus encontrou quatro pontos em que o canon e a implementação ainda diferem. Exercitá-los é
+o objetivo do corpus — o gate do S11 não os esconde. Cada um está registrado em
+`docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md` com um programa mínimo de
+demonstração, e cada um é carregado como critério de aceitação do `P00-G13`:
 
-| Gap | Today | Canon requires |
+| Lacuna | Hoje | O canon exige |
 |---|---|---|
-| G1 `init` not invoked by `Type{...}` | construction only fills named fields | construction runs `init` when declared |
-| G2 `invariant()` not evaluated | instance published unchecked | invariants hold on publication |
-| G3 signature contracts not checked at runtime | value crosses the boundary unchecked | runtime check at boundaries |
-| G4 `Bytes` has no construction form | `Bytes([1,2,3])` raises `AIPO_RT_NOT_CALLABLE` | construction and indexing are in scope |
+| G1 `init` não invocado por `Type{...}` | a construção apenas preenche os campos nomeados | a construção executa `init` quando declarado |
+| G2 `invariant()` não avaliado | instância publicada sem verificação | os invariantes valem na publicação |
+| G3 contratos de assinatura não verificados em runtime | o valor cruza a fronteira sem verificação | verificação em runtime nas fronteiras |
+| G4 `Bytes` não tem forma de construção | `Bytes([1,2,3])` levanta `AIPO_RT_NOT_CALLABLE` | construção e indexação estão no escopo |
 
-These are **not** regressions and **not** failures of this goal's acceptance criteria: S11's
-deliverable is the corpus and the honest gate, and it delivers both. They are the reason the
-gate is recorded as **partial** rather than **closed**.
+Estas lacunas **não** são regressões e **não** são falhas dos critérios de aceitação deste goal: o
+entregável do S11 é o corpus e o gate honesto, e ele entrega ambos. Elas são o motivo de o
+gate ser registrado como **parcial** e não como **fechado**.
 
-## Documentation delta
+## Delta de documentação
 
-| Artifact | Change |
+| Artefato | Mudança |
 |---|---|
-| `docs/conformance/README.md` | new — corpus layout, fixture invariants, snapshot matrix, regeneration, gauntlet rubric |
-| `docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md` | new — the four verified gaps above, with demonstrating programs |
-| `docs/evidence/P00-G11-cli-and-formatter.md` | records the S10 deliverables this slice scores |
-| `docs/evidence/P00-G10-backend-completion.md` | records the backend gaps this slice exercises |
-| `.ai/goals/P00-G13.goal.json` | successor goal for the four gaps |
-| `CHANGELOG.md`, `PROJECT_STATE.md` | slice S11 recorded, next action set to S12 |
+| `docs/conformance/README.md` | novo — layout do corpus, invariantes das fixtures, matriz de snapshots, regeneração, rubric do gauntlet |
+| `docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md` | novo — as quatro lacunas verificadas acima, com programas de demonstração |
+| `docs/evidence/P00-G11-cli-and-formatter.md` | registra os entregáveis do S10 que este slice pontua |
+| `docs/evidence/P00-G10-backend-completion.md` | registra as lacunas de backend que este slice exercita |
+| `.ai/goals/P00-G13.goal.json` | goal sucessor para as quatro lacunas |
+| `CHANGELOG.md`, `PROJECT_STATE.md` | slice S11 registrado, próxima ação definida como S12 |

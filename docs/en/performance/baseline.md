@@ -1,15 +1,15 @@
-# Baseline de Performance do Aipo
+# Aipo Performance Baseline
 
-**Status:** registro (artefato gerado, não é um gate)
-**Escopo:** baselines de wall-clock para estágios do frontend, comandos, workloads da VM, o backend JS e a suíte cross-language separada
-**Ambiente:** Linux x86_64 (4 CPU, 5 GiB RAM), rustc 1.98.1, Node v24.18.0, `--release`, runner compartilhado (ruidoso — veja a coluna MAD)
-**Registrado em:** 2026-09-20, `cargo run --release -p aipo-bench` (7 amostras, mediana/MAD), git a8709881
+**Status:** record (generated artifact, not a gate)
+**Scope:** wall-clock baselines for frontend stages, commands, VM workloads, the JS backend and the separate cross-language suite
+**Environment:** Linux x86_64 (4 CPU, 5 GiB RAM), rustc 1.98.1, Node v24.18.0, `--release`, shared runner (noisy — see MAD column)
+**Recorded:** 2026-09-20, `cargo run --release -p aipo-bench` (7 samples, median/MAD), git a8709881
 
-Estes números são baselines para comparação futura em um runner dedicado, **não** limiares de aprovação/reprovação. Para o protocolo multi-runtime, as amostras brutas, os checksums e as regras de justiça, veja `docs/performance/cross-language.md`.
+These numbers are baselines for future comparison on a dedicated runner, **not** pass/fail thresholds. For the multi-runtime protocol, raw samples, checksums and fairness rules, see `docs/performance/cross-language.md`.
 
-## Estágios do frontend (mediana)
+## Frontend stages (median)
 
-| estágio | 858 B | 9 KiB | 99 KiB | 1023 KiB |
+| stage | 858 B | 9 KiB | 99 KiB | 1023 KiB |
 |---|---|---|---|---|
 | bytecode/compile+verify | 34.12µs | 347.30µs | 3.91ms | 45.94ms |
 | formatter/format | 50.16µs | 561.38µs | 9.55ms | 78.44ms |
@@ -20,9 +20,9 @@ Estes números são baselines para comparação futura em um runner dedicado, **
 | source/new | 1.90µs | 15.45µs | 179.48µs | 2.23ms |
 | syntax/parse | 77.95µs | 861.32µs | 11.42ms | 102.74ms |
 
-## Comandos e workloads da VM (mediana)
+## Commands and VM workloads (median)
 
-| workload | entrada | mediana | MAD |
+| workload | input | median | MAD |
 |---|---|---|---|
 | cmd/check | 858 B | 188.04µs | 7.59µs |
 | cmd/run | 858 B | 349.31µs | 6.43µs |
@@ -45,9 +45,9 @@ Estes números são baselines para comparação futura em um runner dedicado, **
 | vm/contracts | 71 B | 179.25µs | 1.07µs |
 | vm/invariant-commit | 167 B | 212.84µs | 1.34µs |
 
-## Backend JS (frontend + emit + spawn do node + execução)
+## JS backend (frontend + emit + node spawn + run)
 
-| workload | entrada | mediana | MAD |
+| workload | input | median | MAD |
 |---|---|---|---|
 | js/emit | 858 B | 288.64µs | 13.93µs |
 | js/emit | 9 KiB | 4.00ms | 178.16µs |
@@ -56,16 +56,16 @@ Estes números são baselines para comparação futura em um runner dedicado, **
 | js/hello | 17 B | 57.64ms | 5.16ms |
 | js/integrated | 858 B | 72.06ms | 6.68ms |
 
-O spawn do processo Node domina os workloads pequenos (~50–70 ms no total). A medição cross-language separa Aipo VM in-process, Aipo CLI/VM e Aipo→JavaScript; comparações de steady-state ainda exigem runner dedicado.
+Node process spawn dominates small workloads (~50–70 ms total). A medição cross-language separa Aipo VM in-process, Aipo CLI/VM e Aipo→JavaScript; comparações de steady-state ainda exigem runner dedicado.
 
-## Escalonamento (construção/iteração de list, inserção em dict, N=200..1600)
+## Scaling (list build/iterate, dict insert, N=200..1600)
 
-Todas as razões ficam próximas de 2× a cada dobra neste runner — comportamento linear; os veredictos reportam o ruído com honestidade. Razões brutas:
+All ratios near 2× per doubling on this runner — linear behavior; verdicts report noise honestly. Raw ratios:
 
 - `list-build: N=200..1600 ratios [1.73x, 2.17x, 1.66x] verdict=noisy — rerun on dedicated runner`
 - `list-iterate: N=200..1600 ratios [1.88x, 2.07x, 1.86x] verdict=noisy — rerun on dedicated runner`
 - `dict-insert: N=200..1600 ratios [1.75x, 1.87x, 2.02x] verdict=noisy — rerun on dedicated runner`
 
-## Achado notável durante este gauntlet
+## Notable finding during this gauntlet
 
-O parsing de format-strings escalava 68× a cada 10× de entrada (medidos 23.4 ms para 400 f-strings em 8.4 KiB). Causa raiz: padding `" ".repeat(offset)` por placeholder mais rescans completos. Corrigido fazendo o parsing de slices sem padding e deslocando os spans de volta (`crates/aipo-syntax/src/shift.rs`, adendo do ADP-005): 1.77 ms depois, custo proporcional ao offset eliminado, snapshots do corpus idênticos byte a byte.
+Format-string parsing scaled 68× per 10× input (measured 23.4 ms for 400 f-strings over 8.4 KiB). Root cause: per-placeholder `" ".repeat(offset)` padding plus full rescans. Fixed by parsing slices unpadded and shifting spans back (`crates/aipo-syntax/src/shift.rs`, ADP-005 addendum): 1.77 ms after, offset-proportional cost eliminated, corpus snapshots byte-identical.

@@ -1,38 +1,38 @@
-# Evidence — P00-G13 / MVP Construction Hooks & `Bytes`
+# Evidência — P00-G13 / Hooks de Construção do MVP & `Bytes`
 
-**Goal:** `P00-G13` — MVP contract closure: `init`, `invariant`, runtime contracts and `Bytes` construction
-**Phase:** P00 (Foundation) · **Recorded:** 2026-09-15
-**Environment:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
+**Goal:** `P00-G13` — Fechamento de contratos do MVP: `init`, `invariant`, contratos em runtime e construção de `Bytes`
+**Fase:** P00 (Foundation) · **Registrado em:** 2026-09-15
+**Ambiente:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
 
-Proof attachments for the required gates. Commands are reproducible from the repository root.
+Anexos de prova dos gates exigidos. Os comandos são reproduzíveis a partir da raiz do repositório.
 
-## Why this goal existed
+## Por que este goal existiu
 
-The S11 conformance corpus (`docs/evidence/P00-G12-conformance-and-mvp-gate.md`) found four places
-where canon and the implementation disagreed, and recorded the MVP gate as **partial** rather than
-closing it. This goal resolves three of them from canon and re-delegates the fourth.
+O corpus de conformidade do S11 (`docs/evidence/P00-G12-conformance-and-mvp-gate.md`) encontrou quatro pontos
+em que o canon e a implementação discordavam, e registrou o gate do MVP como **parcial** em vez de
+fechá-lo. Este goal resolve três deles a partir do canon e re-delega o quarto.
 
-| Gap | Decision source | Outcome |
+| Lacuna | Fonte da decisão | Resultado |
 |---|---|---|
-| G1 — `init` not invoked by `Type{...}` | Canonical Syntax: `Type{...}` uses `init` when it exists; the hook is not a dot-call | **closed** |
-| G2 — `invariant()` not evaluated | Canonical Syntax: verified at the end of construction; lines combined by `and` | **closed (at construction)** |
-| G4 — `Bytes` had no construction form | Language Reference §6: `let data = Bytes(32)` — a managed mutable block | **closed** |
-| G2b — invariant at mutation points | Canonical Syntax: `candidate → apply → verify → commit` | deferred to `P00-G14` |
-| G3 — signature contracts at runtime | Wave 1 plan: "runtime check at boundaries" | deferred to `P00-G14` |
+| G1 — `init` não invocado por `Type{...}` | Sintaxe Canônica: `Type{...}` usa `init` quando ele existe; o hook não é uma dot-call | **fechada** |
+| G2 — `invariant()` não avaliado | Sintaxe Canônica: verificado ao final da construção; linhas combinadas por `and` | **fechada (na construção)** |
+| G4 — `Bytes` não tinha forma de construção | Language Reference §6: `let data = Bytes(32)` — um bloco mutável gerenciado | **fechada** |
+| G2b — invariante nos pontos de mutação | Sintaxe Canônica: `candidate → apply → verify → commit` | adiada para `P00-G14` |
+| G3 — contratos de assinatura em runtime | Plano da Wave 1: "verificação em runtime nas fronteiras" | adiada para `P00-G14` |
 
-The error channel for both contract violations was already decided by the repo's own MVP error
-model (`docs/stdlib/mvp-subset.md`): **contract violations are runtime faults**, not recoverable
-`Failure`s. No new semantics had to be invented.
+O canal de erro para ambas as violações de contrato já havia sido decidido pelo próprio modelo de erro do MVP do
+repositório (`docs/stdlib/mvp-subset.md`): **violações de contrato são faults de runtime**, e não
+`Failure`s recuperáveis. Nenhuma semântica nova precisou ser inventada.
 
-## Implementation
+## Implementação
 
-| Stage | Change |
+| Estágio | Mudança |
 |---|---|
-| `aipo-syntax` | `parse_init_hook` injects the implicit `self!` receiver when the author omits it, so canon's `init(id, name)` and the explicit `init(self!, id)` form lower identically |
-| `aipo-hir` | `invariant()` lowers to a `self`-taking predicate: the hook's lines become one `and` chain returned by `<Type>.invariant` |
-| `aipo-ir` | `init` hooks are registered as construction signatures (declared parameters only); `Type{...}` emits `BuildStruct(defer_fixed)` → `Type.init` call → `Pop` → invariant check → `SealStruct`; `init` returns the instance it was handed |
-| `aipo-bytecode` | `BuildStruct` carries a `defer_fixed` flag; new opcodes `SealStruct` and `AssertInvariant` (emitter, verifier with name-index bounds checks, disassembler) |
-| `aipo-vm` | `StructInstance::under_construction` keeps `fixed` fields mutable until `seal`; `BuildStruct` defers both the `fixed` set and the invariant; `SealStruct` restores the set; `AssertInvariant` turns a `false` predicate into `VmFault::InvariantViolation`; `Bytes(count)` conversion |
+| `aipo-syntax` | `parse_init_hook` injeta o receiver implícito `self!` quando o autor o omite, de modo que o `init(id, name)` do canon e a forma explícita `init(self!, id)` fazem lowering de forma idêntica |
+| `aipo-hir` | `invariant()` faz lowering para um predicado que recebe `self`: as linhas do hook viram uma cadeia de `and` retornada por `<Type>.invariant` |
+| `aipo-ir` | os hooks `init` são registrados como assinaturas de construção (apenas parâmetros declarados); `Type{...}` emite `BuildStruct(defer_fixed)` → chamada a `Type.init` → `Pop` → verificação do invariante → `SealStruct`; `init` retorna a instância que recebeu |
+| `aipo-bytecode` | `BuildStruct` carrega uma flag `defer_fixed`; novos opcodes `SealStruct` e `AssertInvariant` (emitter, verifier com verificações de limites do índice de nomes, disassembler) |
+| `aipo-vm` | `StructInstance::under_construction` mantém os campos `fixed` mutáveis até o `seal`; `BuildStruct` adia tanto o conjunto `fixed` quanto o invariante; `SealStruct` restaura o conjunto; `AssertInvariant` transforma um predicado `false` em `VmFault::InvariantViolation`; conversão `Bytes(count)` |
 
 ## Gate: `fmt` / `check` / `clippy`
 
@@ -54,14 +54,14 @@ $ cargo test --workspace
 passed: 137  failed: 0
 ```
 
-New certification:
+Nova certificação:
 
-| Fixture | Proves |
+| Fixture | Comprova |
 |---|---|
-| `docs/conformance/programs/13_init_and_invariant.aipo` | canon `init` with defaults, `fixed` assignment during construction, default referencing an earlier parameter, invariant verified at the end of construction |
-| `docs/conformance/diagnostics/11_runtime_invariant_violation.aipo` | a violated invariant fails with `AIPO_RT_TYPE_MISMATCH` and the instance is never published |
-| `docs/conformance/programs/12_bytes.aipo` | `Bytes(4)` size, byte indexing, `len`, slicing, `Bytes(0)` |
-| `crates/aipo-stdlib/tests/stdlib_tests.rs::test_convert_bytes` | `Bytes(count)` shape, zero-fill, `Bytes(0)`, negative/oversized `Failure`, non-`Int` fault |
+| `docs/conformance/programs/13_init_and_invariant.aipo` | `init` do canon com defaults, atribuição a `fixed` durante a construção, default que referencia um parâmetro anterior, invariante verificado ao final da construção |
+| `docs/conformance/diagnostics/11_runtime_invariant_violation.aipo` | um invariante violado falha com `AIPO_RT_TYPE_MISMATCH` e a instância nunca é publicada |
+| `docs/conformance/programs/12_bytes.aipo` | tamanho de `Bytes(4)`, indexação de bytes, `len`, slicing, `Bytes(0)` |
+| `crates/aipo-stdlib/tests/stdlib_tests.rs::test_convert_bytes` | forma de `Bytes(count)`, preenchimento com zeros, `Bytes(0)`, `Failure` para negativo/grande demais, fault para não `Int` |
 
 ## Gate: `doc`
 
@@ -72,19 +72,19 @@ $ cargo doc --workspace --no-deps
 
 ## Gate: `documentation_impact`
 
-- `docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md` — G1, G2 and G4 marked resolved with
-  the implementation decision recorded; G2b and G3 rewritten as the next goal's criteria.
-- `docs/stdlib/mvp-subset.md` — the `Bytes` section now documents the canonical `Bytes(count)` form
-  and the provisional allocation cap.
-- `docs/conformance/README.md` — snapshot matrix extended; the "Verified gaps" section now states
-  which gaps closed and which remain.
+- `docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md` — G1, G2 e G4 marcadas como resolvidas, com
+  a decisão de implementação registrada; G2b e G3 reescritas como critérios do próximo goal.
+- `docs/stdlib/mvp-subset.md` — a seção de `Bytes` agora documenta a forma canônica `Bytes(count)`
+  e o limite provisório de alocação.
+- `docs/conformance/README.md` — matriz de snapshots estendida; a seção "Lacunas verificadas" agora declara
+  quais lacunas foram fechadas e quais permanecem.
 - `CHANGELOG.md`, `PROJECT_STATE.md`.
 
-## Known limitations (recorded, not hidden)
+## Limitações conhecidas (registradas, não escondidas)
 
-- `invariant()` is verified at the end of construction only. Mutating a field after publication
-  does not re-evaluate the predicate yet — gap **G2b**, assigned to `P00-G14`.
-- `init` bodies that execute an explicit `return` leave the construction value as that return
-  rather than the instance. Canon's `init` is a hook without a value, so this is only reachable by
-  writing an unusual body; the normal path returns the sealed instance.
-- `BYTES_MAX_ALLOCATION` (64 MiB) is a provisional implementation guard, not a canon limit.
+- `invariant()` é verificado apenas ao final da construção. Mutar um campo após a publicação
+  ainda não reavalia o predicado — lacuna **G2b**, atribuída ao `P00-G14`.
+- Corpos de `init` que executam um `return` explícito deixam como valor da construção esse return
+  em vez da instância. O `init` do canon é um hook sem valor, então isso só é alcançável ao
+  escrever um corpo incomum; o caminho normal retorna a instância selada.
+- `BYTES_MAX_ALLOCATION` (64 MiB) é uma guarda provisória da implementação, não um limite do canon.

@@ -1,30 +1,30 @@
-# Evidence — P00-G10 / Backend Completion (gaps inside S1–S9)
+# Evidência — P00-G10 / Conclusão do Backend (lacunas dentro de S1–S9)
 
-**Goal:** `P00-G10` — Backend Completion: functions, closures, collections, Byte/Range/slice, and module execution
-**Phase:** P00 (Foundation) · **Recorded:** 2026-09-15
-**Environment:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
+**Goal:** `P00-G10` — Conclusão do Backend: funções, closures, coleções, Byte/Range/slice e execução de módulos
+**Fase:** P00 (Foundation) · **Registrado em:** 2026-09-15
+**Ambiente:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
 
-Proof attachments for the required gates. Commands are reproducible from the repository root.
+Anexos de prova dos gates exigidos. Os comandos são reproduzíveis a partir da raiz do repositório.
 
-## Why this goal existed
+## Por que este goal existiu
 
-Slices S1–S9 delivered each stage of the pipeline with its own tests, but the stages were not yet
-wired to each other end to end: the parser produced calls that the bytecode emitter could not
-lower, the VM had no first-class function values, the collections API stopped at the operations
-that need no callback, and `import`/`export` were specified in S9 but never executed. This goal
-closes those gaps so that a `.aipo` program can use the full MVP subset through `aipo run`.
+Os slices S1–S9 entregaram cada estágio do pipeline com seus próprios testes, mas os estágios ainda
+não estavam ligados entre si de ponta a ponta: o parser produzia chamadas que o emitter de bytecode não
+conseguia fazer lowering, a VM não tinha valores de função de primeira classe, a API de coleções parava nas operações
+que não precisam de callback, e `import`/`export` foram especificados no S9, mas nunca executados. Este goal
+fecha essas lacunas para que um programa `.aipo` possa usar todo o subset do MVP por meio de `aipo run`.
 
-## What changed, by stage
+## O que mudou, por estágio
 
-| Stage | Crate | Gap closed |
+| Estágio | Crate | Lacuna fechada |
 |---|---|---|
-| Frontend | `aipo-syntax` | `f"..."` interpolation desugars to `String(...)` concatenation; `a[a..b]`, `a[..b]`, `a[a..]` and `a[..]` parse into range-index expressions instead of a bare `a[a]` |
-| Core IR | `aipo-ir` | struct declarations carried on `Program`; `BuildStruct` initializes fields in canonical order; two new opcodes for default parameters and the callee-side prologue |
-| Bytecode | `aipo-bytecode`, `aipo-bytecode::module` | struct table on `BytecodeModule`; emitter, verifier and disassembler cover every new opcode |
-| VM | `aipo-vm` | first-class function values and closures with upvalues; `Value::Byte`/`Value::Bytes`/`Value::Type`; type tests; range and slice indexing; receiver-aware call frames; `MutationDuringIteration` enforcement on `List`/`Dict` iteration |
-| Stdlib | `aipo-stdlib` | `collections.rs` binds `List`/`Dict` methods to the VM; conversions delegate to the VM so `String(v)` and `io.print(v)` cannot diverge; `String`/`Bytes` method surface |
-| Sema | `aipo-sema` | Prelude surface (`docs/…/mvp-subset.md`) is visible to name resolution |
-| CLI | `aipo-cli` | `modules.rs` resolves and executes `import`/`export` with a topological order and init-once semantics |
+| Frontend | `aipo-syntax` | a interpolação `f"..."` sofre desugaring para concatenação de `String(...)`; `a[a..b]`, `a[..b]`, `a[a..]` e `a[..]` fazem parse como expressões de índice por range em vez de um simples `a[a]` |
+| Core IR | `aipo-ir` | declarações de struct carregadas em `Program`; `BuildStruct` inicializa os campos em ordem canônica; dois novos opcodes para parâmetros default e para o prologue no lado do callee |
+| Bytecode | `aipo-bytecode`, `aipo-bytecode::module` | tabela de structs em `BytecodeModule`; emitter, verifier e disassembler cobrem todos os novos opcodes |
+| VM | `aipo-vm` | valores de função de primeira classe e closures com upvalues; `Value::Byte`/`Value::Bytes`/`Value::Type`; testes de tipo; indexação por range e slice; frames de chamada cientes do receiver; imposição de `MutationDuringIteration` na iteração de `List`/`Dict` |
+| Stdlib | `aipo-stdlib` | `collections.rs` vincula os métodos de `List`/`Dict` à VM; as conversões delegam à VM para que `String(v)` e `io.print(v)` não possam divergir; superfície de métodos de `String`/`Bytes` |
+| Sema | `aipo-sema` | a superfície do Prelude (`docs/…/mvp-subset.md`) fica visível para a resolução de nomes |
+| CLI | `aipo-cli` | `modules.rs` resolve e executa `import`/`export` com ordem topológica e semântica de init-once |
 
 ## Gate: `fmt`
 
@@ -40,7 +40,7 @@ $ cargo check --workspace --all-targets
     Finished `dev` profile [unoptimized + debuginfo] target(s)
 ```
 
-## Gate: `clippy` (workspace lints deny warnings)
+## Gate: `clippy` (os lints do workspace tratam warnings como erro)
 
 ```
 $ cargo clippy --workspace --all-targets -- -D warnings
@@ -54,9 +54,9 @@ $ cargo test --workspace
 passed: 136  failed: 0
 ```
 
-Per crate:
+Por crate:
 
-| Crate | Tests | | Crate | Tests |
+| Crate | Testes | | Crate | Testes |
 |---|---|---|---|---|
 | `aipo-source` | 5 | | `aipo-ir` | 2 |
 | `aipo-diagnostics` | 3 | | `aipo-bytecode` | 4 |
@@ -66,20 +66,20 @@ Per crate:
 | `aipo-hir` | 4 | | `aipo-formatter` | 11 |
 | `aipo-sema` | 8 | | `aipo-cli` | 16 |
 
-The gap-closing work is pinned by the conformance corpus rather than by unit tests alone. Each
-program fixture in `docs/conformance/programs/` is executed through the real pipeline and compared
-against committed stdout, and each diagnostic fixture must fail with its committed code:
+O trabalho de fechamento das lacunas é fixado pelo corpus de conformidade, e não apenas por testes
+unitários. Cada fixture de programa em `docs/conformance/programs/` é executada pelo pipeline real e comparada
+com o stdout commitado, e cada fixture de diagnóstico precisa falhar com o código commitado:
 
-| Fixture | Gap it proves closed |
+| Fixture | Lacuna que comprova fechada |
 |---|---|
-| `02_recursion`, `11_defaults_and_named_args` | functions with real locals/params, default parameters evaluated per call, defaults referencing earlier parameters, named arguments in any order, pipeline into a call |
-| `06_closures` | anonymous `fn`, capture, per-iteration capture in loops |
-| `04_collections` | `List`/`Dict` method API including the higher-order `transform`, `filter` and `sort_by` (which call back into Aipo through the VM) |
-| `09_slicing` | ranges `a..b`, list/string slicing with negative bounds, omitted slice bounds |
-| `05_structs_and_impl` | `struct` with defaults, construction, `impl` methods, associated functions |
-| `07_strings_and_math` | `Byte(255)`, `string`/`math` surface, `f"..."` interpolation |
+| `02_recursion`, `11_defaults_and_named_args` | funções com locals/params reais, parâmetros default avaliados a cada chamada, defaults que referenciam parâmetros anteriores, argumentos nomeados em qualquer ordem, pipeline para uma chamada |
+| `06_closures` | `fn` anônima, captura, captura por iteração em loops |
+| `04_collections` | API de métodos de `List`/`Dict`, incluindo os de ordem superior `transform`, `filter` e `sort_by` (que chamam de volta o Aipo pela VM) |
+| `09_slicing` | ranges `a..b`, slicing de list/string com limites negativos, limites de slice omitidos |
+| `05_structs_and_impl` | `struct` com defaults, construção, métodos de `impl`, funções associadas |
+| `07_strings_and_math` | `Byte(255)`, superfície de `string`/`math`, interpolação `f"..."` |
 | `diagnostics/08_runtime_mutation_during_iteration` | `AIPO_RT_MUTATION_DURING_ITERATION` |
-| `modules/basic`, `modules/cycle`, `modules/missing` | import/export execution, init-once, privacy, `AIPO_SEM_IMPORT_CYCLE`, `AIPO_SEM_UNKNOWN_MODULE` |
+| `modules/basic`, `modules/cycle`, `modules/missing` | execução de import/export, init-once, privacidade, `AIPO_SEM_IMPORT_CYCLE`, `AIPO_SEM_UNKNOWN_MODULE` |
 
 ## Gate: `doc`
 
@@ -90,10 +90,10 @@ $ cargo doc --workspace --no-deps
 
 ## Gate: `documentation_impact`
 
-- `docs/stdlib/mvp-subset.md` — module execution is no longer listed as S9-only; the `List`/`Dict`
-  method surface and the reason the higher-order methods live in the VM are recorded.
-- `docs/adp/ADP-001-byte-and-core-types-as-values.md` — Q1 and Q2 are resolved by this slice
-  (`Value::Byte` and first-class type values now exist); the remaining open questions stay open.
-- `docs/evidence/P00-G12-conformance-and-mvp-gate.md` — the corpus this slice validates is scored
-  there.
+- `docs/stdlib/mvp-subset.md` — a execução de módulos deixa de constar como exclusiva do S9; a superfície de
+  métodos de `List`/`Dict` e o motivo de os métodos de ordem superior viverem na VM estão registrados.
+- `docs/adp/ADP-001-byte-and-core-types-as-values.md` — Q1 e Q2 são resolvidas por este slice
+  (`Value::Byte` e valores de tipo de primeira classe agora existem); as demais questões em aberto continuam abertas.
+- `docs/evidence/P00-G12-conformance-and-mvp-gate.md` — o corpus que este slice valida é pontuado
+  ali.
 - `CHANGELOG.md`, `PROJECT_STATE.md`.

@@ -1,10 +1,10 @@
-# Evidence — P00-G09 / Slice S9 (Runtime & Minimum Stdlib)
+# Evidência — P00-G09 / Slice S9 (Runtime & Stdlib Mínima)
 
-**Goal:** `P00-G09` — Runtime & Minimum Stdlib: Module registry, initialization order, Prelude V1, and native stdlib modules
-**Phase:** P00 (Foundation) · **Slice:** S9 · **Recorded:** 2026-09-15
-**Environment:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
+**Goal:** `P00-G09` — Runtime & Stdlib Mínima: registro de módulos, ordem de inicialização, Prelude V1 e módulos nativos da stdlib
+**Fase:** P00 (Foundation) · **Slice:** S9 · **Registrado em:** 2026-09-15
+**Ambiente:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
 
-Proof attachments for the required gates. Commands are reproducible from the repository root.
+Anexos de prova dos gates exigidos. Os comandos são reproduzíveis a partir da raiz do repositório.
 
 ## Gate: `fmt`
 
@@ -20,7 +20,7 @@ $ cargo check --workspace --all-targets
     Finished `dev` profile [unoptimized + debuginfo] target(s)
 ```
 
-## Gate: `clippy` (workspace lints deny warnings)
+## Gate: `clippy` (os lints do workspace tratam warnings como erro)
 
 ```
 $ cargo clippy --workspace --all-targets
@@ -35,27 +35,27 @@ $ cargo test --workspace
 total_passed=109 total_failed=0
 ```
 
-Per crate:
+Por crate:
 
-| Crate | Tests |
+| Crate | Testes |
 |---|---|
-| `aipo-stdlib` | 30 passed, 0 failed |
-| `aipo-runtime` | 10 passed, 0 failed |
-| `aipo-vm` | 24 passed, 0 failed |
+| `aipo-stdlib` | 30 passaram, 0 falharam |
+| `aipo-runtime` | 10 passaram, 0 falharam |
+| `aipo-vm` | 24 passaram, 0 falharam |
 
-`aipo-stdlib` coverage (`crates/aipo-stdlib/tests/stdlib_tests.rs`, 30 tests):
-Prelude V1 (`len`, `copy`, `same`, `some`, `fail`), core-type conversions
+Cobertura de `aipo-stdlib` (`crates/aipo-stdlib/tests/stdlib_tests.rs`, 30 testes):
+Prelude V1 (`len`, `copy`, `same`, `some`, `fail`), conversões de tipos core
 (`Int`, `Float`, `Byte`, `String`), `math` (`abs`, `min`, `max`, `floor`, `ceil`, `round`
 half-away-from-zero, `truncate`, `sqrt`, `pow`, `clamp`), `string` (`len`, `byte_len`,
 `contains`, `starts_with`, `ends_with`, `find`, `lower`, `upper`, `capitalize`, `reverse`,
-`trim`, `split`, `join`, `replace`, `slice`, `format`), `io` (capture sink), canon argument
-rules (empty `split`/`replace` patterns, non-`String` `join` elements, preserved empty
-fields), `NativeRegistry` surface coverage, and two end-to-end VM executions calling
-stdlib natives through bytecode.
+`trim`, `split`, `join`, `replace`, `slice`, `format`), `io` (capture sink), regras de
+argumentos do canon (padrões vazios de `split`/`replace`, elementos de `join` que não são
+`String`, campos vazios preservados), cobertura da superfície de `NativeRegistry` e duas
+execuções end-to-end da VM chamando nativos da stdlib via bytecode.
 
-`aipo-runtime` coverage (`crates/aipo-runtime/tests/graph_tests.rs`, 10 tests): empty graph,
-single module, linear chain, lexicographic tie-break, diamond dependency, missing dependency,
-direct cycle, indirect cycle, module lifecycle states, native registry operations.
+Cobertura de `aipo-runtime` (`crates/aipo-runtime/tests/graph_tests.rs`, 10 testes): grafo vazio,
+módulo único, cadeia linear, desempate lexicográfico, dependência em diamante, dependência ausente,
+ciclo direto, ciclo indireto, estados do ciclo de vida do módulo, operações do registro de nativos.
 
 ## Gate: `doc`
 
@@ -64,7 +64,7 @@ $ cargo doc --workspace --no-deps
 (no warnings; `missing_docs` is enabled at workspace level in every crate)
 ```
 
-## Governance gates
+## Gates de governança
 
 ```
 $ prumo validate
@@ -86,26 +86,26 @@ $ prumo goal list             # P00-G09 DONE, diagnostics [], warnings []
 $ prumo report add            # TR-002 recorded in .prumo/history/project-intelligence.json
 ```
 
-Documentation obligations predicted for the touched paths were `security.trust`; the actual delta
-was the same contract, so the postflight reconcile reports zero drift.
+As obrigações de documentação previstas para os caminhos tocados eram `security.trust`; o delta
+real foi o mesmo contrato, de modo que o reconcile de pós-execução (postflight) reporta drift zero.
 
-## Dependency approval
+## Aprovação de dependência
 
-`unicode-normalization` 0.1.25 contains `unsafe` (`char::from_u32_unchecked`, Hangul
-decomposition). Approval was requested and granted explicitly during this slice; the
-exception is recorded in `docs/security/security-contract.md`. `unicode-segmentation`
-1.13.3 (`#![deny(unsafe_code)]`) and `tinyvec` 1.13.3 (`#![forbid(unsafe_code)]`) were
-verified unsafe-free.
+`unicode-normalization` 0.1.25 contém `unsafe` (`char::from_u32_unchecked`, decomposição de
+Hangul). A aprovação foi solicitada e concedida explicitamente durante este slice; a
+exceção está registrada em `docs/security/security-contract.md`. `unicode-segmentation`
+1.13.3 (`#![deny(unsafe_code)]`) e `tinyvec` 1.13.3 (`#![forbid(unsafe_code)]`) foram
+verificadas como livres de unsafe.
 
-## Documentation delta
+## Delta de documentação
 
-| Artifact | Change |
+| Artefato | Mudança |
 |---|---|
-| `docs/stdlib/mvp-subset.md` | new — implemented Prelude V1 / `math` / `string` / `io` surface, error model, deferred surface |
-| `docs/adp/ADP-001-byte-and-core-types-as-values.md` | new — open questions: `Byte` runtime kind, first-class type values, inverted `clamp` bounds, `slice` saturation, NFC boundaries |
-| `docs/crates/crate-contracts.md` | `aipo-stdlib` contract now points at the implemented surface and ADP-001 |
-| `docs/security/security-contract.md` | approved dependency exception table + unsafe scan requirement |
-| `docs/PRUMO.md` | router links to crate contracts, wave plan, authority map, stdlib subset, ADP-001 |
-| `crates/aipo-stdlib/README.md` | surface, invariants and error-model summary |
-| `crates/aipo-runtime/README.md` | unchanged (accurate for this slice) |
-| `PROJECT_STATE.md`, `CHANGELOG.md` | slice S9 recorded, next action set to S10 |
+| `docs/stdlib/mvp-subset.md` | novo — superfície implementada de Prelude V1 / `math` / `string` / `io`, modelo de erro, superfície adiada |
+| `docs/adp/ADP-001-byte-and-core-types-as-values.md` | novo — questões em aberto: kind de runtime de `Byte`, valores de tipo de primeira classe, limites invertidos de `clamp`, saturação de `slice`, fronteiras NFC |
+| `docs/crates/crate-contracts.md` | o contrato de `aipo-stdlib` agora aponta para a superfície implementada e para o ADP-001 |
+| `docs/security/security-contract.md` | tabela de exceções de dependências aprovadas + requisito de varredura de unsafe |
+| `docs/PRUMO.md` | o router aponta para contratos das crates, plano de waves, mapa de autoridade, subset da stdlib, ADP-001 |
+| `crates/aipo-stdlib/README.md` | resumo da superfície, dos invariantes e do modelo de erro |
+| `crates/aipo-runtime/README.md` | inalterado (preciso para este slice) |
+| `PROJECT_STATE.md`, `CHANGELOG.md` | slice S9 registrado, próxima ação definida como S10 |

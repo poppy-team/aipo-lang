@@ -1,10 +1,10 @@
-# Evidence — P03-G01 / Host ABI: Capability Model, Host Values and Generational Handles
+# Evidência — P03-G01 / Host ABI: Modelo de Capabilities, Valores do Host e Handles Geracionais
 
-**Goal:** `P03-G01` — Prove the host-neutral ABI defined by Wave 4: consume an AHS (host surface description as data), a deny-by-default capability model, host values that copy by value with host-owned external identity, and generational handles that never use-after-free (stale access yields none or a Failure per contract).
-**Phase:** P03 (Wave 4 — Host ABI + Poppy) · **Recorded:** 2026-09-21
-**Environment:** Linux x86_64, rustc/cargo 1.98.1, Node v24.18.0
+**Goal:** `P03-G01` — Provar a ABI neutra em relação ao host definida pela Wave 4: consumir uma AHS (descrição da superfície do host como dado), um modelo de capabilities deny-by-default, valores do host que são copiados por valor com identidade externa pertencente ao host, e handles geracionais que nunca fazem use-after-free (o acesso obsoleto resulta em none ou em uma Failure, conforme o contrato).
+**Fase:** P03 (Wave 4 — Host ABI + Poppy) · **Registrado em:** 2026-09-21
+**Ambiente:** Linux x86_64, rustc/cargo 1.98.1, Node v24.18.0
 
-## Gates (all executed, all green)
+## Gates (todos executados, todos verdes)
 
 ```
 $ cargo fmt --all -- --check                                           # exit 0
@@ -18,48 +18,48 @@ $ cargo test -p aipo-vm --test host_capability_and_handles             # 5 passe
 $ cargo test -p aipo-host                                              # 37 unit + 1 doctest
 ```
 
-## Acceptance Criteria Verification
+## Verificação dos Critérios de Aceitação
 
-| # | Criterion | Status | Evidence |
+| # | Critério | Status | Evidência |
 |---|---|---|---|
-| 1 | Capability model is deny-by-default with the canon hierarchy | ✅ | `CANON_CAPABILITIES` in `aipo-host/src/capability.rs`; `CapabilitySet::none()` starts empty; 8 tests in `capability.rs` cover subsumption, narrowing, denial fault, and canon hierarchy well-formedness |
-| 2 | AHS is consumed as data | ✅ | `HostSchema` in `aipo-host/src/ahs.rs` with `from_json`, `validate`, `declared_capabilities`, `missing_capabilities`, `require_capabilities`, `function` lookup; 9 tests cover well-formed surfaces, duplicates, subjects, async, malformed caps, empty host, invalid JSON |
-| 3 | Host values copy by value; no Rust reference crosses the boundary | ✅ | `HostValue` in `aipo-host/src/value.rs` is a closed enum of plain data + `Handle`; `host_value_to_value`/`value_to_host_value` in `aipo-vm/src/host.rs` copy each variant by value with NFC normalization at the boundary; richer values (collections, functions) return `None` from `value_to_host_value`; 6 unit tests |
-| 4 | Generational handles never use freed state | ✅ | `HandleTable` in `aipo-host/src/handle.rs` bumps generation on `remove`; exhaustion retires the slot instead of wrapping; `resolve` via `HostContext` returns `VmFault::StaleHandle`; 10 unit tests + 2 VM pipeline integration tests (`test_stale_handle_via_host_context`, `test_stale_handle_across_slot_reuse`) |
-| 5 | Missing capability → AIPO_RT_CAPABILITY_DENIED with target/capability context | ✅ | `CapabilitySet::require` → `HostFault::CapabilityDenied` → `VmFault::CapabilityDenied`; pipeline test `test_capability_denied` with `revoke_clock()` proves the fault fires at runtime; `time.now`/`time.monotonic` test the positive path with `install_clock` |
-| 6 | Scoped binding cannot escape, enforced at 6 heap-publication points | ✅ | `Vm::publish_check` called at `SetGlobal` (L132), `Return` (L263), `SetField` (L381), `SetIndex` (L546), `BuildList` (L604), `BuildDict` (L619-620) in `dispatch.rs`; `HostContext::ensure_publishable` walks containers recursively with visited set; 8 pipeline-level tests in `host_scope_escape.rs` covering all 6 sites |
-| 7 | Nondeterministic sources through capability layer, replaceable by test profile | ✅ | `time.now`/`time.monotonic` gated by `ClockSource` trait; `install_clock`/`revoke_clock` process-global; CLI installs `SystemClock`; tests install `FixedClock`; denial faults with `AIPO_RT_CAPABILITY_DENIED`; conformance program 28 |
-| 8 | fmt, clippy, test, doc all green | ✅ | See gates above |
+| 1 | O modelo de capabilities é deny-by-default com a hierarquia do canon | ✅ | `CANON_CAPABILITIES` em `aipo-host/src/capability.rs`; `CapabilitySet::none()` começa vazio; 8 testes em `capability.rs` cobrem subsunção, estreitamento, fault de negação e boa formação da hierarquia do canon |
+| 2 | A AHS é consumida como dado | ✅ | `HostSchema` em `aipo-host/src/ahs.rs` com `from_json`, `validate`, `declared_capabilities`, `missing_capabilities`, `require_capabilities`, busca por `function`; 9 testes cobrem superfícies bem formadas, duplicatas, subjects, async, capabilities malformadas, host vazio, JSON inválido |
+| 3 | Valores do host são copiados por valor; nenhuma referência Rust cruza a fronteira | ✅ | `HostValue` em `aipo-host/src/value.rs` é um enum fechado de dados simples + `Handle`; `host_value_to_value`/`value_to_host_value` em `aipo-vm/src/host.rs` copiam cada variante por valor com normalização NFC na fronteira; valores mais ricos (coleções, funções) retornam `None` em `value_to_host_value`; 6 testes unitários |
+| 4 | Handles geracionais nunca usam estado liberado | ✅ | `HandleTable` em `aipo-host/src/handle.rs` incrementa a geração em `remove`; a exaustão aposenta o slot em vez de dar wrap; `resolve` via `HostContext` retorna `VmFault::StaleHandle`; 10 testes unitários + 2 testes de integração de pipeline da VM (`test_stale_handle_via_host_context`, `test_stale_handle_across_slot_reuse`) |
+| 5 | Capability ausente → AIPO_RT_CAPABILITY_DENIED com contexto de alvo/capability | ✅ | `CapabilitySet::require` → `HostFault::CapabilityDenied` → `VmFault::CapabilityDenied`; o teste de pipeline `test_capability_denied` com `revoke_clock()` prova que o fault dispara em runtime; `time.now`/`time.monotonic` testam o caminho positivo com `install_clock` |
+| 6 | Um binding com escopo não pode escapar, imposto em 6 pontos de publicação no heap | ✅ | `Vm::publish_check` chamado em `SetGlobal` (L132), `Return` (L263), `SetField` (L381), `SetIndex` (L546), `BuildList` (L604), `BuildDict` (L619-620) em `dispatch.rs`; `HostContext::ensure_publishable` percorre containers recursivamente com um conjunto de visitados; 8 testes em nível de pipeline em `host_scope_escape.rs` cobrindo os 6 pontos |
+| 7 | Fontes não determinísticas passam pela camada de capabilities, substituíveis por um profile de teste | ✅ | `time.now`/`time.monotonic` controlados pelo trait `ClockSource`; `install_clock`/`revoke_clock` globais ao processo; a CLI instala `SystemClock`; os testes instalam `FixedClock`; a negação gera fault com `AIPO_RT_CAPABILITY_DENIED`; programa de conformidade 28 |
+| 8 | fmt, clippy, test, doc todos verdes | ✅ | Veja os gates acima |
 
-## Summary of Implementation
+## Resumo da Implementação
 
-| Area | Details |
+| Área | Detalhes |
 |---|---|
-| **`aipo-host` crate** | `#![forbid(unsafe_code)]`. Five modules: `ahs` (AHS as data), `capability` (deny-by-default hierarchy), `fault` (5-variant `HostFault` → stable codes), `handle` (generational `HandleTable`), `value` (`HostValue` closed enum with boundary checks). Depends only on `aipo-diagnostics` and `serde`. 37 unit tests + 1 doctest. |
-| **VM adapter (`aipo-vm/src/host.rs`)** | `HostContext` holds `CapabilitySet`, `HandleTable<HostValue>`, open scopes, and escaped handles. Single-point conversions: `host_value_to_value` (NFC, range checks), `value_to_host_value` (plain data only), `host_fault_to_vm_fault` (total mapping, never a panic or recoverable `Failure`). 14 unit tests covering round-trips, out-of-range faults, NFC normalization, reference refusal, capability denial, stale handles, scoped escape through containers and structs, self-referential walk termination, and full fault mapping. |
-| **Scope-escape enforcement** | `publish_check` at 6 bytecode publication points guards values about to become heap-reachable. Early-exit on `!has_escapes()` (one `bool` test) means programs without host bindings pay effectively nothing. The walk handles `Value::List`, `Value::Set`, `Value::Dict`, `Value::Struct` with a visited-set to stop at self-referential values. |
-| **`time` module** | `time.now()` → wall clock as `Duration`, `time.monotonic()` → monotonic clock as `Duration`. `ClockSource` trait with `install_clock`/`revoke_clock` for process-global swap. `SystemClock` uses `std::time::{SystemTime, Instant}`. Denial is a fault, never silent absence. The JS backend mirrors the same gate via `globalThis.__aipoClock`. |
-| **Diagnostic codes** | `AIPO_RT_CAPABILITY_DENIED`, `AIPO_RT_STALE_HANDLE`, `AIPO_RT_SCOPE_ESCAPE` in `DiagnosticCode` with `Severity::Fault`. Documented in `docs/diagnostics/catalog.md`. |
+| **Crate `aipo-host`** | `#![forbid(unsafe_code)]`. Cinco módulos: `ahs` (AHS como dado), `capability` (hierarquia deny-by-default), `fault` (`HostFault` de 5 variantes → códigos estáveis), `handle` (`HandleTable` geracional), `value` (enum fechado `HostValue` com verificações de fronteira). Depende apenas de `aipo-diagnostics` e `serde`. 37 testes unitários + 1 doctest. |
+| **Adapter da VM (`aipo-vm/src/host.rs`)** | `HostContext` mantém `CapabilitySet`, `HandleTable<HostValue>`, escopos abertos e handles escapados. Conversões em ponto único: `host_value_to_value` (NFC, verificações de faixa), `value_to_host_value` (apenas dados simples), `host_fault_to_vm_fault` (mapeamento total, nunca um panic nem uma `Failure` recuperável). 14 testes unitários cobrindo round-trips, faults de fora de faixa, normalização NFC, recusa de referências, negação de capability, handles obsoletos, escape com escopo através de containers e structs, término do percurso autorreferencial e mapeamento completo de faults. |
+| **Imposição de scope-escape** | `publish_check` em 6 pontos de publicação do bytecode protege valores prestes a se tornarem alcançáveis no heap. A saída antecipada em `!has_escapes()` (um teste de `bool`) faz com que programas sem bindings do host paguem praticamente nada. O percurso trata `Value::List`, `Value::Set`, `Value::Dict`, `Value::Struct` com um conjunto de visitados para parar em valores autorreferenciais. |
+| **Módulo `time`** | `time.now()` → relógio de parede como `Duration`, `time.monotonic()` → relógio monotônico como `Duration`. Trait `ClockSource` com `install_clock`/`revoke_clock` para troca global ao processo. `SystemClock` usa `std::time::{SystemTime, Instant}`. A negação é um fault, nunca uma ausência silenciosa. O backend JS espelha o mesmo gate via `globalThis.__aipoClock`. |
+| **Códigos de diagnóstico** | `AIPO_RT_CAPABILITY_DENIED`, `AIPO_RT_STALE_HANDLE`, `AIPO_RT_SCOPE_ESCAPE` em `DiagnosticCode` com `Severity::Fault`. Documentados em `docs/diagnostics/catalog.md`. |
 
-## Test Inventory & Verification
+## Inventário de Testes & Verificação
 
-Unit and integration tests:
+Testes unitários e de integração:
 
-- `crates/aipo-host/src/` — 37 unit tests + 1 doctest: capability subsumption and narrowing, deny-by-default, handle insert/get/release/stale/generation-exhaustion, value range checking, AHS validation.
-- `crates/aipo-vm/src/host.rs` — 14 unit tests: value round-trips, out-of-range faults, NFC normalization, reference refusal, capability denial and grant, stale handles, scope escape through containers and structs, self-referential walk, fault mapping.
-- `crates/aipo-vm/tests/host_scope_escape.rs` — 9 integration tests driving the real pipeline: SetGlobal, Return, BuildList, BuildDict, SetIndex, SetField escape sites; open-scope passthrough; no-host-bindings fast path; slot reuse after scope close.
-- `crates/aipo-vm/tests/host_capability_and_handles.rs` — 5 integration tests: capability denied (revoke_clock → time.now/monotonic faults), capability granted (install_clock → success), stale handle via release, stale handle across slot reuse, live handle resolution.
-- `crates/aipo-stdlib/src/time.rs` — 6 unit tests: denied/granted clock, fixed/ticking sources, wall reading.
+- `crates/aipo-host/src/` — 37 testes unitários + 1 doctest: subsunção e estreitamento de capabilities, deny-by-default, insert/get/release/obsoleto/exaustão de geração de handles, verificação de faixa de valores, validação de AHS.
+- `crates/aipo-vm/src/host.rs` — 14 testes unitários: round-trips de valores, faults de fora de faixa, normalização NFC, recusa de referências, negação e concessão de capability, handles obsoletos, escape de escopo através de containers e structs, percurso autorreferencial, mapeamento de faults.
+- `crates/aipo-vm/tests/host_scope_escape.rs` — 9 testes de integração que conduzem o pipeline real: pontos de escape SetGlobal, Return, BuildList, BuildDict, SetIndex, SetField; passagem por escopo aberto; fast path sem bindings do host; reuso de slot após o fechamento do escopo.
+- `crates/aipo-vm/tests/host_capability_and_handles.rs` — 5 testes de integração: capability negada (revoke_clock → faults em time.now/monotonic), capability concedida (install_clock → sucesso), handle obsoleto via release, handle obsoleto através de reuso de slot, resolução de handle vivo.
+- `crates/aipo-stdlib/src/time.rs` — 6 testes unitários: relógio negado/concedido, fontes fixas/com tick, leitura do relógio de parede.
 
-Conformance corpus:
+Corpus de conformidade:
 
-- `docs/conformance/programs/28_time_clock_capability.aipo` — monotonic ≥ 0, wall > 0, monotonic non-decreasing.
+- `docs/conformance/programs/28_time_clock_capability.aipo` — monotônico ≥ 0, parede > 0, monotônico não decrescente.
 
-## Non-Goals (Explicit Deferrals)
+## Não-Objetivos (Adiamentos Explícitos)
 
-| Item | Rationale |
+| Item | Justificativa |
 |---|---|
-| ECS scopes, command buffer, behaviors/events, game.random | `aipo-poppy` (P03-G02) |
-| Any specific engine inside `aipo-host` | Stays general abstractions only |
-| filesystem/network/process stdlib modules | Wave 6 capability stdlib |
-| Instruction/fuel, heap and wall-time budget enforcement | ADP-003 (undecided) |
+| Escopos ECS, command buffer, behaviors/events, game.random | `aipo-poppy` (P03-G02) |
+| Qualquer engine específica dentro de `aipo-host` | Permanece apenas com abstrações gerais |
+| módulos de stdlib de filesystem/network/process | Stdlib de capabilities da Wave 6 |
+| Imposição de orçamento de instruções/fuel, heap e tempo de parede | ADP-003 (indecidido) |

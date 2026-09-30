@@ -1,49 +1,49 @@
-# ADP-003 — Execution Budgets for Untrusted Programs (fuel, memory, interruption)
+# ADP-003 — Orçamentos de Execução para Programas Não Confiáveis (fuel, memória, interrupção)
 
-**Status:** draft (open question — no semantics implemented, nothing decided)
-**Related:** `docs/evidence/P01-G02-*.md` (resource-exhaustion suite), crate contracts
-(`aipo-vm` Owns line corrected by the same goal), Fechamento Arquitetural §10–11
-**Authority:** subordinate to `docs/canon/Aipo V1 — Language Reference…` and
-`docs/language/authority-map.md` (no-invention policy)
+**Status:** rascunho (questão em aberto — nenhuma semântica implementada, nada decidido)
+**Relacionado:** `docs/evidence/P01-G02-*.md` (suíte de exaustão de recursos), contratos das crates
+(linha Owns de `aipo-vm` corrigida pelo mesmo goal), Fechamento Arquitetural §10–11
+**Autoridade:** subordinada a `docs/canon/Aipo V1 — Language Reference…` e
+`docs/language/authority-map.md` (política de não invenção)
 
-## Verified facts (not decisions)
+## Fatos verificados (não são decisões)
 
-- The VM enforces exactly one execution budget today: the operand-stack depth
-  limit (1024), surfacing as `AIPO_RT_OVERFLOW` with a recursion hint.
-- There is **no** instruction/fuel budget, no allocation/memory accounting, and no
-  in-VM interruption mechanism. A `loop … end` program runs until the host kills
-  it; the test suite proves this with an external watchdog, not with a VM guarantee.
-- The crate contract historically listed "VM-level fuel/debt accounting" under
-  `aipo-vm` Owns. That line described an aspiration, not the implementation, and
-  has been corrected to the stack-depth limit with a pointer here.
-- `cargo-fuzz`/libFuzzer execution, Miri, and sanitizer runs are CI-tier
-  evaluations, not current gates (see the gauntlet evidence record).
+- Hoje a VM impõe exatamente um orçamento de execução: o limite de profundidade da
+  operand stack (1024), que se manifesta como `AIPO_RT_OVERFLOW` com uma dica de recursão.
+- **Não** existe orçamento de instruções/fuel, nem contabilização de alocação/memória, nem
+  mecanismo de interrupção dentro da VM. Um programa `loop … end` executa até que o host o
+  mate; a suíte de testes prova isso com um watchdog externo, não com uma garantia da VM.
+- O contrato das crates listava historicamente "contabilização de fuel/débito no nível da VM"
+  em Owns de `aipo-vm`. Essa linha descrevia uma aspiração, não a implementação, e foi
+  corrigida para o limite de profundidade da stack, com um ponteiro para este documento.
+- A execução de `cargo-fuzz`/libFuzzer, o Miri e as execuções com sanitizers são avaliações
+  de nível CI, não gates atuais (veja o registro de evidência do gauntlet).
 
-## Open questions (all undecided)
+## Questões em aberto (todas indecididas)
 
-1. **Exhaustion signal:** when a budget trips, is the outcome a recoverable
-   `Failure`, a runtime fault with a new diagnostic code, or process abort?
-   Each choice changes the Failure/fault contract and needs Language Reference
-   backing that does not exist yet.
-2. **Budget scope:** per call, per module run, per host session? Who sets it —
-   source syntax, CLI flags, or host API only?
-3. **Memory accounting:** what counts (collectotas, closures, strings, bytecode),
-   and is the accounting exact or sampled?
-4. **Interruption:** cooperative (checked between instructions) or preemptive?
-   What state is observable after an interrupt?
-5. **JS backend:** any budget must have a defined VM↔JS parity rule; the shim
-   currently has no budget either.
+1. **Sinal de exaustão:** quando um orçamento estoura, o resultado é uma `Failure`
+   recuperável, um fault de runtime com um novo código de diagnóstico, ou um abort do
+   processo? Cada escolha altera o contrato de Failure/fault e exige respaldo na Language
+   Reference que ainda não existe.
+2. **Escopo do orçamento:** por chamada, por execução de módulo, por sessão do host? Quem o
+   define — sintaxe do código-fonte, flags da CLI ou apenas a API do host?
+3. **Contabilização de memória:** o que conta (coletas, closures, strings, bytecode), e a
+   contabilização é exata ou amostrada?
+4. **Interrupção:** cooperativa (verificada entre instruções) ou preemptiva? Que estado é
+   observável depois de uma interrupção?
+5. **Backend JS:** qualquer orçamento precisa de uma regra de paridade VM↔JS definida; o shim
+   atualmente também não tem orçamento.
 
-## Non-goals of this ADP
+## Não-objetivos deste ADP
 
-- Inventing fuel semantics inside a test/quality goal. Budgets change observable
-  behavior and need their own design goal with canon sponsorship.
-- Claiming sandboxing: Aipo output "is not by itself a security sandbox"
-  (Fechamento §10). Untrusted scripts still require VM/host sandboxing or
-  external isolation.
+- Inventar semântica de fuel dentro de um goal de teste/qualidade. Orçamentos alteram o
+  comportamento observável e precisam de um goal de design próprio, com patrocínio do canon.
+- Afirmar sandboxing: a saída do Aipo "não é, por si só, um sandbox de segurança"
+  (Fechamento §10). Scripts não confiáveis ainda exigem sandboxing de VM/host ou isolamento
+  externo.
 
-## Exit criteria
+## Critérios de saída
 
-This ADP closes when a design goal specifies the signal, scope, accounting and
-parity rule above, with fixtures proving each — or explicitly scopes budgets out
-of V1 with a documented rationale.
+Este ADP se encerra quando um goal de design especificar o sinal, o escopo, a contabilização
+e a regra de paridade acima, com fixtures que provem cada um — ou quando tirar explicitamente
+os orçamentos da V1, com uma justificativa documentada.

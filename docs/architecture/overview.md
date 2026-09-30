@@ -1,47 +1,47 @@
-# Aipo — Architecture Overview (Waves 1–2)
+# Aipo — Visão Geral da Arquitetura (Waves 1–2)
 
-**Status:** normative (architecture level)
-**Authority:** subordinate to canonical docs in `docs/canon/`
-**Scope:** Wave 1–2 implementation architecture: pipeline, data ownership, boundaries
-**Blocking questions:**
-- What owns canonical state?
-- Which components may mutate it?
+**Status:** normativo (nível de arquitetura)
+**Autoridade:** subordinada aos documentos canônicos em `docs/canon/`
+**Escopo:** arquitetura de implementação das Waves 1–2: pipeline, propriedade dos dados, fronteiras
+**Questões bloqueantes:**
+- Quem é o dono do estado canônico?
+- Quais componentes podem mutá-lo?
 
-## System boundaries and major components
+## Fronteiras do sistema e principais componentes
 
-The Aipo system is partitioned into strictly bounded, acyclic workspace components:
+O sistema Aipo é particionado em componentes de workspace estritamente delimitados e acíclicos:
 
-1. **Source & Diagnostics**: `aipo-source` (manages files, byte spans, line indexing) and `aipo-diagnostics` (catalog of stable error codes and JSONL serialization).
-2. **Compiler Frontend**: `aipo-lexer` (tokenization), `aipo-syntax` (lossless CST and recovery parser), `aipo-ast` (typed AST), `aipo-hir` (desugaring and lowering), and `aipo-sema` (scope resolution, contracts, mutability).
-3. **Target-Neutral Middle-end**: `aipo-ir` (Core IR).
-4. **Bytecode & Execution Runtime**: `aipo-bytecode` (instruction encoding and verifier) and `aipo-vm` (stack-based virtual machine over `Rc<RefCell<…>>` shared values — single-threaded by decision, no GC crate).
-5. **Runtime services & Stdlib**: `aipo-runtime` (module registry, native registry) and `aipo-stdlib` (Prelude, `math`, `string`, `io`, collection methods).
-6. **JavaScript backend (Wave 2)**: `aipo-js` (Core IR → ESM bundle + versioned runtime shim + source maps; depends on `aipo-ir` only, never on bytecode).
-7. **Tooling & Orchestration**: `aipo-formatter` and `aipo-cli` (`aipo run`, `aipo check`, `aipo build`, `aipo fmt`).
-8. **Test-only harnesses**: `aipo-testkit` (deterministic RNG, program generator, pipeline/JS runners — never ships language semantics) and `aipo-bench` (benchmark runner binary).
+1. **Source & Diagnostics**: `aipo-source` (gerencia arquivos, byte spans, indexação de linhas) e `aipo-diagnostics` (catálogo de códigos de erro estáveis e serialização JSONL).
+2. **Frontend do Compilador**: `aipo-lexer` (tokenização), `aipo-syntax` (CST lossless e parser com recovery), `aipo-ast` (AST tipada), `aipo-hir` (desugaring e lowering) e `aipo-sema` (resolução de escopo, contratos, mutabilidade).
+3. **Middle-end Neutro em Relação ao Alvo**: `aipo-ir` (Core IR).
+4. **Bytecode & Runtime de Execução**: `aipo-bytecode` (codificação de instruções e verifier) e `aipo-vm` (máquina virtual baseada em stack sobre valores compartilhados `Rc<RefCell<…>>` — single-threaded por decisão, sem crate de GC).
+5. **Serviços de runtime & Stdlib**: `aipo-runtime` (registro de módulos, registro de nativos) e `aipo-stdlib` (Prelude, `math`, `string`, `io`, métodos de coleções).
+6. **Backend JavaScript (Wave 2)**: `aipo-js` (Core IR → bundle ESM + runtime shim versionado + source maps; depende apenas de `aipo-ir`, nunca de bytecode).
+7. **Tooling & Orquestração**: `aipo-formatter` e `aipo-cli` (`aipo run`, `aipo check`, `aipo build`, `aipo fmt`).
+8. **Harnesses exclusivos de teste**: `aipo-testkit` (RNG determinístico, gerador de programas, runners de pipeline/JS — nunca distribui semântica da linguagem) e `aipo-bench` (binário runner de benchmark).
 
-## Dependency direction
+## Direção das dependências
 
-The dependency direction is strictly unidirectional and acyclic:
+A direção das dependências é estritamente unidirecional e acíclica:
 `CLI → Runtime / VM → Bytecode → Core IR → Sema → HIR → AST → Syntax → Lexer → Source → Diagnostics`,
-with `aipo-js` branching off Core IR (`JS → Core IR` only).
-No backend or execution layer may be imported into the frontend or syntax tree.
+com `aipo-js` ramificando-se a partir do Core IR (`JS → Core IR` apenas).
+Nenhuma camada de backend ou de execução pode ser importada para o frontend ou para a árvore de sintaxe.
 
-## External integrations
+## Integrações externas
 
-Wave 1 has minimal external integrations:
-- Operating system file system (via standard library file reads for `.aipo` source files).
-- Standard streams (`stdin`, `stdout`, `stderr`) for program execution and diagnostics.
+A Wave 1 tem integrações externas mínimas:
+- Sistema de arquivos do sistema operacional (via leituras de arquivo da biblioteca padrão para arquivos-fonte `.aipo`).
+- Streams padrão (`stdin`, `stdout`, `stderr`) para execução de programas e diagnósticos.
 
-## Canonical state ownership and mutation
+## Propriedade e mutação do estado canônico
 
-### What owns canonical state?
-- **Compile time**: The `SourceMap` in `aipo-source` owns the canonical source text. Each compilation phase produces immutable data artifacts (`Source` → `Tokens` → `SyntaxTree` → `Ast` → `Hir` → `CoreIr` → `BytecodeModule`, or `CoreIr` → JS bundle).
-- **Runtime**: The virtual machine `aipo-vm` owns the execution state (call stack, frames, and `Rc<RefCell<…>>` shared values); the JS backend mirrors the same value model in its versioned shim.
+### Quem é o dono do estado canônico?
+- **Tempo de compilação**: o `SourceMap` em `aipo-source` é dono do texto-fonte canônico. Cada fase de compilação produz artefatos de dados imutáveis (`Source` → `Tokens` → `SyntaxTree` → `Ast` → `Hir` → `CoreIr` → `BytecodeModule`, ou `CoreIr` → bundle JS).
+- **Runtime**: a máquina virtual `aipo-vm` é dona do estado de execução (call stack, frames e valores compartilhados `Rc<RefCell<…>>`); o backend JS espelha o mesmo modelo de valores em seu shim versionado.
 
-### Which components may mutate it?
-- Compile-time data structures are append-only or immutable transformations across phase boundaries.
-- At runtime, only the VM's active evaluation frame and execution loop may mutate local variables and mutable data structures (`var` bindings, mutable list/dict elements) in accordance with Aipo mutability semantics.
+### Quais componentes podem mutá-lo?
+- As estruturas de dados de tempo de compilação são append-only ou transformações imutáveis através das fronteiras de fase.
+- Em runtime, apenas o frame de avaliação ativo da VM e o loop de execução podem mutar variáveis locais e estruturas de dados mutáveis (bindings `var`, elementos mutáveis de list/dict), de acordo com a semântica de mutabilidade do Aipo.
 
 ## Pipeline (Waves 1–2)
 
@@ -60,13 +60,13 @@ Wave 1 has minimal external integrations:
   → aipo-cli        (aipo run / aipo check / aipo build / aipo fmt)
 ```
 
-Diagnostics flow from every stage into `aipo-diagnostics`; user output is either
-human-rendered or `--message-format=jsonl` (stable codes, machine-readable).
+Os diagnósticos fluem de todos os estágios para `aipo-diagnostics`; a saída ao usuário é
+renderizada para humanos ou em `--message-format=jsonl` (códigos estáveis, legível por máquina).
 
-## Failure vs fault (runtime model)
+## Failure vs fault (modelo de runtime)
 
-- **Failure** = recoverable, created by `fail(...)` or runtime operations documented as
-  fallible; propagates automatically (Model B); captured by `or_else` / `attempt...failed`.
-- **Fault** = programming error (overflow, div by zero, index/key errors, mutation during
-  iteration, contract violation discovered at runtime, non-Bool condition); not capturable;
-  ends execution with a structured runtime-fault diagnostic. Never a Rust panic.
+- **Failure** = recuperável, criada por `fail(...)` ou por operações de runtime documentadas como
+  falíveis; propaga-se automaticamente (Model B); capturada por `or_else` / `attempt...failed`.
+- **Fault** = erro de programação (overflow, divisão por zero, erros de índice/chave, mutação durante
+  iteração, violação de contrato descoberta em runtime, condição não Bool); não capturável;
+  encerra a execução com um diagnóstico estruturado de fault de runtime. Nunca um panic do Rust.
