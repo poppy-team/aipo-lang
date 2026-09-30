@@ -53,7 +53,7 @@ style = { level = "deny", priority = -1 }
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
+sha2 = "0.11"
 toml = "1.1"
 unicode-segmentation = "1.12"
 unicode-normalization = "0.1"
