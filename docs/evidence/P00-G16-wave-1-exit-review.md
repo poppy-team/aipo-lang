@@ -1,37 +1,37 @@
-# Evidence — P00-G16 / Wave 1 Exit Review
+# Evidência — P00-G16 / Revisão de Saída da Wave 1
 
-**Goal:** `P00-G16` — audit the certified MVP subset against the exit criteria and hand it over with a gauntlet score
-**Phase:** P00 (Foundation) · **Recorded:** 2026-09-19
-**Environment:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
+**Goal:** `P00-G16` — auditar o subset do MVP certificado contra os critérios de saída e entregá-lo com uma pontuação do gauntlet
+**Fase:** P00 (Foundation) · **Registrado em:** 2026-09-19
+**Ambiente:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
 
-Proof attachments for the required gates. Commands are reproducible from the repository root.
-The corpus specification lives in `docs/conformance/README.md`; this record is the score and the hand-off, not a second specification.
+Anexos de prova dos gates exigidos. Os comandos são reproduzíveis a partir da raiz do repositório.
+A especificação do corpus está em `docs/conformance/README.md`; este registro é a pontuação e o hand-off, não uma segunda especificação.
 
-## Why this goal existed
+## Por que este goal existiu
 
-`P00-G15` closed the last three residuals (`AIPO_SEM_CONTRACT_VIOLATION_STATIC`, structural interface conformance, ADP-001 Q3/Q4/Q5) and both ADP documents became `resolved`. The remaining risk was not a language gap but a hand-off gap: no single record classified every Wave 1 exit criterion in `docs/waves/wave-1-mvp.md` as certified vs. explicitly not delivered, with the command that proves each claim.
+O `P00-G15` fechou os três últimos residuais (`AIPO_SEM_CONTRACT_VIOLATION_STATIC`, conformidade estrutural de interfaces, ADP-001 Q3/Q4/Q5) e ambos os documentos ADP passaram a `resolvido`. O risco restante não era uma lacuna da linguagem, e sim uma lacuna de hand-off: nenhum registro único classificava cada critério de saída da Wave 1 em `docs/waves/wave-1-mvp.md` como certificado vs. explicitamente não entregue, com o comando que prova cada afirmação.
 
-`P00-G16` also carried two semantic completions found during the audit window (module-scope visibility and canonical local `fn`), certified by `programs/19_local_functions` and `programs/20_module_scope`. This record covers both the code baseline and the audit.
+O `P00-G16` também carregou duas conclusões semânticas encontradas durante a janela de auditoria (visibilidade em escopo de módulo e `fn` local canônica), certificadas por `programs/19_local_functions` e `programs/20_module_scope`. Este registro cobre tanto a baseline de código quanto a auditoria.
 
-## Certified baseline
+## Baseline certificada
 
-| Kind | Count | Location |
+| Tipo | Quantidade | Local |
 |---|---|---|
-| Runnable programs + stdout snapshots | 20 + 20 | `docs/conformance/programs/` (`01`–`20`) |
-| Diagnostic fixtures + expected codes | 19 + 19 | `docs/conformance/diagnostics/` (`01`–`19`) |
-| Formatter golden pairs | 8 + 8 | `docs/conformance/formatting/` |
-| Module cases | 3 | `docs/conformance/modules/` (`basic`, `cycle`, `missing`) |
+| Programas executáveis + snapshots de stdout | 20 + 20 | `docs/conformance/programs/` (`01`–`20`) |
+| Fixtures de diagnóstico + códigos esperados | 19 + 19 | `docs/conformance/diagnostics/` (`01`–`19`) |
+| Pares golden do formatter | 8 + 8 | `docs/conformance/formatting/` |
+| Casos de módulos | 3 | `docs/conformance/modules/` (`basic`, `cycle`, `missing`) |
 
-Inventory verified on disk (`20/20`, `19/19`, `8/8`, `3` entry points). No orphan `.stdout` without `.aipo`, no `.code` without `.aipo`.
+Inventário verificado em disco (`20/20`, `19/19`, `8/8`, `3` entry points). Nenhum `.stdout` órfão sem `.aipo`, nenhum `.code` sem `.aipo`.
 
-New certification since `P00-G15`:
+Nova certificação desde o `P00-G15`:
 
-| Artifact | Proves |
+| Artefato | Comprova |
 |---|---|
-| `docs/conformance/programs/19_local_functions.aipo` | local `fn` declarations: shared `var` capture (`create_counter`), self-recursion via `FillSelfCapture`, lexical capture of enclosing parameter |
-| `docs/conformance/programs/20_module_scope.aipo` | module-scope bindings visible inside `fn` bodies: `var total` mutated by `add`, `let scale` read by `scaled` |
+| `docs/conformance/programs/19_local_functions.aipo` | declarações `fn` locais: captura compartilhada de `var` (`create_counter`), autorrecursão via `FillSelfCapture`, captura léxica de parâmetro envolvente |
+| `docs/conformance/programs/20_module_scope.aipo` | bindings de escopo de módulo visíveis dentro de corpos `fn`: `var total` mutado por `add`, `let scale` lido por `scaled` |
 
-Direct run:
+Execução direta:
 
 ```
 $ cargo run -q -p aipo-cli -- run docs/conformance/programs/19_local_functions.aipo
@@ -45,19 +45,19 @@ total: 5
 40
 ```
 
-Both match their committed `.stdout`.
+Ambos coincidem com seus `.stdout` commitados.
 
-## Gauntlet rubric — 100%
+## Rubric do gauntlet — 100%
 
-| Gate | Weight | Command | Result |
+| Gate | Peso | Comando | Resultado |
 |---|---|---|---|
-| Executable MVP | 30% | `cargo test -p aipo-cli --test conformance` | **pass** — 13/13, all program and module fixtures match committed stdout |
-| Diagnostic discipline | 20% | same suite, failure tests | **pass** — every fixture fails with its committed code; wrong-reason failures would fail the suite |
-| Determinism | 20% | `cargo test -p aipo-formatter` + `fmt --check` corpus tests | **pass** — 6 + 4 + 1 = 11/11; formatter idempotent, canonical sources report no drift |
-| Robustness | 15% | `cargo test -p aipo-cli --test fuzz_smoke` | **pass** — 3/3; random bytes, mutated and truncated programs never panic |
-| Repository gates | 15% | `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo doc --workspace --no-deps` | **pass** — all four green |
+| MVP executável | 30% | `cargo test -p aipo-cli --test conformance` | **aprovado** — 13/13, todas as fixtures de programas e módulos coincidem com o stdout commitado |
+| Disciplina de diagnósticos | 20% | mesma suíte, testes de falha | **aprovado** — toda fixture falha com seu código commitado; falhas pelo motivo errado fariam a suíte falhar |
+| Determinismo | 20% | `cargo test -p aipo-formatter` + testes do corpus de `fmt --check` | **aprovado** — 6 + 4 + 1 = 11/11; formatter idempotente, fontes canônicas não reportam drift |
+| Robustez | 15% | `cargo test -p aipo-cli --test fuzz_smoke` | **aprovado** — 3/3; bytes aleatórios, programas mutados e truncados nunca causam panic |
+| Gates do repositório | 15% | `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo doc --workspace --no-deps` | **aprovado** — os quatro verdes |
 
-Command output:
+Saída dos comandos:
 
 ```
 $ cargo test -p aipo-cli --test conformance
@@ -97,7 +97,7 @@ $ prumo doctor .
 Prumo Doctor: all checks passed cleanly.
 ```
 
-Additional surface checks:
+Verificações adicionais de superfície:
 
 ```
 $ cargo run -q -p aipo-cli -- check docs/conformance/programs/20_module_scope.aipo
@@ -111,70 +111,70 @@ $ cargo run -q -p aipo-cli -- --version
 aipo 0.1.0
 ```
 
-## MVP exit gate — every criterion classified
+## Gate de saída do MVP — todos os critérios classificados
 
-`docs/waves/wave-1-mvp.md` lists five exit conditions. Status against each:
+`docs/waves/wave-1-mvp.md` lista cinco condições de saída. Status de cada uma:
 
-| Exit condition | Status | Evidence |
+| Condição de saída | Status | Evidência |
 |---|---|---|
-| `aipo run` executes real small programs | **certified** | `programs/01`–`20` snapshots; `cargo test -p aipo-cli --test conformance` 13/13 |
-| `aipo check` reports diagnostics; `aipo fmt` idempotent | **certified** | `diagnostics/01`–`19` codes; `formatting/01`–`08` goldens + `cargo test -p aipo-formatter` 11/11 |
-| pass/fail fixtures green; snapshots committed; integration tests green | **certified** | conformance 13/13; `cargo test --workspace` 146/146 |
-| No Rust panic escapes as user error (fuzz smoke) | **certified** | `cargo test -p aipo-cli --test fuzz_smoke` 3/3 |
-| CI: fmt/clippy/test/doc green; `prumo validate` + `prumo doctor` green; docs delta resolved | **certified** | gates above; `prumo` outputs above; delta table below |
+| `aipo run` executa programas pequenos reais | **certificada** | snapshots de `programs/01`–`20`; `cargo test -p aipo-cli --test conformance` 13/13 |
+| `aipo check` reporta diagnósticos; `aipo fmt` idempotente | **certificada** | códigos de `diagnostics/01`–`19`; goldens de `formatting/01`–`08` + `cargo test -p aipo-formatter` 11/11 |
+| fixtures de pass/fail verdes; snapshots commitados; testes de integração verdes | **certificada** | conformance 13/13; `cargo test --workspace` 146/146 |
+| Nenhum panic do Rust escapa como erro de usuário (fuzz smoke) | **certificada** | `cargo test -p aipo-cli --test fuzz_smoke` 3/3 |
+| CI: fmt/clippy/test/doc verdes; `prumo validate` + `prumo doctor` verdes; delta de docs resolvido | **certificada** | gates acima; saídas do `prumo` acima; tabela de delta abaixo |
 
-MVP language subset (`docs/waves/wave-1-mvp.md`, formal recorte) — all items certified by the corpus or the unit suites:
+Subset de linguagem do MVP (`docs/waves/wave-1-mvp.md`, recorte formal) — todos os itens certificados pelo corpus ou pelas suítes unitárias:
 
-| Subset area | Status | Representative proof |
+| Área do subset | Status | Prova representativa |
 |---|---|---|
-| Literals (`none`/`true`/`false`, Int ±(2^53−1), Float finite, `Byte`, `"…"`, `f/r/fr`, `"""`) | **certified** | `programs/01_hello`, `07_strings_and_math`, `17_unicode_nfc` |
-| Bindings (`let`/`var`, `var`/`!`/`self!`/`fixed` paths, destructuring surface) | **certified** | `programs/05_structs_and_impl`, `10_integrated`, `19_local_functions`, `20_module_scope` |
-| Operators (`.`, `?.`, call/index, `* / div %`, `+ -`, `..`, comparisons, `is`, `not`/`and`/`or`, `or_else`, `\|>`, compound assign) | **certified** | `programs/03_control_flow`, `04_collections`, `07_strings_and_math`, `09_slicing` |
-| Control flow (`if/elif/else`, inline `if/then`, `match/when`, `loop`/`while`/`repeat`/`each`, `break`/`continue`) | **certified** | `programs/03_control_flow`, `10_integrated` |
-| Functions (`fn`, defaults, named args, local `fn`, anonymous `fn`, closures + per-iteration capture, `return`) | **certified** | `programs/02_recursion`, `06_closures`, `11_defaults_and_named_args`, `19_local_functions` |
-| Calls (positional-before-named, trailing `do…end`, pipeline, dot-call for `impl` assoc fns) | **certified** | `programs/06_closures`, `10_integrated`, `11_defaults_and_named_args` |
-| Data (`struct`+defaults+`fixed`, `Type{…}`, `impl`+`init`+`invariant`, `List`/`Dict` ops, negative indices, `a..b`) | **certified** | `programs/04_collections`, `05_structs_and_impl`, `09_slicing`, `12_bytes`, `13_init_and_invariant`, `15_invariant_on_mutation` |
-| Errors (`fail`, `or_else`, `attempt/failed`, `err.message`; numeric/index/key/iteration/contract faults) | **certified** | `programs/08_failures`, `14_signature_contracts`, `15_invariant_on_mutation`, `diagnostics/06`–`10`, `14` |
-| Contracts (param/return `Type`, `!`, `-> T`, `T?`; runtime boundary checks; `is` narrowing; interfaces + `satisfy` structural) | **certified** | `programs/14_signature_contracts`, `16_interface_contracts`, `diagnostics/12/13/15/16/17/18` |
-| Modules (one file = one module; `import m`, `import m: names`, `import m as alias`, `export`, acyclic, init-once) | **certified** | `modules/basic`, `modules/cycle`, `modules/missing` |
-| Prelude + stdlib (`len/copy/same/some/fail`, conversions, `io`, `string`, `List`/`Dict`, `math`) | **certified** | `programs/01_hello`, `04_collections`, `07_strings_and_math`, `17_unicode_nfc`, `18_tolerant_slices_and_clamp` |
-| CLI (`run`/`check`/`fmt`, `--message-format=jsonl`, exit codes `0/1/2`) | **certified** | conformance suite (`--help`/`--version`, jsonl, usage-code tests) |
+| Literais (`none`/`true`/`false`, Int ±(2^53−1), Float finito, `Byte`, `"…"`, `f/r/fr`, `"""`) | **certificado** | `programs/01_hello`, `07_strings_and_math`, `17_unicode_nfc` |
+| Bindings (`let`/`var`, caminhos `var`/`!`/`self!`/`fixed`, superfície de destructuring) | **certificado** | `programs/05_structs_and_impl`, `10_integrated`, `19_local_functions`, `20_module_scope` |
+| Operadores (`.`, `?.`, chamada/índice, `* / div %`, `+ -`, `..`, comparações, `is`, `not`/`and`/`or`, `or_else`, `\|>`, atribuição composta) | **certificado** | `programs/03_control_flow`, `04_collections`, `07_strings_and_math`, `09_slicing` |
+| Fluxo de controle (`if/elif/else`, `if/then` inline, `match/when`, `loop`/`while`/`repeat`/`each`, `break`/`continue`) | **certificado** | `programs/03_control_flow`, `10_integrated` |
+| Funções (`fn`, defaults, argumentos nomeados, `fn` local, `fn` anônima, closures + captura por iteração, `return`) | **certificado** | `programs/02_recursion`, `06_closures`, `11_defaults_and_named_args`, `19_local_functions` |
+| Chamadas (posicional-antes-de-nomeado, `do…end` trailing, pipeline, dot-call para funções associadas de `impl`) | **certificado** | `programs/06_closures`, `10_integrated`, `11_defaults_and_named_args` |
+| Dados (`struct`+defaults+`fixed`, `Type{…}`, `impl`+`init`+`invariant`, operações de `List`/`Dict`, índices negativos, `a..b`) | **certificado** | `programs/04_collections`, `05_structs_and_impl`, `09_slicing`, `12_bytes`, `13_init_and_invariant`, `15_invariant_on_mutation` |
+| Erros (`fail`, `or_else`, `attempt/failed`, `err.message`; faults numéricos/de índice/de chave/de iteração/de contrato) | **certificado** | `programs/08_failures`, `14_signature_contracts`, `15_invariant_on_mutation`, `diagnostics/06`–`10`, `14` |
+| Contratos (param/return `Type`, `!`, `-> T`, `T?`; verificações de fronteira em runtime; narrowing com `is`; interfaces + `satisfy` estrutural) | **certificado** | `programs/14_signature_contracts`, `16_interface_contracts`, `diagnostics/12/13/15/16/17/18` |
+| Módulos (um arquivo = um módulo; `import m`, `import m: names`, `import m as alias`, `export`, acíclico, init-once) | **certificado** | `modules/basic`, `modules/cycle`, `modules/missing` |
+| Prelude + stdlib (`len/copy/same/some/fail`, conversões, `io`, `string`, `List`/`Dict`, `math`) | **certificado** | `programs/01_hello`, `04_collections`, `07_strings_and_math`, `17_unicode_nfc`, `18_tolerant_slices_and_clamp` |
+| CLI (`run`/`check`/`fmt`, `--message-format=jsonl`, exit codes `0/1/2`) | **certificado** | suíte de conformidade (testes de `--help`/`--version`, jsonl, códigos de uso) |
 
-## Explicit non-delivery (not gaps, not regressions)
+## Não entrega explícita (não são lacunas, não são regressões)
 
-What the MVP subset declares out of scope stays out of scope. No later slice inherits a hidden gap:
+O que o subset do MVP declara fora do escopo continua fora do escopo. Nenhum slice posterior herda uma lacuna oculta:
 
-| Non-delivery | Scope source | Status |
+| Não entrega | Fonte do escopo | Status |
 |---|---|---|
-| `Bytes` packing APIs (`read_i32`/`write_f32`/…, `String.encode`/`Bytes.decode`) | `docs/waves/wave-1-mvp.md` exclusions; `docs/stdlib/mvp-subset.md` Deferred | **not delivered by design** — only `Bytes(count)` + index/`len`/slice are certified (`programs/12_bytes`) |
-| `aipo-js` backend | crate contracts (Wave 2); MVP exclusions | **not delivered** — pipeline is bytecode → VM only; crate not started |
-| `Set` / lazy `Sequence` | MVP exclusions; stdlib Deferred | **not delivered** — no kind, no literal, no fixture claims them |
-| LSP / REPL | MVP exclusions | **not delivered** — CLI is `run`/`check`/`fmt` only |
-| async/await, host ABI/Poppy, packages/registry, regex/json/fs/http, `graphemes`, hot reload | MVP exclusions | **not delivered** — recorded here so Wave 2 planning starts from an explicit list |
+| APIs de packing de `Bytes` (`read_i32`/`write_f32`/…, `String.encode`/`Bytes.decode`) | exclusões de `docs/waves/wave-1-mvp.md`; Adiado em `docs/stdlib/mvp-subset.md` | **não entregue por design** — apenas `Bytes(count)` + índice/`len`/slice são certificados (`programs/12_bytes`) |
+| Backend `aipo-js` | contratos das crates (Wave 2); exclusões do MVP | **não entregue** — o pipeline é apenas bytecode → VM; crate não iniciada |
+| `Set` / `Sequence` lazy | exclusões do MVP; Adiado da stdlib | **não entregue** — nenhum kind, nenhum literal, nenhuma fixture os reivindica |
+| LSP / REPL | exclusões do MVP | **não entregue** — a CLI é apenas `run`/`check`/`fmt` |
+| async/await, host ABI/Poppy, pacotes/registry, regex/json/fs/http, `graphemes`, hot reload | exclusões do MVP | **não entregue** — registrado aqui para que o planejamento da Wave 2 comece de uma lista explícita |
 
-Both ADP documents stay `resolved` and are not re-opened by this goal.
+Ambos os documentos ADP permanecem `resolvidos` e não são reabertos por este goal.
 
-## Recommended next slice
+## Próximo slice recomendado
 
-Wave 1 is closed. The certified baseline above is the starting point. Recommended ordering for Wave 2 planning (no Wave 2 code started by this goal):
+A Wave 1 está fechada. A baseline certificada acima é o ponto de partida. Ordem recomendada para o planejamento da Wave 2 (nenhum código da Wave 2 foi iniciado por este goal):
 
-1. `aipo-js` backend spike against the frozen corpus (`programs/01`–`20` as the parity oracle) — smallest slice that proves the second backend without touching the language surface.
-2. `Bytes` packing APIs only after the JS parity decision, because encode/decode crosses the NFC boundary documented in ADP-001 Q5.
-3. `Set`/`Sequence` and LSP/REPL after the backend question, in that order — each is independent of the others once the corpus is the referee.
+1. Spike do backend `aipo-js` contra o corpus congelado (`programs/01`–`20` como oráculo de paridade) — o menor slice que prova o segundo backend sem tocar a superfície da linguagem.
+2. APIs de packing de `Bytes` somente após a decisão de paridade com JS, porque encode/decode cruza a fronteira NFC documentada no ADP-001 Q5.
+3. `Set`/`Sequence` e LSP/REPL após a questão do backend, nessa ordem — cada um é independente dos demais quando o corpus é o árbitro.
 
 ## Gate: `documentation_impact`
 
-| Artifact | Change |
+| Artefato | Mudança |
 |---|---|
-| `docs/conformance/README.md` | gauntlet scores with exact commands; inventory verified (`20/20`, `19/19`, `8/8`, 3 module cases); non-delivery list explicit |
-| `docs/stdlib/mvp-subset.md` | Deferred surface lists `Bytes` packing, `aipo-js`, `Set`/`Sequence`, LSP/REPL as explicit non-delivery |
-| `docs/evidence/P00-G16-wave-1-exit-review.md` | new — this hand-off record |
-| `docs/PRUMO.md` | evidence index gains `P00-G16` |
-| `CHANGELOG.md`, `PROJECT_STATE.md` | Wave 1 exit recorded; `P00-G16` DONE |
+| `docs/conformance/README.md` | pontuações do gauntlet com os comandos exatos; inventário verificado (`20/20`, `19/19`, `8/8`, 3 casos de módulos); lista de não entregas explícita |
+| `docs/stdlib/mvp-subset.md` | a superfície Adiada lista packing de `Bytes`, `aipo-js`, `Set`/`Sequence`, LSP/REPL como não entrega explícita |
+| `docs/evidence/P00-G16-wave-1-exit-review.md` | novo — este registro de hand-off |
+| `docs/PRUMO.md` | o índice de evidências ganha `P00-G16` |
+| `CHANGELOG.md`, `PROJECT_STATE.md` | saída da Wave 1 registrada; `P00-G16` DONE |
 
-## Known limitations (recorded, not hidden)
+## Limitações conhecidas (registradas, não escondidas)
 
-- **The audit certifies the subset, not every combination.** The corpus plus 146 unit/integration tests is the referee; untested feature interactions outside the corpus are still subject to the no-invention policy and become ADPs when found.
-- **Static contracts stay provable-only.** `AIPO_SEM_CONTRACT_VIOLATION_STATIC` fires for literals against core-type contracts and `none` against non-nullable ones; everything else stays a runtime contract fault at the call boundary.
-- **Interface conformance is name + caller-visible arity.** A matching name with an incompatible parameter type is discovered when the operation runs, not at the contract check.
-- **`prumo` gates are environment-provided.** `prumo validate` / `prumo doctor` are green on this machine; CI must run the same four cargo gates plus these two.
+- **A auditoria certifica o subset, não todas as combinações.** O corpus mais 146 testes unitários/de integração é o árbitro; interações de features não testadas fora do corpus ainda estão sujeitas à política de não invenção e viram ADPs quando encontradas.
+- **Os contratos estáticos continuam apenas comprováveis.** `AIPO_SEM_CONTRACT_VIOLATION_STATIC` dispara para literais contra contratos de tipo core e `none` contra não nullable; todo o resto continua sendo um fault de contrato em runtime na fronteira da chamada.
+- **A conformidade de interfaces é nome + aridade visível ao chamador.** Um nome coincidente com um tipo de parâmetro incompatível é descoberto quando a operação executa, não na verificação do contrato.
+- **Os gates do `prumo` são fornecidos pelo ambiente.** `prumo validate` / `prumo doctor` estão verdes nesta máquina; o CI precisa executar os mesmos quatro gates do cargo mais estes dois.

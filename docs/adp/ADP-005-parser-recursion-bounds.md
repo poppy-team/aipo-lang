@@ -1,58 +1,62 @@
-# ADP-005 — Parser Recursion Bounds (Nesting Limits)
+# ADP-005 — Limites de Recursão do Parser (Limites de Aninhamento)
 
-**Status:** accepted (implemented with this gauntlet; limits are robustness bounds)
-**Related:** `AIPO_PARSE_NESTING_TOO_DEEP` (diagnostics catalog), `crates/aipo-syntax`
-(depth guards + progress guarantee), `crates/aipo-cli/tests/resource.rs`,
+**Status:** aceito (implementado com este gauntlet; os limites são bounds de robustez)
+**Relacionado:** `AIPO_PARSE_NESTING_TOO_DEEP` (catálogo de diagnósticos), `crates/aipo-syntax`
+(guardas de profundidade + garantia de progresso), `crates/aipo-cli/tests/resource.rs`,
 `docs/evidence/P01-G02-*.md`
-**Authority:** subordinate to the Language Reference (which defines no nesting
-requirement) and the no-invention policy
+**Autoridade:** subordinada à Language Reference (que não define nenhum requisito de
+aninhamento) e à política de não invenção
 
-## Verified facts (measured, not assumed)
+## Fatos verificados (medidos, não presumidos)
 
-- Before this change, hostile-but-well-formed nesting aborted the host process
-  (`SIGABRT`, exit 134): `((((…))))` past ~500–800 levels and nested `if` past
-  ~300–600 levels on an 8 MiB main stack. An abort is never canonical behavior:
-  the testing strategy already requires that no Rust panic (and by extension no
-  host crash) escapes as an Aipo user error.
-- Measured per-level frame cost is ~10–27 KiB depending on the construct, so any
-  bound must sit far below `2 MiB / 27 KiB ≈ 74` levels to also hold on 2 MiB
-  test threads.
-- The deepest nesting in the conformance corpus is single digits.
-- A second, latent defect fell out of the same investigation: body loops
-  (`while !terminator { parse_stmt … }`) assume every failed parse consumes
-  input, so *any* non-consuming failure hangs them forever. The first version of
-  the depth guard tripped exactly this path.
-- A third shape evaded the in-parse guards entirely: trees built iteratively but
-  deeply (a 5000-term `1 + 1 + …` chain, a 500-placeholder `f"…"`), which abort
-  downstream recursive walkers (HIR lowering and beyond). The fix is an
-  iterative AST depth post-pass in `aipo_syntax::parse` (`depth.rs`, exhaustive
-  over every recursive AST shape so a new one is a compile error, not a hole).
+- Antes desta mudança, um aninhamento hostil porém bem formado abortava o processo do host
+  (`SIGABRT`, exit 134): `((((…))))` acima de ~500–800 níveis e `if` aninhado acima de
+  ~300–600 níveis em uma main stack de 8 MiB. Um abort nunca é comportamento canônico: a
+  estratégia de testes já exige que nenhum panic do Rust (e, por extensão, nenhum crash do
+  host) escape como erro de usuário do Aipo.
+- O custo medido de frame por nível é de ~10–27 KiB, dependendo da construção; portanto,
+  qualquer limite precisa ficar bem abaixo de `2 MiB / 27 KiB ≈ 74` níveis para valer também
+  em threads de teste de 2 MiB.
+- O aninhamento mais profundo no corpus de conformidade tem um único dígito.
+- Um segundo defeito latente surgiu da mesma investigação: os loops de corpo
+  (`while !terminator { parse_stmt … }`) assumem que toda falha de parse consome entrada,
+  de modo que *qualquer* falha que não consuma trava esses loops para sempre. A primeira
+  versão da guarda de profundidade disparou exatamente esse caminho.
+- Uma terceira forma escapou por completo das guardas dentro do parse: árvores construídas
+  de forma iterativa, mas profundas (uma cadeia `1 + 1 + …` de 5000 termos, um `f"…"` com
+  500 placeholders), que abortam os walkers recursivos posteriores (HIR lowering e adiante).
+  A correção é um post-pass iterativo de profundidade da AST em `aipo_syntax::parse`
+  (`depth.rs`, exaustivo sobre toda forma recursiva da AST, de modo que uma nova forma seja
+  um erro de compilação, não uma brecha).
 
-## Decisions (all recorded here so nothing is silently invented)
+## Decisões (todas registradas aqui para que nada seja inventado silenciosamente)
 
-1. **Bounds:** expression nesting 128, block nesting 64, AST depth 128. All are
-   >15× the deepest corpus nesting and keep worst-case stack near ~1–2 MiB —
-   inside the smallest supported host stack with margin. These numbers are
-   implementation robustness bounds, **not** language semantics: every program
-   below them parses exactly as before (proven by the unchanged test suite plus
-   corpus snapshots).
-2. **Signal:** one new diagnostic code, `AIPO_PARSE_NESTING_TOO_DEEP`
-   (severity `error`), pointing at the offending token. Reusing
-   `AIPO_PARSE_UNEXPECTED_TOKEN` would misdescribe the problem and hurt the
-   diagnostic accessibility rubric; a dedicated code is the honest signal.
-3. **Cascade control:** after the first overflow the parser sets an abort flag —
-   the rest of the file is skipped quietly instead of emitting one error per
-   remaining token (a 600-deep file previously produced ~1000 follow-ups).
-4. **Progress guarantee:** a `parse_stmt` failure that consumed nothing advances
-   one token. This path provably never fires on previously-terminating inputs
-   (they always made progress, otherwise they would already hang), so observable
-   recovery behavior there is unchanged by construction.
+1. **Limites:** aninhamento de expressões 128, aninhamento de blocos 64, profundidade da AST
+   128. Todos são >15× o aninhamento mais profundo do corpus e mantêm a stack no pior caso
+   em torno de ~1–2 MiB — dentro da menor stack de host suportada, com margem. Esses números
+   são bounds de robustez da implementação, **não** semântica da linguagem: todo programa
+   abaixo deles faz parse exatamente como antes (provado pela suíte de testes inalterada e
+   pelos snapshots do corpus).
+2. **Sinal:** um novo código de diagnóstico, `AIPO_PARSE_NESTING_TOO_DEEP`
+   (severidade `error`), apontando para o token ofensor. Reutilizar
+   `AIPO_PARSE_UNEXPECTED_TOKEN` descreveria mal o problema e prejudicaria o rubric de
+   acessibilidade dos diagnósticos; um código dedicado é o sinal honesto.
+3. **Controle de cascata:** após o primeiro overflow, o parser levanta uma flag de abort —
+   o resto do arquivo é ignorado silenciosamente, em vez de emitir um erro por token
+   restante (um arquivo com 600 níveis de profundidade produzia antes ~1000 erros
+   subsequentes).
+4. **Garantia de progresso:** uma falha de `parse_stmt` que não consumiu nada avança um
+   token. Comprovadamente, esse caminho nunca dispara em entradas que já terminavam
+   (elas sempre faziam progresso, caso contrário já travariam), de modo que o comportamento
+   de recuperação observável ali permanece inalterado por construção.
 
-## Non-goals
+## Não-objetivos
 
-- No general recursion-limit syntax, no configurable limit flag, no statement
-  about what "should" nest deeply. If canon ever requires deeper nesting, the
-  bound moves with evidence, not by editing around it.
-- HIR/sema lowering recursion was measured (300-deep `if` lowers fine) but is
-  not separately guarded; the parser bound caps everything downstream. If a
-  future construct recurses outside the parser, it gets its own ADP entry.
+- Nenhuma sintaxe geral de limite de recursão, nenhuma flag de limite configurável, nenhuma
+  afirmação sobre o que "deveria" aninhar profundamente. Se o canon algum dia exigir
+  aninhamento mais profundo, o limite se move com evidência, não por edições que o
+  contornem.
+- A recursão do lowering de HIR/sema foi medida (um `if` de 300 níveis passa pelo lowering
+  sem problemas), mas não tem guarda separada; o limite do parser restringe tudo o que vem
+  depois. Se uma construção futura recursar fora do parser, ela ganha sua própria entrada
+  de ADP.

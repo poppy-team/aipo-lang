@@ -1,47 +1,47 @@
-# Evidence — P00-G14 / Runtime Contract Enforcement
+# Evidência — P00-G14 / Imposição de Contratos em Runtime
 
-**Goal:** `P00-G14` — `invariant()` at mutation boundaries and signature contracts at runtime
-**Phase:** P00 (Foundation) · **Recorded:** 2026-09-15
-**Environment:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
+**Goal:** `P00-G14` — `invariant()` nas fronteiras de mutação e contratos de assinatura em runtime
+**Fase:** P00 (Foundation) · **Registrado em:** 2026-09-15
+**Ambiente:** rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1 (797e8a9bc 2026-08-05), Linux
 
-Proof attachments for the required gates. Commands are reproducible from the repository root.
+Anexos de prova dos gates exigidos. Os comandos são reproduzíveis a partir da raiz do repositório.
 
-## Why this goal existed
+## Por que este goal existiu
 
-`P00-G13` closed three of the five gaps found by the S11 corpus and left two, because both needed a
-runtime mechanism that did not exist yet: re-validating `invariant()` after a mutation, and checking
-signature contracts at the call boundary. Both are MVP exit-gate criteria in
-`docs/waves/wave-1-mvp.md`, so the gate could not be called complete before them.
+O `P00-G13` fechou três das cinco lacunas encontradas pelo corpus do S11 e deixou duas, porque ambas exigiam um
+mecanismo de runtime que ainda não existia: revalidar `invariant()` após uma mutação e verificar
+contratos de assinatura na fronteira da chamada. Ambas são critérios do gate de saída do MVP em
+`docs/waves/wave-1-mvp.md`, portanto o gate não podia ser considerado completo antes delas.
 
-| Gap | Canon decision source | Outcome |
+| Lacuna | Fonte da decisão no canon | Resultado |
 |---|---|---|
-| G2b — `invariant()` not re-evaluated after a mutation | Canonical Syntax: `candidate → provisional apply → verify → commit`; Interlúdio §3: validated at stable mutable boundaries, and a failed validation produces a `Failure` | **closed** |
-| G3 — signature contracts not checked at runtime | Language Reference §4: `name: Type`, `name!: Type`, `-> T`, `T?`; a violation found only at runtime is a **contract fault** | **closed** |
+| G2b — `invariant()` não reavaliado após uma mutação | Sintaxe Canônica: `candidate → provisional apply → verify → commit`; Interlúdio §3: validado em fronteiras mutáveis estáveis, e uma validação que falha produz uma `Failure` | **fechada** |
+| G3 — contratos de assinatura não verificados em runtime | Language Reference §4: `name: Type`, `name!: Type`, `-> T`, `T?`; uma violação encontrada apenas em runtime é um **fault de contrato** | **fechada** |
 
-The two error channels are different, and canon says so explicitly: an invariant failure at a
-mutation boundary is a recoverable `Failure` ("a operação produz uma `Failure`"), while a contract
-violation discovered at runtime is a programming fault that `attempt` cannot capture. No semantics
-had to be invented for either.
+Os dois canais de erro são diferentes, e o canon diz isso explicitamente: uma falha de invariante em uma
+fronteira de mutação é uma `Failure` recuperável ("a operação produz uma `Failure`"), enquanto uma violação de
+contrato descoberta em runtime é um fault de programação que `attempt` não consegue capturar. Nenhuma semântica
+precisou ser inventada para nenhum dos dois.
 
-## Implementation
+## Implementação
 
-| Stage | Change |
+| Estágio | Mudança |
 |---|---|
-| `aipo-ir` | New `CoreInst::AssertContract { type_name, nullable, position }` and `CoreInst::CheckMutations`; `FnCtx` carries the function's return contract and the span of the frame's last field assignment |
-| `aipo-bytecode` | New opcodes `AssertContract` (u16 name + u8 nullable + u16 position) and `CheckMutations`, wired through the emitter, the verifier (name-index bounds checks, nullable-flag check) and the disassembler |
-| `aipo-vm` | `VmFault::ContractViolation`; a per-frame mutation journal (`MutationEntry`) with entry values; `SetField` applies provisionally and journals; `CheckMutations` verifies every participating instance, rolls back all of them and raises a recoverable `Failure`; `Vm::run` resolves each `Type.invariant` entry point from the module's function table; `CallFrame.journal_start` scopes the journal per frame |
-| `aipo-stdlib` / `aipo-vm` | `TypeTag::from_name`, so a written contract name maps back to the core category the runtime already tests |
+| `aipo-ir` | Novos `CoreInst::AssertContract { type_name, nullable, position }` e `CoreInst::CheckMutations`; `FnCtx` carrega o contrato de retorno da função e o span da última atribuição de campo do frame |
+| `aipo-bytecode` | Novos opcodes `AssertContract` (nome u16 + nullable u8 + posição u16) e `CheckMutations`, ligados ao emitter, ao verifier (verificações de limites do índice de nomes, verificação da flag nullable) e ao disassembler |
+| `aipo-vm` | `VmFault::ContractViolation`; um journal de mutações por frame (`MutationEntry`) com os valores de entrada; `SetField` aplica provisoriamente e registra no journal; `CheckMutations` verifica cada instância participante, faz rollback de todas elas e levanta uma `Failure` recuperável; `Vm::run` resolve cada entry point `Type.invariant` a partir da tabela de funções do módulo; `CallFrame.journal_start` delimita o journal por frame |
+| `aipo-stdlib` / `aipo-vm` | `TypeTag::from_name`, para que um nome de contrato escrito seja mapeado de volta à categoria core que o runtime já testa |
 
-### Where the contracts are checked
+### Onde os contratos são verificados
 
-- **Parameters**: in the callee's own prologue, after the default prologue, so a defaulted value is
-  checked too and `init`, methods, plain functions and closures all get the check from one place.
-- **Returns**: immediately before each `return expr`, on the value already on the stack. The
-  instruction inspects the top of stack without consuming it, which is why one opcode serves both.
-- **Invariant at mutation**: at the end of the enclosing mutable operation (every function/method
-  return, including the implicit epilogue) and at every mutation statement of the module entry
-  script, which has no enclosing operation to defer to. Canon forbids validating after each
-  internal assignment, so the assignment itself only journals.
+- **Parâmetros**: no prologue do próprio callee, depois do prologue de defaults, de modo que um valor default
+  também seja verificado e `init`, métodos, funções simples e closures recebam a verificação em um único lugar.
+- **Retornos**: imediatamente antes de cada `return expr`, sobre o valor que já está na stack. A
+  instrução inspeciona o topo da stack sem consumi-lo, e é por isso que um único opcode serve aos dois casos.
+- **Invariante na mutação**: ao final da operação mutável que a envolve (todo return de função/método,
+  incluindo o epílogo implícito) e a cada statement de mutação do script de entrada do módulo, que
+  não tem operação envolvente à qual adiar. O canon proíbe validar após cada atribuição
+  interna, então a atribuição em si apenas registra no journal.
 
 ## Gate: `fmt` / `clippy`
 
@@ -61,19 +61,19 @@ $ cargo test --workspace
 passed: 141  failed: 0
 ```
 
-New certification:
+Nova certificação:
 
-| Fixture | Proves |
+| Fixture | Comprova |
 |---|---|
-| `docs/conformance/programs/14_signature_contracts.aipo` | `Int` parameter, verified default, `T?` accepting `none`, the `Function` contract, a `struct` contract, a mutable `p!: Point` receiver and an `-> Int` return |
-| `docs/conformance/diagnostics/12_runtime_contract_violation.aipo` | a parameter contract violation is a fault (`AIPO_RT_TYPE_MISMATCH`) |
-| `docs/conformance/diagnostics/13_runtime_return_contract.aipo` | a return contract violation is a fault |
-| `docs/conformance/programs/15_invariant_on_mutation.aipo` | commit at a method boundary, rollback with the entry value preserved on a method failure, the same for a direct assignment in the entry script, and rollback of two participating instances in one operation |
-| `docs/conformance/diagnostics/14_runtime_invariant_mutation_uncaught.aipo` | an unhandled mutation invariant failure ends the program as a recoverable `Failure` (`AIPO_RT_FAILURE_UNCAUGHT`) |
-| `crates/aipo-vm/tests/data_and_errors.rs::test_guarded_mutation_rolls_back_at_boundary` | the journal, the boundary verification and the rollback at the VM layer, with a host validator |
-| `crates/aipo-vm/tests/data_and_errors.rs::test_signature_contract_violation_is_a_fault` | `AssertContract` raises `VmFault::ContractViolation`, not a `Failure` |
-| `crates/aipo-vm/tests/data_and_errors.rs::test_nullable_contract_accepts_none` | `T?` accepts `none` |
-| `crates/aipo-bytecode/src/lib.rs::test_compile_verify_and_disassemble_contracts_and_mutation_boundaries` | `AssertContract`, `CheckMutations` and `AssertInvariant` survive the emitter → verifier → disassembler round trip |
+| `docs/conformance/programs/14_signature_contracts.aipo` | parâmetro `Int`, default verificado, `T?` aceitando `none`, o contrato `Function`, um contrato de `struct`, um receiver mutável `p!: Point` e um retorno `-> Int` |
+| `docs/conformance/diagnostics/12_runtime_contract_violation.aipo` | uma violação de contrato de parâmetro é um fault (`AIPO_RT_TYPE_MISMATCH`) |
+| `docs/conformance/diagnostics/13_runtime_return_contract.aipo` | uma violação de contrato de retorno é um fault |
+| `docs/conformance/programs/15_invariant_on_mutation.aipo` | commit na fronteira de um método, rollback com o valor de entrada preservado em uma falha de método, o mesmo para uma atribuição direta no script de entrada, e rollback de duas instâncias participantes em uma única operação |
+| `docs/conformance/diagnostics/14_runtime_invariant_mutation_uncaught.aipo` | uma falha de invariante de mutação não tratada encerra o programa como uma `Failure` recuperável (`AIPO_RT_FAILURE_UNCAUGHT`) |
+| `crates/aipo-vm/tests/data_and_errors.rs::test_guarded_mutation_rolls_back_at_boundary` | o journal, a verificação na fronteira e o rollback na camada da VM, com um validator do host |
+| `crates/aipo-vm/tests/data_and_errors.rs::test_signature_contract_violation_is_a_fault` | `AssertContract` levanta `VmFault::ContractViolation`, e não uma `Failure` |
+| `crates/aipo-vm/tests/data_and_errors.rs::test_nullable_contract_accepts_none` | `T?` aceita `none` |
+| `crates/aipo-bytecode/src/lib.rs::test_compile_verify_and_disassemble_contracts_and_mutation_boundaries` | `AssertContract`, `CheckMutations` e `AssertInvariant` sobrevivem ao round trip emitter → verifier → disassembler |
 
 ## Gate: `doc`
 
@@ -84,26 +84,26 @@ $ cargo doc --workspace --no-deps
 
 ## Gate: `documentation_impact`
 
-- `docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md` — G2b and G3 marked resolved with
-  the decisions recorded, including the deviation note about *where* the mutation check runs.
-- `docs/conformance/README.md` — snapshot matrix and fixture inventory extended.
-- `docs/stdlib/mvp-subset.md` — signature contracts and invariant mutation boundaries documented as
-  implemented behaviour.
+- `docs/adp/ADP-002-construction-hooks-and-runtime-contracts.md` — G2b e G3 marcadas como resolvidas, com
+  as decisões registradas, incluindo a nota de desvio sobre *onde* a verificação de mutação é executada.
+- `docs/conformance/README.md` — matriz de snapshots e inventário de fixtures estendidos.
+- `docs/stdlib/mvp-subset.md` — contratos de assinatura e fronteiras de mutação de invariantes documentados como
+  comportamento implementado.
 - `CHANGELOG.md`, `PROJECT_STATE.md`, `docs/PRUMO.md`.
 
-## Known limitations (recorded, not hidden)
+## Limitações conhecidas (registradas, não escondidas)
 
-- **Interface contracts are not checked at runtime.** A contract naming an interface is accepted,
-  because the MVP has no runtime structural conformance check; inventing a failure for a contract
-  the runtime cannot evaluate would be worse than the missing check.
-- **Contract checks run in the callee prologue, not at the call site.** The observable behaviour is
-  the same (a fault at the boundary, with the parameter name in the message), but a statically known
-  mismatch is still reported at runtime rather than before execution; `aipo-sema` does not use the
-  annotations yet.
-- **`init` bodies still use the construction fault channel.** An invariant violated while
-  constructing is `VmFault::InvariantViolation` (nothing may be published), while an invariant
-  violated by a later mutation is a recoverable `Failure` (there is an entry state to restore).
-  Both come from canon, from different paragraphs.
-- **A `Failure` escaping an operation before its boundary keeps the applied value.** Canon only
-  mandates a rollback when the *validation* fails, so entries are dropped without a restore when an
-  unrelated failure unwinds the frame.
+- **Contratos de interface não são verificados em runtime.** Um contrato que nomeia uma interface é aceito,
+  porque o MVP não tem verificação estrutural de conformidade em runtime; inventar uma falha para um contrato
+  que o runtime não consegue avaliar seria pior do que a verificação ausente.
+- **As verificações de contrato executam no prologue do callee, não no ponto de chamada.** O comportamento observável é
+  o mesmo (um fault na fronteira, com o nome do parâmetro na mensagem), mas uma incompatibilidade conhecida
+  estaticamente ainda é reportada em runtime, e não antes da execução; `aipo-sema` ainda não usa as
+  anotações.
+- **Os corpos de `init` ainda usam o canal de fault de construção.** Um invariante violado durante
+  a construção é `VmFault::InvariantViolation` (nada pode ser publicado), enquanto um invariante
+  violado por uma mutação posterior é uma `Failure` recuperável (existe um estado de entrada a restaurar).
+  Ambos vêm do canon, de parágrafos diferentes.
+- **Uma `Failure` que escapa de uma operação antes de sua fronteira mantém o valor aplicado.** O canon só
+  exige rollback quando a *validação* falha, portanto as entradas são descartadas sem restauração quando uma
+  falha não relacionada desenrola o frame.

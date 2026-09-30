@@ -1,113 +1,114 @@
-# ADP-006 — Wave 3/4 Open Decisions (async, collections, packing, host)
+# ADP-006 — Decisões em Aberto das Waves 3/4 (async, coleções, packing, host)
 
-**Status:** accepted (decisions below are implemented; follow-ups noted)
-**Related:** Fechamento §6–§8, Stdlib canon (Task/Sequence/Time), Poppy Pivot
-**Authority:** subordinate to canon; every item cites its canon source or is
-explicitly marked as the smallest consistent choice.
+**Status:** aceito (as decisões abaixo estão implementadas; os follow-ups estão anotados)
+**Relacionado:** Fechamento §6–§8, canon da Stdlib (Task/Sequence/Time), Poppy Pivot
+**Autoridade:** subordinada ao canon; todo item cita sua fonte no canon ou é
+explicitamente marcado como a menor escolha consistente.
 
-## A. `Set` construction
+## A. Construção de `Set`
 
-Canon shows `Set` as a type with `.lazy()` but defines no literal or call form,
-and V1 established that `List`/`Dict`/`Bytes` have no call form. Decision:
-`Set(values: List) -> Set` conversion call (dedup, first-occurrence order,
-insertion-ordered per canon). Rationale: mirrors the `Bytes(count)`/`Int(x)`
-conversion-call pattern; no new literal syntax invented.
+O canon mostra `Set` como um tipo com `.lazy()`, mas não define literal nem forma de
+chamada, e a V1 estabeleceu que `List`/`Dict`/`Bytes` não têm forma de chamada. Decisão:
+chamada de conversão `Set(values: List) -> Set` (remove duplicatas, ordem da primeira
+ocorrência, ordenado por inserção conforme o canon). Justificativa: espelha o padrão de
+chamada de conversão de `Bytes(count)`/`Int(x)`; nenhuma sintaxe de literal nova é inventada.
 
-## B. `Sequence` sources and vocabulary
+## B. Fontes e vocabulário de `Sequence`
 
-Canon diagram: `List / Dict / Set → .lazy()`. Decision: `.lazy()` exists on
-List (elements), Dict (values), Set (insertion order). Range/String sources are
-**not** added (unspecified). Vocabulary implemented: `map`, `filter`,
-`flat_map`, `find`, `any`, `all`, `count`, `reduce` (initial value required),
-`take`, `skip`, `group_by` (→ Dict), `distinct`, `zip` (→ List of pairs),
-`chain`, `chunk` (→ List of Lists), `window` (→ List of Lists), `enumerate`
-(→ List of `[index, value]`), `collect` (→ List). Laziness is a thunk chain;
-`take` short-circuits so `take` over large sources stays bounded.
+Diagrama do canon: `List / Dict / Set → .lazy()`. Decisão: `.lazy()` existe em
+List (elementos), Dict (valores) e Set (ordem de inserção). Fontes Range/String
+**não** são adicionadas (não especificadas). Vocabulário implementado: `map`, `filter`,
+`flat_map`, `find`, `any`, `all`, `count`, `reduce` (valor inicial obrigatório),
+`take`, `skip`, `group_by` (→ Dict), `distinct`, `zip` (→ List de pares),
+`chain`, `chunk` (→ List de Lists), `window` (→ List de Lists), `enumerate`
+(→ List de `[index, value]`), `collect` (→ List). A laziness é uma cadeia de thunks;
+`take` faz short-circuit, de modo que `take` sobre fontes grandes permanece limitado.
 
-## C. Bytes packing
+## C. Packing de Bytes
 
-Canon names only storage formats (`i8…f64`), no API shape. Decision:
-receiver-first methods `read_i8/u8/i16/u16/i32/u32/i64/u64/f32/f64(index)` and
-`write_*(index, value)`, **little-endian** (game/binary convention; consistent
-on VM and JS by construction), plus `String.encode()` (UTF-8 → Bytes) and
-`Bytes.decode()` (UTF-8 → String, Failure on invalid). Exact-index violations
-are faults (consistent with exact indexing); out-of-range writes never grow
-the block silently.
+O canon nomeia apenas formatos de armazenamento (`i8…f64`), sem forma de API. Decisão:
+métodos com receiver primeiro `read_i8/u8/i16/u16/i32/u32/i64/u64/f32/f64(index)` e
+`write_*(index, value)`, **little-endian** (convenção de jogos/binário; consistente
+na VM e no JS por construção), mais `String.encode()` (UTF-8 → Bytes) e
+`Bytes.decode()` (UTF-8 → String, Failure se inválido). Violações de índice exato
+são faults (consistente com a indexação exata); escritas fora do intervalo nunca
+expandem o bloco silenciosamente.
 
-## D. `Duration` and deferred clock types
+## D. `Duration` e tipos de relógio adiados
 
-Canon requires `Duration` plus `Date`/`TimeOfDay`/`DateTime` with ISO parsing,
-but the IANA timezone database belongs to a later package. Decision: `Duration(seconds:
-Int|Float)` conversion in Wave 3 with `+`, `-`, comparison and
-`total_seconds()`; the pure calendar types `Date`, `TimeOfDay` and `DateTime` are
-implemented without timezone identity. The IANA-backed `timezone` provider remains
-deferred. `task.sleep(seconds)` accepts
-Int/Float seconds directly; negative sleep is a recoverable Failure.
+O canon exige `Duration` mais `Date`/`TimeOfDay`/`DateTime` com parsing ISO,
+mas o banco de dados de fusos horários IANA pertence a um pacote posterior. Decisão:
+conversão `Duration(seconds:
+Int|Float)` na Wave 3 com `+`, `-`, comparação e
+`total_seconds()`; os tipos de calendário puros `Date`, `TimeOfDay` e `DateTime` são
+implementados sem identidade de fuso horário. O provider de `timezone` baseado em IANA
+continua adiado. `task.sleep(seconds)` aceita
+segundos Int/Float diretamente; sleep negativo é uma Failure recuperável.
 
-## E. Task combinators
+## E. Combinadores de Task
 
-Canon lists `sleep`, `all`, `race`, `timeout`, `cancel`, `group`, `spawn`
-without signatures. Decisions: `task.spawn(fn)` and `task.spawn(fn, args:
-List)`; `task.all(tasks: List) -> List` (fail-fast, cancels the rest, first
-Failure wins); `task.race(tasks: List)` (first completion in deterministic
-scheduler order wins, losers cancelled; empty list → Failure); `task.timeout
-(task, ticks: Int)` (value or `Failure("timeout")`, task cancelled on expiry);
-`task.cancel(task)` (marks cancelled, effective at suspension points);
-`task.group()` → Group with `group.spawn(task)` / `group.wait()` (all
-semantics; leftovers cancelled after fail-fast). `sleep(0)` is a reschedule
-point. Ticks are u64 virtual time — fully deterministic, no wall clock.
+O canon lista `sleep`, `all`, `race`, `timeout`, `cancel`, `group`, `spawn`
+sem assinaturas. Decisões: `task.spawn(fn)` e `task.spawn(fn, args:
+List)`; `task.all(tasks: List) -> List` (fail-fast, cancela o restante, a primeira
+Failure vence); `task.race(tasks: List)` (a primeira conclusão na ordem determinística
+do scheduler vence, as perdedoras são canceladas; lista vazia → Failure); `task.timeout
+(task, ticks: Int)` (valor ou `Failure("timeout")`, task cancelada na expiração);
+`task.cancel(task)` (marca como cancelada, efetivo nos pontos de suspensão);
+`task.group()` → Group com `group.spawn(task)` / `group.wait()` (semântica de
+all; as restantes são canceladas após o fail-fast). `sleep(0)` é um ponto de
+reagendamento. Os ticks são tempo virtual u64 — totalmente determinístico, sem relógio de parede.
 
-## F. Await diagnostics (new codes)
+## F. Diagnósticos de await (novos códigos)
 
-Canon mandates the restrictions; code choice is implementation detail:
-`AIPO_SEM_AWAIT_IN_SUBEXPRESSION` (explicit `await` outside statement /
-initializer / return position), `AIPO_SEM_FORGOTTEN_TASK` (known-Task value
-discarded without await/group combinator), `AIPO_SEM_NESTED_AWAIT_DO`
-(redundant nested `await do`), `AIPO_SEM_PARAMETRIC_CONTRACT` (`Task[T]`
-syntax until parametric contracts exist), `AIPO_RT_CANCELLED` (fault,
-never capturable), `AIPO_RT_AWAIT_CYCLE` (fault: task awaiting itself,
-directly or transitively).
+O canon determina as restrições; a escolha dos códigos é detalhe de implementação:
+`AIPO_SEM_AWAIT_IN_SUBEXPRESSION` (`await` explícito fora da posição de statement /
+inicializador / return), `AIPO_SEM_FORGOTTEN_TASK` (valor sabidamente Task
+descartado sem await/combinador de group), `AIPO_SEM_NESTED_AWAIT_DO`
+(`await do` aninhado redundante), `AIPO_SEM_PARAMETRIC_CONTRACT` (sintaxe `Task[T]`
+enquanto não existirem contratos paramétricos), `AIPO_RT_CANCELLED` (fault,
+nunca capturável), `AIPO_RT_AWAIT_CYCLE` (fault: task aguardando a si mesma,
+direta ou transitivamente).
 
-## G. `Task[T]` parametric contracts deferred
+## G. Contratos paramétricos `Task[T]` adiados
 
-Canon calls `Task[T]` a built-in contract but the language has no generics
-(backlog: user generics out of V1). Decision: bare `Task` matches any Task
-value at runtime; `Task[X]` in contract position is a dedicated diagnostic
-pointing here (`AIPO_SEM_PARAMETRIC_CONTRACT`). Awaiting a provably non-Task
-literal is a static contract violation (`AIPO_SEM_CONTRACT_VIOLATION_STATIC`,
-certified by `docs/conformance/diagnostics/29_sem_await_literal.aipo`);
-awaiting a non-Task at runtime is a contract fault
+O canon chama `Task[T]` de contrato built-in, mas a linguagem não tem generics
+(backlog: generics de usuário fora da V1). Decisão: `Task` puro corresponde a qualquer valor
+Task em runtime; `Task[X]` em posição de contrato é um diagnóstico dedicado
+que aponta para cá (`AIPO_SEM_PARAMETRIC_CONTRACT`). Aguardar um literal comprovadamente
+não Task é uma violação estática de contrato (`AIPO_SEM_CONTRACT_VIOLATION_STATIC`,
+certificada por `docs/conformance/diagnostics/29_sem_await_literal.aipo`);
+aguardar um não Task em runtime é um fault de contrato
 (`AIPO_RT_TYPE_MISMATCH`).
 
-## H. Race/deadlock hazards closed by construction
+## H. Riscos de race/deadlock eliminados por construção
 
-No parallelism exists (single-threaded scheduler, FIFO run queue, depth-first
-await driving, tick jump to minimum wakeup). `race` is order-deterministic by
-design. Await cycles fault instead of hanging. Cancellation is checked at
-suspension points only, so no inspect-and-kill race is possible.
+Não existe paralelismo (scheduler single-threaded, run queue FIFO, condução de await
+em profundidade, salto de tick até o wakeup mínimo). `race` é determinístico quanto à ordem
+por design. Ciclos de await geram fault em vez de travar. O cancelamento é verificado
+apenas nos pontos de suspensão, de modo que nenhuma race de inspecionar-e-matar é possível.
 
-## I. Wave 4 deviations recorded
+## I. Desvios da Wave 4 registrados
 
-- No `bevy` dependency: canon forbids *exposing* bevy/Ecs internals, and a
-  100+ crate dependency for a demo adapter would violate the minimal-surface
-  rule; `aipo-poppy` is self-contained and proves the ABI instead.
-- **Host fault codes for restrictions canon mandates but does not name.** Canon
-  fixes the ban (no use-after-free on a stale handle, no scoped binding escaping
-  its callback) and names only `AIPO_RT_CAPABILITY_DENIED`; the code *names* are
-  implementation detail, the same latitude §F recorded for the await
-  diagnostics. Chosen: `AIPO_RT_STALE_HANDLE` and `AIPO_RT_SCOPE_ESCAPE`,
-  alongside `AIPO_RT_CAPABILITY_DENIED`. A host value that cannot satisfy its
-  declared contract is `AIPO_RT_TYPE_MISMATCH`, because canon classifies a
-  contract violation discovered at a boundary as a type mismatch.
-- **Capability paths are the tree.** Canon §11 lists a flat hierarchy including
-  the `poppy.*` family, while the clock is treated as the single `clock`
-  capability at the call site (`time.now`/`time.monotonic`). Both are the same
-  rule once a path grants its descendants: `clock` covers `clock.wall` and
-  `clock.monotonic`, and `poppy` covers every `poppy.<name>`. No wildcard syntax
-  is introduced, and a profile that grants only `clock.wall` still cannot read
-  the monotonic clock.
-- Scoped-escape enforcement covers SetGlobal, Return, SetField, SetIndex,
-  BuildList and BuildDict (every heap-publication point in the VM).
-- `time.now`/`time.monotonic` require the `clock` capability (canon: clocks are
-  capabilities); denial is `AIPO_RT_CAPABILITY_DENIED` fault. The default CLI
-  script profile grants `clock`; tests construct denied hosts directly.
+- Sem dependência de `bevy`: o canon proíbe *expor* internals de bevy/Ecs, e uma
+  dependência de mais de 100 crates para um adapter de demonstração violaria a regra
+  de superfície mínima; `aipo-poppy` é autocontido e prova a ABI em vez disso.
+- **Códigos de fault do host para restrições que o canon determina mas não nomeia.** O canon
+  fixa a proibição (nenhum use-after-free em um handle obsoleto, nenhum binding com escopo
+  escapando de seu callback) e nomeia apenas `AIPO_RT_CAPABILITY_DENIED`; os *nomes* dos
+  códigos são detalhe de implementação, a mesma latitude que a §F registrou para os
+  diagnósticos de await. Escolhidos: `AIPO_RT_STALE_HANDLE` e `AIPO_RT_SCOPE_ESCAPE`,
+  junto de `AIPO_RT_CAPABILITY_DENIED`. Um valor do host que não consegue satisfazer seu
+  contrato declarado é `AIPO_RT_TYPE_MISMATCH`, porque o canon classifica uma violação de
+  contrato descoberta em uma fronteira como type mismatch.
+- **Os caminhos de capability são a árvore.** A §11 do canon lista uma hierarquia plana que
+  inclui a família `poppy.*`, enquanto o relógio é tratado como a capability única `clock`
+  no ponto de chamada (`time.now`/`time.monotonic`). Ambos são a mesma regra a partir do
+  momento em que um caminho concede seus descendentes: `clock` cobre `clock.wall` e
+  `clock.monotonic`, e `poppy` cobre todo `poppy.<name>`. Nenhuma sintaxe de wildcard é
+  introduzida, e um profile que concede apenas `clock.wall` ainda não consegue ler o relógio
+  monotônico.
+- A imposição de escape com escopo cobre SetGlobal, Return, SetField, SetIndex,
+  BuildList e BuildDict (todo ponto de publicação no heap da VM).
+- `time.now`/`time.monotonic` exigem a capability `clock` (canon: relógios são
+  capabilities); a negação é um fault `AIPO_RT_CAPABILITY_DENIED`. O profile de script
+  padrão da CLI concede `clock`; os testes constroem hosts negados diretamente.

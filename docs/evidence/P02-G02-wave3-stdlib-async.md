@@ -1,10 +1,10 @@
-# Evidence — P02-G02 / Wave 3 Stdlib: Combinadores Assíncronos e Operações de Task
+# Evidência — P02-G02 / Wave 3 Stdlib: Combinadores Assíncronos e Operações de Task
 
 **Goal:** `P02-G02` — Implementar e certificar combinadores assíncronos (`task.spawn`, `task.sleep`, `task.all`, `task.race`, `task.timeout`, `task.cancel`, `task.group`) com tempo virtual determinístico e paridade VM↔JS.
-**Phase:** P02 (Wave 3 — Async & Expanded Types) · **Recorded:** 2026-09-20
-**Environment:** Linux x86_64, rustc/cargo 1.98.1, Node v24.18.0
+**Fase:** P02 (Wave 3 — Async & Tipos Expandidos) · **Registrado em:** 2026-09-20
+**Ambiente:** Linux x86_64, rustc/cargo 1.98.1, Node v24.18.0
 
-## Gates (all executed, all green)
+## Gates (todos executados, todos verdes)
 
 ```
 $ cargo fmt --all -- --check                                           # 0
@@ -17,26 +17,26 @@ $ prumo validate .                                                     # clean
 $ prumo doctor .                                                       # clean
 ```
 
-## Summary of Implementation
+## Resumo da Implementação
 
-| Area | Decisions & Implementation Details |
+| Área | Decisões & Detalhes de Implementação |
 |---|---|
-| **Deterministic Scheduler** | Single-threaded, deterministic cooperative task scheduler implemented in both Rust VM (`aipo-vm/src/vm/task.rs`) and JavaScript runtime (`aipo-runtime.js`). Tasks execute depth-first with FIFO run queue. Virtual time (`tick`) advances strictly when tasks sleep or wait on deadlines — pure computation never advances the clock. |
-| **`task.spawn`** | `task.spawn(fn, args: List) -> Task`. Spawns a new task initialized with its own frame, stack, and upvalue environment, queuing it onto `run_queue`. |
-| **`await`** | Resolves completed tasks inline (fast path). For pending tasks, suspends the waiter with operand stack and instruction pointer intact, handing over execution directly to the awaited task before the rest of the queue. Cycle detection halts with `AIPO_RT_AWAIT_CYCLE`. Invocation inside synchronous host callbacks faults with `AIPO_RT_AWAIT_IN_CALLBACK`. Awaiting cancelled tasks faults with `AIPO_RT_CANCELLED`. |
-| **`task.sleep`** | `task.sleep(duration_or_ticks)`. Accepts `Int`/`Byte` ticks or `Duration` (1s = 1000 ticks). Negative values produce recoverable `Failure`. `sleep(0)` yields to other queued tasks as a deterministic reschedule point. On resume, re-executing the call checks virtual time and resolves with `None`. |
-| **`task.all`** | `task.all(tasks: List) -> List`. Structured join waiting for all members. First failure in completion order fails the join; otherwise outcomes are collected in original member order. If any member is cancelled, faults with `AIPO_RT_CANCELLED`. Empty list returns `[]`. |
-| **`task.race`** | `task.race(tasks: List) -> Value`. First member completion in deterministic scheduler order wins; cancelled winners fault. Empty list returns `Failure("race of no tasks")`. |
-| **`task.timeout`** | `task.timeout(task, deadline_or_duration) -> Value`. Resolves with task outcome if completed before deadline; on deadline expiry, marks join as `Failure("timeout")` and cancels the late task. Empty target returns `Failure("timeout of no task")`. |
-| **`task.cancel`** | `task.cancel(task) -> None`. Marks task as `Cancelled`. Driving or awaiting a cancelled task faults deterministically (`AIPO_RT_CANCELLED`). |
-| **`task.group`** | `task.group() -> Group`. Creates a structured-concurrency scope with `group.spawn(fn, args: List) -> Task` and `group.wait() -> List`. Late spawns dynamically join open group waits. Collects member outcomes in completion order. |
-| **VM ↔ JS Backend Parity** | `crates/aipo-js/runtime/aipo-runtime.js` contains a 100% equivalent cooperative scheduler with exact state machine (`Pending`, `Running`, `Sleeping`, `Blocked`, `Ready`, `Failed`, `Cancelled`), join mechanics, timeout polling, and `case 'Await':` opcode dispatch. Evaluated and certified via `selftest.mjs` and `crates/aipo-js/tests/differential.rs`. |
+| **Scheduler Determinístico** | Scheduler cooperativo de tasks, single-threaded e determinístico, implementado tanto na VM em Rust (`aipo-vm/src/vm/task.rs`) quanto no runtime JavaScript (`aipo-runtime.js`). As tasks executam em profundidade, com run queue FIFO. O tempo virtual (`tick`) avança estritamente quando tasks dormem ou aguardam deadlines — computação pura nunca avança o relógio. |
+| **`task.spawn`** | `task.spawn(fn, args: List) -> Task`. Cria uma nova task inicializada com seu próprio frame, stack e ambiente de upvalues, enfileirando-a na `run_queue`. |
+| **`await`** | Resolve tasks concluídas inline (fast path). Para tasks pendentes, suspende o waiter com a operand stack e o instruction pointer intactos, entregando a execução diretamente à task aguardada antes do restante da fila. A detecção de ciclos interrompe com `AIPO_RT_AWAIT_CYCLE`. A invocação dentro de callbacks síncronos do host gera fault com `AIPO_RT_AWAIT_IN_CALLBACK`. Aguardar tasks canceladas gera fault com `AIPO_RT_CANCELLED`. |
+| **`task.sleep`** | `task.sleep(duration_or_ticks)`. Aceita ticks `Int`/`Byte` ou `Duration` (1s = 1000 ticks). Valores negativos produzem `Failure` recuperável. `sleep(0)` cede a vez para outras tasks enfileiradas como um ponto de reagendamento determinístico. Ao retomar, a reexecução da chamada verifica o tempo virtual e resolve com `None`. |
+| **`task.all`** | `task.all(tasks: List) -> List`. Join estruturado que aguarda todos os membros. A primeira falha na ordem de conclusão faz o join falhar; caso contrário, os resultados são coletados na ordem original dos membros. Se algum membro for cancelado, gera fault com `AIPO_RT_CANCELLED`. Lista vazia retorna `[]`. |
+| **`task.race`** | `task.race(tasks: List) -> Value`. A primeira conclusão de membro na ordem determinística do scheduler vence; vencedores cancelados geram fault. Lista vazia retorna `Failure("race of no tasks")`. |
+| **`task.timeout`** | `task.timeout(task, deadline_or_duration) -> Value`. Resolve com o resultado da task se concluída antes do deadline; na expiração do deadline, marca o join como `Failure("timeout")` e cancela a task atrasada. Alvo vazio retorna `Failure("timeout of no task")`. |
+| **`task.cancel`** | `task.cancel(task) -> None`. Marca a task como `Cancelled`. Conduzir ou aguardar uma task cancelada gera fault de forma determinística (`AIPO_RT_CANCELLED`). |
+| **`task.group`** | `task.group() -> Group`. Cria um escopo de concorrência estruturada com `group.spawn(fn, args: List) -> Task` e `group.wait() -> List`. Spawns tardios se juntam dinamicamente aos waits de grupo abertos. Coleta os resultados dos membros na ordem de conclusão. |
+| **Paridade de Backend VM ↔ JS** | `crates/aipo-js/runtime/aipo-runtime.js` contém um scheduler cooperativo 100% equivalente, com a máquina de estados exata (`Pending`, `Running`, `Sleeping`, `Blocked`, `Ready`, `Failed`, `Cancelled`), mecânica de join, polling de timeout e despacho do opcode `case 'Await':`. Avaliado e certificado via `selftest.mjs` e `crates/aipo-js/tests/differential.rs`. |
 
-## Test Inventory & Verification
+## Inventário de Testes & Verificação
 
-- `crates/aipo-vm/tests/wave3_pipeline.rs`: End-to-end integration tests covering `spawn_and_await`, `all_and_race`, `group`, `sleep_and_timeout`, `timeout_expires`, and `cancel`.
-- `crates/aipo-js/runtime/selftest.mjs`: Unit assertions for `vGroup`, `Group` equality and formatting, plus async execution with `runModule`.
-- `crates/aipo-js/tests/differential.rs`: Differential suite compiling Aipo async programs to bytecode (for VM) and Core IR bundle (for Node.js), asserting exact stdout and status code equality across:
+- `crates/aipo-vm/tests/wave3_pipeline.rs`: testes de integração end-to-end cobrindo `spawn_and_await`, `all_and_race`, `group`, `sleep_and_timeout`, `timeout_expires` e `cancel`.
+- `crates/aipo-js/runtime/selftest.mjs`: asserções unitárias para `vGroup`, igualdade e formatação de `Group`, além de execução assíncrona com `runModule`.
+- `crates/aipo-js/tests/differential.rs`: suíte diferencial que compila programas assíncronos de Aipo para bytecode (para a VM) e para bundle de Core IR (para o Node.js), verificando igualdade exata de stdout e de status code em:
   - `test_wave3_async_spawn_await_differential`
   - `test_wave3_async_all_and_race_differential`
   - `test_wave3_async_group_differential`
