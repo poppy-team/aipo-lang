@@ -18,6 +18,7 @@ aipo-bytecode = { path = "../aipo-bytecode" }
 aipo-diagnostics = { path = "../aipo-diagnostics" }
 aipo-formatter = { path = "../aipo-formatter" }
 aipo-hir = { path = "../aipo-hir" }
+aipo-host = { path = "../aipo-host" }
 aipo-ir = { path = "../aipo-ir" }
 aipo-js = { path = "../aipo-js" }
 aipo-package = { path = "../aipo-package" }

@@ -63,3 +63,32 @@ Corpus de conformidade:
 | Qualquer engine específica dentro de `aipo-host` | Permanece apenas com abstrações gerais |
 | módulos de stdlib de filesystem/network/process | Stdlib de capabilities da Wave 6 |
 | Imposição de orçamento de instruções/fuel, heap e tempo de parede | ADP-003 (indecidido) |
+
+## Retomada da integração AHS — 2026-10-04
+
+A integração pendente foi adaptada ao CLI atual, preservando os comandos de pacotes,
+Wasm e as APIs públicas de embedding. `--ahs` carrega uma `PreludeSurface` explícita,
+sem estado global. Assinaturas de host são preservadas em `analyze_with_surface` e
+`compile_file`; bindings locais que sombreiam módulos não recebem contratos do host,
+e a checagem de métodos de structs continua ativa.
+
+A retomada também corrigiu um bloqueio de compilação do cache de pacotes com `sha2 0.11`:
+a chave reutiliza a conversão hexadecimal existente, com teste de SHA-256 conhecido
+para preservar os mesmos 64 caracteres hexadecimais minúsculos.
+
+Verificações executadas nesta retomada (não são uma recertificação do workspace inteiro):
+
+- `cargo fmt --all --check` e `git diff --check`: aprovados.
+- `cargo check -p aipo-cli -p aipo-sema -p aipo-host -p aipo-package --all-targets`: aprovado.
+- `cargo clippy -p aipo-cli -p aipo-sema -p aipo-host -p aipo-package --all-targets -- -D warnings`: aprovado após corrigir dois usos de `err().expect()` nos novos testes.
+- `cargo test -p aipo-cli -p aipo-sema -p aipo-host -p aipo-package`: **254 testes aprovados, nenhuma falha**, incluindo doctests, conformidade, pacotes, Wasm, paridade dos exemplos e fuzz smoke.
+- `host_surface`: **22 testes aprovados**, incluindo executável real, argumentos nomeados,
+  contratos nullable, isolamento, embedding e semântica anterior ao backend Wasm.
+- Executável `target/debug/aipo check` com os fixtures AHS: saída vazia e exit `0` para
+  o probe válido; JSONL com `AIPO_SEM_CONTRACT_VIOLATION_STATIC` e exit `1` para o inválido.
+- `pnpm run docs:build`: aprovado; aviso de chunks acima de 500 kB, sem erro de build.
+
+Limites preservados: AHS não instala natives, imports Wasm ou capabilities; contratos
+sobre valores dinâmicos continuam sendo responsabilidade do adaptador. O harness de
+faults de host por programas `.aipo` no CLI permanece pendente, conforme Wave 4.
+O rebase encontrado ao iniciar esta retomada não foi finalizado nem houve novo commit.

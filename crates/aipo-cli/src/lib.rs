@@ -2,9 +2,9 @@
 //! `docs/reference/cli.md`:
 //!
 //! ```text
-//! aipo run <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
+//! aipo run <path> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--message-format=<human|jsonl>]
 //! aipo test [path] [--filter <pattern>] [--package-cache <dir>] [--message-format=<human|jsonl>]
-//! aipo check <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
+//! aipo check <path> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--message-format=<human|jsonl>]
 //! aipo build <path> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
 //! aipo disasm <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
 //! aipo fmt <paths...> [--check]
@@ -53,9 +53,13 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod ahs;
 pub mod modules;
 
 static NEXT_LOCK_TEMP: AtomicU64 = AtomicU64::new(0);
+
+/// Loads a validated host description for use with [`compile_file`] or [`analyze_with_surface`].
+pub use ahs::load as load_host_surface;
 
 /// Redirects the standard library's `io` output away from the process streams.
 ///
@@ -75,9 +79,9 @@ pub const USAGE: &str = "\
 aipo — Aipo language toolchain
 
 USAGE:
-    aipo run <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
+    aipo run <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>] [--ahs=<file>]
     aipo test [path] [--filter <pattern>] [--package-cache <dir>] [--message-format=<human|jsonl>]
-    aipo check <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
+    aipo check <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>] [--ahs=<file>]
     aipo build <path> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo disasm <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo fmt <paths...> [--check]
@@ -96,6 +100,9 @@ COMMANDS:
     disasm   Disassemble a source file (.aipo), bytecode file (.aibc), or WebAssembly binary (.wasm)
     fmt      Format source files in place; --check reports drift without writing
     package  Create or audit a local package lockfile, or verify the package cache
+
+FLAGS:
+    --ahs=<file>   Host surface description (AHS) the run may reach, as data
 
 EXIT CODES:
     0  success
@@ -154,15 +161,28 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             format,
             package_cache,
             wasm,
-        } => execute(
-            &path,
-            format,
-            package_cache.as_deref(),
-            out,
-            err,
-            Action::Run,
-            wasm,
-        ),
+            ahs,
+        } => {
+            let surface = match ahs.as_deref().map(ahs::load).transpose() {
+                Ok(surface) => surface,
+                Err(message) => {
+                    let _ = writeln!(err, "error: {message}");
+                    return EXIT_USAGE;
+                }
+            };
+            execute(
+                &path,
+                format,
+                package_cache.as_deref(),
+                out,
+                err,
+                ExecutionOptions {
+                    action: Action::Run,
+                    wasm,
+                    surface: surface.as_ref(),
+                },
+            )
+        }
         Command::Test {
             path,
             filter,
@@ -181,15 +201,28 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             format,
             package_cache,
             wasm,
-        } => execute(
-            &path,
-            format,
-            package_cache.as_deref(),
-            out,
-            err,
-            Action::Check,
-            wasm,
-        ),
+            ahs,
+        } => {
+            let surface = match ahs.as_deref().map(ahs::load).transpose() {
+                Ok(surface) => surface,
+                Err(message) => {
+                    let _ = writeln!(err, "error: {message}");
+                    return EXIT_USAGE;
+                }
+            };
+            execute(
+                &path,
+                format,
+                package_cache.as_deref(),
+                out,
+                err,
+                ExecutionOptions {
+                    action: Action::Check,
+                    wasm,
+                    surface: surface.as_ref(),
+                },
+            )
+        }
         Command::Build {
             path,
             out_dir,
@@ -275,6 +308,8 @@ enum Command {
         format: MessageFormat,
         package_cache: Option<PathBuf>,
         wasm: bool,
+        /// Host surface described as data (`--ahs=<file>`), when one was given.
+        ahs: Option<PathBuf>,
     },
     Test {
         path: Option<PathBuf>,
@@ -287,6 +322,8 @@ enum Command {
         format: MessageFormat,
         package_cache: Option<PathBuf>,
         wasm: bool,
+        /// Host surface described as data (`--ahs=<file>`), when one was given.
+        ahs: Option<PathBuf>,
     },
     Build {
         path: PathBuf,
@@ -362,6 +399,7 @@ impl Command {
                 let mut format = MessageFormat::Human;
                 let mut package_cache = None;
                 let mut wasm = false;
+                let mut ahs = None;
                 let rest = &args[1..];
                 let mut index = 0;
                 while index < rest.len() {
@@ -424,6 +462,24 @@ impl Command {
                             return Err("'--package-cache' was provided more than once".to_string());
                         }
                         package_cache = Some(PathBuf::from(value));
+                    } else if arg == "--ahs" || arg.starts_with("--ahs=") {
+                        if first == "disasm" {
+                            return Err("--ahs is only supported by run and check".to_string());
+                        }
+                        if ahs.is_some() {
+                            return Err("'--ahs' was provided more than once".to_string());
+                        }
+                        let value = if let Some(value) = arg.strip_prefix("--ahs=") {
+                            value
+                        } else {
+                            index += 1;
+                            rest.get(index)
+                                .ok_or_else(|| "--ahs requires a file argument".to_string())?
+                        };
+                        if value.is_empty() || value.starts_with('-') {
+                            return Err("--ahs requires a non-empty file argument".to_string());
+                        }
+                        ahs = Some(PathBuf::from(value));
                     } else if arg.starts_with('-') {
                         return Err(format!("unrecognized flag '{arg}'"));
                     } else if path.is_some() {
@@ -441,6 +497,7 @@ impl Command {
                         format,
                         package_cache,
                         wasm,
+                        ahs,
                     })
                 } else if first == "check" {
                     Ok(Self::Check {
@@ -448,6 +505,7 @@ impl Command {
                         format,
                         package_cache,
                         wasm,
+                        ahs,
                     })
                 } else {
                     Ok(Self::Disasm {
@@ -954,6 +1012,12 @@ enum Action {
     Check,
 }
 
+struct ExecutionOptions<'a> {
+    action: Action,
+    wasm: bool,
+    surface: Option<&'a PreludeSurface>,
+}
+
 struct LoadedSource {
     source: Source,
     package_paths: Option<PackagePathMap>,
@@ -1006,6 +1070,9 @@ pub fn analyze_with_surface(
                     surface.add_variable(name);
                 }
             }
+        }
+        for (module, functions) in extra.host_modules() {
+            surface.add_host_module(module, functions.clone());
         }
     }
     // Imported module names and aliases are ordinary globals to the checker.
@@ -1721,6 +1788,7 @@ fn compile_to_wasm(
     source: &Source,
     path: &Path,
     package_paths: Option<&PackagePathMap>,
+    extra_surface: Option<&PreludeSurface>,
 ) -> (Option<Vec<u8>>, Vec<Diagnostic>) {
     let (program, mut diagnostics) = aipo_syntax::parse(source);
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
@@ -1735,6 +1803,11 @@ fn compile_to_wasm(
     }
 
     let mut surface = prelude_surface();
+    if let Some(extra) = extra_surface {
+        for (module, functions) in extra.host_modules() {
+            surface.add_host_module(module, functions.clone());
+        }
+    }
     for name in &resolved.imported_names {
         surface.add_variable(name);
     }
@@ -1762,9 +1835,22 @@ fn execute(
     package_cache: Option<&Path>,
     out: &mut dyn Write,
     err: &mut dyn Write,
-    action: Action,
-    wasm: bool,
+    options: ExecutionOptions<'_>,
 ) -> u8 {
+    let ExecutionOptions {
+        action,
+        wasm,
+        surface,
+    } = options;
+    if surface.is_some()
+        && matches!(
+            path.extension().and_then(|ext| ext.to_str()),
+            Some("wasm" | "aibc")
+        )
+    {
+        let _ = writeln!(err, "error: --ahs requires an Aipo source file");
+        return EXIT_USAGE;
+    }
     // Pre-compiled `.wasm` files execute directly or check via disassembly.
     if path.extension().and_then(|ext| ext.to_str()) == Some("wasm") {
         if package_cache.is_some() {
@@ -1806,7 +1892,8 @@ fn execute(
             Err(error) => return report_cli_error(error, format, out, err),
         };
 
-        let (wasm_bytes, diagnostics) = compile_to_wasm(&source, path, package_paths.as_ref());
+        let (wasm_bytes, diagnostics) =
+            compile_to_wasm(&source, path, package_paths.as_ref(), surface);
         let has_errors = diagnostics
             .iter()
             .any(|diag| diag.severity == Severity::Error);
@@ -1840,7 +1927,7 @@ fn execute(
             Err(error) => return report_cli_error(error, format, out, err),
         };
 
-        let compiled = analyze(&source, path, package_paths.as_ref());
+        let compiled = analyze_with_surface(&source, path, package_paths.as_ref(), surface);
         let has_errors = compiled
             .diagnostics
             .iter()
@@ -2016,7 +2103,8 @@ fn disassemble_command(
             Ok(loaded) => loaded,
             Err(error) => return report_cli_error(error, format, out, err),
         };
-        let (wasm_bytes, diagnostics) = compile_to_wasm(&source, path, package_paths.as_ref());
+        let (wasm_bytes, diagnostics) =
+            compile_to_wasm(&source, path, package_paths.as_ref(), None);
         let has_errors = diagnostics
             .iter()
             .any(|diag| diag.severity == Severity::Error);
@@ -2092,7 +2180,8 @@ fn build_bundle(
 
     match target {
         BuildTarget::Wasm => {
-            let (wasm_bytes, diagnostics) = compile_to_wasm(&source, path, package_paths.as_ref());
+            let (wasm_bytes, diagnostics) =
+                compile_to_wasm(&source, path, package_paths.as_ref(), None);
             let has_errors = diagnostics
                 .iter()
                 .any(|diag| diag.severity == Severity::Error);

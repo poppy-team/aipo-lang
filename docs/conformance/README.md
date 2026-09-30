@@ -119,6 +119,28 @@ snapshot for a program is only ever rewritten on request (see *Regeneration*).
 | `07_slices_and_calls` | call and slice argument layout |
 | `08_trailing_block` | trailing `do … end` blocks |
 
+### Host surface fixtures (`ahs/`)
+
+`ahs/headless_test_host.json` is an Aipo Host Schema describing a `demo` module the language and
+the standard library know nothing about. The `.aipo` files beside it are exercised by
+`cargo test -p aipo-cli --test host_surface`, with and without `--ahs=<that file>`;
+the expected code is in each file's header comment. The suite also exercises `run`,
+Wasm semantic checking, JSONL diagnostics and the explicit Rust embedding surface.
+
+| Fixture | Asserts |
+|---|---|
+| `host_surface_probe` | resolves with the surface; `AIPO_SEM_UNKNOWN_NAME` without it |
+| `host_unknown_member` | `AIPO_SEM_UNKNOWN_NAME` for `demo.nonexistent` |
+| `host_arity_mismatch` | `AIPO_SEM_ARITY_MISMATCH` for `demo.ping()` |
+| `host_optional_param` | an `optional` parameter may be omitted, positional or named |
+| `host_contract_violation` | `AIPO_SEM_CONTRACT_VIOLATION_STATIC` for a literal against `Int` |
+
+The suite includes regressions for unknown/duplicate named arguments, required arguments,
+nullable contracts, dynamic values left to runtime, local module shadowing, preserved struct
+method checks, rejected flag combinations and isolation between CLI/embedding compilations.
+
+These are not part of the `programs/`/`diagnostics/` suite because they need a flag.
+
 ## Regeneration
 
 Snapshot files are written by the suite when the environment asks for it:

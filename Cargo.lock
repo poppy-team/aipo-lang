@@ -121,6 +121,7 @@ dependencies = [
  "aipo-diagnostics",
  "aipo-formatter",
  "aipo-hir",
+ "aipo-host",
  "aipo-ir",
  "aipo-js",
  "aipo-lexer",

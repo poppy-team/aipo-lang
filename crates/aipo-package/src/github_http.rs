@@ -1398,7 +1398,24 @@ struct CacheMetadata {
 fn cache_key(source: &GitHubSource) -> String {
     let mut hasher = Sha256::new();
     hasher.update(source.label().as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::digest::hex(&hasher.finalize())
+}
+
+#[cfg(test)]
+#[test]
+fn cache_key_is_the_lowercase_sha256_of_the_source_label() {
+    let source = PackageSource::github_at(
+        "acme/packages",
+        "0123456789abcdef0123456789abcdef01234567",
+        ".",
+    )
+    .expect("valid source")
+    .github_source()
+    .expect("GitHub source");
+    assert_eq!(
+        cache_key(&source),
+        "413ebdc5cf154d3f24e54df971cd3359a68f7ce8f8098378ffae8b2dc5af84be"
+    );
 }
 
 fn parse_github_source_label(label: &str) -> Result<GitHubSource, String> {

@@ -1,6 +1,6 @@
 //! Semantic analysis and verification pass.
 
-use crate::prelude::PreludeSurface;
+use crate::prelude::{HostFunction, PreludeSurface};
 use crate::symbol::{MethodSignature, Mutability, ScopeTree, Symbol, SymbolKind};
 use aipo_ast::{Literal, TypeAnnotation};
 use aipo_diagnostics::{Diagnostic, DiagnosticCode};
@@ -122,6 +122,7 @@ pub struct SemanticAnalyzer<'a> {
     current_fn_is_mut: bool,
     /// Written signature contracts of every declared function, by name.
     fn_contracts: HashMap<String, DeclaredContract>,
+    host_modules: HashMap<String, HashMap<String, HostFunction>>,
     /// Return contract of the function currently being analyzed, checked at every `return`.
     current_return_contract: Option<TypeAnnotation>,
     /// Root scope of the module, which owns the module-level bindings.
@@ -180,6 +181,7 @@ impl<'a> SemanticAnalyzer<'a> {
             impl_methods: HashMap::new(),
             current_fn_is_mut: false,
             fn_contracts: HashMap::new(),
+            host_modules: HashMap::new(),
             current_return_contract: None,
             root_scope: root,
             module_bindings: HashSet::new(),
@@ -213,6 +215,10 @@ impl<'a> SemanticAnalyzer<'a> {
                     span: aipo_source::SourceSpan::empty(0),
                 },
             );
+        }
+
+        for (module, functions) in surface.host_modules() {
+            self.host_modules.insert(module.clone(), functions.clone());
         }
     }
 
@@ -1151,6 +1157,115 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    /// Host metadata applies only to the original prelude binding, not a local shadow.
+    fn is_host_module_reference(&self, name: &str) -> bool {
+        if !self.host_modules.contains_key(name) || self.module_bindings.contains(name) {
+            return false;
+        }
+        let root = self.facts.scopes.scopes[self.root_scope].symbols.get(name);
+        let resolved = self.facts.scopes.lookup(self.current_scope, name);
+        match (root, resolved) {
+            (Some(root), Some(resolved)) => {
+                root.span == SourceSpan::empty(0) && std::ptr::eq(root, resolved)
+            }
+            _ => false,
+        }
+    }
+
+    /// Checks a call against a host-module signature without assuming non-literal value types.
+    fn check_host_call(
+        &mut self,
+        module: &str,
+        member: &str,
+        args: &[HirCallArg],
+        span: SourceSpan,
+    ) {
+        let Some(functions) = self.host_modules.get(module) else {
+            return;
+        };
+        let Some(function) = functions.get(member).cloned() else {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                    format!("unknown host member '{module}.{member}'"),
+                )
+                .with_primary_span(self.source, span),
+            );
+            return;
+        };
+
+        let positional = args.iter().filter(|arg| arg.name.is_none()).count();
+        let mut supplied = HashSet::new();
+        for (index, arg) in args.iter().enumerate() {
+            if let Some(name) = &arg.name {
+                if !function.params.iter().any(|param| &param.name == name) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::AIPO_SEM_NAMED_ARG_UNKNOWN,
+                            format!("unknown named argument '{name}' for '{module}.{member}'"),
+                        )
+                        .with_primary_span(self.source, arg.value.span()),
+                    );
+                } else if !supplied.insert(name.clone())
+                    || function
+                        .params
+                        .iter()
+                        .position(|param| &param.name == name)
+                        .is_some_and(|position| position < positional)
+                {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::AIPO_SEM_DUPLICATE_NAMED_ARG,
+                            format!("duplicate argument '{name}' for '{module}.{member}'"),
+                        )
+                        .with_primary_span(self.source, arg.value.span()),
+                    );
+                }
+            } else if index < function.params.len() {
+                supplied.insert(function.params[index].name.clone());
+            }
+        }
+        let min_args = function
+            .params
+            .iter()
+            .filter(|param| !param.optional)
+            .count();
+        let max_args = function.params.len();
+        if positional > max_args
+            || function
+                .params
+                .iter()
+                .any(|param| !param.optional && !supplied.contains(&param.name))
+        {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::AIPO_SEM_ARITY_MISMATCH,
+                    format!(
+                        "function '{module}.{member}' expected between {min_args} and {max_args} arguments, found {}",
+                        args.len()
+                    ),
+                )
+                .with_primary_span(self.source, span),
+            );
+        }
+
+        let contract = DeclaredContract {
+            params: function
+                .params
+                .iter()
+                .map(|param| ParameterContract {
+                    name: param.name.clone(),
+                    annotation: Some(TypeAnnotation {
+                        name: param.ty.clone(),
+                        is_nullable: param.nullable,
+                        span,
+                    }),
+                })
+                .collect(),
+        };
+        self.check_argument_contracts(&format!("{module}.{member}"), args, &contract);
+    }
+
     /// Reports a return value that provably cannot satisfy the declared return contract.
     fn check_return_contract(&mut self, expression: &HirExpr, span: SourceSpan) {
         let Some(annotation) = self.current_return_contract.clone() else {
@@ -1309,7 +1424,12 @@ impl<'a> SemanticAnalyzer<'a> {
                     if let Some(contract) = self.fn_contracts.get(name).cloned() {
                         self.check_argument_contracts(name, args, &contract);
                     }
-                } else if let HirExpr::Dot(target, member, _) = &**callee {
+                } else if let HirExpr::Dot(target, member, dot_span) = &**callee {
+                    if let HirExpr::Identifier(module_name, _) = &**target {
+                        if self.is_host_module_reference(module_name) {
+                            self.check_host_call(module_name, member, args, *dot_span);
+                        }
+                    }
                     let target_struct = match &**target {
                         HirExpr::Identifier(name, _) if name == "self" => {
                             self.current_struct.clone()

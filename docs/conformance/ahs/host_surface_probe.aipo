@@ -1,0 +1,6 @@
+# `demo` exists only in `docs/conformance/ahs/headless_test_host.json`: the language and the
+# standard library know nothing about it, so without `--ahs` the checker reports
+# AIPO_SEM_UNKNOWN_NAME and with the description installed it accepts the call. That is the
+# whole point of a host surface described as data — the checker reaches a host it does not know.
+var reply = demo.ping(41)
+io.println(reply)

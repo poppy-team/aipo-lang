@@ -1,0 +1,25 @@
+{
+  "host": "headless-test-host",
+  "version": "0.1.0",
+  "modules": [
+    {
+      "name": "demo",
+      "docs": "A minimal host surface, used to prove the checker reaches a host described as data.",
+      "functions": [
+        {
+          "name": "ping",
+          "params": [{ "name": "value", "type": { "name": "Int" } }],
+          "returns": { "name": "Int" }
+        },
+        {
+          "name": "greet",
+          "params": [
+            { "name": "name", "type": { "name": "String" } },
+            { "name": "loud", "type": { "name": "Bool" }, "optional": true }
+          ],
+          "returns": { "name": "String" }
+        }
+      ]
+    }
+  ]
+}
