@@ -1366,6 +1366,39 @@ fn test_sdf_shader_ring_uses_its_own_sdf_not_the_border_distance() {
 }
 
 #[test]
+fn test_sdf_shader_composites_the_focus_ring_after_the_fill_and_border() {
+    // Ordering here is load-bearing, not cosmetic. The ring is drawn in the
+    // padding band OUTSIDE the box, where neither the fill nor the 1px border
+    // stroke has coverage. The border block assigns `col` from scratch, so a
+    // ring composited before it is overwritten with alpha 0, and the `discard`
+    // at the end of `main` then throws the fragment away. The ring was computed
+    // but never reached the screen on any widget, which is exactly the
+    // WCAG 2.4.13 failure this pass exists to prevent.
+    let shader = sdf_fragment_shader_source();
+    let fill = shader.find("if (color.a > 0.0)").expect("fill block");
+    let border = shader
+        .find("col = vec4(out_rgb, out_a);")
+        .expect("border/fill assignment");
+    let ring = shader.find("abs(d - ring_mid)").expect("ring SDF");
+    let discard = shader.find("discard;").expect("alpha discard");
+
+    assert!(
+        fill < border,
+        "the border must stay after the fill block that feeds it"
+    );
+    assert!(
+        border < ring,
+        "the ring must composite after the border/fill assignment; \
+         compositing it earlier makes the assignment erase the ring"
+    );
+    assert!(
+        ring < discard,
+        "the ring must composite before the alpha discard, otherwise the \
+         ring fragments are dropped"
+    );
+}
+
+#[test]
 fn test_sdf_shader_keeps_scaled_aa_and_gamma() {
     let shader = sdf_fragment_shader_source();
     assert!(

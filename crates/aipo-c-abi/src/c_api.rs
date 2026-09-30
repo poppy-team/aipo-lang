@@ -87,6 +87,9 @@ pub unsafe extern "C" fn aipo_runtime_grant_capability(
     if rt.is_null() || capability.is_null() {
         return aipo_status_t::AIPO_ERR_NULL_POINTER;
     }
+    if crate::runtime::in_host_callback() {
+        return aipo_status_t::AIPO_ERR_USAGE;
+    }
     let result = catch_unwind(AssertUnwindSafe(|| {
         let runtime = unsafe { &mut *rt };
         let c_str = unsafe { std::ffi::CStr::from_ptr(capability) };
@@ -120,6 +123,9 @@ pub unsafe extern "C" fn aipo_runtime_revoke_capability(
 ) -> aipo_status_t {
     if rt.is_null() || capability.is_null() {
         return aipo_status_t::AIPO_ERR_NULL_POINTER;
+    }
+    if crate::runtime::in_host_callback() {
+        return aipo_status_t::AIPO_ERR_USAGE;
     }
     let result = catch_unwind(AssertUnwindSafe(|| {
         let runtime = unsafe { &mut *rt };
@@ -273,6 +279,9 @@ pub unsafe extern "C" fn aipo_runtime_register_host_fn(
 ) -> aipo_status_t {
     if rt.is_null() || name.is_null() {
         return aipo_status_t::AIPO_ERR_NULL_POINTER;
+    }
+    if crate::runtime::in_host_callback() {
+        return aipo_status_t::AIPO_ERR_USAGE;
     }
     let result = catch_unwind(AssertUnwindSafe(|| {
         let runtime = unsafe { &mut *rt };
@@ -477,4 +486,64 @@ pub unsafe extern "C" fn aipo_last_error(
         *buffer.add(copy_len) = 0;
     }
     copy_len + 1
+}
+
+/// Configures the maximum instruction execution budget for the runtime (0 = unlimited).
+///
+/// # Safety
+///
+/// `rt` must point to a live [`aipo_runtime_t`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aipo_runtime_set_instruction_budget(
+    rt: *mut aipo_runtime_t,
+    max_instructions: u64,
+) -> aipo_status_t {
+    if rt.is_null() {
+        return aipo_status_t::AIPO_ERR_NULL_POINTER;
+    }
+    if crate::runtime::in_host_callback() {
+        return aipo_status_t::AIPO_ERR_USAGE;
+    }
+    let runtime = unsafe { &mut *rt };
+    let limit = if max_instructions == 0 {
+        None
+    } else {
+        Some(max_instructions)
+    };
+    runtime.set_instruction_budget(limit);
+    aipo_status_t::AIPO_OK
+}
+
+/// Returns the total number of instructions executed on the runtime.
+///
+/// # Safety
+///
+/// `rt` must point to a live [`aipo_runtime_t`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aipo_runtime_instruction_count(rt: *const aipo_runtime_t) -> u64 {
+    if rt.is_null() {
+        return 0;
+    }
+    let runtime = unsafe { &*rt };
+    runtime.instruction_count()
+}
+
+/// Resets the instruction execution counter to zero.
+///
+/// # Safety
+///
+/// `rt` must point to a live [`aipo_runtime_t`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aipo_runtime_reset_instruction_count(
+    rt: *mut aipo_runtime_t,
+) -> aipo_status_t {
+    if rt.is_null() {
+        return aipo_status_t::AIPO_ERR_NULL_POINTER;
+    }
+    if crate::runtime::in_host_callback() {
+        return aipo_status_t::AIPO_ERR_USAGE;
+    }
+    let runtime = unsafe { &mut *rt };
+    runtime.reset_instruction_count();
+    aipo_status_t::AIPO_OK
 }

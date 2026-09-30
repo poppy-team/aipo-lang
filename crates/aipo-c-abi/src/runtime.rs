@@ -9,6 +9,7 @@ use aipo_source::{Source, SourceId};
 use aipo_vm::{Value, Vm, VmError, VmFault};
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 thread_local! {
     static CURRENT_RUNTIME: Cell<*mut AipoRuntime> = const { Cell::new(std::ptr::null_mut()) };
@@ -92,7 +93,7 @@ pub struct AipoRuntime {
     /// Granted capabilities for this runtime instance.
     pub capabilities: CapabilitySet,
     /// Loaded bytecode modules by module name.
-    pub modules: HashMap<String, BytecodeModule>,
+    pub modules: HashMap<String, Arc<BytecodeModule>>,
     /// Last error or fault message recorded.
     pub last_error: Option<String>,
     /// Owned snapshots for strings and bytes returned across the C boundary.
@@ -204,15 +205,21 @@ impl AipoRuntime {
         let source = Source::new(SourceId::next(), name, source_text);
         let (program, diagnostics) = aipo_syntax::parse(&source);
         if diagnostics.iter().any(|d| d.severity == Severity::Error) {
-            let msg = format!("parse error in module '{name}'");
+            let details = diagnostics
+                .iter()
+                .filter(|d| d.severity == Severity::Error)
+                .map(|d| d.message.clone())
+                .collect::<Vec<_>>()
+                .join("; ");
+            let msg = format!("parse error in module '{name}': {details}");
             self.last_error = Some(msg.clone());
             return Err((aipo_status_t::AIPO_ERR_DIAGNOSTIC, msg));
         }
 
         let hir = aipo_hir::lower(program);
         let mut surface = PreludeSurface::fundamental();
-        for global in self.vm.globals.keys() {
-            surface.add_variable(global);
+        for host_fn in self.host_functions.keys() {
+            surface.add_variable(host_fn);
         }
         for mod_name in self.modules.keys() {
             surface.add_variable(mod_name);
@@ -223,7 +230,13 @@ impl AipoRuntime {
             .iter()
             .any(|d| d.severity == Severity::Error)
         {
-            let msg = format!("semantic error in module '{name}'");
+            let details = sema_diagnostics
+                .iter()
+                .filter(|d| d.severity == Severity::Error)
+                .map(|d| d.message.clone())
+                .collect::<Vec<_>>()
+                .join("; ");
+            let msg = format!("semantic error in module '{name}': {details}");
             self.last_error = Some(msg.clone());
             return Err((aipo_status_t::AIPO_ERR_DIAGNOSTIC, msg));
         }
@@ -233,6 +246,9 @@ impl AipoRuntime {
             let msg = format!("compilation error: {:?}", errors);
             (aipo_status_t::AIPO_ERR_DIAGNOSTIC, msg)
         })?;
+
+        // Capture definition snapshot before any module mutations for atomic commit/rollback
+        let snapshot = self.vm.snapshot_definitions();
 
         // Register structs and methods on VM
         for decl in &module.structs {
@@ -258,6 +274,8 @@ impl AipoRuntime {
         // Execute top-level module code
         let _guard = CurrentRuntimeGuard::new(self as *mut AipoRuntime);
         if let Err(err) = self.vm.run(&module) {
+            // Atomic rollback: restore VM definitions and globals completely on failure
+            self.vm.restore_definitions(snapshot);
             let msg = format!("runtime error initializing module '{name}': {err}");
             self.last_error = Some(msg.clone());
             let status = match err {
@@ -267,11 +285,11 @@ impl AipoRuntime {
             return Err((status, msg));
         }
 
-        self.modules.insert(name.to_string(), module);
+        self.modules.insert(name.to_string(), Arc::new(module));
         Ok(())
     }
 
-    /// Invokes a global function in a loaded module or global scope.
+    /// Invokes a global function in a loaded module.
     pub fn call(
         &mut self,
         module_name: &str,
@@ -284,22 +302,15 @@ impl AipoRuntime {
             (aipo_status_t::AIPO_ERR_USAGE, msg)
         })?;
 
-        // Resolve function value
-        let callee = self
-            .vm
-            .globals
-            .get(func_name)
-            .cloned()
-            .or_else(|| {
-                module
-                    .functions
-                    .iter()
-                    .find(|f| f.name == func_name)
-                    .map(|f| Value::Function {
-                        entry_ip: f.entry_ip as u32,
-                        arity: f.params as u16,
-                        is_async: f.is_async,
-                    })
+        // Resolve function value strictly from the requested module's function table
+        let callee = module
+            .functions
+            .iter()
+            .find(|f| f.name == func_name)
+            .map(|f| Value::Function {
+                entry_ip: f.entry_ip as u32,
+                arity: f.params as u16,
+                is_async: f.is_async,
             })
             .ok_or_else(|| {
                 let msg = format!("function '{func_name}' not found in module '{module_name}'");
@@ -376,6 +387,22 @@ impl AipoRuntime {
                 handle: h.to_string(),
             })
     }
+
+    /// Sets the maximum instruction execution budget (None = unlimited).
+    pub fn set_instruction_budget(&mut self, limit: Option<u64>) {
+        self.vm.set_max_instructions(limit);
+    }
+
+    /// Returns the number of instructions executed on this runtime.
+    #[must_use]
+    pub fn instruction_count(&self) -> u64 {
+        self.vm.instruction_count()
+    }
+
+    /// Resets the instruction execution counter to zero.
+    pub fn reset_instruction_count(&mut self) {
+        self.vm.reset_instruction_count();
+    }
 }
 
 fn dummy_native_fn(_args: &[Value]) -> Result<Value, VmFault> {
@@ -391,8 +418,6 @@ fn host_native_dispatcher(vm: &mut Vm, args: &[Value]) -> Result<Value, VmError>
         }
         .into());
     }
-
-    let rt = unsafe { &mut *rt_ptr };
 
     // Identity comes from the callee itself, never from its arity. Two host
     // functions can share an arity and require different capabilities, so
@@ -412,39 +437,45 @@ fn host_native_dispatcher(vm: &mut Vm, args: &[Value]) -> Result<Value, VmError>
             })
         })?;
 
-    let (entry, required_cap) = rt
-        .host_functions
-        .get(&callee_name)
-        .map(|(e, cap)| (*e, cap.clone()))
-        .ok_or_else(|| {
-            VmError::from(VmFault::NotCallable {
-                type_name: format!("unregistered host function '{callee_name}'"),
-            })
-        })?;
+    let (entry, required_cap, c_args) = {
+        let rt = unsafe { &mut *rt_ptr };
 
-    let name = callee_name;
+        let (entry, required_cap) = rt
+            .host_functions
+            .get(&callee_name)
+            .map(|(e, cap)| (*e, cap.clone()))
+            .ok_or_else(|| {
+                VmError::from(VmFault::NotCallable {
+                    type_name: format!("unregistered host function '{callee_name}'"),
+                })
+            })?;
 
-    // Capability check
-    if let Some(ref cap_name) = required_cap {
-        let cap = Capability::parse(cap_name).map_err(|e| VmFault::CapabilityDenied {
-            capability: cap_name.clone(),
-            operation: e.to_string(),
-        })?;
-        if let Err(e) = rt.capabilities.require(&cap, &name) {
-            return Err(VmFault::CapabilityDenied {
+        // Capability check
+        if let Some(ref cap_name) = required_cap {
+            let cap = Capability::parse(cap_name).map_err(|e| VmFault::CapabilityDenied {
                 capability: cap_name.clone(),
                 operation: e.to_string(),
+            })?;
+            if let Err(e) = rt.capabilities.require(&cap, &callee_name) {
+                return Err(VmFault::CapabilityDenied {
+                    capability: cap_name.clone(),
+                    operation: e.to_string(),
+                }
+                .into());
             }
-            .into());
         }
-    }
 
-    // Convert arguments to aipo_value_t, each heap payload copied into a snapshot
-    // so the callback can keep the pointers past the end of this call.
-    let c_args: Vec<aipo_value_t> = args
-        .iter()
-        .map(|v| aipo_value_t::from_vm_value(v, rt.snapshotter()))
-        .collect();
+        // Convert arguments to aipo_value_t, each heap payload copied into a snapshot
+        // so the callback can keep the pointers past the end of this call.
+        let c_args: Vec<aipo_value_t> = args
+            .iter()
+            .map(|v| aipo_value_t::from_vm_value(v, rt.snapshotter()))
+            .collect();
+
+        Ok::<_, VmError>((entry, required_cap, c_args))
+    }?;
+
+    let name = callee_name;
 
     let mut out_result = aipo_value_t::none();
     // Refuse re-entry before the callback can reach the runtime again through a

@@ -21,8 +21,18 @@ impl Vm {
     /// # Errors
     /// Returns `VmError` on runtime fault or invalid instruction.
     pub fn step(&mut self, module: &BytecodeModule) -> Result<bool, VmError> {
-        if self.metrics_enabled {
+        if self.metrics_enabled || self.max_instructions.is_some() {
             self.metrics.instructions = self.metrics.instructions.saturating_add(1);
+        }
+        if let Some(limit) = self.max_instructions {
+            if self.metrics.instructions > limit {
+                return Err(VmFault::Overflow {
+                    details: format!(
+                        "execution budget exceeded: instruction limit of {limit} reached"
+                    ),
+                }
+                .into());
+            }
         }
         if self.host_task.is_some() {
             return self.drive_host_task();

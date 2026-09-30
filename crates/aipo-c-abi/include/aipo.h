@@ -8,9 +8,9 @@
  * Memory Ownership & Thread Safety:
  * - The runtime is single-threaded and not thread-safe. Calls to a runtime instance
  *   must be externally synchronized if invoked across threads.
- * - String and bytes pointers returned in `aipo_value_t` from module execution or function
- *   calls are pooled inside the `aipo_runtime_t` instance and remain valid until the next
- *   call to the runtime or until `aipo_runtime_destroy` is called.
+ * - String and bytes pointers returned in `aipo_value_t` from module execution, function
+ *   calls, or handle resolution are runtime-owned snapshots. They remain valid until
+ *   explicitly freed with `aipo_value_release` or until `aipo_runtime_destroy` is called.
  * - Generational handles (`aipo_handle_t`) are opaque references validated against
  *   slot index and generation number. Once released, any subsequent access returns
  *   `AIPO_ERR_STALE_HANDLE`.
@@ -28,7 +28,7 @@ extern "C" {
 #endif
 
 #define AIPO_VERSION_MAJOR 0
-#define AIPO_VERSION_MINOR 1
+#define AIPO_VERSION_MINOR 2
 #define AIPO_VERSION_PATCH 0
 
 /**
@@ -222,13 +222,47 @@ aipo_status_t aipo_runtime_register_host_fn(
 );
 
 /**
- * \brief Mints a new generational handle for a host value.
+ * \brief Mints a new generational handle for a host value, reporting validation errors.
+ *
+ * This is the checked form of `aipo_handle_create`. If the provided value violates
+ * canonical host contracts (e.g. integer out of safe range, non-finite float, or invalid
+ * UTF-8), this returns `AIPO_ERR_USAGE` and no handle is allocated.
  *
  * \param rt Runtime pointer.
  * \param val Value representation associated with the handle.
- * \return Minted generational handle with valid index and generation.
+ * \param out_handle Out-pointer to store the minted generational handle.
+ * \return AIPO_OK on success, AIPO_ERR_NULL_POINTER if rt is NULL, or AIPO_ERR_USAGE on validation failure.
+ */
+aipo_status_t aipo_handle_create_checked(
+    aipo_runtime_t *rt,
+    aipo_value_t val,
+    aipo_handle_t *out_handle
+);
+
+/**
+ * \brief Mints a new generational handle for a host value (legacy unchecked form).
+ *
+ * Prefer `aipo_handle_create_checked`. On validation failure, this returns a default
+ * invalid handle without reporting the error code.
+ *
+ * \param rt Runtime pointer.
+ * \param val Value representation associated with the handle.
+ * \return Minted generational handle, or a zeroed handle on failure.
  */
 aipo_handle_t aipo_handle_create(aipo_runtime_t *rt, aipo_value_t val);
+
+/**
+ * \brief Releases the runtime-owned snapshot backing a returned string, bytes, or failure value.
+ *
+ * Returned values carrying heap payloads (`AIPO_VAL_STRING`, `AIPO_VAL_BYTES`,
+ * `AIPO_VAL_FAILURE`) point to buffers owned by the runtime snapshot table. When the host
+ * is finished reading these buffers, calling `aipo_value_release` frees the backing allocation.
+ * Calling this on non-heap values is a safe no-op.
+ *
+ * \param rt Runtime pointer.
+ * \param val Value whose snapshot allocation should be released.
+ */
+void aipo_value_release(aipo_runtime_t *rt, aipo_value_t val);
 
 /**
  * \brief Resolves a live generational handle to its host value.
@@ -262,6 +296,38 @@ aipo_status_t aipo_handle_release(aipo_runtime_t *rt, aipo_handle_t handle);
  * \return Number of bytes written, including null terminator.
  */
 size_t aipo_last_error(const aipo_runtime_t *rt, char *buffer, size_t buffer_len);
+
+/**
+ * \brief Configures the maximum instruction execution budget for the runtime.
+ *
+ * If `max_instructions > 0`, the runtime increments an instruction counter on every step.
+ * If the counter exceeds `max_instructions`, execution immediately halts with `AIPO_ERR_FAULT`
+ * (diagnostic code `AIPO_RT_OVERFLOW`). Passing `0` disables the budget (unlimited execution).
+ *
+ * \param rt Runtime pointer.
+ * \param max_instructions Maximum instructions allowed, or 0 for unlimited.
+ * \return AIPO_OK on success, or error status code.
+ */
+aipo_status_t aipo_runtime_set_instruction_budget(
+    aipo_runtime_t *rt,
+    uint64_t max_instructions
+);
+
+/**
+ * \brief Returns the total number of instructions executed on this runtime.
+ *
+ * \param rt Runtime pointer.
+ * \return Number of instructions executed since creation or last reset.
+ */
+uint64_t aipo_runtime_instruction_count(const aipo_runtime_t *rt);
+
+/**
+ * \brief Resets the executed instruction counter to zero.
+ *
+ * \param rt Runtime pointer.
+ * \return AIPO_OK on success, or error status code.
+ */
+aipo_status_t aipo_runtime_reset_instruction_count(aipo_runtime_t *rt);
 
 #ifdef __cplusplus
 }

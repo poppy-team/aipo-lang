@@ -9,12 +9,17 @@
 - **Tagged Value Union (`aipo_value_t`)**: Plain C struct representing Aipo runtime values (`None`, `Bool`, `Int`, `Float`, `String`, `Bytes`, `Handle`, `Failure`). Integers and floats enforce the language's canonical invariants (+/- 2^53 - 1, finite-only).
 - **Generational Handle Validation (`aipo_handle_t`)**: Opaque references to host objects validated via slot index and generation counters. Once released, handles reliably report `AIPO_ERR_STALE_HANDLE` rather than corrupting memory.
 - **Capability Gating**: Host functions registered via `aipo_runtime_register_host_fn` can demand host capabilities (e.g. `system.vault`, `clock`, `io`). Unauthorized calls immediately fault with `AIPO_ERR_CAPABILITY_DENIED`.
-- **String Memory Pooling**: Strings and raw bytes returned across the boundary are pinned in the runtime's memory pool and remain valid until the next runtime operation or until runtime destruction.
+- **Runtime-Owned Snapshots (`aipo_value_release`)**: Heap payloads (`String`, `Bytes`, `Failure`) are returned as runtime-owned snapshots with trailing sentinel bytes. They are released explicitly by the host via `aipo_value_release` or upon runtime destruction, eliminating use-after-free and dangling pointer risks.
+- **Reentrancy and Aliasing Guards**: Calling back into the runtime (`aipo_runtime_call`, `load_module`, `grant_capability`, `revoke_capability`, `register_host_fn`) or destroying it from within a host callback is intercepted and refused with `AIPO_ERR_USAGE`, preventing mutable aliasing violations on active VM frames.
+- **Checked Handle Minting (`aipo_handle_create_checked`)**: Rejects out-of-contract values (integers > ±(2^53 - 1), NaN/infinite floats, non-NFC strings, or invalid UTF-8) with `AIPO_ERR_USAGE` without creating erroneous handles to `none`.
+- **Module Isolation & Zero-Clone Invocations (M1 / P1)**: Functions are resolved strictly within module scope using shared `Arc<BytecodeModule>` references, eliminating cross-module function shadowing and per-call bytecode cloning.
+- **Atomic Two-Stage Module Loading (M2)**: Definition tables and globals are snapshotted prior to initialization; top-level faults trigger transactional rollbacks, preventing VM state pollution.
+- **Execution Budgets & Instruction Metering (S1)**: Runtime-enforced instruction quotas (`aipo_runtime_set_instruction_budget`) reliably terminate infinite loops with `AIPO_ERR_FAULT`, with queryable and resettable counters.
 - **Diagnostic Error Reporting**: Comprehensive error diagnostics and runtime fault reasons are retrievable via `aipo_last_error`.
 
 ## Exported Header
 
-The canonical header file is located at `include/aipo.h` and is ready for consumption by C, C++, Python ctypes, Go cgo, and other foreign function interfaces.
+The canonical header file is located at `include/aipo.h` and is ready for consumption by C, C++, Python ctypes, Go cgo, and other foreign function interfaces. It defines ABI version `0.2.0`.
 
 ## Testing
 
@@ -22,12 +27,8 @@ The canonical header file is located at `include/aipo.h` and is ready for consum
 cargo test -p aipo-c-abi
 ```
 
-The test suite in `tests/c_abi_tests.rs` validates:
-1. Version querying (`aipo_version`)
-2. Runtime lifecycle allocation and cleanup without leaks
-3. Module compilation and function calling with primitives (Int, Float, Bool, String)
-4. Host native C callbacks called directly from Aipo scripts
-5. Generational handle lifecycle, release, and stale detection
-6. Capability guarding, granting, and revoking
-7. Diagnostic compilation errors and runtime faults (e.g. division by zero)
-8. Null pointer safety across all entrypoints
+The test suites validate:
+1. `tests/c_abi_tests.rs`: Version querying, runtime lifecycle, module execution, host callbacks, generational handles, capability guarding, diagnostics, and null pointer safety.
+2. `tests/c_abi_p0_tests.rs`: Dedicated regression tests pinning down the 7 boundary defects (C1–C7) identified in the technical dossier.
+3. `tests/c_abi_p1_tests.rs`: Reproduction and regression tests for module isolation (M1), atomic rollback (M2), and execution budgets (S1).
+4. `tests/host/main.c` + `tests/c_host_tests.rs`: Pure C executable compiled with native C compilers (`clang`/`gcc`) against `include/aipo.h`, linked with `libaipo_c_abi`, and executed under AddressSanitizer and UndefinedBehaviorSanitizer (`-fsanitize=address,undefined`).

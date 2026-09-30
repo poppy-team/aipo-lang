@@ -215,6 +215,32 @@ pub struct Vm {
     pub(crate) call_inst_len: u8,
     /// Test execution mode for canonical unit testing.
     pub test_mode: TestMode,
+    /// Maximum allowed instructions before execution faults with budget overflow.
+    pub max_instructions: Option<u64>,
+}
+
+/// Snapshot of VM global environment and type definitions, enabling atomic rollback on load failure.
+#[derive(Clone, Debug)]
+pub struct VmDefinitionSnapshot {
+    globals: HashMap<String, Value>,
+    global_slots: Vec<Option<Value>>,
+    global_name_slots: HashMap<String, usize>,
+    constant_values: Vec<Value>,
+    struct_invariant_entries: HashMap<String, usize>,
+    struct_defs: HashMap<String, Vec<(String, bool)>>,
+    struct_field_indices: HashMap<String, HashMap<String, usize>>,
+    struct_methods: HashMap<(String, String), (usize, usize, bool)>,
+    struct_methods_by_type: HashMap<String, HashMap<String, (usize, usize, bool)>>,
+}
+
+/// Execution caches bound to a specific module during `step` and `invoke`.
+#[derive(Clone, Debug, Default)]
+pub struct VmModuleExecutionState {
+    field_cache: Vec<Option<(String, FieldLookup)>>,
+    global_slots: Vec<Option<Value>>,
+    global_name_slots: HashMap<String, usize>,
+    constant_values: Vec<Value>,
+    struct_invariant_entries: HashMap<String, usize>,
 }
 
 impl Default for Vm {
@@ -270,6 +296,7 @@ impl Vm {
             host: HostContext::denied(),
             call_inst_len: 2,
             test_mode: TestMode::Disabled,
+            max_instructions: None,
         }
     }
 
@@ -314,6 +341,132 @@ impl Vm {
     #[must_use]
     pub fn metrics(&self) -> VmMetrics {
         self.metrics
+    }
+
+    /// Configures the maximum instruction execution budget.
+    pub fn set_max_instructions(&mut self, limit: Option<u64>) {
+        self.max_instructions = limit;
+    }
+
+    /// Returns the number of instructions executed since the last reset or run.
+    #[must_use]
+    pub fn instruction_count(&self) -> u64 {
+        self.metrics.instructions
+    }
+
+    /// Resets the executed instruction counter to zero.
+    pub fn reset_instruction_count(&mut self) {
+        self.metrics.instructions = 0;
+    }
+
+    /// Creates a snapshot of definition tables and global variables.
+    #[must_use]
+    pub fn snapshot_definitions(&self) -> VmDefinitionSnapshot {
+        VmDefinitionSnapshot {
+            globals: self.globals.clone(),
+            global_slots: self.global_slots.clone(),
+            global_name_slots: self.global_name_slots.clone(),
+            constant_values: self.constant_values.clone(),
+            struct_invariant_entries: self.struct_invariant_entries.clone(),
+            struct_defs: self.struct_defs.clone(),
+            struct_field_indices: self.struct_field_indices.clone(),
+            struct_methods: self.struct_methods.clone(),
+            struct_methods_by_type: self.struct_methods_by_type.clone(),
+        }
+    }
+
+    /// Restores definitions and globals to a prior snapshot, cleaning execution residue.
+    pub fn restore_definitions(&mut self, snapshot: VmDefinitionSnapshot) {
+        self.globals = snapshot.globals;
+        self.global_slots = snapshot.global_slots;
+        self.global_name_slots = snapshot.global_name_slots;
+        self.constant_values = snapshot.constant_values;
+        self.struct_invariant_entries = snapshot.struct_invariant_entries;
+        self.struct_defs = snapshot.struct_defs;
+        self.struct_field_indices = snapshot.struct_field_indices;
+        self.field_cache.clear();
+        self.struct_methods = snapshot.struct_methods;
+        self.struct_methods_by_type = snapshot.struct_methods_by_type;
+        self.stack.clear();
+        self.frames.clear();
+        self.frame_base = 0;
+        self.handlers.clear();
+        self.ip = 0;
+        self.halted_with = None;
+    }
+
+    /// Prepares module-scoped caches (constants, global slots, field cache, struct invariants)
+    /// for executing bytecode belonging to `module`.
+    ///
+    /// # Errors
+    /// Returns `VmFault` if constant validation fails.
+    pub fn prepare_module_execution(&mut self, module: &BytecodeModule) -> Result<(), VmFault> {
+        self.field_cache.clear();
+        self.field_cache.resize(module.names.len(), None);
+
+        self.global_slots = vec![None; module.names.len()];
+        self.global_name_slots = module
+            .names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| (name.clone(), index))
+            .collect();
+        for (index, name) in module.names.iter().enumerate() {
+            self.global_slots[index] = self.globals.get(name).cloned();
+        }
+        self.constant_values = module
+            .constants
+            .iter()
+            .map(|constant| match constant {
+                Constant::Nil => Ok(Value::None),
+                Constant::Bool(value) => Ok(Value::Bool(*value)),
+                Constant::Int(value) => check_safe_int(*value).map(Value::Int),
+                Constant::Float(value) => check_finite_float(*value).map(Value::Float),
+                Constant::String(value) => Ok(Value::String(Rc::new(value.clone()))),
+            })
+            .collect::<Result<Vec<_>, VmFault>>()?;
+
+        self.struct_invariant_entries.clear();
+        for function in &module.functions {
+            if let Some((type_name, method)) = function.name.split_once('.') {
+                if method == "invariant" {
+                    self.struct_invariant_entries
+                        .insert(type_name.to_string(), function.entry_ip);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Saves the current module execution caches and prepares new ones for `module`.
+    ///
+    /// # Errors
+    /// Returns `VmFault` if constant validation fails.
+    pub fn push_module_execution(
+        &mut self,
+        module: &BytecodeModule,
+    ) -> Result<VmModuleExecutionState, VmFault> {
+        let prev = VmModuleExecutionState {
+            field_cache: std::mem::take(&mut self.field_cache),
+            global_slots: std::mem::take(&mut self.global_slots),
+            global_name_slots: std::mem::take(&mut self.global_name_slots),
+            constant_values: std::mem::take(&mut self.constant_values),
+            struct_invariant_entries: std::mem::take(&mut self.struct_invariant_entries),
+        };
+        if let Err(err) = self.prepare_module_execution(module) {
+            self.pop_module_execution(prev);
+            return Err(err);
+        }
+        Ok(prev)
+    }
+
+    /// Restores previously saved module execution caches.
+    pub fn pop_module_execution(&mut self, prev: VmModuleExecutionState) {
+        self.field_cache = prev.field_cache;
+        self.global_slots = prev.global_slots;
+        self.global_name_slots = prev.global_name_slots;
+        self.constant_values = prev.constant_values;
+        self.struct_invariant_entries = prev.struct_invariant_entries;
     }
 
     #[inline]
@@ -591,41 +744,11 @@ impl Vm {
         self.main_outcome = None;
         self.invoke_depth = 0;
         self.metrics = VmMetrics::default();
-        self.field_cache.clear();
-        self.field_cache.resize(module.names.len(), None);
+        self.prepare_module_execution(module)?;
 
-        self.global_slots = vec![None; module.names.len()];
-        self.global_name_slots = module
-            .names
-            .iter()
-            .enumerate()
-            .map(|(index, name)| (name.clone(), index))
-            .collect();
-        for (index, name) in module.names.iter().enumerate() {
-            self.global_slots[index] = self.globals.get(name).cloned();
-        }
-        self.constant_values = module
-            .constants
-            .iter()
-            .map(|constant| match constant {
-                Constant::Nil => Ok(Value::None),
-                Constant::Bool(value) => Ok(Value::Bool(*value)),
-                Constant::Int(value) => check_safe_int(*value).map(Value::Int),
-                Constant::Float(value) => check_finite_float(*value).map(Value::Float),
-                Constant::String(value) => Ok(Value::String(Rc::new(value.clone()))),
-            })
-            .collect::<Result<Vec<_>, VmFault>>()?;
-
-        // Struct invariants are compiled as `Type.invariant` predicates, so the module itself
-        // records how to reach each type's check: the runtime resolves the entry points once
-        // per run and never needs a second expression evaluator.
-        self.struct_invariant_entries.clear();
         for function in &module.functions {
             if let Some((type_name, method)) = function.name.split_once('.') {
-                if method == "invariant" {
-                    self.struct_invariant_entries
-                        .insert(type_name.to_string(), function.entry_ip);
-                } else {
+                if method != "invariant" {
                     self.register_struct_method(
                         type_name,
                         method,

@@ -728,3 +728,52 @@ fn test_unknown_opcode_reports_the_offset_of_the_bad_byte() {
         other => panic!("expected CorruptedBytecode, got {other:?}"),
     }
 }
+
+#[test]
+fn test_instruction_budget_halts_infinite_loop() {
+    let mut vm = Vm::new();
+    // Loop forever: Jump backwards by -3 to offset 0
+    // Bytecode: Jump(-3) -> OpCode::Jump (1 byte) + offset -3 (2 bytes)
+    let mut code = vec![OpCode::Jump as u8];
+    code.extend_from_slice(&(-3i16).to_be_bytes());
+    let module = make_test_module(code, vec![], vec![]);
+
+    // Without budget, this would loop infinitely. With a budget of 50 instructions:
+    vm.set_max_instructions(Some(50));
+    let err = vm
+        .run(&module)
+        .expect_err("infinite loop must terminate via instruction budget");
+    match err {
+        VmError::Fault(VmFault::Overflow { details }) => {
+            assert!(
+                details.contains("instruction limit of 50 reached"),
+                "{details}"
+            );
+        }
+        other => panic!("expected VmFault::Overflow, got {other:?}"),
+    }
+    assert!(vm.instruction_count() > 50);
+}
+
+#[test]
+fn test_vm_definition_snapshot_and_rollback() {
+    let mut vm = Vm::new();
+    vm.define_global("initial", Value::Int(1));
+    vm.register_struct("OriginalStruct", vec![("field_a", false)]);
+
+    let snapshot = vm.snapshot_definitions();
+
+    // Mutate VM definitions and state
+    vm.define_global("polluted", Value::Int(999));
+    vm.register_struct("CorruptedStruct", vec![("bad", false)]);
+    vm.stack.push(Value::Int(123));
+
+    // Rollback
+    vm.restore_definitions(snapshot);
+
+    assert_eq!(vm.get_global("initial"), Some(&Value::Int(1)));
+    assert_eq!(vm.get_global("polluted"), None);
+    assert!(vm.struct_defs.contains_key("OriginalStruct"));
+    assert!(!vm.struct_defs.contains_key("CorruptedStruct"));
+    assert!(vm.stack.is_empty());
+}

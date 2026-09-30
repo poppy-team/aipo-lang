@@ -398,21 +398,6 @@ void main() {
         col = vec4(0.0, 0.0, 0.0, sa);
     }
 
-    // Focus ring, placed OUTSIDE the box boundary. Its own SDF, so it follows
-    // the same corner curvature as the border instead of being a screen-space
-    // outline. Composited before the fill so the fill wins any overlap.
-    if (u_focus_width > 0.0 && u_focus_color.a > 0.0) {
-        float ring_mid = FOCUS_GAP + u_focus_width * 0.5;
-        float fr = abs(d - ring_mid) - u_focus_width * 0.5;
-        float fa = (1.0 - smoothstep(-aa, aa, fr)) * u_focus_color.a;
-        float out_a = fa + col.a * (1.0 - fa);
-        col = vec4(
-            (out_a > 1e-5) ? (u_focus_color.rgb * fa + col.rgb * col.a * (1.0 - fa)) / out_a
-                           : u_focus_color.rgb,
-            out_a
-        );
-    }
-
     // Fill over the shadow: never shrink the alpha already contributed by
     // the shadow, so a translucent panel still casts a readable shadow.
     if (color.a > 0.0) {
@@ -433,6 +418,29 @@ void main() {
             ? (u_border_color.rgb * sa + color.rgb * fill_a * (1.0 - sa)) / out_a
             : u_border_color.rgb;
         col = vec4(out_rgb, out_a);
+    }
+
+    // Focus ring, placed OUTSIDE the box boundary. Its own SDF, so it follows
+    // the same corner curvature as the border instead of being a screen-space
+    // outline.
+    //
+    // It composites last, after the fill and border. It used to run first and
+    // was then erased: the border block assigned `col` from scratch, and in
+    // the ring's annulus neither the 1px stroke nor the fill has any coverage,
+    // so the assignment produced alpha 0 and the `discard` below threw the
+    // fragment away. The ring was drawn into nothing and no widget ever showed
+    // a focus indicator. Compositing it here overlaps nothing, because the
+    // ring starts `FOCUS_GAP` outside a box the fill never leaves.
+    if (u_focus_width > 0.0 && u_focus_color.a > 0.0) {
+        float ring_mid = FOCUS_GAP + u_focus_width * 0.5;
+        float fr = abs(d - ring_mid) - u_focus_width * 0.5;
+        float fa = (1.0 - smoothstep(-aa, aa, fr)) * u_focus_color.a;
+        float out_a = fa + col.a * (1.0 - fa);
+        col = vec4(
+            (out_a > 1e-5) ? (u_focus_color.rgb * fa + col.rgb * col.a * (1.0 - fa)) / out_a
+                           : u_focus_color.rgb,
+            out_a
+        );
     }
 
     // 1px top inner highlight: simulates ambient light catching the chamfer.

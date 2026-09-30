@@ -7,6 +7,7 @@ use crate::frame::CallFrame;
 use crate::value::{MethodKind, Value};
 use aipo_bytecode::BytecodeModule;
 use std::rc::Rc;
+
 impl Vm {
     /// Resolves and starts a call whose callee and arguments are the top
     /// `arg_count + 1` operand stack entries.
@@ -363,6 +364,18 @@ impl Vm {
     }
 
     fn invoke_inner(
+        &mut self,
+        module: &BytecodeModule,
+        callee: Value,
+        args: &[Value],
+    ) -> Result<Value, VmError> {
+        let prev_state = self.push_module_execution(module)?;
+        let result = self.invoke_body(module, callee, args);
+        self.pop_module_execution(prev_state);
+        result
+    }
+
+    fn invoke_body(
         &mut self,
         module: &BytecodeModule,
         callee: Value,

@@ -5,6 +5,40 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [0.11.0] - Em desenvolvimento (Trilha WebAssembly & Self-Hosting)
 
+- **Fase 1 — Remediação dos Defeitos Críticos P0 da C ABI, ABI 0.2.0 e Harness Nativo em C com ASan (`aipo-c-abi`)**:
+  - **Remediação dos 7 defeitos de fronteira P0 identificados no Dossiê Técnico**:
+    - **C1 (Ownership e ciclo de vida de `Bytes`)**: valores `Bytes` retornados pela fronteira não mais emprestam buffers do `RefCell<Vec<u8>>` interno do guest (eliminando ponteiro pendente e use-after-free). Payloads heap agora são copiados para snapshots com sentinela explícita, gerenciados pelo runtime e liberados deterministicamente pelo host via `aipo_value_release`.
+    - **C2 (Despacho estrito de callbacks nativos)**: removido o fallback por aridade (`HashMap::find(|cb| cb.arity == args.len())`). O despacho exige identificação unívoca pelo nome do callee nativo (`Value::Native`), falhando fechado (`VmFault::NotCallable`) em caso de não correspondência.
+    - **C3 (Validação canônica de invariantes C)**: valores recebidos pela ABI passam por checagem estrita (`MIN_SAFE_INT..=MAX_SAFE_INT`, `float.is_finite()`, fatias `(str_ptr, str_len)` e normalização Unicode NFC com `unicode-normalization`), impedindo violações de invariantes da VM.
+    - **C4 (Criação segura de handles com `aipo_handle_create_checked`)**: nova API que valida o valor e retorna erro explícito (`AIPO_ERR_USAGE`) em caso de falha de conversão, sem emitir handles corrompidos para `none`. `aipo_handle_create` legado mantido como wrapper para compatibilidade.
+    - **C5 (Bloqueio estrito de reentrância e aliasing FFI)**: implementado `CallbackDepthGuard` e `in_host_callback()`. Tentativas de invocar `aipo_runtime_call`, `load_module`, `grant_capability`, `revoke_capability`, `register_host_fn` ou `destroy` durante a execução de um callback de host são interceptadas e recusadas com `AIPO_ERR_USAGE` (ou safe no-op para destroy), evitando aliasing mutável (`&mut`) do runtime. Escopo de empréstimo de `rt` no dispatcher delimitado antes da chamada do callback.
+    - **C6 (Rejeição de ponteiros nulos com `argc > 0`)**: chamadas com `argc > 0` e `args == NULL` são rejeitadas explicitamente com `AIPO_ERR_NULL_POINTER` em vez de serem interpretadas silenciosamente como zero argumentos.
+    - **C7 (Integridade de strings com NUL embutido)**: strings com NUL interno preservam seu comprimento exato `str_len` e bytes reais, eliminando discrepâncias de tamanho e leituras out-of-bounds.
+  - **Sincronização canônica do cabeçalho `include/aipo.h`**:
+    - Versão da ABI atualizada para `0.2.0` (`AIPO_VERSION_MINOR 2`).
+    - Declaradas as novas funções `aipo_handle_create_checked` e `aipo_value_release`.
+    - Atualizada a documentação de posse de memória e liberação de snapshots.
+  - **Suíte de testes em Rust e Harness Nativo em C**:
+    - `crates/aipo-c-abi/tests/c_abi_p0_tests.rs`: 7 testes de reprodução e regressão cobrindo exaustivamente C1–C7 e rejeição de reentrância em todos os pontos de mutação.
+    - `crates/aipo-c-abi/tests/host/main.c` + `tests/c_host_tests.rs`: executável C puro compilado com `clang`/`gcc` com flags `-Wall -Wextra -Werror` e executado tanto nativamente quanto sob **AddressSanitizer e UndefinedBehaviorSanitizer** (`-fsanitize=address,undefined`), garantindo ausência de corrupção de memória e conformidade total com o cabeçalho.
+
+- **Fase 2 — Integridade de Módulos, Isolamento de Funções, Carregamento Atômico e Orçamento de Execução (M1, M2, S1 / P1)**:
+  - **M1 / P1 (Isolamento estrito de funções por módulo e zero-clone em chamadas)**:
+    - Funções são resolvidas estritamente dentro da tabela de funções do módulo solicitado (`module.functions`), eliminando o sombreamento e a colisão de nomes através de `vm.globals`.
+    - Módulos carregados no `AipoRuntime` são armazenados como `Arc<BytecodeModule>`, eliminando a clonagem de bytecode por chamada FFI (`aipo_runtime_call`).
+    - Preparação de caches de execução isolada na VM (`push_module_execution` / `pop_module_execution`): constantes, slots globais e cache de campos são vinculados dinamicamente ao módulo em execução durante `invoke`, restaurando o contexto anterior de forma segura e sem blocos `unsafe`.
+    - A superfície de semântica (`PreludeSurface`) ao compilar novos módulos expõe apenas funções de host e nomes de módulos, sem vazar símbolos internos de módulos anteriores.
+  - **M2 (Carregamento atômico em dois estágios com rollback de definições)**:
+    - Implementado `snapshot_definitions()` e `restore_definitions()` na `Vm`: captura o estado de definições de structs, métodos, invariantes, globais e constantes antes da avaliação do código de topo de nível do módulo.
+    - Em caso de falha de runtime durante a inicialização (ex: divisão por zero no topo do script), o snapshot é restaurado deterministicamente, descartando definições órfãs e mantendo o runtime limpo.
+  - **S1 (Orçamento de execução determinístico e contadores de instruções)**:
+    - Adicionado suporte a cota de instruções na `Vm` (`set_max_instructions`, `instruction_count`, `reset_instruction_count`). A VM debita cada instrução no despacho e interrompe loops infinitos imediatamente com `VmFault::Overflow`.
+    - Exportadas funções C ABI canônicas em `include/aipo.h`: `aipo_runtime_set_instruction_budget`, `aipo_runtime_instruction_count`, `aipo_runtime_reset_instruction_count`.
+  - **Testes e Verificação**:
+    - `crates/aipo-vm/tests/vm_core.rs`: testes unitários `test_instruction_budget_halts_infinite_loop` e `test_vm_definition_snapshot_and_rollback`.
+    - `crates/aipo-c-abi/tests/c_abi_p1_tests.rs`: testes de integração multi-módulo cobrindo isolamento (M1), rollback atômico (M2) e cotas de execução (S1).
+    - `crates/aipo-c-abi/tests/host/main.c`: harness C nativo estendido com testes M1, M2 e S1, compilado e executado sob AddressSanitizer/UBSan com 100% de aprovação.
+
 - **M15-A — Culling de Quads, Métricas de Draw Call e o Anel de Foco que o M14 Não Entregava (`aipo.zoe` / `aipo-game-host`)**:
   - **Anel de foco desenhado dentro do fragment shader (corrige o defeito de acessibilidade deixado pelo M14)**:
     - O M14 trocou o anel externo de `renderer.aipo` por duas props (`focus_ring_width`, `focus_ring_color`) passadas aos natives SDF, mas **o shader nunca leu esses valores**: os uniforms não existiam, então um widget focado ficou **sem nenhuma indicação visual de foco** — regressão de WCAG 2.4.13 (`Focus Appearance`) introduzida silenciosamente naquele commit.

@@ -6,12 +6,10 @@
 //!
 //! These run from Rust, which sees the same `#[repr(C)]` surface a C host sees.
 //!
-//! Scope: this file exercises the boundary through Rust. There is **no** C
-//! consumer program and **no** AddressSanitizer run in this repository, so
-//! defects that only appear when a real C compiler lays out and frees these
-//! values are not covered here. Adding `tests/host/main.c` plus an ASan job is
-//! still outstanding; until then, do not read a green run here as C-side
-//! validation.
+//! Scope: this file exercises the boundary through Rust test harnesses.
+//! Native C-side compilation and execution are verified by `tests/host/main.c`
+//! and `tests/c_host_tests.rs`, which run the native test binary under
+//! AddressSanitizer and UndefinedBehaviorSanitizer (clang -fsanitize=address,undefined).
 
 use aipo_c_abi::*;
 use std::ffi::{CStr, CString, c_char};
@@ -354,6 +352,15 @@ fn c4_handle_create_rejects_invalid_value() {
 
 // ---------------------------------------------------------------- C5
 
+extern "C" fn dummy_cb(
+    _rt: *mut aipo_runtime_t,
+    _args: *const aipo_value_t,
+    _argc: usize,
+    _out: *mut aipo_value_t,
+) -> aipo_status_t {
+    aipo_status_t::AIPO_OK
+}
+
 extern "C" fn c5_reentrant_callback(
     rt: *mut aipo_runtime_t,
     _args: *const aipo_value_t,
@@ -365,7 +372,7 @@ extern "C" fn c5_reentrant_callback(
     let mod_name = CString::new("c5_mod").unwrap();
     let fn_name = CString::new("inner").unwrap();
     let mut nested = aipo_value_t::none();
-    let status = unsafe {
+    let call_status = unsafe {
         aipo_runtime_call(
             rt,
             mod_name.as_ptr(),
@@ -375,12 +382,42 @@ extern "C" fn c5_reentrant_callback(
             &mut nested,
         )
     };
-    C5_REENTRANT_STATUS.store(status as i64, std::sync::atomic::Ordering::SeqCst);
+    C5_REENTRANT_CALL_STATUS.store(call_status as i64, std::sync::atomic::Ordering::SeqCst);
+
+    let cap_name = CString::new("clock").unwrap();
+    let grant_status = unsafe { aipo_runtime_grant_capability(rt, cap_name.as_ptr()) };
+    C5_REENTRANT_GRANT_STATUS.store(grant_status as i64, std::sync::atomic::Ordering::SeqCst);
+
+    let revoke_status = unsafe { aipo_runtime_revoke_capability(rt, cap_name.as_ptr()) };
+    C5_REENTRANT_REVOKE_STATUS.store(revoke_status as i64, std::sync::atomic::Ordering::SeqCst);
+
+    let reg_name = CString::new("reentrant_reg").unwrap();
+    let reg_status = unsafe {
+        aipo_runtime_register_host_fn(rt, reg_name.as_ptr(), 0, std::ptr::null(), dummy_cb)
+    };
+    C5_REENTRANT_REG_STATUS.store(reg_status as i64, std::sync::atomic::Ordering::SeqCst);
+
+    let load_src = CString::new("fn extra() return 42 end").unwrap();
+    let load_status = unsafe { aipo_runtime_load_module(rt, mod_name.as_ptr(), load_src.as_ptr()) };
+    C5_REENTRANT_LOAD_STATUS.store(load_status as i64, std::sync::atomic::Ordering::SeqCst);
+
+    // Calling destroy inside a callback must be safely ignored/refused without freeing the VM.
+    unsafe { aipo_runtime_destroy(rt) };
+
     unsafe { *out_result = aipo_value_t::int_val(1) };
     aipo_status_t::AIPO_OK
 }
 
-static C5_REENTRANT_STATUS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
+static C5_REENTRANT_CALL_STATUS: std::sync::atomic::AtomicI64 =
+    std::sync::atomic::AtomicI64::new(-1);
+static C5_REENTRANT_GRANT_STATUS: std::sync::atomic::AtomicI64 =
+    std::sync::atomic::AtomicI64::new(-1);
+static C5_REENTRANT_REVOKE_STATUS: std::sync::atomic::AtomicI64 =
+    std::sync::atomic::AtomicI64::new(-1);
+static C5_REENTRANT_REG_STATUS: std::sync::atomic::AtomicI64 =
+    std::sync::atomic::AtomicI64::new(-1);
+static C5_REENTRANT_LOAD_STATUS: std::sync::atomic::AtomicI64 =
+    std::sync::atomic::AtomicI64::new(-1);
 
 /// C5: the dispatcher handed the C callback a full `*mut aipo_runtime_t` while the
 /// VM was already mutably borrowed from that same runtime. Re-entering it must be
@@ -417,16 +454,45 @@ end
     );
     assert_eq!(status, aipo_status_t::AIPO_OK, "load: {}", last_error(rt));
 
-    C5_REENTRANT_STATUS.store(-1, std::sync::atomic::Ordering::SeqCst);
+    C5_REENTRANT_CALL_STATUS.store(-1, std::sync::atomic::Ordering::SeqCst);
+    C5_REENTRANT_GRANT_STATUS.store(-1, std::sync::atomic::Ordering::SeqCst);
+    C5_REENTRANT_REVOKE_STATUS.store(-1, std::sync::atomic::Ordering::SeqCst);
+    C5_REENTRANT_REG_STATUS.store(-1, std::sync::atomic::Ordering::SeqCst);
+    C5_REENTRANT_LOAD_STATUS.store(-1, std::sync::atomic::Ordering::SeqCst);
+
     let (status, _) = call(rt, "c5_mod", "outer", &[]);
     assert_eq!(status, aipo_status_t::AIPO_OK, "outer: {}", last_error(rt));
 
-    let nested = C5_REENTRANT_STATUS.load(std::sync::atomic::Ordering::SeqCst);
-    assert_ne!(
-        nested,
-        aipo_status_t::AIPO_OK as i64,
-        "re-entering the runtime from a host callback must be refused"
+    assert_eq!(
+        C5_REENTRANT_CALL_STATUS.load(std::sync::atomic::Ordering::SeqCst),
+        aipo_status_t::AIPO_ERR_USAGE as i64,
+        "re-entering call from host callback must return AIPO_ERR_USAGE"
     );
+    assert_eq!(
+        C5_REENTRANT_GRANT_STATUS.load(std::sync::atomic::Ordering::SeqCst),
+        aipo_status_t::AIPO_ERR_USAGE as i64,
+        "re-entering grant_capability from host callback must return AIPO_ERR_USAGE"
+    );
+    assert_eq!(
+        C5_REENTRANT_REVOKE_STATUS.load(std::sync::atomic::Ordering::SeqCst),
+        aipo_status_t::AIPO_ERR_USAGE as i64,
+        "re-entering revoke_capability from host callback must return AIPO_ERR_USAGE"
+    );
+    assert_eq!(
+        C5_REENTRANT_REG_STATUS.load(std::sync::atomic::Ordering::SeqCst),
+        aipo_status_t::AIPO_ERR_USAGE as i64,
+        "re-entering register_host_fn from host callback must return AIPO_ERR_USAGE"
+    );
+    assert_eq!(
+        C5_REENTRANT_LOAD_STATUS.load(std::sync::atomic::Ordering::SeqCst),
+        aipo_status_t::AIPO_ERR_USAGE as i64,
+        "re-entering load_module from host callback must return AIPO_ERR_USAGE"
+    );
+
+    // Verify runtime is still alive and healthy after rejected destroy during callback
+    let (status, res) = call(rt, "c5_mod", "inner", &[]);
+    assert_eq!(status, aipo_status_t::AIPO_OK);
+    assert_eq!(res.int_val, 1);
 
     unsafe { aipo_runtime_destroy(rt) };
 }
