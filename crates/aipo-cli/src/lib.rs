@@ -2,9 +2,9 @@
 //! `docs/reference/cli.md`:
 //!
 //! ```text
-//! aipo run <path> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--message-format=<human|jsonl>]
+//! aipo run <path> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test] [--message-format=<human|jsonl>]
 //! aipo test [path] [--filter <pattern>] [--package-cache <dir>] [--message-format=<human|jsonl>]
-//! aipo check <path> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--message-format=<human|jsonl>]
+//! aipo check <path> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test] [--message-format=<human|jsonl>]
 //! aipo build <path> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
 //! aipo disasm <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
 //! aipo fmt <paths...> [--check]
@@ -54,6 +54,7 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod ahs;
+mod headless;
 pub mod modules;
 
 static NEXT_LOCK_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -79,9 +80,9 @@ pub const USAGE: &str = "\
 aipo — Aipo language toolchain
 
 USAGE:
-    aipo run <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>] [--ahs=<file>]
+    aipo run <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>] [--ahs=<file>] [--host=headless-test]
     aipo test [path] [--filter <pattern>] [--package-cache <dir>] [--message-format=<human|jsonl>]
-    aipo check <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>] [--ahs=<file>]
+    aipo check <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>] [--ahs=<file>] [--host=headless-test]
     aipo build <path> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo disasm <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo fmt <paths...> [--check]
@@ -103,6 +104,7 @@ COMMANDS:
 
 FLAGS:
     --ahs=<file>   Host surface description (AHS) the run may reach, as data
+    --host=headless-test   Opt-in VM conformance host (no capabilities granted)
 
 EXIT CODES:
     0  success
@@ -162,8 +164,9 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             package_cache,
             wasm,
             ahs,
+            host,
         } => {
-            let surface = match ahs.as_deref().map(ahs::load).transpose() {
+            let surface = match execution_surface(ahs.as_deref(), host) {
                 Ok(surface) => surface,
                 Err(message) => {
                     let _ = writeln!(err, "error: {message}");
@@ -180,6 +183,7 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
                     action: Action::Run,
                     wasm,
                     surface: surface.as_ref(),
+                    host,
                 },
             )
         }
@@ -202,8 +206,9 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             package_cache,
             wasm,
             ahs,
+            host,
         } => {
-            let surface = match ahs.as_deref().map(ahs::load).transpose() {
+            let surface = match execution_surface(ahs.as_deref(), host) {
                 Ok(surface) => surface,
                 Err(message) => {
                     let _ = writeln!(err, "error: {message}");
@@ -220,6 +225,7 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
                     action: Action::Check,
                     wasm,
                     surface: surface.as_ref(),
+                    host,
                 },
             )
         }
@@ -310,6 +316,7 @@ enum Command {
         wasm: bool,
         /// Host surface described as data (`--ahs=<file>`), when one was given.
         ahs: Option<PathBuf>,
+        host: Option<HostProfile>,
     },
     Test {
         path: Option<PathBuf>,
@@ -324,6 +331,7 @@ enum Command {
         wasm: bool,
         /// Host surface described as data (`--ahs=<file>`), when one was given.
         ahs: Option<PathBuf>,
+        host: Option<HostProfile>,
     },
     Build {
         path: PathBuf,
@@ -400,6 +408,7 @@ impl Command {
                 let mut package_cache = None;
                 let mut wasm = false;
                 let mut ahs = None;
+                let mut host = None;
                 let rest = &args[1..];
                 let mut index = 0;
                 while index < rest.len() {
@@ -480,6 +489,28 @@ impl Command {
                             return Err("--ahs requires a non-empty file argument".to_string());
                         }
                         ahs = Some(PathBuf::from(value));
+                    } else if arg == "--host" || arg.starts_with("--host=") {
+                        if first == "disasm" {
+                            return Err("--host is only supported by run and check".to_string());
+                        }
+                        if host.is_some() {
+                            return Err("'--host' was provided more than once".to_string());
+                        }
+                        let value = if let Some(value) = arg.strip_prefix("--host=") {
+                            value
+                        } else {
+                            index += 1;
+                            rest.get(index)
+                                .ok_or_else(|| "--host requires a profile".to_string())?
+                        };
+                        host = Some(match value {
+                            "headless-test" => HostProfile::HeadlessTest,
+                            _ => {
+                                return Err(format!(
+                                    "unrecognized --host profile '{value}': expected 'headless-test'"
+                                ));
+                            }
+                        });
                     } else if arg.starts_with('-') {
                         return Err(format!("unrecognized flag '{arg}'"));
                     } else if path.is_some() {
@@ -491,6 +522,19 @@ impl Command {
                 }
 
                 let path = path.ok_or_else(|| format!("'{first}' requires a path argument"))?;
+                if host.is_some() {
+                    if wasm || path.extension().and_then(|ext| ext.to_str()) != Some("aipo") {
+                        return Err(
+                            "--host requires a .aipo source file on the VM backend".to_string()
+                        );
+                    }
+                    if ahs.is_some() {
+                        return Err(
+                            "--host supplies its own AHS and cannot be combined with --ahs"
+                                .to_string(),
+                        );
+                    }
+                }
                 if first == "run" {
                     Ok(Self::Run {
                         path,
@@ -498,6 +542,7 @@ impl Command {
                         package_cache,
                         wasm,
                         ahs,
+                        host,
                     })
                 } else if first == "check" {
                     Ok(Self::Check {
@@ -506,6 +551,7 @@ impl Command {
                         package_cache,
                         wasm,
                         ahs,
+                        host,
                     })
                 } else {
                     Ok(Self::Disasm {
@@ -1012,10 +1058,26 @@ enum Action {
     Check,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostProfile {
+    HeadlessTest,
+}
+
 struct ExecutionOptions<'a> {
     action: Action,
     wasm: bool,
     surface: Option<&'a PreludeSurface>,
+    host: Option<HostProfile>,
+}
+
+fn execution_surface(
+    path: Option<&Path>,
+    host: Option<HostProfile>,
+) -> Result<Option<PreludeSurface>, String> {
+    match host {
+        Some(HostProfile::HeadlessTest) => headless::surface().map(Some),
+        None => path.map(ahs::load).transpose(),
+    }
 }
 
 struct LoadedSource {
@@ -1108,8 +1170,8 @@ pub fn analyze_with_surface(
 
 /// Runs the frontend pipeline and reports diagnostics.
 ///
-/// `analyze` never executes the program: `check` stops here, while `run` continues with
-/// [`execute_module`].
+/// `analyze` never executes the program: `check` stops here, while `run` continues with the
+/// private module execution step.
 pub fn analyze(source: &Source, path: &Path, package_paths: Option<&PackagePathMap>) -> Compiled {
     analyze_with_surface(source, path, package_paths, None)
 }
@@ -1841,6 +1903,7 @@ fn execute(
         action,
         wasm,
         surface,
+        host,
     } = options;
     if surface.is_some()
         && matches!(
@@ -1942,7 +2005,7 @@ fn execute(
             return EXIT_SUCCESS;
         }
 
-        match execute_module(&compiled.module) {
+        match execute_module_with_host(&compiled.module, host) {
             Ok(()) => EXIT_SUCCESS,
             Err(error) => {
                 let diagnostic = runtime_diagnostic(&source, &error);
@@ -2298,7 +2361,17 @@ pub fn register_module_symbols(vm: &mut Vm, module: &aipo_bytecode::BytecodeModu
 /// # Errors
 /// Returns the runtime error raised by the program.
 fn execute_module(module: &aipo_bytecode::BytecodeModule) -> Result<(), VmError> {
+    execute_module_with_host(module, None)
+}
+
+fn execute_module_with_host(
+    module: &aipo_bytecode::BytecodeModule,
+    host: Option<HostProfile>,
+) -> Result<(), VmError> {
     let (mut vm, _) = standard_environment();
+    if let Some(HostProfile::HeadlessTest) = host {
+        headless::install(&mut vm);
+    }
     register_module_symbols(&mut vm, module);
     vm.run(module).map(|_| ())
 }

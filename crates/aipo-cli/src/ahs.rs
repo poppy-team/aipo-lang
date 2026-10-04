@@ -21,9 +21,12 @@ use aipo_sema::{HostFunction, HostParameter, PreludeSurface};
 pub fn load(path: &Path) -> Result<PreludeSurface, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|error| format!("cannot read host surface '{}': {error}", path.display()))?;
-    let schema = HostSchema::from_json(&text)
-        .map_err(|fault| format!("invalid host surface '{}': {fault}", path.display()))?;
+    from_json(&text).map_err(|fault| format!("invalid host surface '{}': {fault}", path.display()))
+}
 
+/// Converts a validated description to the semantic surface shared by CLI profiles.
+pub(crate) fn from_json(text: &str) -> Result<PreludeSurface, aipo_host::HostFault> {
+    let schema = HostSchema::from_json(text)?;
     let mut surface = PreludeSurface::new();
     for module in &schema.modules {
         let functions: HashMap<String, HostFunction> = module

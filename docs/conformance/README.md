@@ -141,6 +141,24 @@ method checks, rejected flag combinations and isolation between CLI/embedding co
 
 These are not part of the `programs/`/`diagnostics/` suite because they need a flag.
 
+### Runtime host fixtures (`host/`)
+
+`headless_test_host.json` is embedded by the opt-in `--host=headless-test` profile.
+Unlike `--ahs`, the profile registers a VM-local implementation without granting capabilities.
+`cargo test -p aipo-cli --test host_runtime` drives the real executable in human and JSONL
+modes; `check` accepts each runtime-fault fixture without executing it.
+
+| Fixture | Pair | Asserts |
+|---|---|---|
+| `capability_denied.aipo` | `.code` | Clock denied (`AIPO_RT_CAPABILITY_DENIED`). |
+| `stale_handle.aipo` | `.code` | Old generation remains stale after slot reuse (`AIPO_RT_STALE_HANDLE`). |
+| `scope_escape.aipo` | `.code` | A closed native scope cannot publish its handle (`AIPO_RT_SCOPE_ESCAPE`). |
+| `live_handle.aipo` | `.stdout` | Live handles read copied integers and release safely; repeated runs agree. |
+
+Additional runtime tests cover both clocks, all six publication sites, uncatchable faults,
+dynamic boundary contracts, strict flag combinations, and isolation from ordinary CLI and
+embedding compilations. These fixtures are deliberately separate from the unprofiled corpus.
+
 ## Regeneration
 
 Snapshot files are written by the suite when the environment asks for it:

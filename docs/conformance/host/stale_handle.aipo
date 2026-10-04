@@ -1,0 +1,5 @@
+# Run with --host=headless-test: slot reuse must never resurrect the old handle.
+let old = headless.create(41)
+headless.release(old)
+let replacement = headless.create(42)
+let reading = headless.read(old)

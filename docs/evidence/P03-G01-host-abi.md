@@ -91,4 +91,42 @@ Verificações executadas nesta retomada (não são uma recertificação do work
 Limites preservados: AHS não instala natives, imports Wasm ou capabilities; contratos
 sobre valores dinâmicos continuam sendo responsabilidade do adaptador. O harness de
 faults de host por programas `.aipo` no CLI permanece pendente, conforme Wave 4.
-O rebase encontrado ao iniciar esta retomada não foi finalizado nem houve novo commit.
+O rebase encontrado ao iniciar esta retomada foi concluído, e o trabalho segue na branch
+`feat/host-ahs-headless-conformance` (PR draft #9).
+
+## Perfil headless de conformidade no CLI — 2026-10-04
+
+`--host=headless-test` fecha a lacuna que faltava para provar os três faults de host a
+partir de um programa `.aipo`. O perfil é opt-in, somente VM, embute sua própria AHS e
+concede **zero** capabilities; relógio, filesystem e ambiente do CLI padrão não são
+alterados.
+
+- `headless.create/read/release` exercitam handles geracionais reais; `headless.scoped`
+  fecha o escopo antes de devolver o handle, para que o fault venha da verificação real
+  de publicação da VM e não de um erro fabricado.
+- Fixtures pareadas em `docs/conformance/host/`: `capability_denied`, `stale_handle` e
+  `scope_escape` com `.code`, mais `live_handle` com `.stdout` como controle positivo.
+- `crates/aipo-cli/tests/host_runtime.rs` executa o binário real: `check` aceita os
+  fixtures de fault, `run` atinge o código exato em humano e JSONL, os seis pontos de
+  publicação são cobertos, faults não são capturáveis como `Failure`, combinações de
+  flag inválidas saem com código `2` e o perfil não vaza entre invocações in-process
+  nem para compilações de embedding.
+
+Verificações desta entrega:
+
+- `cargo fmt --all --check`, `git diff --check` e `aipo fmt --check` nos fixtures: aprovados.
+- `cargo check --workspace --all-targets --locked`: aprovado.
+- `cargo clippy -p aipo-cli -p aipo-bench --all-targets --locked -- -D warnings`: aprovado.
+- `cargo test -p aipo-bench --locked`: 13 aprovados, incluindo o SHA-256 canônico de arquivo.
+- `cargo test -p aipo-cli --lib --test host_surface --test host_runtime`: 2 + 22 + 9 aprovados.
+- `pnpm run docs:build`: aprovado (aviso pré-existente de chunks acima de 500 kB).
+
+Correção adicional encontrada pelos gates do CI: `aipo-bench` usava `format!("{:x}")` com
+o resultado de `Sha256::finalize`, incompatível com `sha2 0.11`; e um link em documentação
+pública de `aipo-cli` apontava para item privado. Ambos foram corrigidos na causa, com o
+hash de arquivo preservado por teste de vetor conhecido.
+
+Limitações: a auditoria de dependências continua falhando por itens já existentes em
+`main` (licenças não permitidas, dependências duplicadas e advisories de `wasmtime`,
+`macroquad` e `ttf-parser`). Nenhuma política de auditoria foi relaxada; isso exige um
+PR próprio de política de dependências.

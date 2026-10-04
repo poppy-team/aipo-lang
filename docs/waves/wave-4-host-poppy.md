@@ -35,10 +35,16 @@ mutation applied at safe points, deterministic headless game fixture.
   `analyze_with_surface`. Local shadowing and struct method checks remain intact, and Wasm
   runs the same semantic checks (runtime host imports are not installed). Fixtures live
   in `docs/conformance/ahs/`, tests in `crates/aipo-cli/tests/host_surface.rs`.
-- Not yet delivered: a CLI path that reaches the runtime host faults (`AIPO_RT_CAPABILITY_DENIED`,
-  `AIPO_RT_STALE_HANDLE`, `AIPO_RT_SCOPE_ESCAPE`) from a `.aipo` program. They are covered by Rust
-  tests only; `--ahs` does not install host implementations or grant capabilities. P03-G01
-  stays open until that harness exists.
+- Delivered: `--host=headless-test` on VM `run`/`check`, an explicit in-memory profile with its
+  own AHS and no capability grants. `.aipo` fixtures reach `AIPO_RT_CAPABILITY_DENIED` through
+  both clock calls, `AIPO_RT_STALE_HANDLE` through a released/reused slot, and
+  `AIPO_RT_SCOPE_ESCAPE` at all six VM heap-publication sites. The runtime harness is separate
+  from `--ahs`, which still installs no implementations or capabilities. Fixtures in
+  `docs/conformance/host/` have committed `.code`/`.stdout` pairs; real CLI tests are in
+  `crates/aipo-cli/tests/host_runtime.rs`.
+- The headless profile closes the CLI fault-harness gap, not the remaining workspace and
+  supply-chain certification gates. Dependency-policy failures are recorded in the PR;
+  no audit policy is weakened to claim Wave 4 complete.
 
 ## Exit gate (evidence required)
 
