@@ -1,0 +1,3 @@
+# Calls a member that does not exist on the host module.
+# Expected: AIPO_SEM_UNKNOWN_NAME for `demo.nonexistent`.
+var reply = demo.nonexistent(1)

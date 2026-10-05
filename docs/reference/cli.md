@@ -9,10 +9,10 @@
 The stable command surface comprises (`run`/`check`/`fmt` stable since Wave 1,
 `build` stable since Wave 2, `disasm` stable since Wave 4, `test` and Wasm targets stable since v0.1.0/ADP-013):
 
-- `aipo run <file.aipo> [--wasm] [--package-cache <dir>]`: Compiles and executes an Aipo source file via Stack VM or WebAssembly JIT engine (`--wasm` / `-t wasm`).
+- `aipo run <file.aipo> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test]`: Compiles and executes an Aipo source file via Stack VM or WebAssembly JIT engine (`--wasm` / `-t wasm`). `--ahs` makes the described host surface available to checking; it does not install host implementations or grant capabilities.
 - `aipo run <file.aibc|file.wasm>`: Loads, verifies and executes a pre-compiled bytecode file or WebAssembly binary.
 - `aipo test [path] [--filter <pattern>] [--package-cache <dir>]`: Discovers and executes isolated unit tests (`*_test.aipo`, `test_*.aipo`) with temporal freezing and PRNG seed reset.
-- `aipo check <file.aipo> [--wasm] [--package-cache <dir>]`: Runs the frontend and semantic analysis without execution, emitting diagnostics.
+- `aipo check <file.aipo> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test]`: Runs the frontend and semantic analysis without execution, emitting diagnostics. `--ahs` loads a validated Aipo Host Schema (AHS) JSON description for this invocation; described host modules and callable signatures (unknown member, arity with optional parameters, named arguments, literal contract violations) are available to static checking.
 - `aipo build <file.aipo> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>]`: Emits an ESM JavaScript bundle (`dist/app.js` + `dist/aipo-runtime.js` + source maps) or standalone WebAssembly binary (`dist/app.wasm`).
 - `aipo disasm <file.aipo|file.aibc|file.wasm> [--wasm] [--package-cache <dir>]`: Disassembles a source, bytecode, or Wasm file (printing bytecode disassembly or WebAssembly Text / WAT format).
 - `aipo fmt [files...] [--check]`: Formats source files idempotently according to canonical indentation rules.
@@ -20,6 +20,52 @@ The stable command surface comprises (`run`/`check`/`fmt` stable since Wave 1,
 - `aipo package audit <package-dir>`: Resolves a local package graph and verifies the existing `aipo.lock` without rewriting it.
 - `aipo package cache verify <cache-dir>`: Audits every existing GitHub cache entry without network access or filesystem mutation.
 - `aipo package cache prune <cache-dir> --lock <lockfile> [--apply]`: Removes only verified cache entries not referenced by the explicit lockfile; dry-run is the default.
+
+## Host surface descriptions
+
+`run` and `check` accept `--ahs=<file>` or `--ahs <file>` for Aipo source inputs.
+The JSON description is validated before compilation. Invalid JSON, inconsistent schemas,
+missing files, empty paths and repeated flags are usage errors (exit `2`). The flag is not
+accepted by other commands or for precompiled `.aibc`/`.wasm` inputs.
+
+The surface is passed explicitly to this compilation: no process-global host schema is
+installed, so subsequent invocations and embedding compilations do not inherit it. Direct
+host-module calls are checked for unknown members, required/optional parameters, named
+arguments and literal parameter-contract violations. Local bindings that shadow a module
+are checked as local values, not against the host signature.
+
+The same semantic checks run before Wasm compilation, but an AHS does not add Wasm imports
+or runtime implementations. Calls unsupported by the selected backend can still fail after
+semantic checking. `run --ahs` also does not grant capabilities or install VM natives.
+
+Rust embedders can call `aipo_cli::load_host_surface(path)` and pass the returned
+`PreludeSurface` to `compile_file(path, Some(&surface))` or `analyze_with_surface`.
+
+## Headless conformance host
+
+`aipo run file.aipo --host=headless-test` explicitly installs an in-memory conformance
+host. `check` accepts the same flag (or `--host headless-test`) to check its embedded AHS
+without executing anything. It is VM-only and rejects Wasm targets, precompiled inputs,
+other commands, unknown/repeated profiles, and combinations with `--ahs` (exit `2`).
+The profile supplies its own AHS; an arbitrary description never selects an implementation.
+
+The profile grants no capabilities, installs no filesystem/environment provider, and uses
+only VM-local state. `time.now()` and `time.monotonic()` fault with
+`AIPO_RT_CAPABILITY_DENIED` without revoking the ordinary CLI's clock. The following
+one-argument functions form a deliberately small testing surface:
+
+| Function | Behavior |
+|---|---|
+| `headless.create(value: Int)` | Create an unscoped handle holding a copied integer. |
+| `headless.read(handle)` | Read the integer; a released handle faults with `AIPO_RT_STALE_HANDLE`. |
+| `headless.release(handle)` | Release a live handle; its generation is never reused. |
+| `headless.scoped(value: Int)` | Intentionally return a handle after its native scope closes, so the next heap publication faults with `AIPO_RT_SCOPE_ESCAPE`. |
+
+`scoped` is a negative-test probe, not a general callback API. The fault comes from the real
+VM publication checks (global, return, field, index, list or dict), not a fabricated error.
+Runtime argument contracts also apply to dynamic values. Faults are not recoverable `Failure`
+values. Fixtures in `docs/conformance/host/` pair `.aipo` with `.code` or `.stdout` and are
+run through the real CLI by `crates/aipo-cli/tests/host_runtime.rs`.
 
 ## Local package entries
 
@@ -120,12 +166,14 @@ lockfile are always retained, and the lockfile itself is never changed. Pruning 
 access, authentication or registry lookup.
 
 
+## Command surface
 
 ```text
-aipo run <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
-aipo check <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
-aipo build <path> [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
-aipo disasm <path> [--package-cache <dir>] [--message-format=<human|jsonl>]
+aipo run <path> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test] [--message-format=<human|jsonl>]
+aipo test [path] [--filter <pattern>] [--package-cache <dir>] [--message-format=<human|jsonl>]
+aipo check <path> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test] [--message-format=<human|jsonl>]
+aipo build <path> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
+aipo disasm <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>]
 aipo fmt <paths...> [--check]
 aipo package lock <package-dir> [--fetch-github --cache <dir>] [--github-token-env <name>]
 aipo package audit <package-dir>

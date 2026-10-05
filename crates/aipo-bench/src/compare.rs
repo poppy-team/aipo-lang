@@ -1533,7 +1533,12 @@ fn file_sha256(path: &Path) -> Option<String> {
         }
         hasher.update(&buffer[..read]);
     }
-    Some(format!("{:x}", hasher.finalize()))
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    Some(hex)
 }
 
 fn build_profile() -> &'static str {
@@ -1697,6 +1702,18 @@ mod tests {
         assert_eq!(rust_checksum("collections", 5), Ok("10".to_string()));
         assert_eq!(rust_checksum("fields", 5), Ok("1841".to_string()));
         assert_eq!(rust_checksum("strings", 5), Ok("10".to_string()));
+    }
+
+    #[test]
+    fn file_hash_preserves_canonical_sha256_and_missing_file_behavior() {
+        let path = std::env::temp_dir().join(format!("aipo-bench-hash-{}", std::process::id()));
+        fs::write(&path, b"abc").expect("write hash fixture");
+        assert_eq!(
+            file_sha256(&path).as_deref(),
+            Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        );
+        fs::remove_file(&path).expect("remove hash fixture");
+        assert_eq!(file_sha256(&path), None);
     }
 
     #[test]

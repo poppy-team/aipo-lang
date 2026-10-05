@@ -1,0 +1,2 @@
+# Run with --host=headless-test: scoped closes its native scope before returning.
+let escaped = headless.scoped(42)

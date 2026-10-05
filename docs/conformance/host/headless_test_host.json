@@ -1,0 +1,15 @@
+{
+  "host": "headless-test",
+  "version": "0.1.0",
+  "modules": [
+    {
+      "name": "headless",
+      "functions": [
+        { "name": "create", "params": [{ "name": "value", "type": { "name": "Int" } }], "returns": { "name": "Handle" } },
+        { "name": "read", "params": [{ "name": "handle", "type": { "name": "Handle" } }], "returns": { "name": "Int" } },
+        { "name": "release", "params": [{ "name": "handle", "type": { "name": "Handle" } }] },
+        { "name": "scoped", "params": [{ "name": "value", "type": { "name": "Int" } }], "returns": { "name": "Handle" } }
+      ]
+    }
+  ]
+}

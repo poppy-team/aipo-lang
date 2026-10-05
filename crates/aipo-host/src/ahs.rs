@@ -176,7 +176,7 @@ pub struct ParamSchema {
     #[serde(default)]
     pub is_mut: bool,
     /// Whether the parameter may be omitted.
-    #[serde(default)]
+    #[serde(default, alias = "optional")]
     pub is_optional: bool,
     /// Optional documentation.
     #[serde(default)]

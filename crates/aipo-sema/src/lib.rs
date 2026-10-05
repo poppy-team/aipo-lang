@@ -9,7 +9,7 @@ pub mod prelude;
 pub mod symbol;
 
 pub use analyzer::{SemanticAnalyzer, SemanticFacts};
-pub use prelude::PreludeSurface;
+pub use prelude::{HostFunction, HostParameter, PreludeSurface};
 pub use symbol::{MethodSignature, Mutability, Scope, ScopeTree, Symbol, SymbolKind};
 
 use aipo_diagnostics::Diagnostic;

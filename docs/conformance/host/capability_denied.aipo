@@ -1,0 +1,2 @@
+# Run with --host=headless-test: clock is denied by the VM-local host context.
+let reading = time.now()

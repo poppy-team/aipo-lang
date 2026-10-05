@@ -14,6 +14,27 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PreludeSurface {
     globals: HashMap<String, SymbolKind>,
+    host_modules: HashMap<String, HashMap<String, HostFunction>>,
+}
+
+/// Function signature supplied by a host schema.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostFunction {
+    /// Parameters in declaration order.
+    pub params: Vec<HostParameter>,
+}
+
+/// Parameter signature supplied by a host schema.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostParameter {
+    /// Parameter name.
+    pub name: String,
+    /// Type contract name.
+    pub ty: String,
+    /// Whether `none` satisfies the contract.
+    pub nullable: bool,
+    /// Whether the parameter may be omitted.
+    pub optional: bool,
 }
 
 impl PreludeSurface {
@@ -58,9 +79,32 @@ impl PreludeSurface {
         self.globals.contains_key(name)
     }
 
+    /// Registers a host module and its function signatures.
+    pub fn add_host_module(&mut self, module: &str, functions: HashMap<String, HostFunction>) {
+        self.add_variable(module);
+        self.host_modules.insert(module.to_string(), functions);
+    }
+
+    /// Looks up a host function signature if `module` is a registered host module.
+    #[must_use]
+    pub fn host_function(&self, module: &str, function: &str) -> Option<&HostFunction> {
+        self.host_modules.get(module)?.get(function)
+    }
+
+    /// Returns whether `module` was registered as a host module.
+    #[must_use]
+    pub fn is_host_module(&self, module: &str) -> bool {
+        self.host_modules.contains_key(module)
+    }
+
     /// Iterates over the surface entries.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &SymbolKind)> {
         self.globals.iter()
+    }
+
+    /// Iterates over host module signatures.
+    pub fn host_modules(&self) -> impl Iterator<Item = (&String, &HashMap<String, HostFunction>)> {
+        self.host_modules.iter()
     }
 
     /// Number of names in the surface.

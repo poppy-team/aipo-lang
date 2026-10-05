@@ -1,0 +1,8 @@
+# Run with --host=headless-test: ordinary handles remain usable until release.
+let handle = headless.create(41)
+let copy = handle
+io.println(headless.read(copy))
+headless.release(handle)
+let replacement = headless.create(42)
+io.println(headless.read(replacement))
+headless.release(replacement)

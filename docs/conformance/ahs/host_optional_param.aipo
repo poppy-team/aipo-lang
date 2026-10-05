@@ -1,0 +1,5 @@
+# Omits and supplies an optional host parameter (`loud` is `optional` in the surface).
+# Expected: accepted, and a required parameter left out is still an arity mismatch.
+var quiet = demo.greet("world")
+var loud = demo.greet("world", true)
+var named = demo.greet("world", loud = true)
