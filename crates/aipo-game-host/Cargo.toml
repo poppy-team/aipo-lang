@@ -33,5 +33,5 @@ aipo-egui = { path = "../aipo-egui" }
 egui = { version = "0.36", default-features = false, features = ["default_fonts"] }
 macroquad = { version = "0.4.16", features = ["audio"] }
 tiny-skia = "0.11"
-svgtypes = "0.15"
+svgtypes = "0.16"
 fontdue = "0.9"
