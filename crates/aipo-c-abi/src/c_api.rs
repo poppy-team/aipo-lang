@@ -630,7 +630,9 @@ pub unsafe extern "C" fn aipo_reg_vm_run(
     let slice = if count == 0 {
         &[]
     } else {
-        unsafe { std::slice::from_raw_parts(instructions.cast::<aipo_bytecode::RegInstruction>(), count) }
+        unsafe {
+            std::slice::from_raw_parts(instructions.cast::<aipo_bytecode::RegInstruction>(), count)
+        }
     };
     match r_vm.run(slice) {
         Ok(val) => {

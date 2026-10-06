@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+use crate::string::normalize_nfc_str;
 use aipo_vm::{
     DictMap, FailureValue, MAX_SAFE_INT, MIN_SAFE_INT, Value, VmFault, check_finite_float,
     check_safe_int,
@@ -17,7 +18,6 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fmt;
 use std::rc::Rc;
-use crate::string::normalize_nfc_str;
 
 fn normalize_nfc(s: &str) -> String {
     normalize_nfc_str(s)

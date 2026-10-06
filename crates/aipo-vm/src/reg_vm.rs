@@ -267,14 +267,19 @@ impl RegVm {
                 RegOpCode::GetGlobal => {
                     let bx = inst.bx() as usize;
                     if let Some(Value::String(name)) = self.constants.get(bx) {
-                        let val = self.globals.get(name.as_str()).cloned().unwrap_or(Value::None);
+                        let val = self
+                            .globals
+                            .get(name.as_str())
+                            .cloned()
+                            .unwrap_or(Value::None);
                         self.registers[a] = val;
                     }
                 }
                 RegOpCode::SetGlobal => {
                     let bx = inst.bx() as usize;
                     if let Some(Value::String(name)) = self.constants.get(bx) {
-                        self.globals.insert(name.to_string(), self.registers[a].clone());
+                        self.globals
+                            .insert(name.to_string(), self.registers[a].clone());
                     }
                 }
                 RegOpCode::GetField => {
@@ -291,12 +296,14 @@ impl RegVm {
                     let target = self.registers[a].clone();
                     match target {
                         Value::Struct(inst) => {
-                            let val = inst.borrow().get_field(field_name).cloned().ok_or_else(|| {
-                                VmFault::NoSuchField {
-                                    type_name: inst.borrow().type_name.clone(),
-                                    field: field_name.to_string(),
-                                }
-                            })?;
+                            let val =
+                                inst.borrow()
+                                    .get_field(field_name)
+                                    .cloned()
+                                    .ok_or_else(|| VmFault::NoSuchField {
+                                        type_name: inst.borrow().type_name.clone(),
+                                        field: field_name.to_string(),
+                                    })?;
                             self.registers[a] = val;
                         }
                         Value::Dict(d) => {

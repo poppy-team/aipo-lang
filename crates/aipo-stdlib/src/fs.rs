@@ -8,13 +8,13 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use crate::string::normalize_nfc_str;
 use aipo_host::Capability;
 use aipo_host::ahs::{FunctionSchema, HostSchema, ModuleSchema, ParamSchema, TypeRef};
 use aipo_runtime::{NativeFunctionMeta, NativeRegistry};
 use aipo_vm::{
     DictMap, FailureValue, FilesystemError, FilesystemSource, Value, Vm, VmError, VmFault,
 };
-use crate::string::normalize_nfc_str;
 
 /// Maximum text size accepted by the deterministic map provider.
 pub const MAX_MAP_READ_TEXT_BYTES: usize = 16 * 1024 * 1024;

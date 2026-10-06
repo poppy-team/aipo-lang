@@ -8,10 +8,10 @@
 
 #![forbid(unsafe_code)]
 
+use crate::string::normalize_nfc_str;
 use aipo_vm::{DictMap, FailureValue, Value, VmFault};
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::string::normalize_nfc_str;
 
 const BASE64_STANDARD_TABLE: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

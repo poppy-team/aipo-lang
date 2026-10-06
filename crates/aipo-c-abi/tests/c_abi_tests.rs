@@ -434,14 +434,8 @@ fn test_reg_vm_c_abi() {
     assert!(!vm.is_null());
 
     unsafe {
-        assert_eq!(
-            aipo_reg_vm_set_reg_int(vm, 1, 100),
-            aipo_status_t::AIPO_OK
-        );
-        assert_eq!(
-            aipo_reg_vm_set_reg_int(vm, 2, 250),
-            aipo_status_t::AIPO_OK
-        );
+        assert_eq!(aipo_reg_vm_set_reg_int(vm, 1, 100), aipo_status_t::AIPO_OK);
+        assert_eq!(aipo_reg_vm_set_reg_int(vm, 2, 250), aipo_status_t::AIPO_OK);
 
         let mut read_back = 0i64;
         assert_eq!(
