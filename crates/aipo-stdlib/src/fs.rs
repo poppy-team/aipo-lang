@@ -14,7 +14,7 @@ use aipo_runtime::{NativeFunctionMeta, NativeRegistry};
 use aipo_vm::{
     DictMap, FailureValue, FilesystemError, FilesystemSource, Value, Vm, VmError, VmFault,
 };
-use unicode_normalization::UnicodeNormalization;
+use crate::string::normalize_nfc_str;
 
 /// Maximum text size accepted by the deterministic map provider.
 pub const MAX_MAP_READ_TEXT_BYTES: usize = 16 * 1024 * 1024;
@@ -365,7 +365,7 @@ pub fn read_text_task(vm: &mut Vm, args: &[Value]) -> Result<Value, VmError> {
         .into());
     };
     match source.read_text(&path) {
-        Ok(Some(text)) => Ok(Value::String(Rc::new(text.nfc().collect()))),
+        Ok(Some(text)) => Ok(Value::String(Rc::new(normalize_nfc_str(&text)))),
         Ok(None) | Err(FilesystemError::NotFound { .. }) => {
             Ok(failure(format!("fs.read_text: file not found: {path}")))
         }

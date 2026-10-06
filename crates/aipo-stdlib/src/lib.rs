@@ -29,6 +29,7 @@ pub mod math;
 pub mod path;
 pub mod prelude;
 pub mod random;
+#[cfg(feature = "regex")]
 pub mod regex;
 pub mod sh;
 pub mod string;
@@ -62,6 +63,7 @@ pub fn register_stdlib(vm: &mut Vm, registry: &mut NativeRegistry) {
     register_path(registry);
     register_sh(registry);
     register_url(registry);
+    #[cfg(feature = "regex")]
     register_regex(registry);
     register_testing(registry);
     register_log(registry);
@@ -139,6 +141,7 @@ fn register_methods(vm: &mut Vm) {
     duration::register_methods(vm);
     time::register_methods(vm);
     random::register_methods(vm);
+    #[cfg(feature = "regex")]
     regex::register_methods(vm);
 }
 
@@ -576,6 +579,7 @@ fn register_modules(vm: &mut Vm) {
     vm.define_global("binary", binary::create_module());
     vm.define_global("path", path::create_module());
     vm.define_global("url", url::create_module());
+    #[cfg(feature = "regex")]
     vm.define_global("regex", regex::create_module());
     vm.define_global("expect", testing::create_expect_module());
     vm.define_global("testing", testing::create_module());
@@ -1148,6 +1152,7 @@ fn register_url(registry: &mut NativeRegistry) {
 }
 
 /// Registers `regex` module metadata.
+#[cfg(feature = "regex")]
 fn register_regex(registry: &mut NativeRegistry) {
     registry.register(NativeFunctionMeta::new(
         "compile",

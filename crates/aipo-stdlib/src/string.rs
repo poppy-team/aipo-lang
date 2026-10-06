@@ -21,7 +21,9 @@
 use aipo_vm::{DictMap, FailureValue, Value, VmFault, check_safe_int};
 use std::cell::RefCell;
 use std::rc::Rc;
+#[cfg(feature = "unicode")]
 use unicode_normalization::UnicodeNormalization;
+#[cfg(feature = "unicode")]
 use unicode_segmentation::UnicodeSegmentation;
 
 fn expect_string<'a>(val: &'a Value, op: &str) -> Result<&'a str, VmFault> {
@@ -53,8 +55,22 @@ fn expect_non_empty<'a>(text: &'a str, op: &str) -> Result<&'a str, VmFault> {
 /// result — case mapping, joining, replacing, formatting — therefore normalizes its output. Pure
 /// substrings (`slice`, `split`, `trim`) keep the invariant for free, because removing characters
 /// never makes two previously non-adjacent characters adjacent.
-fn nfc(text: String) -> String {
+/// Normalizes a string slice to NFC.
+#[cfg(feature = "unicode")]
+#[must_use]
+pub fn normalize_nfc_str(text: &str) -> String {
     text.nfc().collect()
+}
+
+/// Passes through string when `unicode` feature is disabled.
+#[cfg(not(feature = "unicode"))]
+#[must_use]
+pub fn normalize_nfc_str(text: &str) -> String {
+    text.to_string()
+}
+
+fn nfc(text: String) -> String {
+    normalize_nfc_str(&text)
 }
 
 fn arity_error(op: &str, expected: usize, actual: usize) -> VmFault {
@@ -512,8 +528,11 @@ pub fn string_reverse(args: &[Value]) -> Result<Value, VmFault> {
     }
 
     let s = expect_string(&args[0], "string.reverse")?;
+    #[cfg(feature = "unicode")]
     let reversed: String = s.graphemes(true).rev().collect();
-    let normalized = reversed.nfc().collect::<String>();
+    #[cfg(not(feature = "unicode"))]
+    let reversed: String = s.chars().rev().collect();
+    let normalized = normalize_nfc_str(&reversed);
 
     Ok(Value::String(Rc::new(normalized)))
 }
@@ -532,9 +551,15 @@ pub fn string_graphemes(args: &[Value]) -> Result<Value, VmFault> {
     }
 
     let s = expect_string(&args[0], "string.graphemes")?;
+    #[cfg(feature = "unicode")]
     let clusters: Vec<Value> = s
         .graphemes(true)
         .map(|g| Value::String(Rc::new(g.to_string())))
+        .collect();
+    #[cfg(not(feature = "unicode"))]
+    let clusters: Vec<Value> = s
+        .chars()
+        .map(|c| Value::String(Rc::new(c.to_string())))
         .collect();
 
     Ok(Value::List(Rc::new(RefCell::new(clusters))))
@@ -554,8 +579,14 @@ pub fn string_words(args: &[Value]) -> Result<Value, VmFault> {
     }
 
     let s = expect_string(&args[0], "string.words")?;
+    #[cfg(feature = "unicode")]
     let words: Vec<Value> = s
         .unicode_words()
+        .map(|w| Value::String(Rc::new(w.to_string())))
+        .collect();
+    #[cfg(not(feature = "unicode"))]
+    let words: Vec<Value> = s
+        .split_whitespace()
         .map(|w| Value::String(Rc::new(w.to_string())))
         .collect();
 

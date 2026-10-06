@@ -17,10 +17,10 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fmt;
 use std::rc::Rc;
-use unicode_normalization::UnicodeNormalization;
+use crate::string::normalize_nfc_str;
 
 fn normalize_nfc(s: &str) -> String {
-    s.nfc().collect()
+    normalize_nfc_str(s)
 }
 
 struct AipoJsonVisitor;

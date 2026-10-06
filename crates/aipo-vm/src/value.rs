@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
+#[cfg(feature = "unicode")]
 use unicode_normalization::UnicodeNormalization;
 
 /// Maximum safe integer in Aipo: 2^53 - 1.
@@ -844,7 +845,17 @@ impl Value {
                     combined.push_str(b);
                     combined
                 } else {
-                    a.chars().chain(b.chars()).nfc().collect()
+                    #[cfg(feature = "unicode")]
+                    {
+                        a.chars().chain(b.chars()).nfc().collect()
+                    }
+                    #[cfg(not(feature = "unicode"))]
+                    {
+                        let mut combined = String::with_capacity(a.len() + b.len());
+                        combined.push_str(a);
+                        combined.push_str(b);
+                        combined
+                    }
                 };
                 Ok(Self::String(Rc::new(combined)))
             }
