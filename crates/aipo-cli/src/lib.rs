@@ -295,6 +295,33 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
     }
 }
 
+/// Evaluates an in-memory Aipo source string directly (for REPL and `aipo-sh -c`).
+///
+/// Returns exit code `0` on success, `1` on error.
+pub fn eval_source(source_text: &str, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let source = Source::new(SourceId::next(), "<eval>", source_text);
+    let compiled = analyze_with_surface(&source, Path::new("<eval>"), None, None);
+    let has_errors = compiled
+        .diagnostics
+        .iter()
+        .any(|diag| diag.severity == Severity::Error);
+
+    emit_diagnostics(MessageFormat::Human, &source, &compiled.diagnostics, out, err);
+
+    if has_errors {
+        return EXIT_LANGUAGE_FAILURE;
+    }
+
+    match execute_module(&compiled.module) {
+        Ok(()) => EXIT_SUCCESS,
+        Err(error) => {
+            let diagnostic = runtime_diagnostic(&source, &error);
+            emit_diagnostics(MessageFormat::Human, &source, std::slice::from_ref(&diagnostic), out, err);
+            EXIT_LANGUAGE_FAILURE
+        }
+    }
+}
+
 /// Target output format for `aipo build`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildTarget {
