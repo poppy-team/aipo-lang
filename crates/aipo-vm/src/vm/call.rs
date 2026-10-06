@@ -314,6 +314,8 @@ impl Vm {
                     arg_count + 1,
                     journal_start,
                 ));
+                self.upvalue_frames.push(None);
+                self.refresh_frame_base();
                 self.ip = sm.entry_ip as usize;
             }
             other => {
