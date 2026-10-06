@@ -155,11 +155,13 @@ impl EguiSession {
         }
 
         self.ui_stack.clear();
-        let full_output = self.ctx.end_pass();
+        let mut full_output = self.ctx.end_pass();
         self.is_frame_active = false;
 
         let shapes_list: Vec<Value> = full_output.shapes.iter().map(shape_to_value).collect();
         let cursor_name = format!("{:?}", full_output.platform_output.cursor_icon);
+
+        full_output.textures_delta.clear();
 
         let entries = vec![
             (
