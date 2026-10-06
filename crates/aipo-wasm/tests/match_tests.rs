@@ -6,6 +6,7 @@ use aipo_syntax::parse;
 use aipo_wasm::compile_hir;
 use wasmtime::{Engine, Instance, Module, Store};
 
+#[allow(dead_code)]
 fn instantiate_aipo(source_code: &str) -> (Store<()>, Instance) {
     let source = Source::new(SourceId::next(), "test.aipo", source_code);
     let (ast, diags) = parse(&source);

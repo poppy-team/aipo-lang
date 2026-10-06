@@ -482,7 +482,7 @@ pub fn egui_wants_pointer_input(args: &[Value]) -> Result<Value, VmFault> {
             .ok_or_else(|| VmFault::StaleHandle {
                 handle: handle.to_string(),
             })?;
-        Ok(Value::Bool(session.ctx.wants_pointer_input()))
+        Ok(Value::Bool(session.ctx.egui_wants_pointer_input()))
     })
 }
 
@@ -498,7 +498,7 @@ pub fn egui_wants_keyboard_input(args: &[Value]) -> Result<Value, VmFault> {
             .ok_or_else(|| VmFault::StaleHandle {
                 handle: handle.to_string(),
             })?;
-        Ok(Value::Bool(session.ctx.wants_keyboard_input()))
+        Ok(Value::Bool(session.ctx.egui_wants_keyboard_input()))
     })
 }
 
