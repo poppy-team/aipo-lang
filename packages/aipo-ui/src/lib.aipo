@@ -1,21 +1,154 @@
 # lib.aipo — Entrypoint for `aipo.ui`
 # Universal Declarative Multiplatform UI Framework
+#
+# Aipo mixes imported names into the local scope and cannot re-export an
+# imported symbol, so a facade must own every public name and the submodules
+# export prefixed helpers. This mirrors `packages/aipo-zoe/src/lib.aipo`:
+# submodules export `make_*`, this module owns the short public name.
 
-import.types as types
-import.color as color
-import.primitives as prim
-import.app as app
+import types as types_mod
+import color as color_mod
+import primitives as prim_mod
+import app as app_mod
 
-# Re-export Layout and Widget Primitives
-export prim.Box, prim.Row, prim.Column, prim.Stack, prim.ScrollArea, prim.Spacer
-export prim.Text, prim.Button, prim.TextInput, prim.Slider, prim.Checkbox, prim.ProgressBar
+# --- Layout & Container Primitives ---
 
-# Re-export Enums & Structures
-export types.Align, types.Justify, types.Direction, types.Overflow
-export types.Rect, types.Color, types.UINode, types.UIEvent
+fn Box(
+        width = none, height = none, padding = none, margin = none, background = none,
+        border_radius = 0.0, border_width = 0.0, border_color = none,
+        align = none, justify = none, body: Fn? = none
+    ) {
+        return prim_mod.make_box(
+            width, height, padding, margin, background,
+            border_radius, border_width, border_color, align, justify, body
+        )
+    }
 
-# Re-export Submodules
-export color
+    fn Row(
+            gap = 0, padding = none, align = none, justify = none, background = none,
+            width = none, height = none, body: Fn? = none
+        ) {
+            return prim_mod.make_row(gap, padding, align, justify, background, width, height, body)
+        }
 
-# Re-export Lifecycle & Mount Runners
-export app.mount_desktop, app.mount_canvas, app.mount_tui, app.dispatch
+        fn Column(
+                gap = 0, padding = none, align = none, justify = none, background = none,
+                width = none, height = none, body: Fn? = none
+            ) {
+                return prim_mod.make_column(gap, padding, align, justify, background, width, height, body)
+            }
+
+            fn Stack(width = none, height = none, body: Fn? = none) {
+                return prim_mod.make_stack(width, height, body)
+            }
+
+            fn ScrollArea(width = none, height = none, direction = "vertical", body: Fn? = none) {
+                return prim_mod.make_scroll_area(width, height, direction, body)
+            }
+
+            fn Spacer() {
+                return prim_mod.make_spacer()
+            }
+
+            # --- Widget & Control Primitives ---
+
+            fn Text(
+                    content: String, font_size: Float = 14.0, font_weight: String = "normal",
+                    color = none, align: String = "left"
+                ) {
+                    return prim_mod.make_text(content, font_size, font_weight, color, align)
+                }
+
+                fn Button(
+                        label: String, on_click: Fn? = none,
+                        variant: String = "primary", disabled: Bool = false
+                    ) {
+                        return prim_mod.make_button(label, on_click, variant, disabled)
+                    }
+
+                    fn TextInput(
+                            value: String = "", placeholder: String = "",
+                            on_change: Fn? = none, disabled: Bool = false
+                        ) {
+                            return prim_mod.make_text_input(value, placeholder, on_change, disabled)
+                        }
+
+                        fn Slider(
+                                value: Float = 0.0, min: Float = 0.0, max: Float = 100.0,
+                                step: Float = 1.0, on_change: Fn? = none
+                            ) {
+                                return prim_mod.make_slider(value, min, max, step, on_change)
+                            }
+
+                            fn Checkbox(checked: Bool = false, label: String = "", on_toggle: Fn? = none) {
+                                return prim_mod.make_checkbox(checked, label, on_toggle)
+                            }
+
+                            fn ProgressBar(progress: Float = 0.0, height: Float = 8.0, color = none) {
+                                return prim_mod.make_progress_bar(progress, height, color)
+                            }
+
+                            # --- Layout Tags ---
+                            #
+                            # Aipo has no `enum` in V1; each tag is a struct built by these constructors.
+                            # See types.aipo.
+
+                            fn align_start() { return types_mod.make_align_start() }
+                            fn align_center() { return types_mod.make_align_center() }
+                            fn align_end() { return types_mod.make_align_end() }
+                            fn align_stretch() { return types_mod.make_align_stretch() }
+                            fn align_baseline() { return types_mod.make_align_baseline() }
+
+                            fn justify_start() { return types_mod.make_justify_start() }
+                            fn justify_center() { return types_mod.make_justify_center() }
+                            fn justify_end() { return types_mod.make_justify_end() }
+                            fn justify_space_between() { return types_mod.make_justify_space_between() }
+                            fn justify_space_around() { return types_mod.make_justify_space_around() }
+                            fn justify_space_evenly() { return types_mod.make_justify_space_evenly() }
+
+                            fn direction_row() { return types_mod.make_direction_row() }
+                            fn direction_column() { return types_mod.make_direction_column() }
+                            fn direction_row_reverse() { return types_mod.make_direction_row_reverse() }
+                            fn direction_column_reverse() { return types_mod.make_direction_column_reverse() }
+
+                            fn overflow_visible() { return types_mod.make_overflow_visible() }
+                            fn overflow_hidden() { return types_mod.make_overflow_hidden() }
+                            fn overflow_scroll() { return types_mod.make_overflow_scroll() }
+
+                            # --- Color ---
+
+                            fn rgb(r: Int, g: Int, b: Int) { return color_mod.make_rgb(r, g, b) }
+                            fn rgba(r: Int, g: Int, b: Int, a: Float) { return color_mod.make_rgba(r, g, b, a) }
+                            fn hex(hex_code: String) { return color_mod.make_hex(hex_code) }
+                            fn white() { return color_mod.palette_white }
+                            fn black() { return color_mod.palette_black }
+                            fn transparent() { return color_mod.palette_transparent }
+
+                            # --- Lifecycle & Mount Runners ---
+
+                            fn mount_desktop(
+                                    title: String = "Aipo Application", width: Int = 800, height: Int = 600,
+                                    initial: Any?, update: Fn, view: Fn
+                                ) {
+                                    return app_mod.run_desktop(title, width, height, initial, update, view)
+                                }
+
+                                fn mount_canvas(canvas_id: String = "aipo-canvas", initial: Any?, update: Fn, view: Fn) {
+                                    return app_mod.run_canvas(canvas_id, initial, update, view)
+                                }
+
+                                fn mount_tui(initial: Any?, update: Fn, view: Fn) {
+                                    return app_mod.run_tui(initial, update, view)
+                                }
+
+                                fn dispatch(msg: Any) { return app_mod.run_dispatch(msg) }
+
+                                export Box, Row, Column, Stack, ScrollArea, Spacer
+                                export Text, Button, TextInput, Slider, Checkbox, ProgressBar
+                                export align_start, align_center, align_end, align_stretch, align_baseline
+                                export justify_start, justify_center, justify_end
+                                export justify_space_between, justify_space_around, justify_space_evenly
+                                export direction_row, direction_column, direction_row_reverse, direction_column_reverse
+                                export overflow_visible, overflow_hidden, overflow_scroll
+                                export rgb, rgba, hex, white, black, transparent
+                                export mount_desktop, mount_canvas, mount_tui, dispatch

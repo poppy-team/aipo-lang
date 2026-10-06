@@ -1,0 +1,69 @@
+# counter.aipo — Universal counter built with the aipo.ui facade
+#
+# Aipo has no `enum` in V1 and no `main` convention: an entry file calls
+# something itself. Host-driven packages (aipo-zoe, aipo-game) instead expose
+# setup/update/draw and let the host invoke them.
+#
+# Two revision limits shape this example. Both have minimal repros recorded in
+# docs/journal/2026-10-05-syntax-drift.md:
+#
+# 1. Mixing named arguments with a trailing block (`ui.Column(gap = 16) do { }`)
+#    skips default-filling and faults with AIPO_RT_TYPE_MISMATCH. Pass children
+#    as `body = fn() { ... }` instead.
+#
+# 2. A closure that is invoked and, inside itself, creates another closure
+#    capturing an upvalue faults with "operand stack underflow". Component
+#    `body` closures are invoked by the runtime, so they must not build nested
+#    closures. An `ui.Button(on_click = fn() { ... })` nested inside a `body`
+#    closure trips this, which is why this example shows the tree and stops
+#    short of interactive children.
+
+import aipo.ui as ui
+
+struct Model {
+    var count = 0
+}
+
+fn update(m, msg) - > Model{
+    var next = Model{ count: m.count }
+    if msg == "increment" {
+        next.count += 1
+    } elif msg == "decrement" {
+        next.count -= 1
+    } elif msg == "reset" {
+        next.count = 0
+    }
+    return next
+}
+
+fn view(m, dispatch) {
+    let label = f"Valor Atual: {m.count}"
+
+    return ui.Column(
+        gap = 16,
+        padding = 32,
+        align = ui.align_center().value,
+        justify = ui.justify_center().value,
+        background = ui.rgb(24, 24, 27),
+        body = fn () {
+            ui.Text(label, font_size = 28.0, font_weight = "bold", color = ui.white())
+            ui.Spacer()
+        }
+    )
+}
+
+fn start() {
+    # Build the tree once and inspect it: drawing is delegated to the host.
+    let tree = view(Model{ count = 0 }, fn (msg) { io.println(msg) })
+    let text = tree.children[0]
+    let content = text.props["content"]
+    let bg = tree.props["background"]
+    io.println(f"root={tree.kind} children={tree.children.len()}")
+    io.println(f"texto={content} cor={bg.r},{bg.g},{bg.b}")
+
+    # Then hand the same view to a runner.
+    ui.mount_desktop("Contador Aipo UI", 400, 300, Model{ count = 0 }, update, view)
+    io.println("montagem concluida; o desenho fica a cargo do host")
+}
+
+start()

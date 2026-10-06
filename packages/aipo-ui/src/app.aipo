@@ -1,25 +1,25 @@
 # app.aipo — Application Lifecycle and Multiplatform MVU Runner
 # Part of `aipo.ui`
 
-import.types as types
-import.layout as layout
-import.renderer as renderer
+import types as types_mod
+import layout as layout_mod
+import renderer as renderer_mod
 
 struct UIApp {
-    backend: String
-    title: String
-    width: Int
-    height: Int
-    model: Any
-    update_fn: Fn
-    view_fn: Fn
-    root_node: types.UINode
-    is_running: Bool
+    var backend = ""
+    var title = ""
+    var width = 0
+    var height = 0
+    var model = none
+    var update_fn = none
+    var view_fn = none
+    var root_node = none
+    var is_running = false
 }
 
-var _current_app: UIApp = none
+var _current_app = none
 
-fn dispatch(msg: Any) {
+fn run_dispatch(msg: Any) {
     if _current_app != none {
         let new_model = (_current_app.update_fn)(_current_app.model, msg)
         _current_app.model = new_model
@@ -28,88 +28,71 @@ fn dispatch(msg: Any) {
 }
 
 fn render_frame(app: UIApp) {
-    layout.reset_collector()
+    layout_mod.reset_collector()
 
     # 1. Build declarative tree
-    (app.view_fn)(app.model, dispatch)
+    app.root_node = (app.view_fn)(app.model, run_dispatch)
 
     # 2. Perform layout calculation with host Taffy engine
     # In native/Wasm host: host computes geometry coordinates into layout_rect
-    let taffy_desc = layout.serialize_to_taffy_descriptor(app.root_node)
+    let taffy_desc = layout_mod.serialize_to_taffy_descriptor(app.root_node)
 
     # 3. Batch draw commands for active renderer
     var commands = []
     if app.root_node != none {
-        renderer.generate_draw_commands(app.root_node, commands)
+        renderer_mod.generate_draw_commands(app.root_node, commands)
     }
 
     # 4. Send commands to host graphics backend
     # __aipo_ui_host_render(commands)
 }
 
+fn install_app(backend: String, title: String, width: Int, height: Int, model, update: Fn, view: Fn) {
+    _current_app = UIApp{
+        backend: backend,
+        title: title,
+        width: width,
+        height: height,
+        model: model,
+        update_fn: update,
+        view_fn: view,
+        root_node: none,
+        is_running: true
+    }
+
+    render_frame(_current_app)
+}
+
 # Mount on Native Desktop (GPU via Skia)
-fn mount_desktop(
+fn run_desktop(
         title: String = "Aipo Application",
         width: Int = 800,
         height: Int = 600,
-        init: Any,
+        initial: Any?,
+        update: Fn,
+        view: Fn
+    ) {
+        install_app("skia-desktop", title, width, height, initial, update, view)
+    }
+
+    # Mount on WebAssembly (HTML5 Canvas / WebGL)
+    fn run_canvas(
+            canvas_id: String = "aipo-canvas",
+            initial: Any?,
             update: Fn,
             view: Fn
         ) {
-            _current_app = UIApp{
-                backend: "skia-desktop",
-                title: title,
-                width: width,
-                height: height,
-                model: init,
-                    update_fn: update,
-                    view_fn: view,
-                    root_node: none,
-                    is_running: true
-                }
+            install_app("canvas-wasm", canvas_id, 800, 600, initial, update, view)
+        }
 
-                render_frame(_current_app)
+        # Mount on Terminal ANSI (TUI)
+        fn run_tui(
+                initial: Any?,
+                update: Fn,
+                view: Fn
+            ) {
+                install_app("terminal-ansi", "TUI", 80, 24, initial, update, view)
             }
 
-            # Mount on WebAssembly (HTML5 Canvas / WebGL)
-            fn mount_canvas(
-                    canvas_id: String = "aipo-canvas",
-                    init: Any,
-                        update: Fn,
-                        view: Fn
-                    ) {
-                        _current_app = UIApp{
-                            backend: "canvas-wasm",
-                            title: canvas_id,
-                            width: 800,
-                            height: 600,
-                            model: init,
-                                update_fn: update,
-                                view_fn: view,
-                                root_node: none,
-                                is_running: true
-                            }
-
-                            render_frame(_current_app)
-                        }
-
-                        # Mount on Terminal ANSI (TUI)
-                        fn mount_tui(
-                                init: Any,
-                                    update: Fn,
-                                    view: Fn
-                                ) {
-                                    _current_app = UIApp{
-                                        backend: "terminal-ansi",
-                                        title: "TUI",
-                                        width: 80,
-                                        height: 24,
-                                        model: init,
-                                            update_fn: update,
-                                            view_fn: view,
-                                            root_node: none,
-                                            is_running: true
-                                        }
-
-                                        render_frame(_current_app)
-                                    }
+            export UIApp, run_dispatch, render_frame, install_app
+            export run_desktop, run_canvas, run_tui

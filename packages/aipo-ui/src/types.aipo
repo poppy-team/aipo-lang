@@ -1,63 +1,97 @@
-# types.aipo — Core Data Types and Layout Enums
+# types.aipo — Core Data Types and Layout Tags
 # Part of `aipo.ui`
+#
+# Aipo has no `enum` in V1 (it is queued in the post-V1 backlog). Each layout
+# tag below is therefore a struct carrying a canonical String token, plus one
+# constructor function per variant. This keeps the nominal type and the full
+# variant vocabulary that an enum would have provided.
 
-enum Align{
-    Start,
-    Center,
-    End,
-    Stretch,
-    Baseline
+# --- Align ---
+
+struct Align {
+    var value = "start"
 }
 
-enum Justify{
-    Start,
-    Center,
-    End,
-    SpaceBetween,
-    SpaceAround,
-    SpaceEvenly
+fn make_align_start() - > Align{ return Align{ value: "start" } }
+fn make_align_center() - > Align{ return Align{ value: "center" } }
+fn make_align_end() - > Align{ return Align{ value: "end" } }
+fn make_align_stretch() - > Align{ return Align{ value: "stretch" } }
+fn make_align_baseline() - > Align{ return Align{ value: "baseline" } }
+
+# --- Justify ---
+
+struct Justify {
+    var value = "start"
 }
 
-enum Direction{
-    Row,
-    Column,
-    RowReverse,
-    ColumnReverse
+fn make_justify_start() - > Justify{ return Justify{ value: "start" } }
+fn make_justify_center() - > Justify{ return Justify{ value: "center" } }
+fn make_justify_end() - > Justify{ return Justify{ value: "end" } }
+fn make_justify_space_between() - > Justify{ return Justify{ value: "space-between" } }
+fn make_justify_space_around() - > Justify{ return Justify{ value: "space-around" } }
+fn make_justify_space_evenly() - > Justify{ return Justify{ value: "space-evenly" } }
+
+# --- Direction ---
+
+struct Direction {
+    var value = "row"
 }
 
-enum Overflow{
-    Visible,
-    Hidden,
-    Scroll
+fn make_direction_row() - > Direction{ return Direction{ value: "row" } }
+fn make_direction_column() - > Direction{ return Direction{ value: "column" } }
+fn make_direction_row_reverse() - > Direction{ return Direction{ value: "row-reverse" } }
+fn make_direction_column_reverse() - > Direction{ return Direction{ value: "column-reverse" } }
+
+# --- Overflow ---
+
+struct Overflow {
+    var value = "visible"
 }
+
+fn make_overflow_visible() - > Overflow{ return Overflow{ value: "visible" } }
+fn make_overflow_hidden() - > Overflow{ return Overflow{ value: "hidden" } }
+fn make_overflow_scroll() - > Overflow{ return Overflow{ value: "scroll" } }
+
+# --- Geometry & Data Structures ---
+#
+# Struct fields carry no type annotation in Aipo; a field is either bare
+# (fixed), `var` (mutable), or has a default. Every field here is `var`
+# because the host layout engine writes computed geometry back into them.
 
 struct Rect {
-    x: Float
-    y: Float
-    width: Float
-    height: Float
+    var x = 0.0
+    var y = 0.0
+    var width = 0.0
+    var height = 0.0
 }
 
 struct Color {
-    r: Int
-    g: Int
-    b: Int
-    a: Float
+    var r = 0
+    var g = 0
+    var b = 0
+    var a = 1.0
 }
 
 struct UIEvent {
-    kind: String
-    target_id: Int
-    x: Float
-    y: Float
-    key: String
-    modifiers: Dict
+    var kind = ""
+    var target_id = 0
+    var x = 0.0
+    var y = 0.0
+    var key = ""
+    var modifiers = {}
 }
 
 struct UINode {
-    id: Int
-    kind: String
-    props: Dict
-    children: List
-    layout_rect: Rect
+    var id = 0
+    var kind = ""
+    var props = {}
+    var children = []
+    var layout_rect = Rect{ x: 0.0, y: 0.0, width: 0.0, height: 0.0 }
 }
+
+export Align, make_align_start, make_align_center, make_align_end, make_align_stretch, make_align_baseline
+export Justify, make_justify_start, make_justify_center, make_justify_end
+export make_justify_space_between, make_justify_space_around, make_justify_space_evenly
+export Direction, make_direction_row, make_direction_column, make_direction_row_reverse, make_direction_column_reverse
+export Overflow, make_overflow_visible, make_overflow_hidden, make_overflow_scroll
+export Rect, Color, UIEvent, UINode

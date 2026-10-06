@@ -1,7 +1,7 @@
 [[packages]]
 coordinate = "aipo.ui"
 version = "0.1.0"
-digest = "3033f32bc38bd9c3b9acc94ba37efe6851e6527528f85d0a9cac8c3c5b9fcc17"
+digest = "831659a756629a631c8915d811ca83ce114cdabeb12b7fa3484fef48474dc423"
 dependencies = []
 capabilities = []
 targets = [
