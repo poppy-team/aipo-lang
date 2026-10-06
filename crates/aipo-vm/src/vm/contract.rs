@@ -19,8 +19,8 @@ impl Vm {
         }
         match self.bind_method(value, name) {
             Some(Value::BoundMethod(bm)) => Some(bm.arity),
-            Some(Value::StructMethod { total_arity, .. }) => {
-                Some((total_arity as usize).saturating_sub(1))
+            Some(Value::StructMethod(sm)) => {
+                Some((sm.total_arity as usize).saturating_sub(1))
             }
             _ => None,
         }
@@ -43,7 +43,7 @@ impl Vm {
                     | Value::Closure(_)
                     | Value::Native(_)
                     | Value::BoundMethod(_)
-                    | Value::StructMethod { .. }
+                    | Value::StructMethod(_)
             );
         }
         if let Some(tag) = TypeTag::from_name(type_name) {

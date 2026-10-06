@@ -585,8 +585,8 @@ impl HostContext {
                 Ok(())
             }
             Value::BoundMethod(bm) => self.walk(&bm.receiver, site, visited),
-            Value::StructMethod { receiver, .. } => {
-                self.walk(&Value::Struct(receiver.clone()), site, visited)
+            Value::StructMethod(sm) => {
+                self.walk(&Value::Struct(sm.receiver.clone()), site, visited)
             }
             Value::Sequence(pipeline) => {
                 if !visited.insert(Rc::as_ptr(pipeline) as usize) {

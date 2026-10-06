@@ -39,7 +39,7 @@ pub(crate) fn length_of(value: &Value) -> Result<Value, VmFault> {
         Value::Dict(dict) => dict.borrow().len(),
         Value::Bytes(bytes) => bytes.borrow().len(),
         Value::Set(items) => items.borrow().len(),
-        Value::Range { start, end } => usize::try_from((end - start).max(0)).unwrap_or(0),
+        Value::Range(r) => usize::try_from((r.end - r.start).max(0)).unwrap_or(0),
         other => {
             return Err(VmFault::TypeMismatch {
                 expected: "String, List, Dict, Bytes, Set, or Range".to_string(),
@@ -64,7 +64,7 @@ pub(crate) fn iterable_items(receiver: &Value) -> Result<Vec<Value>, VmFault> {
             .chars()
             .map(|ch| Value::String(Rc::new(ch.to_string())))
             .collect()),
-        Value::Range { start, end } => Ok((*start..*end).map(Value::Int).collect()),
+        Value::Range(r) => Ok((r.start..r.end).map(Value::Int).collect()),
         other => Err(VmFault::TypeMismatch {
             expected: "iterable List, Dict, Set, String, or Range".to_string(),
             actual: other.type_name().to_string(),

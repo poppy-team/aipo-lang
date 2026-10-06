@@ -413,6 +413,54 @@ impl SequencePipeline {
     }
 }
 
+/// Half-open integer range data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RangeData {
+    /// Inclusive start.
+    pub start: i64,
+    /// Exclusive end.
+    pub end: i64,
+}
+
+impl RangeData {
+    /// Constructs a new range.
+    #[must_use]
+    pub const fn new(start: i64, end: i64) -> Self {
+        Self { start, end }
+    }
+}
+
+/// Bound struct method metadata.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructMethodData {
+    /// Receiver struct instance.
+    pub receiver: Rc<RefCell<StructInstance>>,
+    /// Entry instruction pointer in the bytecode.
+    pub entry_ip: u32,
+    /// Total arity including receiver parameter.
+    pub total_arity: u16,
+    /// Whether the method is async.
+    pub is_async: bool,
+}
+
+impl StructMethodData {
+    /// Constructs new struct method metadata.
+    #[must_use]
+    pub fn new(
+        receiver: Rc<RefCell<StructInstance>>,
+        entry_ip: u32,
+        total_arity: u16,
+        is_async: bool,
+    ) -> Self {
+        Self {
+            receiver,
+            entry_ip,
+            total_arity,
+            is_async,
+        }
+    }
+}
+
 /// Dynamic value manipulated by the Aipo VM stack machine.
 ///
 /// Sharing (`List`, `Dict`, struct instances, closure upvalue cells) is
@@ -458,26 +506,12 @@ pub enum Value {
     /// convertible core types, as a callable conversion.
     Type(TypeTag),
     /// Half-open integer range produced by `a..b`.
-    Range {
-        /// Inclusive start.
-        start: i64,
-        /// Exclusive end.
-        end: i64,
-    },
+    Range(Rc<RangeData>),
     /// Method already bound to its receiver, produced by field access on a
     /// collection, string or struct instance.
     BoundMethod(Rc<BoundMethodData>),
     /// Struct method bound directly to an instance without heap allocation.
-    StructMethod {
-        /// Receiver struct instance.
-        receiver: Rc<RefCell<StructInstance>>,
-        /// Entry instruction pointer in the bytecode.
-        entry_ip: u32,
-        /// Total arity including receiver parameter.
-        total_arity: u16,
-        /// Whether the method is async.
-        is_async: bool,
-    },
+    StructMethod(Rc<StructMethodData>),
     /// Recoverable failure (Model B).
     Failure(Rc<FailureValue>),
     /// Insertion-ordered set of unique values (structural equality).
@@ -625,6 +659,28 @@ impl Value {
         }))
     }
 
+    /// Constructs a new range value.
+    #[must_use]
+    pub fn range(start: i64, end: i64) -> Self {
+        Self::Range(Rc::new(RangeData::new(start, end)))
+    }
+
+    /// Constructs a new struct method value.
+    #[must_use]
+    pub fn struct_method(
+        receiver: Rc<RefCell<StructInstance>>,
+        entry_ip: u32,
+        total_arity: u16,
+        is_async: bool,
+    ) -> Self {
+        Self::StructMethod(Rc::new(StructMethodData::new(
+            receiver,
+            entry_ip,
+            total_arity,
+            is_async,
+        )))
+    }
+
     /// Constructs a plain failure value.
     #[must_use]
     pub fn failure(message: impl Into<String>) -> Self {
@@ -653,11 +709,11 @@ impl Value {
             | Self::Closure(_)
             | Self::Native(_)
             | Self::BoundMethod(_)
-            | Self::StructMethod { .. } => "Function",
+            | Self::StructMethod(_) => "Function",
             Self::Byte(_) => "Byte",
             Self::Bytes(_) => "Bytes",
             Self::Type(_) => "Type",
-            Self::Range { .. } => "Range",
+            Self::Range(_) => "Range",
             Self::Failure(_) => "Failure",
             Self::Set(_) => "Set",
             Self::Sequence(_) => "Sequence",
@@ -1167,9 +1223,7 @@ impl PartialEq for Value {
             (Self::Float(a), Self::Byte(b)) => *a == f64::from(*b),
             (Self::Bytes(a), Self::Bytes(b)) => *a.borrow() == *b.borrow(),
             (Self::Type(a), Self::Type(b)) => a == b,
-            (Self::Range { start: s1, end: e1 }, Self::Range { start: s2, end: e2 }) => {
-                s1 == s2 && e1 == e2
-            }
+            (Self::Range(a), Self::Range(b)) => a == b,
             (Self::Set(a), Self::Set(b)) => *a.borrow() == *b.borrow(),
             (Self::Sequence(a), Self::Sequence(b)) => Rc::ptr_eq(a, b),
             (Self::Task(a), Self::Task(b)) => a == b,
@@ -1177,20 +1231,12 @@ impl PartialEq for Value {
             (Self::HostHandle(a), Self::HostHandle(b)) => a == b,
             (Self::Duration(a), Self::Duration(b)) => a == b,
             (Self::BoundMethod(a), Self::BoundMethod(b)) => a == b,
-            (
-                Self::StructMethod {
-                    receiver: r1,
-                    entry_ip: ip1,
-                    total_arity: a1,
-                    is_async: as1,
-                },
-                Self::StructMethod {
-                    receiver: r2,
-                    entry_ip: ip2,
-                    total_arity: a2,
-                    is_async: as2,
-                },
-            ) => Rc::ptr_eq(r1, r2) && ip1 == ip2 && a1 == a2 && as1 == as2,
+            (Self::StructMethod(m1), Self::StructMethod(m2)) => {
+                Rc::ptr_eq(&m1.receiver, &m2.receiver)
+                    && m1.entry_ip == m2.entry_ip
+                    && m1.total_arity == m2.total_arity
+                    && m1.is_async == m2.is_async
+            }
             (Self::List(a), Self::List(b)) => *a.borrow() == *b.borrow(),
             (Self::Dict(a), Self::Dict(b)) => *a.borrow() == *b.borrow(),
             (Self::Struct(a), Self::Struct(b)) => {
@@ -1238,19 +1284,16 @@ impl fmt::Debug for Value {
             Self::Byte(b) => write!(f, "{b}"),
             Self::Bytes(b) => write!(f, "Bytes({} bytes)", b.borrow().len()),
             Self::Type(tag) => write!(f, "<type {}>", tag.name()),
-            Self::Range { start, end } => write!(f, "{start}..{end}"),
+            Self::Range(r) => write!(f, "{}..{}", r.start, r.end),
             Self::BoundMethod(b) => {
                 write!(f, "<method {} arity={}>", b.name, b.arity)
             }
-            Self::StructMethod {
-                entry_ip,
-                total_arity,
-                ..
-            } => {
+            Self::StructMethod(m) => {
                 write!(
                     f,
-                    "<struct method @{entry_ip} arity={}>",
-                    total_arity.saturating_sub(1)
+                    "<struct method @{} arity={}>",
+                    m.entry_ip,
+                    m.total_arity.saturating_sub(1)
                 )
             }
             Self::Failure(err) => write!(f, "failure({:?})", err.message),
@@ -1310,11 +1353,11 @@ impl fmt::Display for Value {
             Self::Function { entry_ip, .. } => write!(f, "<fn@{entry_ip}>"),
             Self::Closure(c) => write!(f, "<closure@{}>", c.entry_ip),
             Self::Native(native) => write!(f, "<fn {}>", native.name),
-            Self::StructMethod { entry_ip, .. } => write!(f, "<method@{entry_ip}>"),
+            Self::StructMethod(m) => write!(f, "<method@{}>", m.entry_ip),
             Self::Byte(b) => write!(f, "{b}"),
             Self::Bytes(_) => write!(f, "<bytes>"),
             Self::Type(tag) => write!(f, "{}", tag.name()),
-            Self::Range { start, end } => write!(f, "{start}..{end}"),
+            Self::Range(r) => write!(f, "{}..{}", r.start, r.end),
             Self::Set(items) => {
                 let items = items.borrow();
                 write!(f, "{{")?;

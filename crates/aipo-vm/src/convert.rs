@@ -124,7 +124,7 @@ impl TypeTag {
                 | (Self::List, Value::List(_))
                 | (Self::Dict, Value::Dict(_))
                 | (Self::Bytes, Value::Bytes(_))
-                | (Self::Range, Value::Range { .. })
+                | (Self::Range, Value::Range(_))
                 | (Self::Set, Value::Set(_))
                 | (Self::Sequence, Value::Sequence(_))
                 | (Self::Task, Value::Task(_))
