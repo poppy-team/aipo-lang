@@ -39,20 +39,41 @@ io.println(mensagem) # "Online"
 
 ## Seleção por Padrão (`match ... when`)
 
-O comando `match` permite bifurcar o fluxo comparando uma expressão contra um ou mais padrões por ramo:
+O comando `match` permite bifurcar o fluxo comparando uma expressão contra valores literais, desestruturação de estruturas e variantes de enums:
+
+### Padrões Simples e Guards Condicionais
+Cada braço é introduzido por `when` (nunca `case`). Suporta cláusulas de guarda opcionais com `if <condicao>`:
 
 ```aipo
-let status = "aprovado"
-
-match status {
-    when "pendente" {
-        io.println("Aguardando confirmação...")
+match usuario {
+    when { nome, idade } if idade >= 65 {
+        io.println(f"Sênior: {nome}")
     }
-    when "aprovado", "concluido" {
-        io.println("Operação finalizada com sucesso!")
+    when { nome, idade } if idade >= 18 {
+        io.println(f"Adulto: {nome}")
     }
     else {
-        io.println("Status não reconhecido")
+        io.println("Menor de idade")
+    }
+}
+```
+
+### Casamento de Variantes de Enum e Exaustividade
+Quando o alvo é um `enum`, o compilador impõe checagem estática de exaustividade. Na ausência de um braço `else`, todas as variantes devem ser cobertas:
+
+```aipo
+match estado {
+    when EstadoConexao.Desconectado {
+        io.println("Desconectado")
+    }
+    when EstadoConexao.Tentando(t) {
+        io.println(f"Tentando #{t}")
+    }
+    when EstadoConexao.Conectado { ip, ping_ms } {
+        io.println(f"Conectado a {ip}")
+    }
+    when EstadoConexao.Erro(msg) {
+        io.println(f"Erro: {msg}")
     }
 }
 ```
@@ -138,14 +159,12 @@ struct Cofre {
     var saldo = 0.0
 }
 
-impl Cofre {
-    fn init(saldo_inicial = 0.0) {
-        self.saldo = saldo_inicial
-    }
+Cofre:init(saldo_inicial = 0.0) {
+    self.saldo = saldo_inicial
+}
 
-    invariant {
-        self.saldo >= 0.0
-    }
+Cofre:invariant {
+    self.saldo >= 0.0
 }
 
 let c = Cofre{ saldo: 100.0 }

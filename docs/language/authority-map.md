@@ -75,13 +75,38 @@ ambiguous segment is blocked (no-invention policy).
 
 ## Supersession ledger (extract)
 
+Última atualização: **2026-10-06** (ADR-001 — sintaxe canônica). Para o desenho
+completo e a ordem de implementação, ver
+[`docs/decisions/adr-001-canonical-syntax.md`](../decisions/adr-001-canonical-syntax.md).
+
 | Superseded form | Canonical form | Source |
 |---|---|---|
 | `for` iteration | `each` | Canonical Syntax 2026-09-07 |
-| `where`/`@` field rules | `fixed` + `invariant()` | Canonical Syntax 2026-09-07 |
-| `fn Type.name(...)` associated syntax | `impl Type` + `self`/`self!` | Canonical Syntax 2026-09-07 |
+| `where`/`@` field rules | `invariant()` + campos imutáveis por padrão | Canonical Syntax 2026-09-07 → ADR-001 |
+| `fn Type.name(...)` / `impl Tipo { }` | `Tipo:nome` + `self`/`var self` | ADR-001 2026-10-06 |
+| `satisfy Tipo: Interface` | `#!satisfies` (diretiva de comentário) | ADR-001 2026-10-06 |
+| `div` e `div=` | `//` e `//=` | ADR-001 2026-10-06 |
+| `end` como terminador de bloco | `{ }` exclusivo | ADR-001 2026-10-06 |
+| `self!` (receptor mutável) | `var self` | ADP-012 → ADR-001 2026-10-06 |
+| `nome!` (parâmetro mutável) | `var nome` | ADR-001 2026-10-06 |
+| `then` opcional em bloco | nunca em bloco; sempre no inline | ADR-001 2026-10-06 |
 | `case` | `when` (match) | Language Reference |
-| `try` / `or` / `try … else … end` | `or_else` + `attempt/failed` | Language Reference (Lote 5 / decisão posterior) |
-| `expression else fallback` | `expression or_else fallback` | Language Reference (decisão posterior) |
-| Int as full signed 64-bit | Int = ±(2^53 − 1) | Canonical Syntax 2026-09-10 (numérico) |
-| `T?` beyond signatures/`is` | contracts only in signatures | Language Reference |
+| `try` / `or` / `try … else … end` | `or_else` + `attempt`/`failed` | Language Reference (Lote 5) |
+| `expression else fallback` | `expression or_else fallback` | Language Reference |
+| `fixed` | campo sem `var` (imutável por padrão) | ADP-012 → ADR-001 |
+| Int as full signed 64-bit | Int = ±(2^53 − 1) | Canonical Syntax 2026-09-10 |
+| `T?` além de assinaturas/`is` | contratos só em assinaturas | Language Reference |
+
+### Fontes que prevalecem
+
+Em ordem de autoridade para a **superfície sintática**:
+
+1. **`docs/decisions/adr-001-canonical-syntax.md`** — norma da superfície-alvo
+2. **`SYNTAX.md`** (raiz) — referência canônica, gerada do compilador
+3. **`docs/manual/*`** — narrativa, não define gramática
+4. **`docs/canon/*`** — histórico e decisões datadas; quando contradiz ADR-001, ADR-001 prevalece
+5. **`crates/aipo-{lexer,syntax,ast}`** — o estado *implementado*; enquanto divergirem
+   de ADR-001, a divergência é trabalho pendente (ver `SYNTAX.md` §16), não autoridade
+
+Um documento em (4) ou (5) que afirme `end`, `div`, `impl`, `satisfy` ou `self!`
+como forma canônica está **superseded** por ADR-001.

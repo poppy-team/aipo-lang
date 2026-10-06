@@ -1,0 +1,30 @@
+# Programação assíncrona, blocos sequenciais e combinadores
+import task
+import io
+
+export buscar_dados_combinados
+
+async fn simular_requisicao(url: String, atraso_ms: Int) -> String {
+    task.sleep(atraso_ms)
+    return f"resultado de {url}"
+}
+
+async fn buscar_dados_combinados() -> Dict {
+    # 'await do' executa múltiplos awaits sequenciais com clareza
+    let resultado = await do {
+        let perfil = await simular_requisicao("https://api/perfil", 20)
+        let config = await simular_requisicao("https://api/config", 30)
+        return {
+            "perfil": perfil,
+            "config": config,
+            "timestamp": task.now()
+        }
+    }
+    return resultado
+}
+
+fn main() {
+    let t = task.spawn(buscar_dados_combinados)
+    let final = await t
+    io.println(f"Perfil carregado: {final.perfil}")
+}

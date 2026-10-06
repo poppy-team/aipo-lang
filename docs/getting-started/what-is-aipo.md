@@ -16,26 +16,33 @@ No Aipo, valores possuem tipos concretos e o sistema não realiza conversões ar
 let x = "42"
 let y = 10
 
-// Erro de tipo em tempo de execução:
-// Operador '+' não aplica concatenação entre String e Int
-let z = x + y // Falha explícita!
+# Erro de tipo em tempo de execução:
+# Operador '+' não aplica concatenação entre String e Int
+let z = x + y # Falha explícita!
 ```
 
 Para concatenar ou converter valores, exige-se intenção explícita ou formatação declarada.
 
-### 2. Contratos Estruturais & Invariantes
+### 2. Contratos Estruturais, Invariantes e Enums
 
-Enquanto linguagens tradicionais exigem que você espalhe asserções ou validações manuais em todos os métodos, o Aipo introduz o hook `invariant()` no bloco `impl` da estrutura:
+Enquanto linguagens tradicionais exigem que você espalhe asserções ou validações manuais em todos os métodos, o Aipo introduz o hook `invariant` associado diretamente ao tipo:
 
 ```aipo
 struct Temperature {
-    var celsius = 0.0
+    var celsius: Float = 0.0
 }
 
-impl Temperature {
-    invariant {
-        self.celsius >= -273.15 # Não pode ser inferior ao zero absoluto
-    }
+Temperature:invariant {
+    self.celsius >= -273.15 # Não pode ser inferior ao zero absoluto
+}
+```
+
+Além de structs, o Aipo oferece **enums como tipos de soma fechados** com verificação obrigatória de exaustividade em `match`:
+
+```aipo
+enum ModoOperacao {
+    Manual,
+    Automatico { intervalo_ms: Int },
 }
 ```
 

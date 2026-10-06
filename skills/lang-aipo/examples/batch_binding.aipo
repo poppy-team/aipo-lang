@@ -1,0 +1,60 @@
+# Demonstração de associação em lote com '::' e tipagem em struct
+export Retangulo, calcular_area, calcular_perimetro, escalar
+
+struct Retangulo {
+    largura: Float     # Tipagem de campos opcional, mas fortemente recomendada
+    altura: Float
+}
+
+Retangulo:invariant {
+    self.largura > 0.0
+    self.altura > 0.0
+}
+
+# Funções puras livres (exigência: 'self' como primeiro parâmetro para permitir batch binding)
+fn calcular_area(self) -> Float {
+    return self.largura * self.altura
+}
+
+fn calcular_perimetro(self) -> Float {
+    return 2.0 * (self.largura + self.altura)
+}
+
+# Função livre com receptor mutável
+fn escalar(var self, fator: Float) {
+    if fator <= 0.0 {
+        fail "fator de escala deve ser positivo"
+    }
+    self.largura *= fator
+    self.altura *= fator
+}
+
+# Associação em lote com '::': promove as funções para métodos de Retangulo
+Retangulo::[calcular_area, calcular_perimetro, escalar]
+
+#!test("associação em lote funciona como método e como função livre")
+fn test_batch_binding() {
+    var ret = Retangulo{ largura: 10.0, altura: 5.0 }
+
+    # 1. Chamada via método (promovido por '::')
+    let a1 = ret.calcular_area()
+    let p1 = ret.calcular_perimetro()
+
+    # 2. Chamada como função livre original (preservada)
+    let a2 = calcular_area(ret)
+    let p2 = calcular_perimetro(ret)
+
+    if a1 != a2 or a1 != 50.0 {
+        fail "cálculo de área divergente"
+    }
+
+    if p1 != p2 or p1 != 30.0 {
+        fail "cálculo de perímetro divergente"
+    }
+
+    # 3. Método mutável promovido
+    ret.escalar(2.0)
+    if ret.largura != 20.0 or ret.altura != 10.0 {
+        fail "método mutável promovido falhou na execução"
+    }
+}

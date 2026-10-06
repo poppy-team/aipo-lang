@@ -59,30 +59,28 @@ struct Pendulum {
     angular_velocity
 }
 
-impl Pendulum {
-    init(length, gravity, angle, angular_velocity) {
-        self.length = length
-        self.gravity = gravity
-        self.angle = angle
-        self.angular_velocity = angular_velocity
-    }
+Pendulum:init(length, gravity, angle, angular_velocity) {
+    self.length = length
+    self.gravity = gravity
+    self.angle = angle
+    self.angular_velocity = angular_velocity
+}
 
-    fn update(self, delta_time) {
-        # Angular acceleration: (-g / L) * sin(theta)
-        let acceleration = (-self.gravity / self.length) * math.sin(self.angle)
-        
-        let new_vel = self.angular_velocity + acceleration * delta_time
-        let new_angle = self.angle + new_vel * delta_time
-        
-        # Keep angle bounded within [-pi, pi]
-        let bounded_angle = math.clamp(new_angle, -math.pi, math.pi)
-        
-        return Pendulum{
-            length: self.length,
-            gravity: self.gravity,
-            angle: bounded_angle,
-            angular_velocity: new_vel,
-        }
+Pendulum:update(delta_time) {
+    # Angular acceleration: (-g / L) * sin(theta)
+    let acceleration = (-self.gravity / self.length) * math.sin(self.angle)
+    
+    let new_vel = self.angular_velocity + acceleration * delta_time
+    let new_angle = self.angle + new_vel * delta_time
+    
+    # Keep angle bounded within [-pi, pi]
+    let bounded_angle = math.clamp(new_angle, -math.pi, math.pi)
+    
+    return Pendulum{
+        length: self.length,
+        gravity: self.gravity,
+        angle: bounded_angle,
+        angular_velocity: new_vel,
     }
 }
 

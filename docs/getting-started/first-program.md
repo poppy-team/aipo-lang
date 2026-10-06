@@ -33,47 +33,45 @@ Vamos criar um programa que modela uma conta bancária com invariante de saldo p
 ```aipo
 # conta.aipo
 struct Conta {
-    titular
-    numero
-    var saldo = 0.0
+    titular: String
+    numero: Int
+    var saldo: Float = 0.0
 }
 
-impl Conta {
-    init(titular, numero = 0, saldo = 0.0) {
-        self.titular = titular
-        self.numero = numero
-        self.saldo = saldo
-    }
+Conta:init(titular: String, numero: Int = 0, saldo: Float = 0.0) {
+    self.titular = titular
+    self.numero = numero
+    self.saldo = saldo
+}
 
-    # Invariante: executada em todas as criações e mutações de campos
-    invariant {
-        self.saldo >= 0.0
-    }
+# Invariante: executada em todas as criações e mutações de campos
+Conta:invariant {
+    self.saldo >= 0.0
+}
 
-    fn depositar(var self, valor: Float) {
-        if valor <= 0.0 {
-            return fail("Valor de depósito deve ser positivo")
-        }
-        self.saldo += valor
+Conta:depositar(var self, valor: Float) {
+    if valor <= 0.0 {
+        return fail("Valor de depósito deve ser positivo")
     }
+    self.saldo += valor
+}
 
-    fn sacar(var self, valor: Float) {
-        if valor <= 0.0 {
-            return fail("Valor de saque deve ser positivo")
-        }
-        
-        # Tenta aplicar a operação. Se violar self.saldo >= 0.0,
-        # o bloco attempt reverte automaticamente a mutação!
-        attempt {
-            self.saldo -= valor
-        } failed erro {
-            return fail("Saque recusado: saldo insuficiente")
-        }
+Conta:sacar(var self, valor: Float) {
+    if valor <= 0.0 {
+        return fail("Valor de saque deve ser positivo")
+    }
+    
+    # Tenta aplicar a operação. Se violar self.saldo >= 0.0,
+    # o bloco attempt reverte automaticamente a mutação!
+    attempt {
+        self.saldo -= valor
+    } failed erro {
+        return fail("Saque recusado: saldo insuficiente")
     }
 }
 
 # Instanciando a conta usando dois-pontos (:) consistente
-let c = Conta{ titular: "Maria Silva", numero: 1042, saldo: 150.0 }
+var c = Conta{ titular: "Maria Silva", numero: 1042, saldo: 150.0 }
 
 io.println(f"Conta criada para: {c.titular}")
 io.println(f"Saldo inicial: {c.saldo}")
