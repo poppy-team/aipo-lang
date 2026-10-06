@@ -1,0 +1,170 @@
+# ui_test.aipo — unit tests for the aipo.ui public facade
+#
+# This suite is the guard that was missing while the package sat outside the
+# grammar: no test compiled these sources, so syntax drift went unnoticed.
+
+import aipo.ui as ui
+
+test("layout tags build the canonical token") do
+    expect.equal(ui.align_start().value, "start")
+    expect.equal(ui.align_center().value, "center")
+    expect.equal(ui.align_end().value, "end")
+    expect.equal(ui.align_stretch().value, "stretch")
+    expect.equal(ui.align_baseline().value, "baseline")
+
+    expect.equal(ui.justify_start().value, "start")
+    expect.equal(ui.justify_space_between().value, "space-between")
+    expect.equal(ui.justify_space_around().value, "space-around")
+    expect.equal(ui.justify_space_evenly().value, "space-evenly")
+
+    expect.equal(ui.direction_row().value, "row")
+    expect.equal(ui.direction_column().value, "column")
+    expect.equal(ui.direction_row_reverse().value, "row-reverse")
+    expect.equal(ui.direction_column_reverse().value, "column-reverse")
+
+    expect.equal(ui.overflow_visible().value, "visible")
+    expect.equal(ui.overflow_hidden().value, "hidden")
+    expect.equal(ui.overflow_scroll().value, "scroll")
+end
+
+test("color constructors and palette") do
+    let opaque = ui.rgb(10, 20, 30)
+    expect.equal(opaque.r, 10)
+    expect.equal(opaque.g, 20)
+    expect.equal(opaque.b, 30)
+    expect.approx(opaque.a, 1.0, 0.001)
+
+    let faded = ui.rgba(1, 2, 3, 0.5)
+    expect.equal(faded.r, 1)
+    expect.approx(faded.a, 0.5, 0.001)
+
+    expect.equal(ui.white().r, 255)
+    expect.equal(ui.black().r, 0)
+    expect.approx(ui.transparent().a, 0.0, 0.001)
+
+    # hex strips the leading marker; a 6-digit body reaches the host delegate
+    expect.equal(ui.hex("#ffffff").r, 255)
+end
+
+test("a node tree is built from the block body") do
+    let root = ui.Box(
+        background = ui.white(),
+        body = fn () {
+            ui.Text("hello", 20.0, "bold")
+            ui.Spacer()
+        }
+    )
+
+    expect.equal(root.kind, "Box")
+    expect.equal(root.children.len(), 2)
+    expect.equal(root.children[0].kind, "Text")
+    expect.equal(root.children[0].props["content"], "hello")
+    expect.approx(root.children[0].props["font_size"], 20.0, 0.001)
+    expect.equal(root.children[1].kind, "Spacer")
+    expect.equal(root.children[1].props["flex_grow"], 1)
+
+    # layout_rect is a Rect, not none, so the renderer can read geometry
+    expect.approx(root.layout_rect.width, 0.0, 0.001)
+
+    # ids are unique across the collector
+    expect.true (root.children[0].id != root.children[1].id)
+end
+
+test("an unset prop stays none instead of falling back") do
+    # Box writes `align_items` as none when no alignment is given. A stored
+    # none must not be replaced by the layout default.
+    let bare = ui.Box()
+    expect.none (bare.props["align_items"])
+
+    let aligned = ui.Box(align = "center")
+    expect.equal(aligned.props["align_items"], "center")
+end
+
+test("text falls back to the palette white") do
+    let plain = ui.Text("x")
+    expect.equal(plain.props["color"].r, 255)
+
+    let custom = ui.Text("x", 14.0, "normal", ui.rgb(9, 9, 9))
+    expect.equal(custom.props["color"].r, 9)
+end
+
+test("layout primitives record their own style") do
+    let row = ui.Row(gap = 8, justify = "space-between")
+    expect.equal(row.kind, "Row")
+    expect.equal(row.props["flex_direction"], "row")
+    expect.equal(row.props["gap"], 8)
+    expect.equal(row.props["justify_content"], "space-between")
+
+    let column = ui.Column()
+    expect.equal(column.props["flex_direction"], "column")
+
+    let area = ui.ScrollArea(direction = "horizontal")
+    expect.equal(area.props["overflow"], "scroll")
+    expect.equal(area.props["scroll_direction"], "horizontal")
+
+    let stack = ui.Stack()
+    expect.equal(stack.props["display"], "stack")
+end
+
+test("widget primitives carry their props") do
+    let button = ui.Button("Save", variant = "danger", disabled = true)
+    expect.equal(button.kind, "Button")
+    expect.equal(button.props["label"], "Save")
+    expect.equal(button.props["variant"], "danger")
+    expect.equal(button.props["disabled"], true)
+
+    let input = ui.TextInput("hi", "type here")
+    expect.equal(input.props["value"], "hi")
+    expect.equal(input.props["placeholder"], "type here")
+
+    let slider = ui.Slider(5.0, 0.0, 10.0, 0.5)
+    expect.approx(slider.props["value"], 5.0, 0.001)
+    expect.approx(slider.props["max"], 10.0, 0.001)
+    expect.approx(slider.props["step"], 0.5, 0.001)
+
+    let check = ui.Checkbox(true, "Accept")
+    expect.equal(check.props["checked"], true)
+    expect.equal(check.props["label"], "Accept")
+
+    let bar = ui.ProgressBar(0.25, 4.0)
+    expect.approx(bar.props["progress"], 0.25, 0.001)
+    expect.approx(bar.props["height"], 4.0, 0.001)
+end
+
+test("named arguments reach the underlying node") do
+    let node = ui.Text("t", align = "center")
+    expect.equal(node.props["text_align"], "center")
+end
+
+# --- MVU fixture -----------------------------------------------------------
+# `struct` and `fn` are top-level items, so the MVU harness lives at module
+# scope and the test below only drives it.
+
+struct Model {
+    var count = 0
+}
+
+fn bump(m, msg) - > Model{
+    var next = Model{ count: m.count }
+    if msg == "increment" {
+        next.count += 1
+    }
+    return next
+}
+
+# `body = fn() { ... }` and not a trailing block: mixing named arguments with a
+# trailing block skips default-filling (see the syntax drift journal entry).
+fn view(m, dispatch) {
+    return ui.Column(gap = 4, body = fn () {
+            ui.Text(f"count={m.count}")
+        })
+}
+
+# -----------------------------------------------------------------------------
+
+test("an MVU mount builds the tree without a host bridge") do
+    # render_frame assigns the view result to root_node; before that was wired
+    # the descriptor pass received `none` and faulted.
+    ui.mount_desktop("test", 320, 240, Model{ count = 7 }, bump, view)
+    expect.true (true)
+end

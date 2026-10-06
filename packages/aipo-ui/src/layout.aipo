@@ -1,7 +1,7 @@
 # layout.aipo — Node collector and Taffy layout bridge descriptors
 # Part of `aipo.ui`
 
-import.types as types
+import types as types_mod
 
 var _node_id_counter = 0
 var _parent_stack = []
@@ -11,19 +11,31 @@ fn next_node_id() - > Int{
     return _node_id_counter
 }
 
-fn register_child(child: types.UINode) {
+# Read a prop with a fallback.
+#
+# Aipo's `dict.get` takes a single argument and returns `none` for a missing
+# key, so it cannot express "key with default". This helper keeps that
+# distinction: a key that is explicitly stored as `none` still yields `none`.
+fn prop_of(node, key, fallback) {
+    if node.props.has(key) {
+        return node.props[key]
+    }
+    return fallback
+}
+
+fn register_child(child: UINode) {
     if _parent_stack.len() > 0 {
         let parent = _parent_stack.last()
         parent.children.add(child)
     }
 }
 
-fn push_parent(node: types.UINode) {
+fn push_parent(node: UINode) {
     _parent_stack.add(node)
 }
 
-fn pop_parent() - > types.UINode{
-    return _parent_stack.pop()
+fn pop_parent() - > UINode{
+    return _parent_stack.remove_last()
 }
 
 fn reset_collector() {
@@ -32,19 +44,19 @@ fn reset_collector() {
 }
 
 # Convert UINode hierarchy into Taffy-compatible layout specification
-fn serialize_to_taffy_descriptor(node: types.UINode) - > Dict{
+fn serialize_to_taffy_descriptor(node: UINode) - > Dict{
     let style = {
-        "display": node.props.get("display", "flex"),
-        "flex_direction": node.props.get("flex_direction", "column"),
-        "align_items": node.props.get("align_items", "stretch"),
-        "justify_content": node.props.get("justify_content", "flex-start"),
-        "gap": node.props.get("gap", 0),
-        "padding": node.props.get("padding", 0),
-        "margin": node.props.get("margin", 0),
-        "width": node.props.get("width", "auto"),
-        "height": node.props.get("height", "auto"),
-        "flex_grow": node.props.get("flex_grow", 0),
-        "flex_shrink": node.props.get("flex_shrink", 1)
+        "display": prop_of(node, "display", "flex"),
+        "flex_direction": prop_of(node, "flex_direction", "column"),
+        "align_items": prop_of(node, "align_items", "stretch"),
+        "justify_content": prop_of(node, "justify_content", "flex-start"),
+        "gap": prop_of(node, "gap", 0),
+        "padding": prop_of(node, "padding", 0),
+        "margin": prop_of(node, "margin", 0),
+        "width": prop_of(node, "width", "auto"),
+        "height": prop_of(node, "height", "auto"),
+        "flex_grow": prop_of(node, "flex_grow", 0),
+        "flex_shrink": prop_of(node, "flex_shrink", 1)
     }
 
     var serialized_children = []
@@ -59,3 +71,6 @@ fn serialize_to_taffy_descriptor(node: types.UINode) - > Dict{
         "children": serialized_children
     }
 }
+
+export next_node_id, prop_of, register_child, push_parent, pop_parent
+export reset_collector, serialize_to_taffy_descriptor

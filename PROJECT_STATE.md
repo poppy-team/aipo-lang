@@ -196,6 +196,13 @@
   - **Demonstração Completa (`animation_and_particles.aipo`)**: Exemplo executável em `packages/aipo-game/examples/animation_and_particles.aipo` integrando ator animado (ciclos `idle`, `run` e `attack`), poeira de passos, faíscas e explosões com moedas e fumaça.
   - **Testes e Qualidade**: 100% dos 11 testes em `crates/aipo-game-host` e suíte de testes em Aipo puro `packages/aipo-game/tests/game_test.aipo` aprovados com zero warnings.
 
+  - **Referência canônica de sintaxe e reparação de `aipo.ui`**:
+    - `SYNTAX.md` (raiz, normativo): superfície sintática extraída do compilador — 46 keywords, 36 operadores, as duas terminações de bloco e os limites do ADP-005. Fecha as lacunas do manual (`fixed`, `end`, `satisfy`, `div`, `do`, e o fato de `#` ser o único comentário enquanto `//` é divisão inteira).
+    - `packages/aipo.ui` estava com 148 erros de parse nos 7 módulos e nenhum gate o compilava. Reparado e coberto por 9 testes em `packages/aipo-ui/tests/ui_test.aipo`, executados no CI por `crates/aipo-cli/tests/package_suites.rs`.
+    - Quatro defeitos de compilador/VM documentados com reprodução mínima em `docs/journal/2026-10-05-syntax-drift.md`: **D1** argumento nomeado + bloco trailer não preenche defaults; **D2** closure aninhado capturando upvalue dentro de closure invocado causa `operand stack underflow`; **D3** `aipo check` não valida existência de membro; **D4** aspas aninhadas quebram interpolação f-string.
+    - **D1 e D2 bloqueiam o caminho interativo do `aipo.ui`**: `ui.Button(on_click = ...)` aninhado dentro de um closure `body` ainda não é seguro. O exemplo `packages/aipo-ui/examples/counter.aipo` demonstra a árvore sem filhos interativos até que sejam corrigidos.
+    - Drift pré-existente de `aipo fmt` em 37 de 45 arquivos de pacote não foi tocado neste ramo, para não enterrar a reparação sob um diff não relacionado.
+
 ## Next action
 
 Todos os subsistemas essenciais do runtime de jogos (`aipo.game`) foram finalizados e testados com sucesso:
