@@ -1067,23 +1067,41 @@ impl IrBuilder {
                 let mut fail_jumps: Vec<usize> = Vec::new();
                 let mut arm_starts: Vec<usize> = Vec::new();
 
-                for (patterns, body) in &s.when_arms {
+                for arm in &s.when_arms {
                     // Remember where this arm's tests begin so a previous arm that matched
                     // nothing can fall through to them instead of skipping straight to `else`.
                     arm_starts.push(out.len());
-                    let mut test_jumps: Vec<usize> = Vec::new();
+                    let mut test_jumps: Vec<Option<usize>> = Vec::new();
                     let mut matched_jumps: Vec<usize> = Vec::new();
                     let mut test_starts: Vec<usize> = Vec::new();
 
-                    for pattern in patterns {
+                    // A destructuring pattern is a shape match: it cannot fail, so it emits no
+                    // test. Its bindings are established once the arm is selected, together
+                    // with the other destructuring names of the same arm.
+                    let mut bound_fields: Vec<String> = Vec::new();
+                    for pattern in &arm.patterns {
                         test_starts.push(out.len());
-                        out.push(CoreInst::Load(target_name.clone(), s.span));
-                        self.build_expr(pattern, out);
-                        out.push(CoreInst::Binary(BinaryOp::Equal, s.span));
-                        test_jumps.push(out.len());
-                        out.push(CoreInst::JumpIfFalse(0, s.span));
-                        matched_jumps.push(out.len());
-                        out.push(CoreInst::Jump(0, s.span));
+                        match pattern {
+                            HirMatchPattern::Value(pattern) => {
+                                out.push(CoreInst::Load(target_name.clone(), s.span));
+                                self.build_expr(pattern, out);
+                                out.push(CoreInst::Binary(BinaryOp::Equal, s.span));
+                                let jump = out.len();
+                                out.push(CoreInst::JumpIfFalse(0, s.span));
+                                test_jumps.push(Some(jump));
+                                matched_jumps.push(out.len());
+                                out.push(CoreInst::Jump(0, s.span));
+                            }
+                            HirMatchPattern::Destructure(fields) => {
+                                bound_fields.extend(fields.iter().cloned());
+                                test_jumps.push(None);
+                                // It cannot fail, so it jumps straight to the body where
+                                // its bindings are established. Without this the arm is
+                                // unreachable and the `else` branch always runs.
+                                matched_jumps.push(out.len());
+                                out.push(CoreInst::Jump(0, s.span));
+                            }
+                        }
                     }
 
                     // No pattern matched: continue with the next arm.
@@ -1092,6 +1110,7 @@ impl IrBuilder {
                     fail_jumps.push(fail);
 
                     for (idx, jump) in test_jumps.iter().enumerate() {
+                        let Some(jump) = jump else { continue };
                         let next = test_starts.get(idx + 1).copied().unwrap_or(fail);
                         out[*jump] = CoreInst::JumpIfFalse(next as isize, s.span);
                     }
@@ -1101,7 +1120,28 @@ impl IrBuilder {
                         out[jump] = CoreInst::Jump(body_start as isize, s.span);
                     }
 
-                    self.build_block(body, out);
+                    // The selected arm binds its destructured fields before the guard runs, so
+                    // the guard can test them. `GetField` on a missing field is the same
+                    // runtime fault as `value.field`, which is what makes this a shape match.
+                    for field in &bound_fields {
+                        self.fn_stack
+                            .last_mut()
+                            .expect("a function context is always active")
+                            .declare_binding(field);
+                        out.push(CoreInst::Load(target_name.clone(), s.span));
+                        out.push(CoreInst::GetField(field.clone(), s.span));
+                        out.push(CoreInst::Store(field.clone(), s.span));
+                    }
+
+                    // A `false` guard rejects the arm and continues with the next one.
+                    if let Some(guard) = &arm.guard {
+                        self.build_condition(guard, out);
+                        let guard_jump = out.len();
+                        out.push(CoreInst::JumpIfFalse(fail as isize, s.span));
+                        let _ = guard_jump;
+                    }
+
+                    self.build_block(&arm.body, out);
                     end_jumps.push(out.len());
                     out.push(CoreInst::Jump(0, s.span));
                 }
@@ -1487,7 +1527,12 @@ impl IrBuilder {
                     when_arms: s
                         .when_arms
                         .iter()
-                        .map(|(patterns, body)| (patterns.clone(), desugar_block(body, async_fns)))
+                        .map(|arm| HirMatchArm {
+                            patterns: arm.patterns.clone(),
+                            guard: arm.guard.clone(),
+                            body: desugar_block(&arm.body, async_fns),
+                            span: arm.span,
+                        })
                         .collect(),
                     else_arm: s
                         .else_arm
@@ -1956,6 +2001,29 @@ impl IrBuilder {
                 self.build_expr(inner, out);
                 out.push(CoreInst::Await(*span));
             }
+            HirExpr::Try(inner, span) => {
+                // `expr?` evaluates the operand and then runs the same check the
+                // VM already performs at every statement boundary: an unconsumed
+                // `Failure` unwinds to the nearest handler or caller, while any
+                // other value stays on the stack for the enclosing expression.
+                self.build_expr(inner, out);
+                out.push(CoreInst::PropagateFailure(*span));
+            }
+            HirExpr::With(base, updates, span) => {
+                // Functional update: clone the base, then overwrite just the named fields.
+                // `CloneStruct` is what makes this non-destructive — structs are shared
+                // `Rc<RefCell<..>>`, so assigning through the base would mutate it.
+                self.build_expr(base, out);
+                out.push(CoreInst::CloneStruct(*span));
+                for (name, value) in updates {
+                    // `SetField` pops the value then the receiver, so the receiver is
+                    // duplicated back onto the stack for the next override.
+                    out.push(CoreInst::Dup(*span));
+                    self.build_value(value, out);
+                    out.push(CoreInst::SetField(name.clone(), *span));
+                }
+                self.mark_field_mutation(*span, out);
+            }
             HirExpr::Fn(f) => {
                 let captures = self.enclosing_captures(f);
                 let name = self.build_closure(f, &captures, None);
@@ -1999,11 +2067,16 @@ fn collect_free_stmt(stmt: &HirStmt, seen: &mut HashSet<String>, out: &mut Vec<S
         }
         HirStmt::Match(s) => {
             collect_free_expr(&s.target, seen, out);
-            for (patterns, body) in &s.when_arms {
-                for pattern in patterns {
-                    collect_free_expr(pattern, seen, out);
+            for arm in &s.when_arms {
+                for pattern in &arm.patterns {
+                    if let HirMatchPattern::Value(expr) = pattern {
+                        collect_free_expr(expr, seen, out);
+                    }
                 }
-                for stmt in body {
+                if let Some(guard) = &arm.guard {
+                    collect_free_expr(guard, seen, out);
+                }
+                for stmt in &arm.body {
                     collect_free_stmt(stmt, seen, out);
                 }
             }
@@ -2089,7 +2162,13 @@ fn collect_free_expr(expr: &HirExpr, seen: &mut HashSet<String>, out: &mut Vec<S
             collect_free_expr(l, seen, out);
             collect_free_expr(r, seen, out);
         }
-        HirExpr::Await(inner, _) => collect_free_expr(inner, seen, out),
+        HirExpr::Await(inner, _) | HirExpr::Try(inner, _) => collect_free_expr(inner, seen, out),
+        HirExpr::With(base, updates, _) => {
+            collect_free_expr(base, seen, out);
+            for (_, value) in updates {
+                collect_free_expr(value, seen, out);
+            }
+        }
         HirExpr::Call(callee, args, _) => {
             collect_free_expr(callee, seen, out);
             for arg in args {

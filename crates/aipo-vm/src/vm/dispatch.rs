@@ -117,6 +117,38 @@ impl Vm {
                 let v = self.peek()?.clone();
                 self.push(v)?;
             }
+            OpCode::CloneStruct => {
+                // Functional update (`base with { ... }`). A `Failure` propagates instead of
+                // faulting, so `f()? with { x: 1 }` reaches the handler rather than reporting a
+                // type mismatch on a value that was never a struct.
+                let value = self.peek()?;
+                if value.is_failure() {
+                    let failure = self.pop()?;
+                    self.handle_failure(failure)?;
+                    return Ok(false);
+                }
+
+                let instance = match value {
+                    Value::Struct(rc) => rc.borrow().clone(),
+                    other => {
+                        return Err(VmFault::TypeMismatch {
+                            expected: "struct".to_string(),
+                            actual: other.type_name().to_string(),
+                        }
+                        .into())
+                    }
+                };
+                let copied = Rc::new(RefCell::new(StructInstance {
+                    under_construction: false,
+                    ..instance
+                }));
+                let slot = self
+                    .stack
+                    .len()
+                    .checked_sub(1)
+                    .ok_or(VmFault::StackUnderflow)?;
+                self.stack[slot] = Value::Struct(copied);
+            }
             OpCode::GetLocal => {
                 let slot = self.read_u16(module)? as usize;
                 let base = self.frame_base;
@@ -516,6 +548,17 @@ impl Vm {
                 // Publication point: the field outlives the assignment's scope.
                 self.publish_check(&new_val, || format!("field '{field_name}'"))?;
 
+                // Self-reference cycle guard: storing a struct into its own field would
+                // create a cycle the reference counter cannot collect.
+                if target.is_same_allocation(&new_val) {
+                    let failure = Value::failure_with_payload(
+                        "cannot store a struct into its own field: self-referential cycle",
+                        Value::String(std::rc::Rc::new("cycle".to_string())),
+                    );
+                    self.handle_failure(failure)?;
+                    return Ok(false);
+                }
+
                 if let Value::Struct(inst) = &target {
                     // Canon applies a guarded update provisionally and verifies it at the end
                     // of the enclosing mutable operation, so the frame-entry value is kept for
@@ -709,6 +752,17 @@ impl Vm {
                 }
                 // Publication point: the stored element outlives the assignment's scope.
                 self.publish_check(&new_val, || "an indexed element".to_string())?;
+
+                // Self-reference cycle guard: storing a container into itself would create
+                // a cycle the reference counter cannot collect.
+                if target.is_same_allocation(&new_val) {
+                    let failure = Value::failure_with_payload(
+                        "cannot store a collection into itself: self-referential cycle",
+                        Value::String(std::rc::Rc::new("cycle".to_string())),
+                    );
+                    self.handle_failure(failure)?;
+                    return Ok(false);
+                }
 
                 match (&target, &index) {
                     (Value::List(l), Value::Int(i)) => {

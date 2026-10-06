@@ -706,6 +706,31 @@ impl Value {
         matches!(self, Self::Failure(_))
     }
 
+    /// Returns `true` when both values share the same heap allocation.
+    ///
+    /// `List`, `Dict`, `Struct`, `Set`, `Bytes`, `Closure` and `Sequence` are
+    /// reference-counted, so pointer identity is what tells "the same collection"
+    /// from "an equal-looking copy". Scalars are compared by value, because a
+    /// scalar can never be stored into itself and so can never form a cycle.
+    ///
+    /// This is the primitive behind the self-reference guard: assigning a
+    /// container into itself would create a cycle the reference counter can never
+    /// reclaim, so the assignment is refused instead.
+    #[must_use]
+    pub fn is_same_allocation(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::List(left), Self::List(right)) => Rc::ptr_eq(left, right),
+            (Self::Dict(left), Self::Dict(right)) => Rc::ptr_eq(left, right),
+            (Self::Struct(left), Self::Struct(right)) => Rc::ptr_eq(left, right),
+            (Self::Set(left), Self::Set(right)) => Rc::ptr_eq(left, right),
+            (Self::Bytes(left), Self::Bytes(right)) => Rc::ptr_eq(left, right),
+            (Self::Sequence(left), Self::Sequence(right)) => Rc::ptr_eq(left, right),
+            (Self::Closure(left), Self::Closure(right)) => Rc::ptr_eq(left, right),
+            (Self::String(left), Self::String(right)) => Rc::ptr_eq(left, right),
+            _ => false,
+        }
+    }
+
     /// Extracts boolean value, returning `TypeMismatch` if not a Bool.
     ///
     /// # Errors

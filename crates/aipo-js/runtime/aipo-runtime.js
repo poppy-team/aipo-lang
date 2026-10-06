@@ -4606,6 +4606,16 @@ function stepFn(m) {
     case 'PopHandler': m.handlers.pop(); break;
     case 'Pop': mPop(m); break;
     case 'Dup': mPush(m, mPeek(m)); break;
+    case 'CloneStruct': {
+      // Functional update (`base with { ... }`). The value is replaced in place so the
+      // copy — not the base — receives the following SetField overrides.
+      const v = mPeek(m);
+      if (isFailure(v)) { mPop(m); handleFailure(m, v); break; }
+      if (v.t !== 'struct') return typeMismatch('struct instance', typeName(v));
+      const i = m.stack.length - 1;
+      m.stack[i] = vStruct(v.type, v.fields.map((f) => [f[0], f[1]]), new Set(v.fixed), false);
+      break;
+    }
     case 'GetField': {
       const t = mPop(m);
       mPush(m, doGetField(m, t, inst.f));

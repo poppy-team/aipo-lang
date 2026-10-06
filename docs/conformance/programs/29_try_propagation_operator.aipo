@@ -1,0 +1,45 @@
+# `expr?` evaluates its operand, propagates a `Failure` to the nearest
+# `attempt` handler (or the caller when there is none), and otherwise yields the
+# value unchanged. It is legal in any expression position, and chains postfix
+# like `a?.b?` does not, because `?` binds tighter than every binary operator.
+fn parse_age(text) {
+    let age = Int(text) or_else -1
+    if age < 0 {
+        fail ("not an age: " + text)
+    }
+    return age
+}
+
+fn double_age(text) {
+    let age = parse_age(text)?
+    return age * 2
+}
+
+attempt {
+    io.println(String(double_age("21")))
+} failed err {
+    io.println("caught: " + err.message)
+}
+
+attempt {
+    io.println(String(double_age("nope")))
+} failed err {
+    io.println("caught: " + err.message)
+}
+
+# Without an enclosing handler the `Failure` reaches the caller, which is where
+# the ordinary statement-boundary propagation takes it.
+fn double_age_unhandled(text) {
+    let age = parse_age(text)?
+    return age * 2
+}
+
+fn caller_unhandled(text) {
+    io.println(String(double_age_unhandled(text)))
+}
+
+attempt {
+    caller_unhandled("7")
+} failed err {
+    io.println("caught: " + err.message)
+}

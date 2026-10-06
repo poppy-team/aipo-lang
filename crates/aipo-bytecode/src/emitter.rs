@@ -516,6 +516,10 @@ impl BytecodeEmitter {
                 self.spans.push((offset, *span));
                 self.code.push(OpCode::Dup as u8);
             }
+            CoreInst::CloneStruct(span) => {
+                self.spans.push((offset, *span));
+                self.code.push(OpCode::CloneStruct as u8);
+            }
             CoreInst::GetField(field, span) => {
                 self.spans.push((offset, *span));
                 let idx = self.intern_name(field);

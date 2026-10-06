@@ -224,13 +224,17 @@ name = "aipo-ir"
 version = "0.1.0"
 dependencies = [
  "aipo-ast",
+ "aipo-bytecode",
  "aipo-diagnostics",
  "aipo-hir",
  "aipo-lexer",
  "aipo-sema",
  "aipo-source",
  "aipo-syntax",
+ "aipo-testkit",
+ "aipo-vm",
  "serde",
+ "unicode-normalization",
 ]
 
 [[package]]

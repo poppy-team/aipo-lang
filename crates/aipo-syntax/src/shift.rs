@@ -158,6 +158,24 @@ pub fn shift_expr(expr: &Expr, delta: usize) -> Expr {
         Expr::Await(inner, span) => {
             Expr::Await(Box::new(shift_expr(inner, delta)), shifted(*span, delta))
         }
+        Expr::Try(inner, span) => {
+            Expr::Try(Box::new(shift_expr(inner, delta)), shifted(*span, delta))
+        }
+        Expr::With(base, with) => Expr::With(
+            Box::new(shift_expr(base, delta)),
+            WithExpr {
+                fields: with
+                    .fields
+                    .iter()
+                    .map(|field| ConstructField {
+                        name: field.name.as_ref().map(|name| shift_ident(name, delta)),
+                        value: shift_expr(&field.value, delta),
+                        span: shifted(field.span, delta),
+                    })
+                    .collect(),
+                span: shifted(with.span, delta),
+            },
+        ),
     }
 }
 
@@ -207,11 +225,24 @@ fn shift_stmt(stmt: &Stmt, delta: usize) -> Stmt {
             when_arms: match_stmt
                 .when_arms
                 .iter()
-                .map(|(patterns, body)| {
-                    (
-                        patterns.iter().map(|p| shift_expr(p, delta)).collect(),
-                        shift_stmts(body, delta),
-                    )
+                .map(|arm| MatchArm {
+                    patterns: arm
+                        .patterns
+                        .iter()
+                        .map(|pattern| match pattern {
+                            MatchPattern::Value(expr) => {
+                                MatchPattern::Value(shift_expr(expr, delta))
+                            }
+                            MatchPattern::Destructure(fields) => {
+                                MatchPattern::Destructure(
+                                    fields.iter().map(|f| shift_ident(f, delta)).collect(),
+                                )
+                            }
+                        })
+                        .collect(),
+                    guard: arm.guard.as_ref().map(|expr| shift_expr(expr, delta)),
+                    body: shift_stmts(&arm.body, delta),
+                    span: shifted(arm.span, delta),
                 })
                 .collect(),
             else_arm: match_stmt

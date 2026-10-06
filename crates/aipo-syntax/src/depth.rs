@@ -102,11 +102,16 @@ fn push_stmt_children<'a>(stack: &mut Vec<Work<'a>>, stmt: &'a Stmt, depth: usiz
         }
         Stmt::Match(match_stmt) => {
             stack.push(Work::Expr(&match_stmt.target, depth));
-            for (patterns, body) in &match_stmt.when_arms {
-                for pattern in patterns {
-                    stack.push(Work::Expr(pattern, depth));
+            for arm in &match_stmt.when_arms {
+                for pattern in &arm.patterns {
+                    if let aipo_ast::MatchPattern::Value(pattern) = pattern {
+                        stack.push(Work::Expr(pattern, depth));
+                    }
                 }
-                push_stmts(stack, body, depth);
+                if let Some(guard) = &arm.guard {
+                    stack.push(Work::Expr(guard, depth));
+                }
+                push_stmts(stack, &arm.body, depth);
             }
             if let Some(body) = &match_stmt.else_arm {
                 push_stmts(stack, body, depth);
@@ -204,8 +209,14 @@ fn push_expr_children<'a>(stack: &mut Vec<Work<'a>>, expr: &'a Expr, depth: usiz
             stack.push(Work::Expr(then_value, depth));
             stack.push(Work::Expr(else_value, depth));
         }
-        Expr::Await(inner, _) => {
+        Expr::Await(inner, _) | Expr::Try(inner, _) => {
             stack.push(Work::Expr(inner, depth));
+        }
+        Expr::With(base, with) => {
+            stack.push(Work::Expr(base, depth));
+            for field in &with.fields {
+                stack.push(Work::Expr(&field.value, depth));
+            }
         }
     }
 }

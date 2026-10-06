@@ -122,6 +122,7 @@ fn inst_to_json(inst: &CoreInst) -> Json {
         CoreInst::JumpIfFalse(t, _) => json!({"op":"JumpIfFalse","t": target_usize(*t)}),
         CoreInst::Pop(_) => json!({"op":"Pop"}),
         CoreInst::Dup(_) => json!({"op":"Dup"}),
+        CoreInst::CloneStruct(_) => json!({"op":"CloneStruct"}),
         CoreInst::GetField(f, _) => json!({"op":"GetField","f": f}),
         CoreInst::SetField(f, _) => json!({"op":"SetField","f": f}),
         CoreInst::GetIndex(_) => json!({"op":"GetIndex"}),

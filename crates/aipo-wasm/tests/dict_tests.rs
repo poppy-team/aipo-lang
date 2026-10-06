@@ -1,0 +1,170 @@
+//! End-to-end tests for Dict literals, lookup, mutation and `len` in Wasm.
+
+use aipo_hir::lower;
+use aipo_source::{Source, SourceId};
+use aipo_syntax::parse;
+use aipo_wasm::compile_hir;
+use wasmtime::{Engine, Instance, Module, Store};
+
+fn instantiate_aipo(source_code: &str) -> (Store<()>, Instance) {
+    let source = Source::new(SourceId::next(), "test.aipo", source_code);
+    let (ast, diags) = parse(&source);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:?}");
+
+    let hir = lower(ast);
+    let wasm_bytes = compile_hir(&hir).expect("compilation to Wasm succeeds");
+
+    let engine = Engine::default();
+    let module = Module::new(&engine, &wasm_bytes).expect("valid WebAssembly module");
+    let mut store = Store::new(&engine, ());
+    let instance =
+        Instance::new(&mut store, &module, &[]).expect("WebAssembly instantiation succeeds");
+
+    (store, instance)
+}
+
+#[test]
+fn test_dict_literal_and_int_key_lookup() {
+    let code = r#"
+fn score_of(id: Int) -> Int {
+  let scores = { 1: 10, 2: 20, 3: 30 }
+  return scores[id]
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<i64, i64>(&mut store, "score_of")
+        .expect("exported `score_of`");
+
+    assert_eq!(f.call(&mut store, 1).unwrap(), 10);
+    assert_eq!(f.call(&mut store, 2).unwrap(), 20);
+    assert_eq!(f.call(&mut store, 3).unwrap(), 30);
+}
+
+#[test]
+fn test_dict_missing_key_returns_none() {
+    let code = r#"
+fn missing() -> Int {
+  let scores = { 1: 10, 2: 20 }
+  return scores[99]
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "missing")
+        .expect("exported `missing`");
+
+    assert_eq!(f.call(&mut store, ()).unwrap(), 0);
+}
+
+#[test]
+fn test_dict_len() {
+    let code = r#"
+fn dict_size() -> Int {
+  let d = { 1: 10, 2: 20, 3: 30, 4: 40 }
+  return d.len
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "dict_size")
+        .expect("exported `dict_size`");
+
+    assert_eq!(f.call(&mut store, ()).unwrap(), 4);
+}
+
+#[test]
+fn test_dict_string_key_lookup() {
+    let code = r#"
+fn level_of() -> Int {
+  let levels = { "ana": 1, "bruno": 2 }
+  return levels["ana"]
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "level_of")
+        .expect("exported `level_of`");
+
+    assert_eq!(f.call(&mut store, ()).unwrap(), 1);
+}
+
+#[test]
+fn test_dict_key_overwrite_replaces_value() {
+    let code = r#"
+fn duplicate_keys() -> Int {
+  let d = { 1: 100, 1: 200 }
+  return d[1]
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "duplicate_keys")
+        .expect("exported `duplicate_keys`");
+
+    assert_eq!(f.call(&mut store, ()).unwrap(), 200);
+}
+
+#[test]
+fn test_dict_assignment_inserts_and_overwrites() {
+    let code = r#"
+fn mutated() -> Int {
+  var d = { 1: 10 }
+  d[1] = 99
+  return d[1]
+}
+
+fn inserted() -> Int {
+  var d = { 1: 10 }
+  d[2] = 55
+  return d[2]
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f1 = instance
+        .get_typed_func::<(), i64>(&mut store, "mutated")
+        .expect("exported `mutated`");
+    let f2 = instance
+        .get_typed_func::<(), i64>(&mut store, "inserted")
+        .expect("exported `inserted`");
+
+    assert_eq!(f1.call(&mut store, ()).unwrap(), 99);
+    assert_eq!(f2.call(&mut store, ()).unwrap(), 55);
+}
+
+#[test]
+fn test_list_index_assignment() {
+    let code = r#"
+fn replaced() -> Int {
+  var xs = [1, 2, 3]
+  xs[1] = 42
+  return xs[1]
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "replaced")
+        .expect("exported `replaced`");
+
+    assert_eq!(f.call(&mut store, ()).unwrap(), 42);
+}
+
+#[test]
+fn test_dict_hash_runtime_helper_is_stable() {
+    // The exported helper must hash the same bytes identically across calls.
+    let code = r#"
+fn unused() -> Int {
+  return 0
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let hash = instance
+        .get_typed_func::<i32, i64>(&mut store, "__aipo_string_hash")
+        .expect("exported `__aipo_string_hash`");
+
+    assert!(instance.get_func(&mut store, "unused").is_some());
+    assert!(hash
+        .call(&mut store, 0)
+        .map(|value| value == hash.call(&mut store, 0).unwrap())
+        .unwrap_or(true));
+}

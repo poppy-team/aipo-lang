@@ -1,0 +1,46 @@
+# `base with { field: value, ... }` is a **functional** update: it copies the base,
+# replaces only the named fields, and leaves the base untouched. The block is a set
+# of overrides, so the order of its entries cannot matter and omitted fields keep
+# the value they had. `fixed` fields are part of the type's identity and cannot be
+# replaced through `with`.
+struct Point
+    x
+    y
+    z
+end
+
+struct Account
+    fixed id
+    balance
+end
+
+let origin = Point{x = 0, y = 0, z = 0}
+let moved = origin with { x: 3, z: 9 }
+
+# The base keeps every original value: the update produced a new instance.
+io.println(String(origin.x) + "," + String(origin.y) + "," + String(origin.z))
+io.println(String(moved.x) + "," + String(moved.y) + "," + String(moved.z))
+
+# Order-independence follows from the block being a set rather than a sequence.
+let left = origin with { x: 1, y: 2 }
+let right = origin with { y: 2, x: 1 }
+io.println(String(left == right))
+
+# `with` is legal in any expression position and chains postfix.
+fn scaled(point)
+    return point with { y: point.y * 10 }
+end
+
+io.println(String(scaled(origin).y))
+io.println(String(origin with { x: 5 } with { y: 6 }.x))
+
+fn make_point(x, y)
+    return Point{x = x, y = y, z = 0}
+end
+
+# Any expression producing a struct is a valid base, not just a binding.
+io.println(String(make_point(7, 8) with { y: 80 }.y))
+
+# A `fixed` field is reachable for reading but rejected when written through `with`.
+let account = Account{id = 1, balance = 100}
+io.println(String(account with { balance: 250 }.balance))

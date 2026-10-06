@@ -269,13 +269,32 @@ impl LoweringContext {
             Stmt::Match(s) => {
                 let target = self.lower_expr(s.target);
                 let mut when_arms = Vec::new();
-                for (pats, body) in s.when_arms {
-                    let patterns = pats.into_iter().map(|p| self.lower_expr(p)).collect();
+                for arm in s.when_arms {
+                    let patterns = arm
+                        .patterns
+                        .into_iter()
+                        .map(|pattern| match pattern {
+                            aipo_ast::MatchPattern::Value(expr) => {
+                                HirMatchPattern::Value(self.lower_expr(expr))
+                            }
+                            aipo_ast::MatchPattern::Destructure(fields) => {
+                                HirMatchPattern::Destructure(
+                                    fields.into_iter().map(|field| field.name).collect(),
+                                )
+                            }
+                        })
+                        .collect();
+                    let guard = arm.guard.map(|cond| self.lower_expr(cond));
                     let mut arm_body = Vec::new();
-                    for st in body {
+                    for st in arm.body {
                         self.lower_stmt(st, &mut arm_body);
                     }
-                    when_arms.push((patterns, arm_body));
+                    when_arms.push(HirMatchArm {
+                        patterns,
+                        guard,
+                        body: arm_body,
+                        span: arm.span,
+                    });
                 }
                 let else_arm = s.else_arm.map(|body| {
                     let mut arm_body = Vec::new();
@@ -431,6 +450,22 @@ impl LoweringContext {
         match expr {
             Expr::Literal(lit, span) => HirExpr::Literal(lit, span),
             Expr::Await(inner, span) => HirExpr::Await(Box::new(self.lower_expr(*inner)), span),
+            Expr::Try(inner, span) => HirExpr::Try(Box::new(self.lower_expr(*inner)), span),
+            Expr::With(base, with) => {
+                // The block mirrors `Construct`'s field list, but an unnamed (positional)
+                // field is meaningless in a sparse update, so it is dropped here and
+                // rejected by sema when one survives.
+                let updates = with
+                    .fields
+                    .into_iter()
+                    .filter_map(|field| {
+                        field
+                            .name
+                            .map(|name| (name.name, self.lower_expr(field.value)))
+                    })
+                    .collect();
+                HirExpr::With(Box::new(self.lower_expr(*base)), updates, with.span)
+            }
             Expr::Identifier(id) => HirExpr::Identifier(id.name, id.span),
             Expr::Unary(op, inner, span) => {
                 HirExpr::Unary(op, Box::new(self.lower_expr(*inner)), span)

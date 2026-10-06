@@ -1100,6 +1100,21 @@ pub fn analyze_with_surface(
     package_paths: Option<&PackagePathMap>,
     extra_surface: Option<&PreludeSurface>,
 ) -> Compiled {
+    analyze_full(source, path, package_paths, extra_surface, true)
+}
+
+/// Runs the frontend pipeline, optionally skipping the Core IR optimization passes.
+///
+/// `optimize` runs [`aipo_ir::optimize`] between lowering and emission; passing
+/// `false` keeps the raw lowered stream, which is what a differential conformance
+/// run compares against.
+pub fn analyze_full(
+    source: &Source,
+    path: &Path,
+    package_paths: Option<&PackagePathMap>,
+    extra_surface: Option<&PreludeSurface>,
+    optimize: bool,
+) -> Compiled {
     let (program, mut diagnostics) = aipo_syntax::parse(source);
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Compiled {
@@ -1151,6 +1166,7 @@ pub fn analyze_with_surface(
     }
 
     let ir = aipo_ir::lower_to_ir(&hir);
+    let ir = if optimize { aipo_ir::optimize(&ir) } else { ir };
     match aipo_bytecode::compile(&ir) {
         Ok(module) => Compiled {
             module,
