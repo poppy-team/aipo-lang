@@ -37,6 +37,25 @@ impl RegVm {
         }
     }
 
+    /// Executes a compiled register function.
+    ///
+    /// # Errors
+    /// Returns [`VmFault`] if a runtime error occurs.
+    pub fn run_function(&mut self, func: &aipo_bytecode::RegCompiledFunction) -> Result<Value, VmFault> {
+        self.constants = func
+            .constants
+            .iter()
+            .map(|c| match c {
+                aipo_bytecode::Constant::Nil => Value::None,
+                aipo_bytecode::Constant::Bool(b) => Value::Bool(*b),
+                aipo_bytecode::Constant::Int(n) => Value::Int(*n),
+                aipo_bytecode::Constant::Float(f) => Value::Float(*f),
+                aipo_bytecode::Constant::String(s) => Value::String(Rc::new(s.clone())),
+            })
+            .collect();
+        self.run(&func.instructions)
+    }
+
     /// Executes instructions sequentially until `Return` or error.
     ///
     /// # Errors
@@ -290,5 +309,42 @@ mod tests {
     fn test_register_vm_size_in_memory() {
         // 256 registers of 16 bytes = 4096 bytes (exactly 4 KiB!).
         assert_eq!(std::mem::size_of::<[Value; 256]>(), 4096);
+    }
+
+    #[test]
+    fn test_reg_emitter_to_reg_vm_end_to_end() {
+        use aipo_bytecode::RegEmitter;
+        use aipo_ir::{BinaryOp, CoreFunction, CoreInst};
+        use aipo_source::SourceSpan;
+
+        let span = SourceSpan::default();
+        let func = CoreFunction {
+            name: "calculate".to_string(),
+            is_async: false,
+            params: vec!["a".to_string(), "b".to_string()],
+            locals: vec!["res".to_string()],
+            upvalues: Vec::new(),
+            instructions: vec![
+                CoreInst::Load("a".to_string(), span),
+                CoreInst::Load("b".to_string(), span),
+                CoreInst::Binary(BinaryOp::Mul, span),
+                CoreInst::Store("res".to_string(), span),
+                CoreInst::Load("res".to_string(), span),
+                CoreInst::Return {
+                    has_value: true,
+                    span,
+                },
+            ],
+            span,
+        };
+
+        let compiled = RegEmitter::new().compile_function(&func);
+        let mut vm = RegVm::new();
+        // Set parameters R[0] and R[1]
+        vm.registers[0] = Value::Int(6);
+        vm.registers[1] = Value::Int(7);
+
+        let outcome = vm.run_function(&compiled).unwrap();
+        assert_eq!(outcome, Value::Int(42));
     }
 }
