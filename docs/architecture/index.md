@@ -41,3 +41,11 @@ graph TD
 2. **Result-based Error Model**: Nenhuma exceção ou pânico em Rust pode vazar como erro de usuário do Aipo. Todos os erros são mapeados para códigos estáveis de diagnóstico.
 3. **Imutabilidade Estrutural Segura**: Mutações em estruturas são rastreadas e sujeitas a validação de invariantes, garantindo que o estado interno nunca fique corrompido.
 4. **Sem Alocação Oculta no Caminho Feliz**: As operações críticas de despacho e decodificação na VM minimizam clonagens de valores e evitam `Box` desnecessários.
+
+---
+
+## Documentação Arquitetural de Referência
+
+- **[Bytecode & Máquina Virtual](/architecture/bytecode-and-vm)**: Especificação da VM baseada em pilha e formato binário `.aibc`.
+- **[Perfil Embedded & Shell](/architecture/embedded-and-shell-profile)**: Desenho do perfil reduzido (estilo Lua), metas de pegada de memória e arquitetura Dual-Track.
+- **[Host ABI & Sandboxing](/architecture/host-abi)**: Modelo de isolamento de capacidades e bindings do host.

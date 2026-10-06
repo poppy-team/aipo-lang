@@ -23,3 +23,4 @@ Toda questão aberta ou mudança estrutural é formalizada como uma **Proposta d
 | **[ADP-011](/decisions/adp-011)** | Roteiro de Performance & Ergonomia | Aprovado | Compactação de `Value`, fusão `InvokeMethod`, laço hoisted, falhas tipadas e pattern matching. |
 | **[ADP-012](/decisions/adp-012)** | Especificação de Ergonomia Sintática | Aprovado | Blocos delimitados por chaves `{ ... }`, imutabilidade por padrão em structs, `var self`, `:` simétrico e interfaces automáticas. |
 | **[ADP-013](/decisions/adp-013)** | Substrato de Execução WebAssembly e Self-Hosting | Aprovado | Congelamento da v0.1.0 na branch legado, migração para WebAssembly (Wasm 2.0 / WASI) e roteiro de self-hosting. |
+| **[ADP-014](/decisions/adp-014)** | Perfil Embedded, Arquitetura Dual-Track e Evolução da `aipo-vm` | Proposto | Arquitetura Dual-Track (Wasm Web vs VM Nativa), perfil nano/shell estilo Lua, corte de subsistemas e arenas. |

@@ -265,6 +265,7 @@ export default defineConfig({
                 { text: 'Macroarquitetura', link: '/architecture/' },
                 { text: 'Frontend do Compilador', link: '/architecture/compiler-frontend' },
                 { text: 'Bytecode & Máquina Virtual', link: '/architecture/bytecode-and-vm' },
+                { text: 'Perfil Embedded & Shell', link: '/architecture/embedded-and-shell-profile' },
                 { text: 'Backend JavaScript', link: '/architecture/js-emitter' },
                 { text: 'Host ABI & Sandboxing', link: '/architecture/host-abi' },
                 { text: 'Contratos das Crates', link: '/architecture/crates' }
@@ -288,7 +289,8 @@ export default defineConfig({
                 { text: 'ADP-010: Thin Proofs (Rust, C, JS)', link: '/decisions/adp-010' },
                 { text: 'ADP-011: Roteiro Performance & Ergonomia', link: '/decisions/adp-011' },
                 { text: 'ADP-012: Modernização Ergonômica', link: '/decisions/adp-012' },
-                { text: 'ADP-013: Substrato WebAssembly & Self-Hosting', link: '/decisions/adp-013' }
+                { text: 'ADP-013: Substrato WebAssembly & Self-Hosting', link: '/decisions/adp-013' },
+                { text: 'ADP-014: Perfil Embedded & Dual-Track', link: '/decisions/adp-014' }
               ]
             }
           ],
