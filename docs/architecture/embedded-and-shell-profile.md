@@ -1,30 +1,101 @@
 # Arquitetura do Perfil Embedded & Shell da Linguagem Aipo
 
-Este documento detalha o desenho técnico e as diretrizes arquiteturais para o **Perfil Embedded & Shell** da linguagem Aipo, visando equiparar a linguagem ao patamar de eficiência, pegada de memória e velocidade de inicialização estabelecido pela linguagem **Lua**.
+Este documento estabelece a especificação técnica detalhada para o **Perfil Embedded & Shell** da linguagem Aipo, definindo as decisões de microarquitetura, modelo de memória, sistema de tipos e laço de despacho da máquina virtual (`aipo-vm`) calibrados contra a referência da linguagem **Lua 5.4**.
 
 ---
 
 ## 1. Visão Geral e Justificativa
 
-A arquitetura do Aipo foi historicamente dividida entre um runtime nativo baseado em pilha (`aipo-vm`) e um destino WebAssembly (`aipo-wasm`). Embora o WebAssembly resolva a portabilidade para a web e sandboxes isoladas, a dependência de motores JIT pesados (como o Wasmtime com backend Cranelift) impõe barreiras intransponíveis para dois casos de uso estratégicos:
+A linguagem Aipo possui dois destinos principais de compilação: a máquina virtual nativa (`aipo-vm`) e o emissor WebAssembly (`aipo-wasm`). Embora o WebAssembly viabilize execução segura em navegadores e plataformas de nuvem isoladas, a dependência de um motor JIT massivo (Wasmtime com Cranelift) inviabiliza dois cenários estratégicos:
 
 1. **Ambientes Embarcados e Microcontroladores (MCUs)**:
-   - Dispositivos como ARM Cortex-M, ESP32 e RP2040 possuem orçamentos estritos de hardware: tipicamente entre **64 KB e 512 KB de Flash** e entre **16 KB e 64 KB de RAM estática**.
-   - Não possuem MMU (Memory Management Unit) nem suporte a páginas de código executável dinâmico (`mprotect`/W^X).
-   - Não comportam runtimes com dependências pesadas do sistema operacional (`std`, threads preemptivas, alocadores globais complexos).
+   - Dispositivos bare-metal (Cortex-M0/M3/M4, ESP32, RP2040) operam com orçamentos restritos: **64 KB a 512 KB de Flash** e **16 KB a 64 KB de RAM**.
+   - Não possuem MMU (Memory Management Unit) nem permissão de memória executável dinâmica (`mprotect`/W^X).
+   - Não suportam a biblioteca padrão completa do sistema operacional (`std`, threads de kernel, alocadores abertos).
 
 2. **Linguagem de Shell Interativa e Utilitários de Terminal**:
    - Um utilitário de terminal ou uma shell de sistema (`aipo-sh`) requer **tempo de inicialização (*cold start*) inferior a 2 milissegundos**.
-   - Não pode tolerar os 20 ms a 50 ms necessários para carregar compiladores JIT, descompactar metadados ou validar módulos WebAssembly.
-   - Requer acesso direto e sem intermediários às primitivas de processo do sistema operacional (`fork`, `exec`, descritores de arquivo, pipes `|>` e sinais).
+   - A sobretaxa de compilação JIT (15 ms a 50 ms) degrada sensivelmente a experiência em scripts encadeados e comandos de linha interativa.
+   - Requer integração direta e síncrona com os descritores de arquivo, processos do sistema operacional e streams de pipes `|>` sem a virtualização restritiva do WASI.
 
-Para viabilizar esses cenários, o Aipo não cria uma bifurcação (*fork*) de linguagem, mas introduz um **Perfil Reduzido de Compilação e Runtime**, projetado sob a filosofia de Lua.
+Para atender a esses requisitos sem fragmentar o ecossistema, o Aipo estabelece uma estratégia **Dual-Track** combinada a uma **evolução progressiva em 3 camadas**.
 
 ---
 
-## 2. A Filosofia "Estilo Lua": Metas de Engenharia
+## 2. A Estratégia Dual-Track (Wasm Web vs VM Nativa)
 
-O ecossistema Lua (Lua 5.4 / Luau) é o padrão ouro de embutibilidade e velocidade de inicialização na indústria. As metas do perfil embedded do Aipo são calibradas diretamente contra essa referência:
+```
+                  ┌────────────────────────────────────────┐
+                  │             Código Aipo                │
+                  │   (Frontend Canônico: Lexer / Sema)    │
+                  └───────────────────┬────────────────────┘
+                                      │
+            ┌─────────────────────────┴─────────────────────────┐
+            ▼                                                   ▼
+ ┌──────────────────────┐                           ┌───────────────────────┐
+ │     Track Web/Cloud  │                           │    Track Nativo/Embed │
+ │   `aipo-wasm` (.wasm)│                           │  `aipo-bytecode` (.aibc)
+ ├──────────────────────┤                           ├───────────────────────┤
+ │ • Emissor: wasm-enc. │                           │ • VM: `aipo-vm`       │
+ │ • Destino: Navegador,│                           │ • Destino: CLI Rápido,│
+ │   Workers, Sandboxes │                           │   Shell, Jogos nativos│
+ │ • Runner Wasmtime:   │                           │   e MCUs (`no_std`)   │
+ │   Opcional (Feature) │                           │ • Sem dependências JIT│
+ └──────────────────────┘                           └───────────────────────┘
+```
+
+- **O WebAssembly não é abandonado**: O crate `aipo-wasm` permanece ativo como emissor oficial para a Web e ambientes serverless que já possuem runtimes Wasm nativos.
+- **O Wasmtime torna-se opcional**: O runtime JIT Wasmtime deixa de estar embutido por padrão na CLI, virando uma *feature flag* opcional (`--features wasmtime-runner`).
+- **A `aipo-vm` assume o caminho crítico**: Todo o desenvolvimento nativo foca na nossa própria máquina virtual, garantindo autonomia, compacidade e velocidade de boot.
+
+---
+
+## 3. Modelo de Evolução Progressiva em 3 Camadas
+
+O design da máquina virtual segue um modelo de três camadas concêntricas, onde a camada central viabiliza as camadas superiores sem reescrita de código:
+
+```
+┌────────────────────────────────────────────────────────┐
+│ Camada 3: Bare-Metal MCU (Horizonte Futuro)            │
+│   • HAL de periféricos (GPIO, UART, I2C, Timers)       │
+│   • `#![no_std]` estrito, zero dependência de SO       │
+│   • Execução direta da memória Flash (XIP)             │
+└───────────────────────────▲────────────────────────────┘
+                            │
+┌───────────────────────────┴────────────────────────────┐
+│ Camada 2: System Shell (CLI Standalone)                │
+│   • Builtins de processo (`spawn`, `pipe`, `env`, `fs`)│
+│   • REPL interativo e pipes de dados `|>`              │
+│   • Binário único estático (< 1 MB), boot < 2 ms       │
+└───────────────────────────▲────────────────────────────┘
+                            │
+┌───────────────────────────┴────────────────────────────┐
+│ Camada 1: Host Scripting (Motor Central)               │
+│   • `aipo-vm` como biblioteca C ABI (`libaipo.a`)      │
+│   • Estado isolado por instância (`VmContext` reentrante│
+│   • Zero dependência de SO: I/O via callbacks do host  │
+│   • Modelo de memória compacto (16 bytes por valor)    │
+│   • Gerenciamento por arenas com desalocação O(1)      │
+└────────────────────────────────────────────────────────┘
+```
+
+### Camada 1: Host Scripting (A Base Reentrante)
+- **Biblioteca Estática (`libaipo.a`)**: Exporta interface C estável (`aipo_new_state`, `aipo_load_bytecode`, `aipo_call`, `aipo_free_state`).
+- **Estado 100% Reentrante**: Zero variáveis globais estáticas (`static mut`) ou singletons. Todas as variáveis de execução residem na struct `VmContext`.
+- **I/O Abstrato**: A VM não realiza chamadas diretas de disco ou rede; o hospedeiro (seja o motor Poppy, uma aplicação C++ ou uma engine de jogos) fornece os bytes e recebe os eventos.
+
+### Camada 2: System Shell (Automação de Infraestrutura)
+- **Executável Único (`aipo-sh`)**: Um binário stripped de ~400 KB a 600 KB.
+- **Syscalls Injetadas**: Injeta no `VmContext` primitivas de automação (`sh.run`, `sh.env`, `sh.pipe`).
+- **Substituição de Bash/Python**: Scripts tipados estaticamente, prevenindo falhas silenciosas no meio de deploys e automações.
+
+### Camada 3: Bare-Metal MCU (Firmware e Sensores)
+- **`#![no_std]` + `alloc` opcional**: Funciona diretamente sobre registradores de hardware e tabelas de vetores de interrupção.
+- **Execute-In-Place (XIP)**: Lê o bytecode diretamente da memória Flash, preservando a memória RAM exclusivamente para variáveis ativas.
+
+---
+
+## 4. Metas de Engenharia Calibradas contra Lua 5.4
 
 | Métrica | Referência Lua 5.4 (C) | Aipo Atual (Host Dev) | Alvo Aipo Embedded / Shell |
 | :--- | :--- | :--- | :--- |
@@ -33,87 +104,150 @@ O ecossistema Lua (Lua 5.4 / Luau) é o padrão ouro de embutibilidade e velocid
 | **Consumo Mínimo de RAM Inicial** | ~4 KB a 8 KB | Heap aberto do SO | **~8 KB a 16 KB** |
 | **Tempo de Boot / Cold Start** | < 1 ms | 15 ms a 40 ms | **< 2 ms** |
 | **Largura do Tipo `Value`** | 16 bytes (`TValue`) | 48 bytes (Enum Rust + `Rc`) | **16 bytes** (Tagged Union / NaN-boxing) |
-| **Gerenciador de Memória** | GC Tricolor Incremental | Alocador do SO (`Rc`/`RefCell`) | **Arena Linear de Tamanho Fixo** |
-| **Compatibilidade Bare-Metal** | ANSI C puro | Depende de `std` | **`#![no_std]` + `alloc` opcional** |
+| **Arquitetura de Bytecode**| Registradores Virtuais | Pilha Pura (Stack VM) | **Registradores Virtuais (32-bit u32)** |
+| **Gerenciador de Memória** | GC Tricolor Incremental | Alocador do SO (`Rc`/`RefCell`) | **Arena Linear com Reset O(1)** |
+| **Compatibilidade Bare-Metal** | Totalmente portável (`no_std` C)| Depende de `std` | **`#![no_std]` + `alloc` opcional** |
 
 ---
 
-## 3. O que o Perfil Embedded Sacrifica
+## 5. Modelo de Memória e Modelo de Valores (`Value`)
 
-Para que o compilador e a máquina virtual caibam nessas restrições sem comprometer o núcleo da linguagem, certos subsistemas do compilador de desenvolvimento são substituídos ou cortados no modo reduzido:
+### 5.1 O Tipo `Value` de 16 Bytes
+Atualmente, `Value` ocupa 48 bytes. A nova arquitetura adota um layout compacto de **duas palavras de 64 bits (16 bytes)**:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       COMPILADOR HOST (Desenvolvimento)                     │
-│  • Diagnósticos visuais com cores, sublinhados e sugestões contextuais      │
-│  • Tabelas completas de normalização Unicode NFC e regex DFA de 500 KB      │
-│  • Suporte obrigatório a Float IEEE-754 de 64 bits                          │
-│  • Concorrência preemptiva multi-thread com canais assíncronos              │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ Compilação / Validação Estática
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       PERFIL EMBEDDED / RUNTIME NANO                        │
-│  [Cortado / Substituído]                                                   │
-│  ✗ Mensagens de erro extensas ──► Substituídas por códigos (ex: E042:12:4)  │
-│  ✗ Tabelas Unicode pesadas   ──► Strings tratadas como UTF-8 cru sem NFC    │
-│  ✗ Ponto flutuante forçado    ──► Float desativável via feature flag        │
-│  ✗ Heap irrestrito           ──► Arena de memória fixa (16 KB - 64 KB)     │
-│  ✗ Threads preemptivas       ──► Concorrência cooperativa ou single-thread  │
-│                                                                             │
-│  [Preservado e Intacto]                                                     │
-│  ✓ `let` imutável por padrão e `var` restrito (zero variáveis globais)      │
-│  ✓ `enum` fechado de soma e `match` exaustivo com custo mínimo              │
-│  ✓ Operador de pipe funcional e de stream (`|>`)                            │
-│  ✓ Tratamento explícito de erros via `Result[T, E]` (zero exceções ocultas) │
-│  ✓ Structs com imutabilidade estrutural e métodos vinculados                │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────┬─────────────────────────────────┐
+│         Palavra 0 (8B)          │         Palavra 1 (8B)          │
+│   Tag de Tipo (u8) + Metadados  │        Payload Primitivo        │
+│                                 │     ou Ponteiro de Referência   │
+└─────────────────────────────────┴─────────────────────────────────┘
+```
+
+- **Inteiros (`Int`)**: Armazenados inline na Palavra 1 (`i64` ou 53 bits seguros).
+- **Booleanos, Bytes e None**: Armazenados inline sem tocar no heap.
+- **Ponto Flutuante (`Float`)**: Armazenado inline como `f64`.
+- **Strings, Listas, Structs e Closures**: A Palavra 1 armazena um ponteiro de 64 bits (ou offset relativo de 32 bits em MCUs) apontando para a arena de memória gerenciada.
+
+> **Ganho Microarquitetural:** Triplica a quantidade de valores que cabem na mesma linha de cache L1 (64 bytes), reduzindo drasticamente falhas de cache (*cache misses*).
+
+### 5.2 Gerenciamento de Memória por Arenas com Reset O(1)
+Em vez de um Garbage Collector complexo que causa pausas imprevisíveis (*latency spikes*) e fragmentação de heap:
+
+1. **Alocação Sequencial (*Bump Allocation*)**: Todas as strings intermediárias, listas e instâncias temporárias criadas durante um comando ou ciclo de script são alocadas sequencialmente em um bloco contíguo de memória pré-alocado (ex.: 32 KB).
+2. **Desalocação Instantânea em O(1)**: Ao término do comando de shell ou do frame de execução, o ponteiro de topo da arena é resetado para a base. Todas as alocações são liberadas simultaneamente sem chamadas individuais a `free()`.
+3. **Cota Rígida (*Hard Quota*)**: Se o script ultrapassar a capacidade da arena, a VM interrompe a execução com um erro seguro de esgotamento (`E_OUT_OF_MEMORY`), impedindo corrupção de memória.
+
+### 5.3 O Contexto Reentrante (`VmContext`)
+```rust
+pub struct VmContext<'a> {
+    /// Array contíguo de registradores virtuais ativos (Values de 16 bytes).
+    registers: &'a mut [Value],
+    /// Tabela de frames de chamada ativos.
+    call_frames: &'a mut [CallFrame],
+    /// Alocador de arena linear para objetos dinâmicos.
+    arena: ArenaAllocator<'a>,
+    /// Ponteiros de funções nativas injetadas pelo hospedeiro.
+    host_callbacks: &'a [HostCallback],
+}
 ```
 
 ---
 
-## 4. Onde o Aipo Supera Lua no Papel de Shell e Embedded
+## 6. Sistema de Tipos Estratificado
 
-Embora adote as métricas de tamanho de Lua, o Aipo resolve falhas históricas de ergonomia e segurança que tornam Lua arriscada para automação de infraestrutura:
+Para conciliar a riqueza do Aipo com o suporte a chips minúsculos, os tipos são divididos em dois níveis:
 
-1. **Eliminação de Globais Invisíveis**: Em Lua, um simples erro tipográfico cria uma nova variável global (`myVar = 10` cria `myvar = nil`). Em Aipo, o escopo léxico estrito com `let` e `var` impede essa classe de falhas estaticamente.
-2. **Pipelines Nativos para Shell (`|>`)**: A sintaxe `cmd1() |> cmd2() |> cmd3()` oferece a mesma fluidez do operador `|` do Bash, porém com tipagem estruturada entre comandos em vez de strings desestruturadas.
-3. **Casamento de Padrões Confiável**: A instrução de `match` com verificação estática de exaustividade garante que novos estados de processo ou variantes de erro nunca sejam ignorados.
-4. **Erros Explícitos vs `pcall`**: Em vez do mecanismo frágil de `pcall` e strings de erro desestruturadas de Lua, Aipo opera com `Result[T, E]` manipulável via operador `?`.
+### Tier 1: O Núcleo Universal Mandatório
+Disponível em **todos** os alvos, operando sem alocador de sistema e em menos de **30 KB de código compilado**:
+- **`Int`**: Inteiros com sinal de 64 bits (ou 32 bits em MCUs).
+- **`Bool`**: Booleano inline.
+- **`Byte`**: Unidade binária básica de 8 bits.
+- **`Bytes`**: Fat pointer `(&[u8], len)` para I/O e buffers sem cópia.
+- **`String`**: Fat pointer `(&str, len)` para strings UTF-8 imutáveis.
+- **`Enum`**: Tag numérica `u16` + payload opcional. Custo idêntico a um inteiro primitivo.
+- **`Struct` Estático**: Array contíguo de `Value` com acesso a campos resolvido pelo compilador para offsets numéricos fixos (`GetField 0`, `GetField 1`). Zero custo de tabelas hash.
+- **`Function` / `Native`**: Despacho direto de instrução ou ponteiro C.
+
+### Tier 2: Tipos Configuráveis por Perfil (`Features`)
+- **`Float` (Ponto Flutuante IEEE-754)**: Desativado em microcontroladores sem FPU de hardware, economizando de 15 KB a 35 KB de rotinas matemáticas de software.
+- **`Dict` (Tabelas Hash Dinâmicas)**: Ativado em shell e desktops; em MCUs, substituído por structs estáticos ou listas lineares de pares chave-valor.
+- **`List` de Capacidade Aberta**: Ativado em shell e desktops; em MCUs, substituído por arrays de tamanho fixo (`Array[T, N]`) alocados na arena.
+
+### Perfis Finais de Compilação no Workspace
+1. **`profile-nano`**: Tier 1 puro, `#![no_std]`, arena estática, sem float por software. Binário da VM: **~40 KB a 70 KB**.
+2. **`profile-shell`**: Tier 1 + Tier 2 completo, builtins de processo (`run`, `pipe`, `env`), inicialização < 2 ms. Binário final: **~400 KB a 600 KB**.
+3. **`profile-full`**: Tudo do perfil shell + gerador WebAssembly (`aipo-wasm`), diagnósticos formatados e ferramentas estáticas.
 
 ---
 
-## 5. Arquitetura Dual-Track (Wasm vs VM Nativa)
+## 7. Bytecode de Registradores Virtuais e Laço de Despacho
 
-A introdução do perfil embedded consolida a estratégia **Dual-Track** de execução:
+### 7.1 Transição de Stack VM para Register VM
+A máquina virtual migra do modelo baseado em pilha para uma **máquina de registradores virtuais**:
 
-1. **Track Web / Cloud (`aipo-wasm`)**:
-   - Geração pura de arquivos binários `.wasm` padronizados via `wasm-encoder`.
-   - Execução em ambientes onde runtimes Wasm já estão integrados nativamente: navegadores, workers serverless e sandboxes em nuvem.
-   - O runner Wasmtime da CLI torna-se uma funcionalidade opcional (`--features wasmtime-runner`), reduzindo o binário padrão da ferramenta.
+- **Modelo Antigo (Pilha)**:
+  `c = a + b` exigia 4 instruções (`GetLocal a`, `GetLocal b`, `Add`, `SetLocal c`) com 4 ciclos de despacho e 4 acessos de topo de pilha.
+- **Novo Modelo (Registradores)**:
+  `c = a + b` executa uma única instrução:
+  ```text
+  Add R(c), R(a), R(b)
+  ```
+- **Resultado Prático**: Redução de 35% a 50% nas instruções executadas por programa, reduzindo pela metade os desvios de previsão de salto (*branch mispredictions*) na CPU.
 
-2. **Track Nativo / Embedded / Shell (`aipo-vm`)**:
-   - Motor de execução nativo de alta prioridade técnica.
-   - Interpretador de bytecode de passagem direta, sem abstrações intermediárias pesadas.
-   - Suporte a exportação como biblioteca estática em C (`libaipo.a`), permitindo embutir Aipo em aplicações escritas em C, C++, Zig ou Rust tão facilmente quanto `liblua.a`.
+### 7.2 Formato de Instrução Fixa de 32 Bits (`u32`)
+Cada instrução ocupa exatamente 4 bytes alinhados:
+
+```
+ 0       6 7             14 15            23 24            31
+┌─────────┬────────────────┬────────────────┬────────────────┐
+│ Opcode  │       A        │       B        │       C        │
+│ (7 bits)│    (8 bits)    │    (9 bits)    │    (9 bits)    │
+└─────────┴────────────────┴────────────────┴────────────────┘
+   128          256             512              512
+ instruções  registradores    registradores /  registradores /
+                              constantes       constantes
+```
+
+- **`iABC`**: Operações binárias e chamadas (`Opcode A B C`).
+- **`iABx`**: Carga de constantes e literais (`Opcode A Bx`, com `Bx` não-sinalizado de 18 bits).
+- **`iAsBx`**: Saltos e desvios condicionais (`Opcode A sBx`, com `sBx` sinalizado de 18 bits).
+
+### 7.3 Decodificação e Despacho Direto
+- A decodificação é realizada via operações diretas de deslocamento de bits (*bitwise shifts*) sem ramificações lógicas condicionais:
+  ```rust
+  let opcode = (raw & 0x7F) as u8;
+  let reg_a = ((raw >> 7) & 0xFF) as usize;
+  let reg_b = ((raw >> 15) & 0x1FF) as usize;
+  let reg_c = ((raw >> 24) & 0x1FF) as usize;
+  ```
+- No modo seguro Rust, o laço de execução utiliza tabela de saltos densa gerada pelo LLVM. Na C ABI (`libaipo.a`), adota-se *Direct Threaded Code* com ponteiros calculados (`goto *dispatch_table[opcode]`).
+
+### 7.4 Integração Nativa com Pipes de Shell (`|>`)
+Pipelines do Aipo conectam-se diretamente aos registradores virtuais:
+```aipo
+ps() |> grep("node") |> count()
+```
+O compilador emite transferências diretas de registradores de stream:
+```text
+Call      R(0), ps, 0
+CallPipe  R(1), grep, R(0), "node"
+CallPipe  R(2), count, R(1)
+```
+Em nível de sistema operacional, os descritores de arquivo são vinculados diretamente via `pipe2` do kernel, transmitindo buffers de bytes diretamente entre comandos sem cópias intermediárias na memória da VM.
 
 ---
 
-## 6. Pilares de Otimização da `aipo-vm`
+## 8. Roteiro de Engenharia em 4 Marcos
 
-Para alcançar o perfil nano, o desenvolvimento da `aipo-vm` focará em três pilares microarquiteturais:
-
-### 1. Compactação de `Value` para 16 Bytes
-Atualmente, `Value` ocupa 48 bytes em memória devido aos payloads do enum Rust e referências `Rc`. Reduzir essa estrutura para 16 bytes (usando tagged pointer de duas palavras ou NaN-boxing para arquiteturas de 64 bits) trará os seguintes benefícios:
-- Triplicação do número de valores que cabem na mesma linha de cache L1 do processador (64 bytes).
-- Redução drástica de falhas de cache (*cache misses*) durante loops intensivos de script.
-
-### 2. Gestão de Memória por Arenas com Desalocação em Bloco
-Para scripts curtos de shell e ciclos de processamento de comandos:
-- A VM recebe um buffer de memória fixo (exemplo: 32 KB).
-- Todas as strings temporárias, listas intermediárias e estruturas são alocadas linearmente nessa arena.
-- Ao final da execução do comando ou script, a arena inteira é resetada em tempo O(1) pelo ajuste de um único ponteiro de topo, eliminando a sobretaxa de desalocação individual de objetos.
-
-### 3. Fast-Path de Compilação Direta (Single-Pass)
-Para uso interativo em terminal (REPL):
-- Criação de um gerador direto de bytecode a partir da AST básica, dispensando passes profundos de análise de grafos quando o script for uma sequência curta de comandos imperativos.
+1. **Marco 1 — Desacoplamento e Enxugamento**:
+   - Criação da feature flag `wasmtime-runner` no `crates/aipo-cli` (opcional).
+   - Inclusão do perfil `[profile.nano]` no `Cargo.toml`.
+2. **Marco 2 — Compactação de `Value` e Arenas**:
+   - Refatoração do layout de `Value` para 16 bytes.
+   - Implementação de `ArenaAllocator` com reset O(1).
+3. **Marco 3 — Bytecode de Registradores Virtuais**:
+   - Implementação da especificação de instruções de 32 bits em `crates/aipo-bytecode`.
+   - Reestruturação do laço de despacho em `crates/aipo-vm`.
+4. **Marco 4 — CLI de Shell (`aipo-sh`) e Exportação C ABI**:
+   - Criação do binário standalone de shell com builtins de processo.
+   - Validação da biblioteca estática `libaipo.a` em provas finas de C e Rust.
