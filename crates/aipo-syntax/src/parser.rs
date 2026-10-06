@@ -1070,7 +1070,15 @@ impl<'a> Parser<'a> {
         }
 
         let mut elif_branches = Vec::new();
-        while self.match_token(&TokenKind::Elif) {
+        while self.match_token(&TokenKind::Elif)
+            || (self.check(&TokenKind::Else)
+                && self.cursor + 1 < self.tokens.len()
+                && self.tokens[self.cursor + 1].kind == TokenKind::If)
+        {
+            if self.check(&TokenKind::Else) {
+                self.advance(); // 'else'
+                self.advance(); // 'if'
+            }
             let elif_cond = self.parse_expr()?;
             let _ = self.match_token(&TokenKind::Then);
             self.skip_newlines();
