@@ -5,10 +5,12 @@ pub mod convert;
 pub mod fault;
 pub mod frame;
 pub mod host;
+pub mod reg_vm;
 pub mod value;
 pub mod vm;
 
 pub use arena::{ArenaAllocator, ArenaError};
+pub use reg_vm::RegVm;
 pub use convert::{
     BYTE_MAX, TypeTag, convert_byte, convert_bytes, convert_duration, convert_float, convert_int,
     convert_set, convert_string, convert_via_type,

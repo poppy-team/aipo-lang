@@ -6,12 +6,14 @@
 
 pub mod disasm;
 pub mod emitter;
+pub mod instruction;
 pub mod module;
 pub mod opcode;
 pub mod verifier;
 
 pub use disasm::{disassemble, disassemble_with_source};
 pub use emitter::BytecodeEmitter;
+pub use instruction::{RegInstruction, RegOpCode};
 pub use module::{AIBC_MAGIC, AIBC_VERSION, BytecodeModule, FunctionInfo, StructInfo};
 pub use opcode::{Constant, OpCode};
 pub use verifier::BytecodeVerifier;
