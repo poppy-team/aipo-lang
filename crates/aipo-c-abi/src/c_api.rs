@@ -2,7 +2,8 @@
 
 use crate::runtime::AipoRuntime;
 use crate::types::{
-    aipo_handle_t, aipo_host_fn_t, aipo_runtime_t, aipo_status_t, aipo_val_tag_t, aipo_value_t,
+    aipo_handle_t, aipo_host_fn_t, aipo_reg_vm_t, aipo_runtime_t, aipo_status_t, aipo_val_tag_t,
+    aipo_value_t,
 };
 use aipo_vm::host_value_to_value;
 use std::ffi::c_char;
@@ -546,4 +547,100 @@ pub unsafe extern "C" fn aipo_runtime_reset_instruction_count(
     let runtime = unsafe { &mut *rt };
     runtime.reset_instruction_count();
     aipo_status_t::AIPO_OK
+}
+
+/// Creates a new virtual register machine instance.
+#[unsafe(no_mangle)]
+pub extern "C" fn aipo_reg_vm_create() -> *mut aipo_reg_vm_t {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        Box::into_raw(Box::new(aipo_vm::RegVm::new())).cast::<aipo_reg_vm_t>()
+    }));
+    result.unwrap_or(std::ptr::null_mut())
+}
+
+/// Destroys a virtual register machine instance.
+///
+/// # Safety
+/// If non-null, `vm` must be a valid pointer returned by [`aipo_reg_vm_create`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aipo_reg_vm_destroy(vm: *mut aipo_reg_vm_t) {
+    if !vm.is_null() {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            drop(unsafe { Box::from_raw(vm.cast::<aipo_vm::RegVm>()) });
+        }));
+    }
+}
+
+/// Sets an integer into a specific register.
+///
+/// # Safety
+/// `vm` must point to a live [`aipo_reg_vm_t`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aipo_reg_vm_set_reg_int(
+    vm: *mut aipo_reg_vm_t,
+    reg: u8,
+    val: i64,
+) -> aipo_status_t {
+    if vm.is_null() {
+        return aipo_status_t::AIPO_ERR_NULL_POINTER;
+    }
+    let r_vm = unsafe { &mut *vm.cast::<aipo_vm::RegVm>() };
+    r_vm.registers[reg as usize] = aipo_vm::Value::Int(val);
+    aipo_status_t::AIPO_OK
+}
+
+/// Reads an integer from a specific register.
+///
+/// # Safety
+/// `vm` must point to a live [`aipo_reg_vm_t`], and `out_val` must point to a valid writable `i64`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aipo_reg_vm_get_reg_int(
+    vm: *const aipo_reg_vm_t,
+    reg: u8,
+    out_val: *mut i64,
+) -> aipo_status_t {
+    if vm.is_null() || out_val.is_null() {
+        return aipo_status_t::AIPO_ERR_NULL_POINTER;
+    }
+    let r_vm = unsafe { &*vm.cast::<aipo_vm::RegVm>() };
+    match &r_vm.registers[reg as usize] {
+        aipo_vm::Value::Int(n) => {
+            unsafe { *out_val = *n };
+            aipo_status_t::AIPO_OK
+        }
+        _ => aipo_status_t::AIPO_ERR_FAULT,
+    }
+}
+
+/// Executes a buffer of 32-bit register instructions on the register machine.
+///
+/// # Safety
+/// `vm` must point to a live [`aipo_reg_vm_t`]. `instructions` must point to `count` aligned `u32` words.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aipo_reg_vm_run(
+    vm: *mut aipo_reg_vm_t,
+    instructions: *const u32,
+    count: usize,
+    out_int: *mut i64,
+) -> aipo_status_t {
+    if vm.is_null() || (instructions.is_null() && count > 0) {
+        return aipo_status_t::AIPO_ERR_NULL_POINTER;
+    }
+    let r_vm = unsafe { &mut *vm.cast::<aipo_vm::RegVm>() };
+    let slice = if count == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(instructions.cast::<aipo_bytecode::RegInstruction>(), count) }
+    };
+    match r_vm.run(slice) {
+        Ok(val) => {
+            if !out_int.is_null() {
+                if let aipo_vm::Value::Int(n) = val {
+                    unsafe { *out_int = n };
+                }
+            }
+            aipo_status_t::AIPO_OK
+        }
+        Err(_) => aipo_status_t::AIPO_ERR_FAULT,
+    }
 }
