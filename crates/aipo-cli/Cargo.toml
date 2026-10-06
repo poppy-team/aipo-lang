@@ -28,15 +28,16 @@ aipo-source = { path = "../aipo-source" }
 aipo-stdlib = { path = "../aipo-stdlib" }
 aipo-syntax = { path = "../aipo-syntax" }
 aipo-vm = { path = "../aipo-vm" }
-aipo-wasm = { path = "../aipo-wasm" }
+aipo-wasm = { path = "../aipo-wasm", default-features = false }
 
 [dev-dependencies]
 aipo-testkit = { path = "../aipo-testkit" }
 aipo-lexer = { path = "../aipo-lexer" }
 
 [features]
-default = []
+default = ["wasmtime-runner"]
 github-http = ["aipo-package/http"]
+wasmtime-runner = ["aipo-wasm/wasmtime"]
 
 [lints]
 workspace = true
