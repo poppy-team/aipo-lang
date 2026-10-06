@@ -4,6 +4,7 @@ use crate::arena::ArenaAllocator;
 use crate::fault::VmFault;
 use crate::value::{Value, check_safe_int};
 use aipo_bytecode::{RegInstruction, RegOpCode};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Compact virtual register machine for embedded execution and fast scripts.
@@ -13,6 +14,8 @@ pub struct RegVm {
     pub registers: [Value; 256],
     /// Constant pool.
     pub constants: Vec<Value>,
+    /// Global variables environment.
+    pub globals: HashMap<String, Value>,
     /// Linear bump arena for string/buffer allocations.
     pub arena: ArenaAllocator,
     /// Program counter.
@@ -32,6 +35,7 @@ impl RegVm {
         Self {
             registers: std::array::from_fn(|_| Value::None),
             constants: Vec::new(),
+            globals: HashMap::new(),
             arena: ArenaAllocator::with_default_capacity(),
             pc: 0,
         }
@@ -260,10 +264,233 @@ impl RegVm {
                         self.pc = target as usize;
                     }
                 }
+                RegOpCode::GetGlobal => {
+                    let bx = inst.bx() as usize;
+                    if let Some(Value::String(name)) = self.constants.get(bx) {
+                        let val = self.globals.get(name.as_str()).cloned().unwrap_or(Value::None);
+                        self.registers[a] = val;
+                    }
+                }
+                RegOpCode::SetGlobal => {
+                    let bx = inst.bx() as usize;
+                    if let Some(Value::String(name)) = self.constants.get(bx) {
+                        self.globals.insert(name.to_string(), self.registers[a].clone());
+                    }
+                }
+                RegOpCode::GetField => {
+                    let bx = inst.bx() as usize;
+                    let field_name = match self.constants.get(bx) {
+                        Some(Value::String(s)) => s.as_str(),
+                        _ => {
+                            return Err(VmFault::CorruptedBytecode {
+                                offset: self.pc - 1,
+                                reason: "invalid field name constant".to_string(),
+                            });
+                        }
+                    };
+                    let target = self.registers[a].clone();
+                    match target {
+                        Value::Struct(inst) => {
+                            let val = inst.borrow().get_field(field_name).cloned().ok_or_else(|| {
+                                VmFault::NoSuchField {
+                                    type_name: inst.borrow().type_name.clone(),
+                                    field: field_name.to_string(),
+                                }
+                            })?;
+                            self.registers[a] = val;
+                        }
+                        Value::Dict(d) => {
+                            let key = Value::String(Rc::new(field_name.to_string()));
+                            let val = d.borrow().get(&key).cloned().unwrap_or(Value::None);
+                            self.registers[a] = val;
+                        }
+                        other => {
+                            return Err(VmFault::NoSuchField {
+                                type_name: other.type_name().to_string(),
+                                field: field_name.to_string(),
+                            });
+                        }
+                    }
+                }
+                RegOpCode::SetField => {
+                    let name_idx = b;
+                    let val_reg = c;
+                    let field_name = match self.constants.get(name_idx) {
+                        Some(Value::String(s)) => s.as_str(),
+                        _ => {
+                            return Err(VmFault::CorruptedBytecode {
+                                offset: self.pc - 1,
+                                reason: "invalid field name constant".to_string(),
+                            });
+                        }
+                    };
+                    let new_val = self.registers[val_reg].clone();
+                    match &self.registers[a] {
+                        Value::Struct(inst) => {
+                            inst.borrow_mut().set_field(field_name, new_val)?;
+                        }
+                        Value::Dict(d) => {
+                            let key = Value::String(Rc::new(field_name.to_string()));
+                            d.borrow_mut().upsert(key, new_val);
+                        }
+                        other => {
+                            return Err(VmFault::NoSuchField {
+                                type_name: other.type_name().to_string(),
+                                field: field_name.to_string(),
+                            });
+                        }
+                    }
+                }
+                RegOpCode::GetIndex => {
+                    let target = self.registers[b].clone();
+                    let key = &self.registers[c];
+                    match (&target, key) {
+                        (Value::List(l), Value::Int(i)) => {
+                            let list = l.borrow();
+                            let len = list.len();
+                            #[allow(clippy::cast_possible_wrap)]
+                            let actual = if *i < 0 { (len as i64) + *i } else { *i };
+                            let idx = usize::try_from(actual)
+                                .ok()
+                                .filter(|&idx| idx < len)
+                                .ok_or(VmFault::IndexOutOfRange { index: *i, len })?;
+                            self.registers[a] = list[idx].clone();
+                        }
+                        (Value::Dict(d), k) => {
+                            self.registers[a] = d.borrow().get(k).cloned().unwrap_or(Value::None);
+                        }
+                        (Value::Bytes(b), Value::Int(i)) => {
+                            let bytes = b.borrow();
+                            let len = bytes.len();
+                            #[allow(clippy::cast_possible_wrap)]
+                            let actual = if *i < 0 { (len as i64) + *i } else { *i };
+                            let idx = usize::try_from(actual)
+                                .ok()
+                                .filter(|&idx| idx < len)
+                                .ok_or(VmFault::IndexOutOfRange { index: *i, len })?;
+                            self.registers[a] = Value::Byte(bytes[idx]);
+                        }
+                        (Value::String(s), Value::Int(i)) => {
+                            let chars: Vec<char> = s.chars().collect();
+                            let len = chars.len();
+                            #[allow(clippy::cast_possible_wrap)]
+                            let actual = if *i < 0 { (len as i64) + *i } else { *i };
+                            let idx = usize::try_from(actual)
+                                .ok()
+                                .filter(|&idx| idx < len)
+                                .ok_or(VmFault::IndexOutOfRange { index: *i, len })?;
+                            self.registers[a] = Value::String(Rc::new(chars[idx].to_string()));
+                        }
+                        (other, _) => {
+                            return Err(VmFault::TypeMismatch {
+                                expected: "indexable collection".to_string(),
+                                actual: other.type_name().to_string(),
+                            });
+                        }
+                    }
+                }
+                RegOpCode::SetIndex => {
+                    let key = &self.registers[b];
+                    let val = self.registers[c].clone();
+                    match &self.registers[a] {
+                        Value::List(l) => {
+                            if let Value::Int(i) = key {
+                                let mut list = l.borrow_mut();
+                                let len = list.len();
+                                #[allow(clippy::cast_possible_wrap)]
+                                let actual = if *i < 0 { (len as i64) + *i } else { *i };
+                                let idx = usize::try_from(actual)
+                                    .ok()
+                                    .filter(|&idx| idx < len)
+                                    .ok_or(VmFault::IndexOutOfRange { index: *i, len })?;
+                                list[idx] = val;
+                            } else {
+                                return Err(VmFault::TypeMismatch {
+                                    expected: "Int index".to_string(),
+                                    actual: key.type_name().to_string(),
+                                });
+                            }
+                        }
+                        Value::Dict(d) => {
+                            d.borrow_mut().upsert(key.clone(), val);
+                        }
+                        Value::Bytes(bytes) => {
+                            if let (Value::Int(i), Value::Byte(b)) = (key, &val) {
+                                let mut b_vec = bytes.borrow_mut();
+                                let len = b_vec.len();
+                                #[allow(clippy::cast_possible_wrap)]
+                                let actual = if *i < 0 { (len as i64) + *i } else { *i };
+                                let idx = usize::try_from(actual)
+                                    .ok()
+                                    .filter(|&idx| idx < len)
+                                    .ok_or(VmFault::IndexOutOfRange { index: *i, len })?;
+                                b_vec[idx] = *b;
+                            }
+                        }
+                        other => {
+                            return Err(VmFault::TypeMismatch {
+                                expected: "mutable collection".to_string(),
+                                actual: other.type_name().to_string(),
+                            });
+                        }
+                    }
+                }
+                RegOpCode::Call => {
+                    let callee = self.registers[a].clone();
+                    let arg_count = b;
+                    let args = self.registers[a + 1..a + 1 + arg_count].to_vec();
+                    match callee {
+                        Value::Native(native) => {
+                            let result = (native.func)(&args)?;
+                            self.registers[a] = result;
+                        }
+                        Value::BoundMethod(bm) => match bm.kind {
+                            crate::value::MethodKind::Native(func) => {
+                                let result = func(&bm.receiver, &args)?;
+                                self.registers[a] = result;
+                            }
+                            _ => {
+                                return Err(VmFault::NotCallable {
+                                    type_name: format!("<method {}>", bm.name),
+                                });
+                            }
+                        },
+                        other => {
+                            return Err(VmFault::NotCallable {
+                                type_name: other.type_name().to_string(),
+                            });
+                        }
+                    }
+                }
+                RegOpCode::CallPipe => {
+                    let callee = self.registers[c].clone();
+                    let stream_arg = self.registers[b].clone();
+                    match callee {
+                        Value::Native(native) => {
+                            let result = (native.func)(&[stream_arg])?;
+                            self.registers[a] = result;
+                        }
+                        Value::BoundMethod(bm) => match bm.kind {
+                            crate::value::MethodKind::Native(func) => {
+                                let result = func(&bm.receiver, &[stream_arg])?;
+                                self.registers[a] = result;
+                            }
+                            _ => {
+                                return Err(VmFault::NotCallable {
+                                    type_name: format!("<method {}>", bm.name),
+                                });
+                            }
+                        },
+                        other => {
+                            return Err(VmFault::NotCallable {
+                                type_name: other.type_name().to_string(),
+                            });
+                        }
+                    }
+                }
                 RegOpCode::Return => {
                     return Ok(self.registers[a].clone());
                 }
-                _ => {}
             }
         }
         Ok(Value::None)
@@ -349,5 +576,48 @@ mod tests {
 
         let outcome = vm.run_function(&compiled).unwrap();
         assert_eq!(outcome, Value::Int(42));
+    }
+
+    #[test]
+    fn test_register_vm_call_native_and_indexing() {
+        let mut vm = RegVm::new();
+        let double_native = Value::native("double", 1, |args| match args.first() {
+            Some(Value::Int(n)) => Ok(Value::Int(n * 2)),
+            _ => Ok(Value::None),
+        });
+        vm.registers[10] = double_native;
+        vm.registers[11] = Value::Int(21);
+
+        let code = vec![
+            // R[10] = call R[10] with 1 argument (R[11])
+            RegInstruction::encode_abc(RegOpCode::Call, 10, 1, 1),
+            // return R[10]
+            RegInstruction::encode_abc(RegOpCode::Return, 10, 0, 0),
+        ];
+
+        let result = vm.run(&code).unwrap();
+        assert_eq!(result, Value::Int(42));
+    }
+
+    #[test]
+    fn test_register_vm_list_get_and_set_index() {
+        use std::cell::RefCell;
+        let mut vm = RegVm::new();
+        let list = Value::List(Rc::new(RefCell::new(vec![Value::Int(10), Value::Int(20)])));
+        vm.registers[0] = list;
+        vm.registers[1] = Value::Int(1); // index 1
+        vm.registers[2] = Value::Int(99); // new value
+
+        let code = vec![
+            // SetIndex: R[0][R[1]] = R[2] (list[1] = 99)
+            RegInstruction::encode_abc(RegOpCode::SetIndex, 0, 1, 2),
+            // GetIndex: R[5] = R[0][R[1]]
+            RegInstruction::encode_abc(RegOpCode::GetIndex, 5, 0, 1),
+            // return R[5]
+            RegInstruction::encode_abc(RegOpCode::Return, 5, 0, 0),
+        ];
+
+        let result = vm.run(&code).unwrap();
+        assert_eq!(result, Value::Int(99));
     }
 }

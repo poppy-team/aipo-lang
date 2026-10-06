@@ -244,6 +244,70 @@ impl RegEmitter {
                         ));
                     }
                 }
+                CoreInst::Call { arg_count, .. } => {
+                    if top > *arg_count {
+                        let callee = top - arg_count - 1;
+                        self.emit(RegInstruction::encode_abc(
+                            RegOpCode::Call,
+                            callee as u8,
+                            *arg_count as u16,
+                            1,
+                        ));
+                        top = callee + 1;
+                    }
+                }
+                CoreInst::GetField(name, _) => {
+                    if top > 0 {
+                        let rec = top - 1;
+                        let c_idx = self.add_const(Constant::String(name.clone()));
+                        self.emit(RegInstruction::encode_abx(
+                            RegOpCode::GetField,
+                            rec as u8,
+                            c_idx as u32,
+                        ));
+                    }
+                }
+                CoreInst::SetField(name, _) => {
+                    if top >= 2 {
+                        let val = top - 1;
+                        let rec = top - 2;
+                        let c_idx = self.add_const(Constant::String(name.clone()));
+                        self.emit(RegInstruction::encode_abc(
+                            RegOpCode::SetField,
+                            rec as u8,
+                            c_idx as u16,
+                            val as u8,
+                        ));
+                        top -= 2;
+                    }
+                }
+                CoreInst::GetIndex(_) => {
+                    if top >= 2 {
+                        let idx = top - 1;
+                        let rec = top - 2;
+                        self.emit(RegInstruction::encode_abc(
+                            RegOpCode::GetIndex,
+                            rec as u8,
+                            rec as u16,
+                            idx as u8,
+                        ));
+                        top -= 1;
+                    }
+                }
+                CoreInst::SetIndex(_) => {
+                    if top >= 3 {
+                        let val = top - 1;
+                        let idx = top - 2;
+                        let rec = top - 3;
+                        self.emit(RegInstruction::encode_abc(
+                            RegOpCode::SetIndex,
+                            rec as u8,
+                            idx as u16,
+                            val as u8,
+                        ));
+                        top -= 3;
+                    }
+                }
                 CoreInst::Pop(_) => {
                     if top > temp_base {
                         top -= 1;
