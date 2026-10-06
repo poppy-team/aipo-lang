@@ -251,3 +251,17 @@ Em nível de sistema operacional, os descritores de arquivo são vinculados dire
 4. **Marco 4 — CLI de Shell (`aipo-sh`) e Exportação C ABI**:
    - Criação do binário standalone de shell com builtins de processo.
    - Validação da biblioteca estática `libaipo.a` em provas finas de C e Rust.
+
+---
+
+## 9. Status de Implementação e Resultados Medidos
+
+| Subsistema / Métrica | Estado Anterior | Estado Atual (Marco 1-4 + Frentes A-D) |
+|---|---|---|
+| **Tamanho do Binário da CLI** | ~25 MB a 30 MB (com Wasmtime) | **2.0 MB** (`aipo-sh` nano profile) |
+| **Tempo de Cold Start** | 15 ms a 40 ms (validação JIT) | **0,002 s (2 ms)** |
+| **Pegada do Tipo `Value`** | 48 bytes (Enum + Rc) | **16 bytes** (assert verificado) |
+| **Janela de Registradores** | Pilha dinâmica irrestrita | **256 registradores fixos (4 KiB de RAM)** |
+| **Instruções de Execução** | Pilha variável | **32 bits fixos (`u32`) com Execute-In-Place** |
+| **Módulo Nativo de Shell** | Ausente | `sh.run`, `sh.cd`, `sh.pwd`, `sh.env`, `sh.which` |
+| **Embedding C ABI** | Apenas Stack VM | `aipo_reg_vm_*` em `libaipo_c_abi.a` |
