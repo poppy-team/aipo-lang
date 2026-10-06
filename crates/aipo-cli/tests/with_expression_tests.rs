@@ -46,7 +46,11 @@ fn run_program(path: &Path) -> (u8, String, String) {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         String::from_utf8_lossy(&buffer).into_owned()
     };
-    (code, program_output, String::from_utf8_lossy(&err).into_owned())
+    (
+        code,
+        program_output,
+        String::from_utf8_lossy(&err).into_owned(),
+    )
 }
 
 fn check_program(path: &Path) -> (u8, String, String) {
@@ -55,7 +59,11 @@ fn check_program(path: &Path) -> (u8, String, String) {
     let mut out = Vec::new();
     let mut err = Vec::new();
     let code = aipo_cli::run_with(&args, &mut out, &mut err);
-    (code, String::from_utf8_lossy(&out).into_owned(), String::from_utf8_lossy(&err).into_owned())
+    (
+        code,
+        String::from_utf8_lossy(&out).into_owned(),
+        String::from_utf8_lossy(&err).into_owned(),
+    )
 }
 
 #[test]

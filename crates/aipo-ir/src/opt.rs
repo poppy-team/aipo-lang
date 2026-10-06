@@ -32,11 +32,7 @@ type IndexMap = Vec<Option<usize>>;
 #[must_use]
 pub fn optimize(module: &CoreModule) -> CoreModule {
     CoreModule {
-        functions: module
-            .functions
-            .iter()
-            .map(optimize_function)
-            .collect(),
+        functions: module.functions.iter().map(optimize_function).collect(),
         top_level: optimize_function(&module.top_level),
         structs: module.structs.clone(),
         span: module.span,
@@ -212,7 +208,7 @@ fn peephole(instructions: &[CoreInst]) -> (Vec<CoreInst>, IndexMap) {
                 map[index] = Some(out.len());
                 out.push(CoreInst::Jump(*target, *span));
             }
-            map[index + 1] = if *flag { None } else { None };
+            map[index + 1] = None;
             index += 2;
             continue;
         }
@@ -323,11 +319,7 @@ fn remap_jump_targets(instructions: Vec<CoreInst>, map: &IndexMap) -> Vec<CoreIn
             CoreInst::Jump(target, span) => CoreInst::Jump(resolve(target), span),
             CoreInst::JumpIfFalse(target, span) => CoreInst::JumpIfFalse(resolve(target), span),
             CoreInst::PushHandler(target, span) => CoreInst::PushHandler(resolve(target), span),
-            CoreInst::JumpIfSetLocal {
-                slot,
-                target,
-                span,
-            } => CoreInst::JumpIfSetLocal {
+            CoreInst::JumpIfSetLocal { slot, target, span } => CoreInst::JumpIfSetLocal {
                 slot,
                 target: resolve(target),
                 span,

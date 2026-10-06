@@ -5,8 +5,8 @@ use crate::error::WasmCompileError;
 use crate::types::{WasmFnType, WasmType};
 use aipo_ast::{BinaryOp, Literal, UnaryOp};
 use aipo_hir::{
-    HirAttemptStmt, HirExpr, HirFunctionDecl, HirIfStmt, HirItem, HirMatchStmt, HirParam, HirProgram,
-    HirStmt, HirStructDecl,
+    HirAttemptStmt, HirExpr, HirFunctionDecl, HirIfStmt, HirItem, HirMatchStmt, HirParam,
+    HirProgram, HirStmt, HirStructDecl,
 };
 use aipo_lexer::{parse_float_literal, parse_int_literal};
 use aipo_source::SourceSpan;
@@ -332,7 +332,8 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     );
 
     // Function 6: `__aipo_range_new(start: i64, end: i64) -> i32`
-    let range_new_fn_type = WasmFnType::new(vec![WasmType::I64, WasmType::I64], vec![WasmType::I32]);
+    let range_new_fn_type =
+        WasmFnType::new(vec![WasmType::I64, WasmType::I64], vec![WasmType::I32]);
     let range_new_type_idx = emitter.add_type(range_new_fn_type.clone());
     let range_new_fn = build_range_new_function(alloc_func_idx);
     let range_new_func_idx = emitter.add_function(range_new_type_idx, range_new_fn);
@@ -401,7 +402,8 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     );
 
     // Function 12: `__aipo_range_get(range_ptr: i32, index: i32) -> i64`
-    let range_get_fn_type = WasmFnType::new(vec![WasmType::I32, WasmType::I32], vec![WasmType::I64]);
+    let range_get_fn_type =
+        WasmFnType::new(vec![WasmType::I32, WasmType::I32], vec![WasmType::I64]);
     let range_get_type_idx = emitter.add_type(range_get_fn_type.clone());
     let range_get_fn = build_range_get_function();
     let range_get_func_idx = emitter.add_function(range_get_type_idx, range_get_fn);
@@ -477,7 +479,11 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     emitter.export_function("__aipo_string_hash", string_hash_func_idx);
     functions.insert(
         "__aipo_string_hash".to_string(),
-        (string_hash_func_idx, string_hash_type_idx, string_hash_fn_type),
+        (
+            string_hash_func_idx,
+            string_hash_type_idx,
+            string_hash_fn_type,
+        ),
     );
 
     let async_helpers = AsyncHelpers {
@@ -952,9 +958,7 @@ fn scan_stmts_for_io(stmts: &[HirStmt]) -> bool {
             }
             HirStmt::Return(Some(expr), _) if scan_expr_for_io(expr) => return true,
             HirStmt::Fail(expr, _) if scan_expr_for_io(expr) => return true,
-            HirStmt::Attempt(a)
-                if scan_stmts_for_io(&a.body) || scan_stmts_for_io(&a.handler) =>
-            {
+            HirStmt::Attempt(a) if scan_stmts_for_io(&a.body) || scan_stmts_for_io(&a.handler) => {
                 return true;
             }
             HirStmt::If(s) => {
@@ -2050,7 +2054,12 @@ fn collect_stmts_strings(
                 collect_stmts_strings(&a.handler, static_strings, data_segments, next_offset);
             }
             HirStmt::Match(match_stmt) => {
-                collect_expr_strings(&match_stmt.target, static_strings, data_segments, next_offset);
+                collect_expr_strings(
+                    &match_stmt.target,
+                    static_strings,
+                    data_segments,
+                    next_offset,
+                );
                 for arm in &match_stmt.when_arms {
                     for p in &arm.patterns {
                         if let aipo_hir::HirMatchPattern::Value(expr) = p {
@@ -2936,13 +2945,8 @@ fn compile_stmts(
                     }
                 }
                 HirExpr::Index(target_coll, index, _) => {
-                    let coll_kind = infer_expr_kind(
-                        target_coll,
-                        locals,
-                        functions,
-                        table_indices,
-                        anon_map,
-                    );
+                    let coll_kind =
+                        infer_expr_kind(target_coll, locals, functions, table_indices, anon_map);
                     if matches!(coll_kind, LocalKind::Dict) {
                         let (dict_set_idx, _, _) = functions["__aipo_dict_set"];
                         let (string_hash_idx, _, _) = functions["__aipo_string_hash"];
@@ -3491,9 +3495,13 @@ fn compile_stmts(
                     call_depth,
                 )?;
                 coerce_type(func, msg_ty, WasmType::I32);
-                func.instruction(&Instruction::GlobalSet(async_helpers.fail_globals.message_idx));
+                func.instruction(&Instruction::GlobalSet(
+                    async_helpers.fail_globals.message_idx,
+                ));
                 func.instruction(&Instruction::I32Const(1));
-                func.instruction(&Instruction::GlobalSet(async_helpers.fail_globals.status_idx));
+                func.instruction(&Instruction::GlobalSet(
+                    async_helpers.fail_globals.status_idx,
+                ));
 
                 // Inside an `attempt`, raising a failure unwinds to the handler
                 // block instead of returning from the function.
@@ -3551,12 +3559,7 @@ fn compile_stmts(
         // Statement-boundary failure propagation. Skipped once the path is
         // already terminated, since `Return`/`Break` leave no code to guard.
         if !terminated && stmt_may_fail(stmt) {
-            emit_failure_check(
-                func,
-                control_stack,
-                async_helpers.fail_globals,
-                return_type,
-            );
+            emit_failure_check(func, control_stack, async_helpers.fail_globals, return_type);
         }
     }
 
@@ -4179,8 +4182,10 @@ fn compile_match_stmt(
         // Struct destructuring binds fields into locals, and a guard adds a second
         // boolean test after the pattern chain. Neither is implemented by this backend
         // yet, so both are reported instead of silently compiling to the wrong thing.
-        if let Some(aipo_hir::HirMatchPattern::Destructure(fields)) =
-            arm.patterns.iter().find(|p| matches!(p, aipo_hir::HirMatchPattern::Destructure(_)))
+        if let Some(aipo_hir::HirMatchPattern::Destructure(fields)) = arm
+            .patterns
+            .iter()
+            .find(|p| matches!(p, aipo_hir::HirMatchPattern::Destructure(_)))
         {
             return Err(WasmCompileError::UnsupportedStmt {
                 message: format!(
@@ -5349,7 +5354,7 @@ fn compile_expr(
                 type_index: type_idx,
                 table_index: 0,
             });
-            return Ok(ret_ty.unwrap_or(WasmType::I64));
+            Ok(ret_ty.unwrap_or(WasmType::I64))
         }
         HirExpr::Dict(entries, span) => {
             if entries.is_empty() {
@@ -5573,7 +5578,8 @@ fn compile_expr(
             {
                 // Lists and Ranges expose their element count through the
                 // runtime helpers rather than the static string length path.
-                let receiver_kind = infer_expr_kind(receiver, locals, functions, table_indices, anon_map);
+                let receiver_kind =
+                    infer_expr_kind(receiver, locals, functions, table_indices, anon_map);
                 if matches!(receiver_kind, LocalKind::List) {
                     let (list_len_idx, _, _) = functions["__aipo_list_len"];
                     let r_ty = compile_expr(
@@ -5811,10 +5817,12 @@ fn compile_expr(
                 .map(|e| infer_expr_type(e, locals, functions, structs, table_indices))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
-                .reduce(|acc, ty| if acc == WasmType::F64 || ty == WasmType::F64 {
-                    WasmType::F64
-                } else {
-                    acc
+                .reduce(|acc, ty| {
+                    if acc == WasmType::F64 || ty == WasmType::F64 {
+                        WasmType::F64
+                    } else {
+                        acc
+                    }
                 })
                 .unwrap_or(WasmType::I64);
 
@@ -5918,8 +5926,7 @@ fn compile_expr(
                 )?;
                 coerce_type(func, t_ty, WasmType::I32);
 
-                let index_kind =
-                    infer_expr_kind(index, locals, functions, table_indices, anon_map);
+                let index_kind = infer_expr_kind(index, locals, functions, table_indices, anon_map);
                 if matches!(index_kind, LocalKind::String) {
                     let i_ty = compile_expr(
                         index,
@@ -6139,7 +6146,7 @@ fn compile_logical_short_circuit(
 /// mirrors the stack VM's `CheckFailure` opcode together with its handler stack.
 fn emit_failure_check(
     func: &mut Function,
-    control_stack: &mut Vec<ControlFrame>,
+    control_stack: &[ControlFrame],
     fail_globals: FailureGlobals,
     return_type: Option<WasmType>,
 ) {
@@ -6172,7 +6179,8 @@ fn emit_failure_check(
 }
 
 /// Coerces a value on top of the Wasm stack to boolean `i32` (0 or 1).
-fn coerce_to_bool(func: &mut Function, ty: WasmType) {    match ty {
+fn coerce_to_bool(func: &mut Function, ty: WasmType) {
+    match ty {
         WasmType::I32 => {}
         WasmType::I64 => {
             func.instruction(&Instruction::I64Const(0));
@@ -6249,7 +6257,8 @@ fn stmt_may_fail(stmt: &HirStmt) -> bool {
                     arm.patterns.iter().any(|p| match p {
                         aipo_hir::HirMatchPattern::Value(e) => expr_may_fail(e),
                         aipo_hir::HirMatchPattern::Destructure(_) => true,
-                    }) || arm.guard.as_ref().map(expr_may_fail).unwrap_or(false) || stmts_may_fail(&arm.body)
+                    }) || arm.guard.as_ref().map(expr_may_fail).unwrap_or(false)
+                        || stmts_may_fail(&arm.body)
                 })
                 || match_stmt
                     .else_arm
@@ -6322,7 +6331,7 @@ fn infer_expr_is_range(
     expr: &HirExpr,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
     functions: &HashMap<String, (u32, u32, WasmFnType)>,
-    structs: &HashMap<String, StructLayout>,
+    _structs: &HashMap<String, StructLayout>,
     table_indices: &HashMap<String, u32>,
 ) -> bool {
     match expr {
@@ -6331,11 +6340,11 @@ fn infer_expr_is_range(
             .get(name)
             .is_some_and(|(_, _, kind)| matches!(kind, LocalKind::Range)),
         HirExpr::If(_, then_expr, else_expr, _) => {
-            infer_expr_is_range(then_expr, locals, functions, structs, table_indices)
-                && infer_expr_is_range(else_expr, locals, functions, structs, table_indices)
+            infer_expr_is_range(then_expr, locals, functions, _structs, table_indices)
+                && infer_expr_is_range(else_expr, locals, functions, _structs, table_indices)
         }
         _ => {
-            let _ = (functions, table_indices);
+            let _ = (functions, table_indices, _structs);
             false
         }
     }

@@ -696,20 +696,17 @@ impl<'a> SemanticAnalyzer<'a> {
         let promises_value =
             f.return_type.is_some() || report.returns == crate::flow::ReturnShape::AllValues;
         if promises_value && report.missing_value_path {
-            let message = if f.return_type.is_some() {
+            let message = if let Some(ret_ty) = &f.return_type {
                 format!(
                     "function declares `-> {}` but a path reaches the end without returning a value",
-                    contract_label(f.return_type.as_ref().unwrap())
+                    contract_label(ret_ty)
                 )
             } else {
                 "a path reaches the end of the function without returning a value".to_string()
             };
             self.diagnostics.push(
-                Diagnostic::error(
-                    DiagnosticCode::AIPO_SEM_PATH_MISSING_RETURN_VALUE,
-                    message,
-                )
-                .with_primary_span(self.source, f.span),
+                Diagnostic::error(DiagnosticCode::AIPO_SEM_PATH_MISSING_RETURN_VALUE, message)
+                    .with_primary_span(self.source, f.span),
             );
         }
     }
@@ -1682,9 +1679,7 @@ impl<'a> SemanticAnalyzer<'a> {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
-                                    format!(
-                                        "struct '{target}' has no field '{name}'"
-                                    ),
+                                    format!("struct '{target}' has no field '{name}'"),
                                 )
                                 .with_primary_span(self.source, *span),
                             );

@@ -233,11 +233,9 @@ fn shift_stmt(stmt: &Stmt, delta: usize) -> Stmt {
                             MatchPattern::Value(expr) => {
                                 MatchPattern::Value(shift_expr(expr, delta))
                             }
-                            MatchPattern::Destructure(fields) => {
-                                MatchPattern::Destructure(
-                                    fields.iter().map(|f| shift_ident(f, delta)).collect(),
-                                )
-                            }
+                            MatchPattern::Destructure(fields) => MatchPattern::Destructure(
+                                fields.iter().map(|f| shift_ident(f, delta)).collect(),
+                            ),
                         })
                         .collect(),
                     guard: arm.guard.as_ref().map(|expr| shift_expr(expr, delta)),

@@ -51,7 +51,7 @@ impl RegEmitter {
         let mut core_to_reg: Vec<usize> = Vec::with_capacity(func.instructions.len());
         let mut jump_patches: Vec<(usize, isize, bool, u8)> = Vec::new();
 
-        for (_core_idx, inst) in func.instructions.iter().enumerate() {
+        for inst in &func.instructions {
             core_to_reg.push(self.instructions.len());
 
             match inst {
@@ -249,18 +249,16 @@ impl RegEmitter {
                         top -= 1;
                     }
                 }
-                CoreInst::Dup(_) => {
-                    if top > temp_base {
-                        self.track_reg(top);
-                        let prev = top - 1;
-                        self.emit(RegInstruction::encode_abc(
-                            RegOpCode::Move,
-                            top as u8,
-                            prev as u16,
-                            0,
-                        ));
-                        top += 1;
-                    }
+                CoreInst::Dup(_) if top > temp_base => {
+                    self.track_reg(top);
+                    let prev = top - 1;
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::Move,
+                        top as u8,
+                        prev as u16,
+                        0,
+                    ));
+                    top += 1;
                 }
                 _ => {}
             }

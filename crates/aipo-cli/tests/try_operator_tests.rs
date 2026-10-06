@@ -46,7 +46,11 @@ fn run_program(path: &Path) -> (u8, String, String) {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         String::from_utf8_lossy(&buffer).into_owned()
     };
-    (code, program_output, String::from_utf8_lossy(&err).into_owned())
+    (
+        code,
+        program_output,
+        String::from_utf8_lossy(&err).into_owned(),
+    )
 }
 
 #[test]

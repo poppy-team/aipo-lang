@@ -200,6 +200,7 @@ pub fn execute_wasm(wasm_bytes: &[u8], stdout: &mut dyn Write) -> Result<i64, Wa
 #[cfg(not(feature = "wasmtime"))]
 pub fn execute_wasm(_wasm_bytes: &[u8], _stdout: &mut dyn Write) -> Result<i64, WasmRuntimeError> {
     Err(WasmRuntimeError::Execution(
-        "WebAssembly JIT execution is disabled in this build (wasmtime feature not enabled)".to_string(),
+        "WebAssembly JIT execution is disabled in this build (wasmtime feature not enabled)"
+            .to_string(),
     ))
 }

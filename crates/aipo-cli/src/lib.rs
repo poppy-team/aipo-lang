@@ -306,7 +306,13 @@ pub fn eval_source(source_text: &str, out: &mut dyn Write, err: &mut dyn Write) 
         .iter()
         .any(|diag| diag.severity == Severity::Error);
 
-    emit_diagnostics(MessageFormat::Human, &source, &compiled.diagnostics, out, err);
+    emit_diagnostics(
+        MessageFormat::Human,
+        &source,
+        &compiled.diagnostics,
+        out,
+        err,
+    );
 
     if has_errors {
         return EXIT_LANGUAGE_FAILURE;
@@ -316,7 +322,13 @@ pub fn eval_source(source_text: &str, out: &mut dyn Write, err: &mut dyn Write) 
         Ok(()) => EXIT_SUCCESS,
         Err(error) => {
             let diagnostic = runtime_diagnostic(&source, &error);
-            emit_diagnostics(MessageFormat::Human, &source, std::slice::from_ref(&diagnostic), out, err);
+            emit_diagnostics(
+                MessageFormat::Human,
+                &source,
+                std::slice::from_ref(&diagnostic),
+                out,
+                err,
+            );
             EXIT_LANGUAGE_FAILURE
         }
     }
@@ -2037,7 +2049,10 @@ fn execute(
         #[cfg(not(feature = "wasm"))]
         {
             let _ = bytes;
-            let _ = writeln!(err, "error: WebAssembly execution is disabled in this build");
+            let _ = writeln!(
+                err,
+                "error: WebAssembly execution is disabled in this build"
+            );
             EXIT_LANGUAGE_FAILURE
         }
     } else {
@@ -2106,8 +2121,16 @@ fn execute_wasm_file(path: &Path, action: Action, out: &mut dyn Write, err: &mut
 }
 
 #[cfg(not(feature = "wasm"))]
-fn execute_wasm_file(_path: &Path, _action: Action, _out: &mut dyn Write, err: &mut dyn Write) -> u8 {
-    let _ = writeln!(err, "error: WebAssembly execution is disabled in this build");
+fn execute_wasm_file(
+    _path: &Path,
+    _action: Action,
+    _out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let _ = writeln!(
+        err,
+        "error: WebAssembly execution is disabled in this build"
+    );
     EXIT_USAGE
 }
 
@@ -2194,7 +2217,10 @@ fn disassemble_command(
         #[cfg(not(feature = "wasm"))]
         {
             let _ = bytes;
-            let _ = writeln!(err, "error: WebAssembly disassembler is disabled in this build");
+            let _ = writeln!(
+                err,
+                "error: WebAssembly disassembler is disabled in this build"
+            );
             EXIT_USAGE
         }
     } else if path.extension().and_then(|ext| ext.to_str()) == Some("aibc") {
@@ -2269,7 +2295,10 @@ fn disassemble_command(
         #[cfg(not(feature = "wasm"))]
         {
             let _ = bytes;
-            let _ = writeln!(err, "error: WebAssembly disassembler is disabled in this build");
+            let _ = writeln!(
+                err,
+                "error: WebAssembly disassembler is disabled in this build"
+            );
             EXIT_USAGE
         }
     } else {
@@ -2403,8 +2432,11 @@ fn build_bundle(
                                 ("app.js.map", bundle.source_map.as_str()),
                             ] {
                                 if let Err(error) = std::fs::write(dir.join(name), contents) {
-                                    let _ =
-                                        writeln!(err, "error: {}: {error}", dir.join(name).display());
+                                    let _ = writeln!(
+                                        err,
+                                        "error: {}: {error}",
+                                        dir.join(name).display()
+                                    );
                                     return EXIT_USAGE;
                                 }
                             }

@@ -4,7 +4,7 @@
 //! the program: every corpus entry runs through the VM twice, once optimized and
 //! once not, and both runs must agree on the printed output and the return value.
 
-use aipo_ir::{optimize, CoreConstant, CoreFunction, CoreInst};
+use aipo_ir::{CoreConstant, CoreFunction, CoreInst, optimize};
 use aipo_testkit::pipeline::{lower_to_ir, run_capture};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -243,7 +243,10 @@ fn test_does_not_fold_overflowing_addition() {
     let instructions = &optimized.functions[0].instructions;
     // The two operands and the operator survive; nothing was folded away.
     assert!(
-        matches!(instructions.get(2), Some(CoreInst::Binary(aipo_ast::BinaryOp::Add, _))),
+        matches!(
+            instructions.get(2),
+            Some(CoreInst::Binary(aipo_ast::BinaryOp::Add, _))
+        ),
         "overflow must not become a folded constant: {instructions:?}"
     );
     assert!(
@@ -366,7 +369,10 @@ fn test_resolves_known_false_branch() {
     // body. The surviving stream therefore pushes `2` and returns.
     assert_eq!(instructions.len(), 2, "{instructions:?}");
     assert!(
-        matches!(instructions.first(), Some(CoreInst::Constant(CoreConstant::Int(2), _))),
+        matches!(
+            instructions.first(),
+            Some(CoreInst::Constant(CoreConstant::Int(2), _))
+        ),
         "the false branch resolved to the second arm: {instructions:?}"
     );
 }

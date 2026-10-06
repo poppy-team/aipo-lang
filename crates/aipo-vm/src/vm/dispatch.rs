@@ -135,7 +135,7 @@ impl Vm {
                             expected: "struct".to_string(),
                             actual: other.type_name().to_string(),
                         }
-                        .into())
+                        .into());
                     }
                 };
                 let copied = Rc::new(RefCell::new(StructInstance {
@@ -1101,9 +1101,7 @@ impl Vm {
                 let end = self.pop()?;
                 let start = self.pop()?;
                 match (start, end) {
-                    (Value::Int(s), Value::Int(e)) => {
-                        self.push(Value::range(s, e))?
-                    }
+                    (Value::Int(s), Value::Int(e)) => self.push(Value::range(s, e))?,
                     (a, b) => {
                         return Err(VmFault::TypeMismatch {
                             expected: "Int range bounds".to_string(),

@@ -10,7 +10,6 @@ pub mod value;
 pub mod vm;
 
 pub use arena::{ArenaAllocator, ArenaError};
-pub use reg_vm::RegVm;
 pub use convert::{
     BYTE_MAX, TypeTag, convert_byte, convert_bytes, convert_duration, convert_float, convert_int,
     convert_set, convert_string, convert_via_type,
@@ -21,6 +20,7 @@ pub use host::{
     EnvironmentSource, FilesystemError, FilesystemSource, FilesystemSourceError, HostContext,
     host_fault_to_vm_fault, host_value_to_value, value_to_host_value,
 };
+pub use reg_vm::RegVm;
 pub use value::{
     DictMap, FailureValue, GroupId, MAX_SAFE_INT, MIN_SAFE_INT, MethodKind, RangeData, SeqOp,
     SequencePipeline, SequenceSource, StructInstance, StructMethodData, TaskId, Value,

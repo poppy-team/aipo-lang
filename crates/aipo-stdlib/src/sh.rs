@@ -80,13 +80,12 @@ pub fn sh_run(args: &[Value]) -> Result<Value, VmFault> {
             Value::String(Rc::new("stderr".to_string())),
             Value::String(Rc::new(stderr_str)),
         ),
-        (
-            Value::String(Rc::new("ok".to_string())),
-            Value::Bool(ok),
-        ),
+        (Value::String(Rc::new("ok".to_string())), Value::Bool(ok)),
     ];
 
-    Ok(Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries)))))
+    Ok(Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(
+        entries,
+    )))))
 }
 
 /// Changes the current working directory: `sh.cd(path: String) -> Bool`.

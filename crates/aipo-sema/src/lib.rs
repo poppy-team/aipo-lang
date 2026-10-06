@@ -315,7 +315,10 @@ mod tests {
         let code = "fn pick(flag: Bool) -> Int\n  if flag\n    return 1\n  end\n  return\nend";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
-        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_RETURN_VALUE_MISMATCH);
+        assert_eq!(
+            diags[0].code,
+            DiagnosticCode::AIPO_SEM_RETURN_VALUE_MISMATCH
+        );
     }
 
     /// Every `return` carrying a value is the ordinary shape and must stay silent.
@@ -426,9 +429,11 @@ mod tests {
     fn test_logical_operator_literal_operands_are_reported() {
         let diags = analyze_source("let flag = 1 and 2");
         assert_eq!(diags.len(), 2, "found: {diags:?}");
-        assert!(diags
-            .iter()
-            .all(|d| d.code == DiagnosticCode::AIPO_SEM_NON_BOOL_CONDITION));
+        assert!(
+            diags
+                .iter()
+                .all(|d| d.code == DiagnosticCode::AIPO_SEM_NON_BOOL_CONDITION)
+        );
     }
 
     /// `not` also requires a `Bool`.

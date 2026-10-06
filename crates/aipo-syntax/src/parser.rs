@@ -1159,7 +1159,10 @@ impl<'a> Parser<'a> {
                         }
                         self.skip_newlines();
                     }
-                    self.expect(&TokenKind::RBrace, "expected '}' to close destructuring pattern")?;
+                    self.expect(
+                        &TokenKind::RBrace,
+                        "expected '}' to close destructuring pattern",
+                    )?;
                     patterns.push(MatchPattern::Destructure(fields));
                 } else {
                     let old = self.allow_comma_is;
@@ -2483,10 +2486,7 @@ impl<'a> Parser<'a> {
                 let start = left.span();
                 let (fields, end) = self.parse_braced_fields("expected '{' after 'with'")?;
                 let span = start.merge(end);
-                Some(Expr::With(
-                    Box::new(left),
-                    WithExpr { fields, span },
-                ))
+                Some(Expr::With(Box::new(left), WithExpr { fields, span }))
             }
 
             // Index access: `target[index]`, including half-open slices with omitted
@@ -2648,7 +2648,10 @@ impl<'a> Parser<'a> {
         }
         self.skip_newlines();
         let end = self
-            .expect(&TokenKind::RBrace, "expected '}' to close struct construction")?
+            .expect(
+                &TokenKind::RBrace,
+                "expected '}' to close struct construction",
+            )?
             .span;
         Some((fields, end))
     }

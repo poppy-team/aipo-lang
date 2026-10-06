@@ -19,9 +19,7 @@ impl Vm {
         }
         match self.bind_method(value, name) {
             Some(Value::BoundMethod(bm)) => Some(bm.arity),
-            Some(Value::StructMethod(sm)) => {
-                Some((sm.total_arity as usize).saturating_sub(1))
-            }
+            Some(Value::StructMethod(sm)) => Some((sm.total_arity as usize).saturating_sub(1)),
             _ => None,
         }
     }

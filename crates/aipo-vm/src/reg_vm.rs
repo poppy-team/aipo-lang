@@ -41,7 +41,10 @@ impl RegVm {
     ///
     /// # Errors
     /// Returns [`VmFault`] if a runtime error occurs.
-    pub fn run_function(&mut self, func: &aipo_bytecode::RegCompiledFunction) -> Result<Value, VmFault> {
+    pub fn run_function(
+        &mut self,
+        func: &aipo_bytecode::RegCompiledFunction,
+    ) -> Result<Value, VmFault> {
         self.constants = func
             .constants
             .iter()

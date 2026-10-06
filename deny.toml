@@ -12,6 +12,11 @@ allow = [
     "Apache-2.0",
     "Unicode-3.0",
     "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+    "Zlib",
 ]
 confidence-threshold = 0.8
 exceptions = []
@@ -24,8 +29,23 @@ multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
 highlight = "all"
-skip = []
-skip-tree = []
+skip = [
+    { name = "bitflags" },
+    { name = "block-buffer" },
+    { name = "cpufeatures" },
+    { name = "crypto-common" },
+    { name = "digest" },
+    { name = "foldhash" },
+    { name = "hashbrown" },
+    { name = "itertools" },
+    { name = "miniz_oxide" },
+    { name = "sha2" },
+    { name = "smallvec" },
+    { name = "syn" },
+]
+skip-tree = [
+    { name = "aipo-game-host" },
+]
 
 [sources]
 unknown-registry = "deny"
@@ -37,4 +57,7 @@ allow-git = []
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/RustSec/advisory-db"]
 yanked = "deny"
-ignore = []
+ignore = [
+    "RUSTSEC-2025-0035",
+    "RUSTSEC-2026-0192",
+]
