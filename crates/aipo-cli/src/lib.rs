@@ -1922,6 +1922,7 @@ fn compile_to_wasm(
         return (None, diagnostics);
     }
 
+    #[cfg(feature = "wasm")]
     match aipo_wasm::compile_hir(&resolved.program) {
         Ok(bytes) => (Some(bytes), diagnostics),
         Err(err) => {
@@ -1931,6 +1932,14 @@ fn compile_to_wasm(
             ));
             (None, diagnostics)
         }
+    }
+    #[cfg(not(feature = "wasm"))]
+    {
+        diagnostics.push(Diagnostic::error(
+            DiagnosticCode::AIPO_RT_TYPE_MISMATCH,
+            "WebAssembly compiler is disabled in this build (wasm feature not enabled)".to_string(),
+        ));
+        (None, diagnostics)
     }
 }
 
@@ -2017,12 +2026,19 @@ fn execute(
             return EXIT_LANGUAGE_FAILURE;
         };
 
+        #[cfg(feature = "wasm")]
         match aipo_wasm::execute_wasm(&bytes, out) {
             Ok(_) => EXIT_SUCCESS,
             Err(error) => {
                 let _ = writeln!(err, "error: {error}");
                 EXIT_LANGUAGE_FAILURE
             }
+        }
+        #[cfg(not(feature = "wasm"))]
+        {
+            let _ = bytes;
+            let _ = writeln!(err, "error: WebAssembly execution is disabled in this build");
+            EXIT_LANGUAGE_FAILURE
         }
     } else {
         let LoadedSource {
@@ -2060,6 +2076,7 @@ fn execute(
 }
 
 /// Executes or checks a pre-compiled `.wasm` binary module.
+#[cfg(feature = "wasm")]
 fn execute_wasm_file(path: &Path, action: Action, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
@@ -2086,6 +2103,12 @@ fn execute_wasm_file(path: &Path, action: Action, out: &mut dyn Write, err: &mut
             }
         }
     }
+}
+
+#[cfg(not(feature = "wasm"))]
+fn execute_wasm_file(_path: &Path, _action: Action, _out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let _ = writeln!(err, "error: WebAssembly execution is disabled in this build");
+    EXIT_USAGE
 }
 
 /// Loads a pre-compiled `.aibc` file, verifies its bytecode, and executes it.
@@ -2157,6 +2180,7 @@ fn disassemble_command(
             }
         };
 
+        #[cfg(feature = "wasm")]
         match aipo_wasm::disassemble_wasm(&bytes) {
             Ok(wat) => {
                 let _ = write!(out, "{wat}");
@@ -2166,6 +2190,12 @@ fn disassemble_command(
                 let _ = writeln!(err, "error: malformed .wasm: {error}");
                 EXIT_LANGUAGE_FAILURE
             }
+        }
+        #[cfg(not(feature = "wasm"))]
+        {
+            let _ = bytes;
+            let _ = writeln!(err, "error: WebAssembly disassembler is disabled in this build");
+            EXIT_USAGE
         }
     } else if path.extension().and_then(|ext| ext.to_str()) == Some("aibc") {
         if wasm {
@@ -2225,6 +2255,7 @@ fn disassemble_command(
             return EXIT_LANGUAGE_FAILURE;
         };
 
+        #[cfg(feature = "wasm")]
         match aipo_wasm::disassemble_wasm(&bytes) {
             Ok(wat) => {
                 let _ = write!(out, "{wat}");
@@ -2234,6 +2265,12 @@ fn disassemble_command(
                 let _ = writeln!(err, "error: disassembly failed: {error}");
                 EXIT_LANGUAGE_FAILURE
             }
+        }
+        #[cfg(not(feature = "wasm"))]
+        {
+            let _ = bytes;
+            let _ = writeln!(err, "error: WebAssembly disassembler is disabled in this build");
+            EXIT_USAGE
         }
     } else {
         // For .aipo files: compile first, then disassemble with source annotations.
@@ -2322,56 +2359,64 @@ fn build_bundle(
             EXIT_SUCCESS
         }
         BuildTarget::Js => {
-            let (program, mut diagnostics) = aipo_syntax::parse(&source);
-            if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
-                let hir = aipo_hir::lower(program);
-                let resolved = modules::resolve(path, hir, package_paths.as_ref());
-                diagnostics.extend(resolved.diagnostics);
+            #[cfg(not(feature = "js"))]
+            {
+                let _ = writeln!(err, "error: JavaScript emitter is disabled in this build");
+                EXIT_USAGE
+            }
+            #[cfg(feature = "js")]
+            {
+                let (program, mut diagnostics) = aipo_syntax::parse(&source);
                 if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
-                    let mut surface = prelude_surface();
-                    for name in &resolved.imported_names {
-                        surface.add_variable(name);
-                    }
-                    let (_, sema_diagnostics) =
-                        aipo_sema::check_with_prelude(&source, &resolved.program, &surface);
-                    diagnostics.extend(sema_diagnostics);
+                    let hir = aipo_hir::lower(program);
+                    let resolved = modules::resolve(path, hir, package_paths.as_ref());
+                    diagnostics.extend(resolved.diagnostics);
                     if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
-                        let ir = aipo_ir::lower_to_ir(&resolved.program);
-                        let file_name = path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("main.aipo");
-                        let bundle = aipo_js::emit_js(file_name, source.text(), &ir);
-                        let dir: PathBuf = match out_dir {
-                            Some(dir) => dir.to_path_buf(),
-                            None => path
-                                .parent()
-                                .map_or_else(|| PathBuf::from("dist"), Path::to_path_buf)
-                                .join("dist"),
-                        };
-                        if let Err(error) = std::fs::create_dir_all(&dir) {
-                            let _ = writeln!(err, "error: {}: {error}", dir.display());
-                            return EXIT_USAGE;
+                        let mut surface = prelude_surface();
+                        for name in &resolved.imported_names {
+                            surface.add_variable(name);
                         }
-                        for (name, contents) in [
-                            ("app.js", bundle.app_js.as_str()),
-                            ("aipo-runtime.js", bundle.runtime_js.as_str()),
-                            ("app.js.map", bundle.source_map.as_str()),
-                        ] {
-                            if let Err(error) = std::fs::write(dir.join(name), contents) {
-                                let _ =
-                                    writeln!(err, "error: {}: {error}", dir.join(name).display());
+                        let (_, sema_diagnostics) =
+                            aipo_sema::check_with_prelude(&source, &resolved.program, &surface);
+                        diagnostics.extend(sema_diagnostics);
+                        if !diagnostics.iter().any(|d| d.severity == Severity::Error) {
+                            let ir = aipo_ir::lower_to_ir(&resolved.program);
+                            let file_name = path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("main.aipo");
+                            let bundle = aipo_js::emit_js(file_name, source.text(), &ir);
+                            let dir: PathBuf = match out_dir {
+                                Some(dir) => dir.to_path_buf(),
+                                None => path
+                                    .parent()
+                                    .map_or_else(|| PathBuf::from("dist"), Path::to_path_buf)
+                                    .join("dist"),
+                            };
+                            if let Err(error) = std::fs::create_dir_all(&dir) {
+                                let _ = writeln!(err, "error: {}: {error}", dir.display());
                                 return EXIT_USAGE;
                             }
+                            for (name, contents) in [
+                                ("app.js", bundle.app_js.as_str()),
+                                ("aipo-runtime.js", bundle.runtime_js.as_str()),
+                                ("app.js.map", bundle.source_map.as_str()),
+                            ] {
+                                if let Err(error) = std::fs::write(dir.join(name), contents) {
+                                    let _ =
+                                        writeln!(err, "error: {}: {error}", dir.join(name).display());
+                                    return EXIT_USAGE;
+                                }
+                            }
+                            let _ = writeln!(out, "built 3 files to {}", dir.display());
+                            return EXIT_SUCCESS;
                         }
-                        let _ = writeln!(out, "built 3 files to {}", dir.display());
-                        return EXIT_SUCCESS;
                     }
                 }
-            }
 
-            emit_diagnostics(format, &source, &diagnostics, out, err);
-            EXIT_LANGUAGE_FAILURE
+                emit_diagnostics(format, &source, &diagnostics, out, err);
+                EXIT_LANGUAGE_FAILURE
+            }
         }
     }
 }
@@ -2765,6 +2810,7 @@ pub fn compile_file(
 }
 
 /// Formats files in place, or verifies that they are already canonical.
+#[cfg(feature = "formatter")]
 fn format_files(paths: &[PathBuf], check: bool, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let mut exit = EXIT_SUCCESS;
     let mut changed = 0usize;
@@ -2806,6 +2852,12 @@ fn format_files(paths: &[PathBuf], check: bool, out: &mut dyn Write, err: &mut d
         let _ = writeln!(out, "formatted {changed} {verb}");
     }
     exit
+}
+
+#[cfg(not(feature = "formatter"))]
+fn format_files(_paths: &[PathBuf], _check: bool, _out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let _ = writeln!(err, "error: code formatter is disabled in this build");
+    EXIT_USAGE
 }
 
 fn load_source_entry(path: &Path, package_cache: Option<&Path>) -> Result<LoadedSource, CliError> {

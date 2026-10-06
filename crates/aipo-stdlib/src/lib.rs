@@ -30,6 +30,7 @@ pub mod path;
 pub mod prelude;
 pub mod random;
 pub mod regex;
+pub mod sh;
 pub mod string;
 pub mod task;
 pub mod testing;
@@ -59,6 +60,7 @@ pub fn register_stdlib(vm: &mut Vm, registry: &mut NativeRegistry) {
     register_encoding(registry);
     register_binary(registry);
     register_path(registry);
+    register_sh(registry);
     register_url(registry);
     register_regex(registry);
     register_testing(registry);
@@ -579,6 +581,7 @@ fn register_modules(vm: &mut Vm) {
     vm.define_global("testing", testing::create_module());
     vm.define_global("test", Value::native("test", 2, testing::test_declaration));
     vm.define_global("log", log::create_module());
+    vm.define_global("sh", sh::create_module());
 }
 
 /// Registers `testing` module metadata.
@@ -894,6 +897,40 @@ fn register_path(registry: &mut NativeRegistry) {
         1,
         Some("path"),
         "Returns the extension portion of a path including the dot.",
+    ));
+}
+
+/// Registers `sh` system automation module metadata.
+fn register_sh(registry: &mut NativeRegistry) {
+    registry.register(NativeFunctionMeta::new(
+        "run",
+        2,
+        Some("sh"),
+        "Executes a system process command, returning a dictionary with code, stdout, stderr, ok.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "cd",
+        1,
+        Some("sh"),
+        "Changes current working directory.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "pwd",
+        0,
+        Some("sh"),
+        "Returns current working directory.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "env",
+        1,
+        Some("sh"),
+        "Retrieves an environment variable by name or none.",
+    ));
+    registry.register(NativeFunctionMeta::new(
+        "which",
+        1,
+        Some("sh"),
+        "Resolves executable path from PATH environment or none.",
     ));
 }
 

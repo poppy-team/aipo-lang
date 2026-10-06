@@ -71,3 +71,24 @@ fn test_eval_source_syntax_error_reports_failure() {
     assert_eq!(exit_code, 1);
     assert!(!err.is_empty());
 }
+
+#[test]
+fn test_sh_module_automation() {
+    let _guard = test_lock();
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    aipo_cli::set_output_sink(Some(Box::new(TestSink(Arc::clone(&captured)))));
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let code = r#"
+let res = sh.run("echo", ["automation-test"])
+io.print(res["stdout"])
+let pwd = sh.pwd()
+io.println(pwd.len() > 0)
+"#;
+    let exit_code = aipo_cli::eval_source(code, &mut out, &mut err);
+    aipo_cli::set_output_sink(None);
+
+    assert_eq!(exit_code, 0);
+    let output = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    assert_eq!(output, "automation-test\ntrue\n");
+}
