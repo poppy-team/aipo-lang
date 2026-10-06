@@ -1,34 +1,35 @@
 # renderer.aipo — Pluggable Renderer interface and Draw Command Batching
 # Part of `aipo.ui`
 
-import.types as types
+import types as types_mod
+import layout as layout_mod
 
 struct DrawCommand {
-    kind: String
-    rect: types.Rect
-    color: types.Color
-    border_radius: Float
-    border_width: Float
-    border_color: types.Color
-    text: String
-    font_size: Float
-    font_weight: String
+    var kind = "Rect"
+    var rect = none
+    var color = none
+    var border_radius = 0.0
+    var border_width = 0.0
+    var border_color = none
+    var text = ""
+    var font_size = 0.0
+    var font_weight = ""
 }
 
 # Generate draw commands from computed layout tree
-fn generate_draw_commands(node: types.UINode, commands: List) {
+fn generate_draw_commands(node: UINode, commands: List) {
     let r = node.layout_rect
 
     if node.kind == "Box" or node.kind == "Row" or node.kind == "Column" {
-        let bg = node.props.get("background", none)
+        let bg = layout_mod.prop_of(node, "background", none)
         if bg != none {
             commands.add(DrawCommand{
                     kind: "Rect",
                     rect: r,
                     color: bg,
-                    border_radius: node.props.get("border_radius", 0.0),
-                    border_width: node.props.get("border_width", 0.0),
-                    border_color: node.props.get("border_color", none),
+                    border_radius: layout_mod.prop_of(node, "border_radius", 0.0),
+                    border_width: layout_mod.prop_of(node, "border_width", 0.0),
+                    border_color: layout_mod.prop_of(node, "border_color", none),
                     text: "",
                     font_size: 0.0,
                     font_weight: ""
@@ -38,20 +39,20 @@ fn generate_draw_commands(node: types.UINode, commands: List) {
         commands.add(DrawCommand{
                 kind: "Text",
                 rect: r,
-                color: node.props.get("color", none),
+                color: layout_mod.prop_of(node, "color", none),
                 border_radius: 0.0,
                 border_width: 0.0,
                 border_color: none,
-                text: node.props.get("content", ""),
-                font_size: node.props.get("font_size", 14.0),
-                font_weight: node.props.get("font_weight", "normal")
+                text: layout_mod.prop_of(node, "content", ""),
+                font_size: layout_mod.prop_of(node, "font_size", 14.0),
+                font_weight: layout_mod.prop_of(node, "font_weight", "normal")
             })
     } else if node.kind == "Button" {
         # Default button rendering: background rectangle + centered label
         commands.add(DrawCommand{
                 kind: "Rect",
                 rect: r,
-                color: node.props.get("background", none),
+                color: layout_mod.prop_of(node, "background", none),
                 border_radius: 6.0,
                 border_width: 1.0,
                 border_color: none,
@@ -66,7 +67,7 @@ fn generate_draw_commands(node: types.UINode, commands: List) {
                 border_radius: 0.0,
                 border_width: 0.0,
                 border_color: none,
-                text: node.props.get("label", ""),
+                text: layout_mod.prop_of(node, "label", ""),
                 font_size: 14.0,
                 font_weight: "medium"
             })
@@ -76,3 +77,5 @@ fn generate_draw_commands(node: types.UINode, commands: List) {
         generate_draw_commands(child, commands)
     }
 }
+
+export DrawCommand, generate_draw_commands

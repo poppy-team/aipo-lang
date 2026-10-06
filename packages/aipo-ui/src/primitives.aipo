@@ -1,25 +1,25 @@
 # primitives.aipo — Declarative UI Component Primitives
 # Part of `aipo.ui`
 
-import.types as types
-import.layout as layout
-import.color as color_mod
+import types as types_mod
+import layout as layout_mod
+import color as color_mod
 
-fn make_node(kind: String, props: Dict, body: Fn = none) - > types.UINode{
-    let node = types.UINode{
-        id: layout.next_node_id(),
+fn make_node(kind: String, props: Dict, body: Fn? = none) - > UINode{
+    let node = UINode{
+        id: layout_mod.next_node_id(),
         kind: kind,
         props: props,
         children: [],
-        layout_rect: types.Rect{ x: 0.0, y: 0.0, width: 0.0, height: 0.0 }
+        layout_rect: Rect{ x: 0.0, y: 0.0, width: 0.0, height: 0.0 }
     }
 
-    layout.register_child(node)
+    layout_mod.register_child(node)
 
     if body != none {
-        layout.push_parent(node)
+        layout_mod.push_parent(node)
         body()
-        layout.pop_parent()
+        layout_mod.pop_parent()
     }
 
     return node
@@ -27,7 +27,7 @@ fn make_node(kind: String, props: Dict, body: Fn = none) - > types.UINode{
 
 # Layout Primitives
 
-fn Box(
+fn make_box(
         width = none,
         height = none,
         padding = none,
@@ -38,8 +38,8 @@ fn Box(
         border_color = none,
         align = none,
         justify = none,
-        body: Fn = none
-    ) - > types.UINode{
+        body: Fn? = none
+    ) - > UINode{
         let props = {
             "display": "flex",
             "flex_direction": "column",
@@ -57,7 +57,7 @@ fn Box(
         return make_node("Box", props, body)
     }
 
-    fn Row(
+    fn make_row(
             gap = 0,
             padding = none,
             align = none,
@@ -65,8 +65,8 @@ fn Box(
             background = none,
             width = none,
             height = none,
-            body: Fn = none
-        ) - > types.UINode{
+            body: Fn? = none
+        ) - > UINode{
             let props = {
                 "display": "flex",
                 "flex_direction": "row",
@@ -81,7 +81,7 @@ fn Box(
             return make_node("Row", props, body)
         }
 
-        fn Column(
+        fn make_column(
                 gap = 0,
                 padding = none,
                 align = none,
@@ -89,8 +89,8 @@ fn Box(
                 background = none,
                 width = none,
                 height = none,
-                body: Fn = none
-            ) - > types.UINode{
+                body: Fn? = none
+            ) - > UINode{
                 let props = {
                     "display": "flex",
                     "flex_direction": "column",
@@ -105,11 +105,11 @@ fn Box(
                 return make_node("Column", props, body)
             }
 
-            fn Stack(
+            fn make_stack(
                     width = none,
                     height = none,
-                    body: Fn = none
-                ) - > types.UINode{
+                    body: Fn? = none
+                ) - > UINode{
                     let props = {
                         "display": "stack",
                         "width": width,
@@ -118,12 +118,12 @@ fn Box(
                     return make_node("Stack", props, body)
                 }
 
-                fn ScrollArea(
+                fn make_scroll_area(
                         width = none,
                         height = none,
                         direction = "vertical",
-                        body: Fn = none
-                    ) - > types.UINode{
+                        body: Fn? = none
+                    ) - > UINode{
                         let props = {
                             "display": "flex",
                             "overflow": "scroll",
@@ -134,7 +134,7 @@ fn Box(
                         return make_node("ScrollArea", props, body)
                     }
 
-                    fn Spacer() - > types.UINode{
+                    fn make_spacer() - > UINode{
                         let props = {
                             "flex_grow": 1,
                             "flex_shrink": 1
@@ -144,93 +144,97 @@ fn Box(
 
                     # Widget & Control Primitives
 
-                    fn Text(
+                    fn make_text(
                             content: String,
                             font_size: Float = 14.0,
                             font_weight: String = "normal",
                             color = none,
                             align: String = "left"
-                        ) - > types.UINode{
-                            let text_color = if color != none { color } else { color_mod.white }
-                            let props = {
-                                "content": content,
-                                "font_size": font_size,
-                                "font_weight": font_weight,
-                                "color": text_color,
-                                "text_align": align
-                            }
-                            return make_node("Text", props, none)
-                        }
-
-                        fn Button(
-                                label: String,
-                                on_click: Fn = none,
-                                variant: String = "primary",
-                                disabled: Bool = false
-                            ) - > types.UINode{
-                                let props = {
-                                    "label": label,
-                                    "on_click": on_click,
-                                    "variant": variant,
-                                    "disabled": disabled
-                                }
-                                return make_node("Button", props, none)
-                            }
-
-                            fn TextInput(
-                                    value: String = "",
-                                    placeholder: String = "",
-                                    on_change: Fn = none,
-                                    disabled: Bool = false
-                                ) - > types.UINode{
+                        ) - > UINode{
+                            let text_color = if color != none then color else color_mod.palette_white
                                     let props = {
-                                        "value": value,
-                                        "placeholder": placeholder,
-                                        "on_change": on_change,
-                                        "disabled": disabled
+                                        "content": content,
+                                        "font_size": font_size,
+                                        "font_weight": font_weight,
+                                        "color": text_color,
+                                        "text_align": align
                                     }
-                                    return make_node("TextInput", props, none)
+                                    return make_node("Text", props, none)
                                 }
 
-                                fn Slider(
-                                        value: Float = 0.0,
-                                        min: Float = 0.0,
-                                        max: Float = 100.0,
-                                        step: Float = 1.0,
-                                        on_change: Fn = none
-                                    ) - > types.UINode{
+                                fn make_button(
+                                        label: String,
+                                        on_click: Fn? = none,
+                                        variant: String = "primary",
+                                        disabled: Bool = false
+                                    ) - > UINode{
                                         let props = {
-                                            "value": value,
-                                            "min": min,
-                                            "max": max,
-                                            "step": step,
-                                            "on_change": on_change
+                                            "label": label,
+                                            "on_click": on_click,
+                                            "variant": variant,
+                                            "disabled": disabled
                                         }
-                                        return make_node("Slider", props, none)
+                                        return make_node("Button", props, none)
                                     }
 
-                                    fn Checkbox(
-                                            checked: Bool = false,
-                                            label: String = "",
-                                            on_toggle: Fn = none
-                                        ) - > types.UINode{
+                                    fn make_text_input(
+                                            value: String = "",
+                                            placeholder: String = "",
+                                            on_change: Fn? = none,
+                                            disabled: Bool = false
+                                        ) - > UINode{
                                             let props = {
-                                                "checked": checked,
-                                                "label": label,
-                                                "on_toggle": on_toggle
+                                                "value": value,
+                                                "placeholder": placeholder,
+                                                "on_change": on_change,
+                                                "disabled": disabled
                                             }
-                                            return make_node("Checkbox", props, none)
+                                            return make_node("TextInput", props, none)
                                         }
 
-                                        fn ProgressBar(
-                                                progress: Float = 0.0,
-                                                height: Float = 8.0,
-                                                color = none
-                                            ) - > types.UINode{
+                                        fn make_slider(
+                                                value: Float = 0.0,
+                                                min: Float = 0.0,
+                                                max: Float = 100.0,
+                                                step: Float = 1.0,
+                                                on_change: Fn? = none
+                                            ) - > UINode{
                                                 let props = {
-                                                    "progress": progress,
-                                                    "height": height,
-                                                    "color": color
+                                                    "value": value,
+                                                    "min": min,
+                                                    "max": max,
+                                                    "step": step,
+                                                    "on_change": on_change
                                                 }
-                                                return make_node("ProgressBar", props, none)
+                                                return make_node("Slider", props, none)
                                             }
+
+                                            fn make_checkbox(
+                                                    checked: Bool = false,
+                                                    label: String = "",
+                                                    on_toggle: Fn? = none
+                                                ) - > UINode{
+                                                    let props = {
+                                                        "checked": checked,
+                                                        "label": label,
+                                                        "on_toggle": on_toggle
+                                                    }
+                                                    return make_node("Checkbox", props, none)
+                                                }
+
+                                                fn make_progress_bar(
+                                                        progress: Float = 0.0,
+                                                        height: Float = 8.0,
+                                                        color = none
+                                                    ) - > UINode{
+                                                        let props = {
+                                                            "progress": progress,
+                                                            "height": height,
+                                                            "color": color
+                                                        }
+                                                        return make_node("ProgressBar", props, none)
+                                                    }
+
+                                                    export make_node
+                                                    export make_box, make_row, make_column, make_stack, make_scroll_area, make_spacer
+                                                    export make_text, make_button, make_text_input, make_slider, make_checkbox, make_progress_bar

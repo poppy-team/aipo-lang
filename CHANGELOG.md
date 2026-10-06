@@ -5,6 +5,27 @@ O formato baseia-se no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0
 
 ## [0.11.0] - Em desenvolvimento (Trilha WebAssembly & Self-Hosting)
 
+- **Referência canônica de sintaxe (`SYNTAX.md`)**:
+  - Novo documento normativo na raiz extraído do compilador (`aipo-lexer`, `aipo-syntax`, `aipo-ast`), não da prosa: 46 keywords e 36 operadores, as duas terminações de bloco (`end` e `{ }`), e os limites de aninhamento do ADP-005.
+  - Fecha lacunas do manual, que omitia `fixed`, `end`, `satisfy`, `div` e `do`, nunca declarava `#` como único comentário e não alertava que `//` é divisão inteira.
+
+- **Reparação de `packages/aipo.ui` (148 erros de parse → 0)**:
+  - Nenhum gate compilava este pacote, e o drift acumulou-se nos 7 módulos: `scripts/verify.sh` só reloca os lockfiles e as suítes Rust que executam fontes `.aipo` cobrem apenas `aipo-zoe` e `aipo-game`.
+  - Correções de gramática: `import.types` → `import types`; `- >` → `->`; `//` como comentário → `#`; campos de struct sem anotação de tipo; tipos sem qualificação de módulo; `if cond { a } else { b }` como expressão → forma `then`; `List.pop()` inexistente → `remove_last()`; `props.get(k, default)` (aridade inexistente) → helper `prop_of`; `init` (palavra reservada) → `initial`; contratos `Fn`/`Any` → `Fn?`/`Any?`.
+  - As quatro tags de layout viraram structs com token canônico e um construtor `make_*` por variante, já que `enum` é pós-V1.
+  - `render_frame` passou a atribuir o retorno de `view` a `root_node`, que nada atribuía antes: a passagem do descritor recebia `none`.
+  - Fachada reescrita no padrão de `aipo-zoe`/`aipo-html` (submódulo exporta `make_*`, fachada define o nome público), porque `export` não aceita nome qualificado e `import` não cria namespace.
+
+- **Nova guarda de suítes de pacote (`crates/aipo-cli/tests/package_suites.rs`)**:
+  - Executa `aipo test` para todo pacote sem host (`aipo.ui`, `aipo.html`, `aipo.http`) e exige `aipo fmt --check` limpo em `aipo.ui`. Validado que falha quando há drift injetado.
+  - `packages/aipo-ui/tests/ui_test.aipo`: 9 testes (tags, cores, árvore, semântica de props, primitivas, mount MVU).
+
+- **Defeitos de linguagem registrados, com reprodução mínima (`docs/journal/2026-10-05-syntax-drift.md`)**:
+  - **D1**: argumento nomeado combinado com bloco trailer não preenche defaults — `f8(a = 1) do { }` falha com `AIPO_RT_TYPE_MISMATCH`, enquanto 0 nomeados ou todos os parâmetros funcionam.
+  - **D2**: closure invocado que, dentro dele, cria outro closure capturando upvalue causa `operand stack underflow`.
+  - **D3**: `aipo check` não valida existência de membro; `l.pop()` passa no check e falha só em runtime.
+  - **D4**: aspas aninhadas quebram interpolação f-string.
+
 - **Fase 1 — Remediação dos Defeitos Críticos P0 da C ABI, ABI 0.2.0 e Harness Nativo em C com ASan (`aipo-c-abi`)**:
   - **Remediação dos 7 defeitos de fronteira P0 identificados no Dossiê Técnico**:
     - **C1 (Ownership e ciclo de vida de `Bytes`)**: valores `Bytes` retornados pela fronteira não mais emprestam buffers do `RefCell<Vec<u8>>` interno do guest (eliminando ponteiro pendente e use-after-free). Payloads heap agora são copiados para snapshots com sentinela explícita, gerenciados pelo runtime e liberados deterministicamente pelo host via `aipo_value_release`.
