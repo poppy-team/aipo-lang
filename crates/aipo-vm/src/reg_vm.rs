@@ -3,9 +3,21 @@
 use crate::arena::ArenaAllocator;
 use crate::fault::VmFault;
 use crate::value::{Value, check_safe_int};
-use aipo_bytecode::{RegInstruction, RegOpCode};
+use aipo_bytecode::{Constant, RegCompiledFunction, RegCompiledModule, RegInstruction, RegOpCode};
 use std::collections::HashMap;
 use std::rc::Rc;
+
+/// Maximum nested user-function call depth (bounds Rust stack + RAM).
+pub const REG_MAX_CALL_DEPTH: usize = 64;
+
+/// A saved caller activation for nested `RegVm` calls.
+#[derive(Debug, Clone)]
+pub struct RegCallFrame {
+    /// Instruction offset to resume in the caller.
+    pub return_pc: usize,
+    /// Register receiving the callee result.
+    pub return_reg: u8,
+}
 
 /// Compact virtual register machine for embedded execution and fast scripts.
 #[derive(Debug)]
@@ -16,6 +28,12 @@ pub struct RegVm {
     pub constants: Vec<Value>,
     /// Global variables environment.
     pub globals: HashMap<String, Value>,
+    /// Compiled user-function table for `MakeFunction`/`Call`.
+    pub functions: Vec<RegCompiledFunction>,
+    /// Active nested-call frames (depth guard).
+    pub frames: Vec<RegCallFrame>,
+    /// Maximum nested-call depth.
+    pub max_call_depth: usize,
     /// Linear bump arena for string/buffer allocations.
     pub arena: ArenaAllocator,
     /// Program counter.
@@ -36,9 +54,76 @@ impl RegVm {
             registers: std::array::from_fn(|_| Value::None),
             constants: Vec::new(),
             globals: HashMap::new(),
+            functions: Vec::new(),
+            frames: Vec::new(),
+            max_call_depth: REG_MAX_CALL_DEPTH,
             arena: ArenaAllocator::with_default_capacity(),
             pc: 0,
         }
+    }
+
+    /// Converts a bytecode constant into a runtime value.
+    fn convert_constant(c: &Constant) -> Value {
+        match c {
+            Constant::Nil => Value::None,
+            Constant::Bool(b) => Value::Bool(*b),
+            Constant::Int(n) => Value::Int(*n),
+            Constant::Float(f) => Value::Float(*f),
+            Constant::String(s) => Value::String(Rc::new(s.clone())),
+        }
+    }
+
+    /// Loads a compiled register module (function table for `MakeFunction`).
+    pub fn load_module(&mut self, module: &RegCompiledModule) {
+        self.functions = module.functions.clone();
+    }
+
+    /// Executes a compiled register module's top-level script.
+    ///
+    /// # Errors
+    /// Returns [`VmFault`] if a runtime error occurs.
+    pub fn run_module(&mut self, module: &RegCompiledModule) -> Result<Value, VmFault> {
+        self.functions = module.functions.clone();
+        self.frames.clear();
+        self.run_function(&module.top_level)
+    }
+
+    /// Invokes a compiled user function with isolated registers.
+    ///
+    /// # Errors
+    /// Returns [`VmFault`] on arity mismatch, depth overflow, or runtime faults.
+    pub fn invoke_function(
+        &mut self,
+        func: &RegCompiledFunction,
+        args: &[Value],
+    ) -> Result<Value, VmFault> {
+        if self.frames.len() >= self.max_call_depth {
+            return Err(VmFault::CorruptedBytecode {
+                offset: self.pc.saturating_sub(1),
+                reason: format!(
+                    "call stack overflow: max depth {} exceeded",
+                    self.max_call_depth
+                ),
+            });
+        }
+        self.frames.push(RegCallFrame {
+            return_pc: self.pc,
+            return_reg: 0,
+        });
+        let saved_registers =
+            std::mem::replace(&mut self.registers, std::array::from_fn(|_| Value::None));
+        let saved_constants = std::mem::take(&mut self.constants);
+        let saved_pc = self.pc;
+        for (i, arg) in args.iter().enumerate().take(256) {
+            self.registers[i] = arg.clone();
+        }
+        self.constants = func.constants.iter().map(Self::convert_constant).collect();
+        let outcome = self.run(&func.instructions);
+        self.registers = saved_registers;
+        self.constants = saved_constants;
+        self.pc = saved_pc;
+        self.frames.pop();
+        outcome
     }
 
     /// Executes a compiled register function.
@@ -49,17 +134,8 @@ impl RegVm {
         &mut self,
         func: &aipo_bytecode::RegCompiledFunction,
     ) -> Result<Value, VmFault> {
-        self.constants = func
-            .constants
-            .iter()
-            .map(|c| match c {
-                aipo_bytecode::Constant::Nil => Value::None,
-                aipo_bytecode::Constant::Bool(b) => Value::Bool(*b),
-                aipo_bytecode::Constant::Int(n) => Value::Int(*n),
-                aipo_bytecode::Constant::Float(f) => Value::Float(*f),
-                aipo_bytecode::Constant::String(s) => Value::String(Rc::new(s.clone())),
-            })
-            .collect();
+        self.constants = func.constants.iter().map(Self::convert_constant).collect();
+        self.frames.clear();
         self.run(&func.instructions)
     }
 
@@ -462,6 +538,25 @@ impl RegVm {
                                 });
                             }
                         },
+                        Value::Function {
+                            entry_ip, arity, ..
+                        } => {
+                            if (arity as usize) != arg_count {
+                                return Err(VmFault::TypeMismatch {
+                                    expected: format!("{arity} arguments"),
+                                    actual: format!("{arg_count} arguments"),
+                                });
+                            }
+                            let func_idx = entry_ip as usize;
+                            let func = self.functions.get(func_idx).cloned().ok_or_else(|| {
+                                VmFault::CorruptedBytecode {
+                                    offset: self.pc - 1,
+                                    reason: format!("unknown function index {func_idx}"),
+                                }
+                            })?;
+                            let result = self.invoke_function(&func, &args)?;
+                            self.registers[a] = result;
+                        }
                         other => {
                             return Err(VmFault::NotCallable {
                                 type_name: other.type_name().to_string(),
@@ -488,6 +583,25 @@ impl RegVm {
                                 });
                             }
                         },
+                        Value::Function {
+                            entry_ip, arity, ..
+                        } => {
+                            if arity as usize != 1 {
+                                return Err(VmFault::TypeMismatch {
+                                    expected: "1 argument for piped call".to_string(),
+                                    actual: format!("function arity {arity}"),
+                                });
+                            }
+                            let func_idx = entry_ip as usize;
+                            let func = self.functions.get(func_idx).cloned().ok_or_else(|| {
+                                VmFault::CorruptedBytecode {
+                                    offset: self.pc - 1,
+                                    reason: format!("unknown function index {func_idx}"),
+                                }
+                            })?;
+                            let result = self.invoke_function(&func, &[stream_arg])?;
+                            self.registers[a] = result;
+                        }
                         other => {
                             return Err(VmFault::NotCallable {
                                 type_name: other.type_name().to_string(),
@@ -500,7 +614,14 @@ impl RegVm {
                 }
                 RegOpCode::MakeFunction => {
                     let bx = inst.bx() as usize;
-                    if let Some(Value::Function {
+                    if let Some(func) = self.functions.get(bx) {
+                        let arity = u16::try_from(func.arity).unwrap_or(u16::MAX);
+                        self.registers[a] = Value::Function {
+                            entry_ip: bx as u32,
+                            arity,
+                            is_async: func.is_async,
+                        };
+                    } else if let Some(Value::Function {
                         entry_ip,
                         arity,
                         is_async,
@@ -514,7 +635,7 @@ impl RegVm {
                     } else {
                         return Err(VmFault::CorruptedBytecode {
                             offset: self.pc - 1,
-                            reason: "invalid function constant for MakeFunction".to_string(),
+                            reason: format!("unknown function index {bx}"),
                         });
                     }
                 }
@@ -646,5 +767,104 @@ mod tests {
 
         let result = vm.run(&code).unwrap();
         assert_eq!(result, Value::Int(99));
+    }
+
+    #[test]
+    fn test_register_vm_user_function_call() {
+        use aipo_bytecode::RegCompiledFunction;
+        // adder: R[0] = R[0] + R[1]; return R[0]
+        let adder = RegCompiledFunction {
+            name: "adder".to_string(),
+            arity: 2,
+            is_async: false,
+            instructions: vec![
+                RegInstruction::encode_abc(RegOpCode::Add, 0, 0, 1),
+                RegInstruction::encode_abc(RegOpCode::Return, 0, 0, 0),
+            ],
+            constants: vec![],
+            num_registers: 2,
+        };
+        let mut vm = RegVm::new();
+        vm.functions = vec![adder];
+        vm.registers[0] = Value::Function {
+            entry_ip: 0,
+            arity: 2,
+            is_async: false,
+        };
+        vm.registers[1] = Value::Int(6);
+        vm.registers[2] = Value::Int(7);
+
+        let code = vec![
+            RegInstruction::encode_abc(RegOpCode::Call, 0, 2, 1),
+            RegInstruction::encode_abc(RegOpCode::Return, 0, 0, 0),
+        ];
+
+        let result = vm.run(&code).unwrap();
+        assert_eq!(result, Value::Int(13));
+    }
+
+    #[test]
+    fn test_register_vm_makefunction_table_call() {
+        use aipo_bytecode::RegCompiledFunction;
+        // double: R[0] = R[0] + R[0]; return R[0]
+        let double = RegCompiledFunction {
+            name: "double".to_string(),
+            arity: 1,
+            is_async: false,
+            instructions: vec![
+                RegInstruction::encode_abc(RegOpCode::Add, 0, 0, 0),
+                RegInstruction::encode_abc(RegOpCode::Return, 0, 0, 0),
+            ],
+            constants: vec![],
+            num_registers: 1,
+        };
+        let mut vm = RegVm::new();
+        vm.functions = vec![double];
+
+        let code = vec![
+            RegInstruction::encode_abx(RegOpCode::MakeFunction, 0, 0),
+            RegInstruction::encode_asbx(RegOpCode::LoadInt, 1, 21),
+            RegInstruction::encode_abc(RegOpCode::Call, 0, 1, 1),
+            RegInstruction::encode_abc(RegOpCode::Return, 0, 0, 0),
+        ];
+
+        let result = vm.run(&code).unwrap();
+        assert_eq!(result, Value::Int(42));
+    }
+
+    #[test]
+    fn test_register_vm_call_depth_limit() {
+        use aipo_bytecode::RegCompiledFunction;
+        // recurse: R[1] = R[0]; call R[1] with 1 arg; return R[1]
+        let recurse = RegCompiledFunction {
+            name: "recurse".to_string(),
+            arity: 1,
+            is_async: false,
+            instructions: vec![
+                RegInstruction::encode_abx(RegOpCode::MakeFunction, 1, 0),
+                RegInstruction::encode_abc(RegOpCode::Move, 2, 0, 0),
+                RegInstruction::encode_abc(RegOpCode::Call, 1, 1, 1),
+                RegInstruction::encode_abc(RegOpCode::Return, 1, 0, 0),
+            ],
+            constants: vec![],
+            num_registers: 3,
+        };
+        let mut vm = RegVm::new();
+        vm.max_call_depth = 8;
+        vm.functions = vec![recurse];
+        vm.registers[0] = Value::Function {
+            entry_ip: 0,
+            arity: 1,
+            is_async: false,
+        };
+        vm.registers[1] = Value::Int(0);
+
+        let code = vec![
+            RegInstruction::encode_abc(RegOpCode::Call, 0, 1, 1),
+            RegInstruction::encode_abc(RegOpCode::Return, 0, 0, 0),
+        ];
+
+        let err = vm.run(&code).unwrap_err();
+        assert!(matches!(err, VmFault::CorruptedBytecode { .. }));
     }
 }

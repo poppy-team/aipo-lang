@@ -13,6 +13,8 @@ pub struct RegCompiledFunction {
     pub name: String,
     /// Parameter count (arity).
     pub arity: usize,
+    /// `true` for `async fn` (calling produces a `Task` in the stack VM).
+    pub is_async: bool,
     /// 32-bit register bytecode instructions.
     pub instructions: Vec<RegInstruction>,
     /// Constant pool.
@@ -388,6 +390,7 @@ impl RegEmitter {
         RegCompiledFunction {
             name: func.name.clone(),
             arity: func.params.len(),
+            is_async: func.is_async,
             instructions: self.instructions,
             constants: self.constants,
             num_registers: (self.max_reg + 1).max(1),
