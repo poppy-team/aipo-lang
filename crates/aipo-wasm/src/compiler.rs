@@ -710,6 +710,14 @@ fn collect_stmts_anon_functions(
             HirStmt::AwaitDo(stmts, _) => {
                 collect_stmts_anon_functions(stmts, anon_map, anon_decls);
             }
+            HirStmt::FnDecl(decl) => {
+                collect_stmts_anon_functions(&decl.body, anon_map, anon_decls);
+                let anon_name = format!("__anon_fn_{}", anon_decls.len());
+                anon_map.insert(decl.span, anon_name.clone());
+                let mut renamed = decl.clone();
+                renamed.name = anon_name;
+                anon_decls.push(renamed);
+            }
             _ => {}
         }
     }
@@ -2439,6 +2447,17 @@ fn pre_scan_stmts(
                     (slot, WasmType::I64, LocalKind::Int),
                 );
                 for arm in &match_stmt.when_arms {
+                    for pat in &arm.patterns {
+                        if let aipo_hir::HirMatchPattern::Destructure(fields) = pat {
+                            for f in fields {
+                                if !locals.contains_key(f) {
+                                    let slot = (params_count + declared_locals.len()) as u32;
+                                    declared_locals.push(WasmType::I64);
+                                    locals.insert(f.clone(), (slot, WasmType::I64, LocalKind::Int));
+                                }
+                            }
+                        }
+                    }
                     let arm_body = &arm.body;
                     pre_scan_stmts(
                         arm_body,
@@ -2549,6 +2568,31 @@ fn pre_scan_stmts(
                     repeat_id,
                 )?;
             }
+            HirStmt::FnDecl(f) => {
+                let idx = (params_count + declared_locals.len()) as u32;
+                declared_locals.push(WasmType::I32);
+                let fn_kind = if let Some(anon_name) = anon_map.get(&f.span) {
+                    if let Some((_, type_idx, _)) = functions.get(anon_name) {
+                        LocalKind::Fn(*type_idx)
+                    } else {
+                        LocalKind::Int
+                    }
+                } else {
+                    LocalKind::Int
+                };
+                locals.insert(f.name.clone(), (idx, WasmType::I32, fn_kind));
+                pre_scan_stmts(
+                    &f.body,
+                    params_count,
+                    locals,
+                    declared_locals,
+                    functions,
+                    structs,
+                    table_indices,
+                    anon_map,
+                    repeat_id,
+                )?;
+            }
             _ => {}
         }
     }
@@ -2596,6 +2640,12 @@ fn infer_expr_kind(
         HirExpr::Binary(BinaryOp::Range, ..) => LocalKind::Range,
         HirExpr::List(..) => LocalKind::List,
         HirExpr::Dict(..) => LocalKind::Dict,
+        HirExpr::With(base, ..) => {
+            infer_expr_kind(base, locals, functions, table_indices, anon_map)
+        }
+        HirExpr::Try(inner, ..) => {
+            infer_expr_kind(inner, locals, functions, table_indices, anon_map)
+        }
         HirExpr::Binary(BinaryOp::Add, left, right, _) => {
             let lk = infer_expr_kind(left, locals, functions, table_indices, anon_map);
             let rk = infer_expr_kind(right, locals, functions, table_indices, anon_map);
@@ -3550,11 +3600,15 @@ fn compile_stmts(
                     call_depth,
                 )?;
             }
-            other => {
-                return Err(WasmCompileError::UnsupportedStmt {
-                    message: format!("statement `{other:?}` is scheduled for Milestone 5"),
-                    span: program_stmt_span(other),
-                });
+            HirStmt::FnDecl(f) => {
+                if let Some(anon_name) = anon_map.get(&f.span) {
+                    if let Some(&table_idx) = table_indices.get(anon_name) {
+                        if let Some(&(local_idx, _, _)) = locals.get(&f.name) {
+                            func.instruction(&Instruction::I32Const(table_idx as i32));
+                            func.instruction(&Instruction::LocalSet(local_idx));
+                        }
+                    }
+                }
             }
         }
 
@@ -4181,22 +4235,6 @@ fn compile_match_stmt(
     func.instruction(&Instruction::Block(BlockType::Empty));
 
     for arm in &match_stmt.when_arms {
-        // Struct destructuring binds fields into locals, and a guard adds a second
-        // boolean test after the pattern chain. Neither is implemented by this backend
-        // yet, so both are reported instead of silently compiling to the wrong thing.
-        if let Some(aipo_hir::HirMatchPattern::Destructure(fields)) = arm
-            .patterns
-            .iter()
-            .find(|p| matches!(p, aipo_hir::HirMatchPattern::Destructure(_)))
-        {
-            return Err(WasmCompileError::UnsupportedStmt {
-                message: format!(
-                    "match destructuring is not supported by the Wasm backend yet (fields: {})",
-                    fields.join(", ")
-                ),
-                span: match_stmt.span,
-            });
-        }
         if arm
             .patterns
             .iter()
@@ -4208,12 +4246,6 @@ fn compile_match_stmt(
                 span: match_stmt.span,
             });
         }
-        if arm.guard.is_some() {
-            return Err(WasmCompileError::UnsupportedStmt {
-                message: "match guards are not supported by the Wasm backend yet".to_string(),
-                span: match_stmt.span,
-            });
-        }
 
         // Each arm may list several patterns. Build a nested
         // `if a then 1 else (if b then 1 else ... 0)` chain so exactly one boolean
@@ -4222,27 +4254,34 @@ fn compile_match_stmt(
             func.instruction(&Instruction::I32Const(0));
         } else {
             for pattern in &arm.patterns {
-                let aipo_hir::HirMatchPattern::Value(pattern) = pattern else {
-                    unreachable!("destructuring and variants were rejected above")
-                };
-                compile_match_condition(
-                    pattern,
-                    target_slot,
-                    target_ty,
-                    func,
-                    locals,
-                    functions,
-                    control_stack,
-                    structs,
-                    static_strings,
-                    table_indices,
-                    anon_map,
-                    indirect_sigs,
-                    alloc_func_idx,
-                    async_helpers,
-                    struct_depth,
-                    call_depth,
-                )?;
+                match pattern {
+                    aipo_hir::HirMatchPattern::Value(pattern) => {
+                        compile_match_condition(
+                            pattern,
+                            target_slot,
+                            target_ty,
+                            func,
+                            locals,
+                            functions,
+                            control_stack,
+                            structs,
+                            static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
+                            alloc_func_idx,
+                            async_helpers,
+                            struct_depth,
+                            call_depth,
+                        )?;
+                    }
+                    aipo_hir::HirMatchPattern::Destructure(_) => {
+                        func.instruction(&Instruction::LocalGet(target_slot));
+                        func.instruction(&Instruction::I64Const(0));
+                        func.instruction(&Instruction::I64Ne);
+                    }
+                    aipo_hir::HirMatchPattern::Variant { .. } => unreachable!(),
+                }
                 func.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
                 func.instruction(&Instruction::I32Const(1));
                 func.instruction(&Instruction::Else);
@@ -4256,25 +4295,112 @@ fn compile_match_stmt(
         }
 
         func.instruction(&Instruction::If(BlockType::Empty));
-        compile_stmts(
-            &arm.body,
-            func,
-            locals,
-            functions,
-            control_stack,
-            structs,
-            static_strings,
-            table_indices,
-            anon_map,
-            indirect_sigs,
-            alloc_func_idx,
-            async_helpers,
-            return_type,
-            false,
-            repeat_id,
-            struct_depth,
-            call_depth,
-        )?;
+        for pattern in &arm.patterns {
+            if let aipo_hir::HirMatchPattern::Destructure(fields) = pattern {
+                for f_name in fields {
+                    let f_slot = locals[f_name].0;
+                    let (f_offset, f_ty) = structs
+                        .values()
+                        .find_map(|s| s.fields.get(f_name).copied())
+                        .unwrap_or((0, WasmType::I64));
+                    func.instruction(&Instruction::LocalGet(target_slot));
+                    func.instruction(&Instruction::I32WrapI64);
+                    match f_ty {
+                        WasmType::I32 => {
+                            func.instruction(&Instruction::I32Load(MemArg {
+                                offset: f_offset as u64,
+                                align: 2,
+                                memory_index: 0,
+                            }));
+                            func.instruction(&Instruction::I64ExtendI32U);
+                        }
+                        WasmType::F64 => {
+                            func.instruction(&Instruction::F64Load(MemArg {
+                                offset: f_offset as u64,
+                                align: 3,
+                                memory_index: 0,
+                            }));
+                            func.instruction(&Instruction::I64ReinterpretF64);
+                        }
+                        _ => {
+                            func.instruction(&Instruction::I64Load(MemArg {
+                                offset: f_offset as u64,
+                                align: 3,
+                                memory_index: 0,
+                            }));
+                        }
+                    }
+                    func.instruction(&Instruction::LocalSet(f_slot));
+                }
+            }
+        }
+
+        if let Some(guard) = &arm.guard {
+            let guard_ty = compile_expr(
+                guard,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth,
+            )?;
+            coerce_to_bool(func, guard_ty);
+            func.instruction(&Instruction::If(BlockType::Empty));
+            let term = compile_stmts(
+                &arm.body,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                return_type,
+                false,
+                repeat_id,
+                struct_depth,
+                call_depth,
+            )?;
+            if !term {
+                func.instruction(&Instruction::Br(2));
+            }
+            func.instruction(&Instruction::End);
+        } else {
+            let term = compile_stmts(
+                &arm.body,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                return_type,
+                false,
+                repeat_id,
+                struct_depth,
+                call_depth,
+            )?;
+            if !term {
+                func.instruction(&Instruction::Br(1));
+            }
+        }
         func.instruction(&Instruction::End);
     }
 
@@ -4464,6 +4590,7 @@ fn compile_attempt_stmt(
 }
 
 /// Helper to get span from statement.
+#[allow(dead_code)]
 fn program_stmt_span(stmt: &HirStmt) -> SourceSpan {
     match stmt {
         HirStmt::Let(_, _, span)
@@ -4798,6 +4925,37 @@ fn compile_expr(
             }
         }
         HirExpr::Binary(op, left, right, span) => {
+            if matches!(op, BinaryOp::Is | BinaryOp::IsNullable) {
+                let l_ty = compile_expr(
+                    left,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    struct_depth,
+                    call_depth,
+                )?;
+                func.instruction(&Instruction::Drop);
+                let matches = match &**right {
+                    HirExpr::Identifier(type_name, _) => match type_name.as_str() {
+                        "Int" => l_ty == WasmType::I64,
+                        "Float" => l_ty == WasmType::F64,
+                        "Bool" => l_ty == WasmType::I32,
+                        _ => true,
+                    },
+                    _ => true,
+                };
+                func.instruction(&Instruction::I32Const(if matches { 1 } else { 0 }));
+                return Ok(WasmType::I32);
+            }
+
             let left_ty = infer_expr_type(left, locals, functions, structs, table_indices)?;
             let right_ty = infer_expr_type(right, locals, functions, structs, table_indices)?;
 
@@ -5116,6 +5274,36 @@ fn compile_expr(
                     coerce_type(func, r_ty, WasmType::I64);
                     let (range_fn_idx, _, _) = functions["__aipo_range_new"];
                     func.instruction(&Instruction::Call(range_fn_idx));
+                    Ok(WasmType::I32)
+                }
+                BinaryOp::Is | BinaryOp::IsNullable => {
+                    let l_ty = compile_expr(
+                        left,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                    )?;
+                    func.instruction(&Instruction::Drop);
+                    let matches = match &**right {
+                        HirExpr::Identifier(type_name, _) => match type_name.as_str() {
+                            "Int" => l_ty == WasmType::I64,
+                            "Float" => l_ty == WasmType::F64,
+                            "Bool" => l_ty == WasmType::I32,
+                            _ => true,
+                        },
+                        _ => true,
+                    };
+                    func.instruction(&Instruction::I32Const(if matches { 1 } else { 0 }));
                     Ok(WasmType::I32)
                 }
                 other => Err(WasmCompileError::UnsupportedExpr {
@@ -6024,10 +6212,226 @@ fn compile_expr(
             func.instruction(&Instruction::Call(list_get_idx));
             Ok(WasmType::I64)
         }
-        other => Err(WasmCompileError::UnsupportedExpr {
-            message: format!("expression `{other:?}` is not yet supported in Wasm backend"),
-            span: other.span(),
-        }),
+        HirExpr::Try(inner, _) => {
+            let temp_name = format!("__call_temp_{}", call_depth.min(7));
+            let temp = locals[&temp_name].0;
+            let inner_ty = compile_expr(
+                inner,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth + 1,
+            )?;
+            match inner_ty {
+                WasmType::I64 | WasmType::I32 => {
+                    func.instruction(&Instruction::LocalSet(temp));
+                    emit_failure_check(func, control_stack, async_helpers.fail_globals, None);
+                    func.instruction(&Instruction::LocalGet(temp));
+                }
+                _ => {
+                    emit_failure_check(func, control_stack, async_helpers.fail_globals, None);
+                }
+            }
+            Ok(inner_ty)
+        }
+        HirExpr::QuestionDot(base, member, _) => {
+            let base_temp_name = format!("__call_temp_{}", call_depth.min(7));
+            let base_temp = locals[&base_temp_name].0;
+            let base_ty = compile_expr(
+                base,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth + 1,
+            )?;
+            coerce_type(func, base_ty, WasmType::I32);
+            func.instruction(&Instruction::LocalSet(base_temp));
+            func.instruction(&Instruction::LocalGet(base_temp));
+            func.instruction(&Instruction::I32Eqz);
+            func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+            func.instruction(&Instruction::I64Const(0));
+            func.instruction(&Instruction::Else);
+
+            let base_kind = infer_expr_kind(base, locals, functions, table_indices, anon_map);
+            let field_info = match base_kind {
+                LocalKind::Struct(ref s_name) => structs
+                    .get(s_name)
+                    .and_then(|s| s.fields.get(member).copied()),
+                _ => structs.values().find_map(|s| s.fields.get(member).copied()),
+            };
+
+            if let Some((field_offset, field_ty)) = field_info {
+                func.instruction(&Instruction::LocalGet(base_temp));
+                match field_ty {
+                    WasmType::I32 => {
+                        func.instruction(&Instruction::I32Load(MemArg {
+                            offset: field_offset as u64,
+                            align: 2,
+                            memory_index: 0,
+                        }));
+                        func.instruction(&Instruction::I64ExtendI32U);
+                    }
+                    WasmType::F64 => {
+                        func.instruction(&Instruction::F64Load(MemArg {
+                            offset: field_offset as u64,
+                            align: 3,
+                            memory_index: 0,
+                        }));
+                        func.instruction(&Instruction::I64ReinterpretF64);
+                    }
+                    _ => {
+                        func.instruction(&Instruction::I64Load(MemArg {
+                            offset: field_offset as u64,
+                            align: 3,
+                            memory_index: 0,
+                        }));
+                    }
+                }
+            } else {
+                func.instruction(&Instruction::I64Const(0));
+            }
+            func.instruction(&Instruction::End);
+            Ok(WasmType::I64)
+        }
+        HirExpr::With(base, updates, span) => {
+            let base_kind = infer_expr_kind(base, locals, functions, table_indices, anon_map);
+            let s_name = match base_kind {
+                LocalKind::Struct(ref name) => Some(name.clone()),
+                _ => None,
+            };
+            let struct_layout = if let Some(ref name) = s_name {
+                structs.get(name).cloned()
+            } else {
+                structs
+                    .values()
+                    .find(|layout| updates.iter().all(|(f, _)| layout.fields.contains_key(f)))
+                    .cloned()
+            };
+
+            if let Some(struct_layout) = struct_layout {
+                let base_temp_name = format!("__call_temp_{}", call_depth.min(7));
+                let base_temp = locals[&base_temp_name].0;
+                let target_temp_name = format!("__struct_temp_{}", struct_depth.min(7));
+                let target_temp = locals[&target_temp_name].0;
+
+                let base_ty = compile_expr(
+                    base,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    struct_depth,
+                    call_depth + 1,
+                )?;
+                coerce_type(func, base_ty, WasmType::I32);
+                func.instruction(&Instruction::LocalSet(base_temp));
+
+                func.instruction(&Instruction::I32Const(struct_layout.size as i32));
+                func.instruction(&Instruction::Call(alloc_func_idx));
+                func.instruction(&Instruction::LocalSet(target_temp));
+
+                let num_words = struct_layout.size.div_ceil(8);
+                for word in 0..num_words {
+                    let offset = (word * 8) as u64;
+                    func.instruction(&Instruction::LocalGet(target_temp));
+                    func.instruction(&Instruction::LocalGet(base_temp));
+                    func.instruction(&Instruction::I64Load(MemArg {
+                        offset,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                    func.instruction(&Instruction::I64Store(MemArg {
+                        offset,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                }
+
+                for (field_name, field_expr) in updates {
+                    let (field_offset, field_ty) = struct_layout
+                        .fields
+                        .get(field_name)
+                        .copied()
+                        .unwrap_or((0, WasmType::I64));
+
+                    func.instruction(&Instruction::LocalGet(target_temp));
+                    let val_ty = compile_expr(
+                        field_expr,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth + 1,
+                        call_depth,
+                    )?;
+                    coerce_type(func, val_ty, field_ty);
+
+                    match field_ty {
+                        WasmType::F64 => {
+                            func.instruction(&Instruction::F64Store(MemArg {
+                                offset: field_offset as u64,
+                                align: 3,
+                                memory_index: 0,
+                            }));
+                        }
+                        WasmType::I32 => {
+                            func.instruction(&Instruction::I32Store(MemArg {
+                                offset: field_offset as u64,
+                                align: 2,
+                                memory_index: 0,
+                            }));
+                        }
+                        _ => {
+                            func.instruction(&Instruction::I64Store(MemArg {
+                                offset: field_offset as u64,
+                                align: 3,
+                                memory_index: 0,
+                            }));
+                        }
+                    }
+                }
+
+                func.instruction(&Instruction::LocalGet(target_temp));
+                Ok(WasmType::I32)
+            } else {
+                Err(WasmCompileError::UnsupportedExpr {
+                    message: "cannot determine struct layout for `with` expression".to_string(),
+                    span: *span,
+                })
+            }
+        }
     }
 }
 
@@ -6411,6 +6815,7 @@ fn infer_expr_type(
             | BinaryOp::And
             | BinaryOp::Or => Ok(WasmType::I32),
             BinaryOp::Range => Ok(WasmType::I32),
+            BinaryOp::Is | BinaryOp::IsNullable => Ok(WasmType::I32),
             BinaryOp::Add => {
                 let left_ty = infer_expr_type(left, locals, functions, structs, table_indices)?;
                 let right_ty = infer_expr_type(right, locals, functions, structs, table_indices)?;
@@ -6440,6 +6845,9 @@ fn infer_expr_type(
             infer_expr_type(then_expr, locals, functions, structs, table_indices)
         }
         HirExpr::Await(..) => Ok(WasmType::I64),
+        HirExpr::Try(inner, _) => infer_expr_type(inner, locals, functions, structs, table_indices),
+        HirExpr::QuestionDot(..) => Ok(WasmType::I64),
+        HirExpr::With(..) => Ok(WasmType::I32),
         HirExpr::Construct(..) => Ok(WasmType::I32),
         HirExpr::List(..) | HirExpr::Dict(..) => Ok(WasmType::I32),
         HirExpr::Index(..) => Ok(WasmType::I64),
@@ -6508,9 +6916,5 @@ fn infer_expr_type(
             }
             Ok(WasmType::I64)
         }
-        other => Err(WasmCompileError::UnsupportedExpr {
-            message: format!("expression `{other:?}` is not supported in Wasm backend"),
-            span: other.span(),
-        }),
     }
 }

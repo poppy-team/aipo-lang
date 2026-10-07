@@ -1278,3 +1278,24 @@ attempt {
     assert!(vm_out.contains("404"));
     assert!(vm_out.contains("resource missing"));
 }
+
+#[test]
+fn test_sequence_pipeline_and_struct_display_differential() {
+    let code = r#"
+struct Point {
+    x
+    y
+}
+let p = Point{x: 1, y: 2}
+io.println(p)
+
+let xs = [1, 2, 3, 4, 5, 6]
+let res = xs.lazy().filter(fn(x) { return x % 2 == 0 }).map(fn(x) { return x * 10 }).collect()
+io.println(res)
+"#;
+    let compiled = compile_code("seq_diff.aipo", code);
+    let vm_out = run_vm(&compiled);
+    let js_out = run_js_code("seq_diff.aipo", code, &compiled);
+    assert_eq!(vm_out, js_out);
+    assert_eq!(vm_out, "Point{x: 1, y: 2}\n[20, 40, 60]\n");
+}

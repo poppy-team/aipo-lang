@@ -1155,6 +1155,27 @@ impl Vm {
                 let value = self.pop()?;
                 match tag {
                     Value::Type(tag) => self.push(Value::Bool(tag.matches(&value)))?,
+                    Value::UserType(target_name) => {
+                        let matches = match &value {
+                            Value::Struct(inst) => {
+                                let name = &inst.borrow().type_name;
+                                name == target_name.as_str()
+                                    || name
+                                        .split_once('.')
+                                        .is_some_and(|(parent, _)| parent == target_name.as_str())
+                            }
+                            _ => false,
+                        };
+                        self.push(Value::Bool(matches))?;
+                    }
+                    Value::Struct(target_inst) => {
+                        let target_name = target_inst.borrow().type_name.clone();
+                        let matches = match &value {
+                            Value::Struct(inst) => inst.borrow().type_name == target_name,
+                            _ => false,
+                        };
+                        self.push(Value::Bool(matches))?;
+                    }
                     other => {
                         return Err(VmFault::TypeMismatch {
                             expected: "type value on the right of `is`".to_string(),
@@ -1172,6 +1193,27 @@ impl Vm {
                 } else {
                     match tag {
                         Value::Type(tag) => self.push(Value::Bool(tag.matches(&value)))?,
+                        Value::UserType(target_name) => {
+                            let matches = match &value {
+                                Value::Struct(inst) => {
+                                    let name = &inst.borrow().type_name;
+                                    name == target_name.as_str()
+                                        || name.split_once('.').is_some_and(|(parent, _)| {
+                                            parent == target_name.as_str()
+                                        })
+                                }
+                                _ => false,
+                            };
+                            self.push(Value::Bool(matches))?;
+                        }
+                        Value::Struct(target_inst) => {
+                            let target_name = target_inst.borrow().type_name.clone();
+                            let matches = match &value {
+                                Value::Struct(inst) => inst.borrow().type_name == target_name,
+                                _ => false,
+                            };
+                            self.push(Value::Bool(matches))?;
+                        }
                         other => {
                             return Err(VmFault::TypeMismatch {
                                 expected: "type value on the right of `is`".to_string(),

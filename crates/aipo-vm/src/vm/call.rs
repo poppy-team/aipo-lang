@@ -196,6 +196,13 @@ impl Vm {
                 self.stack.truncate(callee_idx);
                 self.push(result)?;
             }
+            Value::UserType(name) => {
+                return Err(VmFault::TypeMismatch {
+                    expected: "function or callable".to_string(),
+                    actual: format!("Type {name}"),
+                }
+                .into());
+            }
             Value::BoundMethod(bm) => {
                 if self.metrics_enabled {
                     self.metrics.bound_method_calls =

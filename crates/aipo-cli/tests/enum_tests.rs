@@ -264,3 +264,45 @@ fn test_enum_conformance_fixture_32() {
     .unwrap();
     assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
 }
+
+#[test]
+fn test_enum_is_expression() {
+    let temp = std::env::temp_dir().join("aipo_enum_is.aipo");
+    let source = r#"
+enum Status {
+    Ativo,
+    Inativo,
+}
+let s = Status.Ativo
+io.println(String(s is Status))
+io.println(String(s is Status.Ativo))
+io.println(String(s is Status.Inativo))
+"#;
+    std::fs::write(&temp, source).unwrap();
+    let (code, stdout, stderr) = run_program(&temp);
+    let _ = std::fs::remove_file(&temp);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout.trim(), "true\ntrue\nfalse");
+}
+
+#[test]
+fn test_enum_invariant_enforcement() {
+    let temp = std::env::temp_dir().join("aipo_enum_inv.aipo");
+    let source = r#"
+enum Forma {
+    Circulo { raio: Int },
+}
+Forma:invariant {
+    self.raio > 0
+}
+let c = Forma.Circulo{ raio: 10 }
+io.println("valido")
+let c_bad = Forma.Circulo{ raio: -1 }
+"#;
+    std::fs::write(&temp, source).unwrap();
+    let (code, stdout, stderr) = run_program(&temp);
+    let _ = std::fs::remove_file(&temp);
+    assert_ne!(code, 0);
+    assert_eq!(stdout.trim(), "valido");
+    assert!(stderr.contains("AIPO_RT_TYPE_MISMATCH"));
+}

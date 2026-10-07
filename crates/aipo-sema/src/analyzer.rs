@@ -18,6 +18,108 @@ const CORE_CONTRACT_CATEGORIES: [&str; 13] = [
     "Sequence", "Task",
 ];
 
+const LIST_MEMBERS: &[&str] = &[
+    "add",
+    "insert",
+    "remove",
+    "remove_at",
+    "remove_last",
+    "clear",
+    "contains",
+    "find",
+    "find_index",
+    "count",
+    "first",
+    "first_or",
+    "last",
+    "last_or",
+    "is_empty",
+    "reverse",
+    "sort",
+    "len",
+    "take",
+    "skip",
+    "distinct",
+    "zip",
+    "chain",
+    "chunk",
+    "window",
+    "enumerate",
+    "lazy",
+    "map",
+    "transform",
+    "filter",
+    "sort_by",
+    "any",
+    "all",
+    "flat_map",
+    "reduce",
+    "each",
+    "clone",
+];
+
+const DICT_MEMBERS: &[&str] = &[
+    "has",
+    "get",
+    "keys",
+    "values",
+    "entries",
+    "remove",
+    "clear",
+    "is_empty",
+    "len",
+    "lazy",
+    "set",
+    "contains",
+    "clone",
+    "each",
+    "map",
+    "transform",
+    "filter",
+    "any",
+    "all",
+    "reduce",
+];
+
+const STRING_MEMBERS: &[&str] = &[
+    "len",
+    "byte_len",
+    "contains",
+    "starts_with",
+    "ends_with",
+    "find",
+    "lower",
+    "upper",
+    "capitalize",
+    "reverse",
+    "trim",
+    "split",
+    "join",
+    "replace",
+    "slice",
+    "format",
+    "graphemes",
+    "words",
+    "lines",
+    "casefold",
+    "encode",
+    "encode_utf8",
+    "chars",
+    "to_lowercase",
+    "to_uppercase",
+    "is_empty",
+];
+
+fn extract_inferred_type(expr: &HirExpr) -> Option<String> {
+    match expr {
+        HirExpr::Construct(target, _, _) => Some(target.clone()),
+        HirExpr::List(..) => Some("List".to_string()),
+        HirExpr::Dict(..) => Some("Dict".to_string()),
+        HirExpr::Literal(Literal::String(..), _) => Some("String".to_string()),
+        _ => None,
+    }
+}
+
 /// Canonical category of a literal, when the category is provable from the literal itself.
 fn literal_category(literal: &Literal) -> Option<&'static str> {
     match literal {
@@ -911,24 +1013,24 @@ impl<'a> SemanticAnalyzer<'a> {
                 // before the name becomes visible to the executable flow.
                 self.analyze_expr_top(expr);
                 self.declare_binding(name, Mutability::Immutable, *span);
-                if let HirExpr::Construct(target, _, _) = expr {
-                    self.var_struct_types.insert(name.clone(), target.clone());
+                if let Some(target) = extract_inferred_type(expr) {
+                    self.var_struct_types.insert(name.clone(), target);
                 }
             }
             HirStmt::Var(name, expr, span) => {
                 self.analyze_expr_top(expr);
                 self.declare_binding(name, Mutability::Mutable, *span);
-                if let HirExpr::Construct(target, _, _) = expr {
-                    self.var_struct_types.insert(name.clone(), target.clone());
+                if let Some(target) = extract_inferred_type(expr) {
+                    self.var_struct_types.insert(name.clone(), target);
                 }
             }
             HirStmt::Assign(target, value, span) => {
                 self.analyze_expr_top(value);
                 self.check_assignment_target(target, *span);
-                if let (HirExpr::Identifier(name, _), HirExpr::Construct(st, _, _)) =
-                    (target, value)
-                {
-                    self.var_struct_types.insert(name.clone(), st.clone());
+                if let HirExpr::Identifier(name, _) = target {
+                    if let Some(st) = extract_inferred_type(value) {
+                        self.var_struct_types.insert(name.clone(), st);
+                    }
                 }
             }
             HirStmt::CompoundAssign(_, target, value, span) => {
@@ -1954,7 +2056,8 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                 }
             }
-            HirExpr::Dot(target, _, _) | HirExpr::QuestionDot(target, _, _) => {
+            HirExpr::Dot(target, member, span) | HirExpr::QuestionDot(target, member, span) => {
+                self.check_member_access(target, member, *span);
                 self.analyze_expr(target);
             }
             HirExpr::Index(target, idx, _) => {
@@ -2088,6 +2191,86 @@ impl<'a> SemanticAnalyzer<'a> {
             HirExpr::OrElse(l, r, _) => {
                 self.analyze_expr(l);
                 self.analyze_expr(r);
+            }
+        }
+    }
+
+    fn check_member_access(&mut self, target: &HirExpr, member: &str, span: SourceSpan) {
+        if let HirExpr::Identifier(name, _) = target {
+            if self.is_host_module_reference(name) || self.enum_variants.contains_key(name) {
+                return;
+            }
+        }
+        let target_type = match target {
+            HirExpr::Identifier(name, _) if name == "self" => self.current_struct.clone(),
+            HirExpr::Identifier(name, _) => self.var_struct_types.get(name).cloned(),
+            HirExpr::List(..) => Some("List".to_string()),
+            HirExpr::Dict(..) => Some("Dict".to_string()),
+            HirExpr::Literal(Literal::String(..), _) => Some("String".to_string()),
+            _ => None,
+        };
+
+        if let Some(ty) = target_type {
+            match ty.as_str() {
+                "List" => {
+                    if !LIST_MEMBERS.contains(&member) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                format!("type 'List' has no member '{member}'"),
+                            )
+                            .with_primary_span(self.source, span),
+                        );
+                    }
+                }
+                "Dict" => {
+                    if !DICT_MEMBERS.contains(&member) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                format!("type 'Dict' has no member '{member}'"),
+                            )
+                            .with_primary_span(self.source, span),
+                        );
+                    }
+                }
+                "String" => {
+                    if !STRING_MEMBERS.contains(&member) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                format!("type 'String' has no member '{member}'"),
+                            )
+                            .with_primary_span(self.source, span),
+                        );
+                    }
+                }
+                st => {
+                    if let Some(fields) = self.struct_fixed_fields.get(st) {
+                        let has_field = fields.contains(member)
+                            || self
+                                .facts
+                                .scopes
+                                .lookup(self.current_scope, st)
+                                .is_some_and(|sym| match &sym.kind {
+                                    SymbolKind::Struct { fields } => fields.contains_key(member),
+                                    _ => false,
+                                });
+                        let has_method = self
+                            .impl_methods
+                            .get(st)
+                            .is_some_and(|methods| methods.contains_key(member));
+                        if !has_field && !has_method {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                    format!("struct '{st}' has no member '{member}'"),
+                                )
+                                .with_primary_span(self.source, span),
+                            );
+                        }
+                    }
+                }
             }
         }
     }

@@ -1111,3 +1111,59 @@ io.println(f"checksum:{total}")
     let output = String::from_utf8(stdout).expect("valid utf8");
     assert_eq!(output, "checksum:42\n");
 }
+
+#[test]
+fn test_with_expression() {
+    let code = r#"
+struct Point {
+  x: Int,
+  y: Int,
+}
+fn move_point() -> Int {
+  let p = Point{ x: 10, y: 20 }
+  let p2 = p with { x: 30 }
+  return p2.x + p2.y
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "move_point")
+        .expect("exported function");
+    assert_eq!(f.call(&mut store, ()).unwrap(), 50);
+}
+
+#[test]
+fn test_is_expression() {
+    let code = r#"
+fn test_types() -> Int {
+  let x = 42
+  let y = 3.14
+  if x is Int and y is Float {
+    return 1
+  }
+  return 0
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "test_types")
+        .expect("exported function");
+    assert_eq!(f.call(&mut store, ()).unwrap(), 1);
+}
+
+#[test]
+fn test_local_fn_decl() {
+    let code = r#"
+fn run() -> Int {
+  fn add(a: Int, b: Int) -> Int {
+    return a + b
+  }
+  return add(20, 22)
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "run")
+        .expect("exported function");
+    assert_eq!(f.call(&mut store, ()).unwrap(), 42);
+}

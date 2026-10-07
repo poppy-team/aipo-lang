@@ -44,16 +44,29 @@ fn shift_diagnostic(source: &Source, mut diagnostic: Diagnostic, delta: usize) -
 fn find_placeholder_end(bytes: &[u8], body_start: usize) -> Option<usize> {
     let mut depth = 1usize;
     let mut index = body_start;
+    let mut in_string = false;
+    let mut string_escape = false;
     while index < bytes.len() {
-        match bytes[index] {
-            b'{' => depth += 1,
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(index);
-                }
+        if in_string {
+            if string_escape {
+                string_escape = false;
+            } else if bytes[index] == b'\\' {
+                string_escape = true;
+            } else if bytes[index] == b'"' {
+                in_string = false;
             }
-            _ => {}
+        } else {
+            match bytes[index] {
+                b'"' => in_string = true,
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(index);
+                    }
+                }
+                _ => {}
+            }
         }
         index += 1;
     }

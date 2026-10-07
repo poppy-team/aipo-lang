@@ -244,6 +244,18 @@ mod tests {
     }
 
     #[test]
+    fn test_fstring_nested_quotes_d4() {
+        let src = Source::new(
+            SourceId::next(),
+            "fstring.aipo",
+            r#"let s = f"gap={n.props["gap"]}""#,
+        );
+        let (prog, diags) = parse(&src);
+        assert!(diags.is_empty(), "diags: {:?}", diags);
+        assert_eq!(prog.statements.len(), 1);
+    }
+
+    #[test]
     fn test_parse_destructuring() {
         let src = Source::new(
             SourceId::next(),

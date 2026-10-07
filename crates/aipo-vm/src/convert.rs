@@ -330,7 +330,8 @@ pub fn convert_string(value: &Value) -> Result<Value, VmFault> {
         | Value::Byte(_)
         | Value::Bool(_)
         | Value::None
-        | Value::Type(_) => {
+        | Value::Type(_)
+        | Value::UserType(_) => {
             // Canon makes NFC an invariant of `String`, so an explicit conversion is a
             // construction boundary and its result is normalized before the program sees it.
             let text: String = value.to_string().nfc().collect();

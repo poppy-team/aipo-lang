@@ -360,6 +360,7 @@ impl IrBuilder {
                                 });
 
                                 // Constructor function `Estado.Desligado(...)`
+                                self.fn_stack.push(FnCtx::new(field_names.clone()));
                                 let mut instrs = Vec::new();
                                 for name in &field_names {
                                     instrs.push(CoreInst::Load(name.clone(), v.span));
@@ -370,16 +371,20 @@ impl IrBuilder {
                                     defer_fixed: false,
                                     span: v.span,
                                 });
+                                if self.invariant_hooks.contains(&e.name) {
+                                    self.build_invariant_check(&e.name, v.span, &mut instrs);
+                                }
                                 instrs.push(CoreInst::Return {
                                     has_value: true,
                                     span: v.span,
                                 });
+                                let ctx = self.fn_stack.pop().expect("fn context present");
                                 self.functions.push(CoreFunction {
                                     name: full_name,
                                     is_async: false,
-                                    params: field_names,
-                                    locals: Vec::new(),
-                                    upvalues: Vec::new(),
+                                    params: ctx.params,
+                                    locals: ctx.locals,
+                                    upvalues: ctx.upvalues,
                                     instructions: instrs,
                                     span: v.span,
                                 });
@@ -807,6 +812,29 @@ impl IrBuilder {
             return None;
         }
 
+        // Detect a trailing unnamed argument (from a trailing block `call(...) do { ... }`)
+        // after named arguments.
+        let has_trailing_block =
+            positional < args.len() && args.last().is_some_and(|arg| arg.name.is_none());
+        let trailing_arg = if has_trailing_block {
+            Some(&args[args.len() - 1])
+        } else {
+            None
+        };
+        let named_args_end = if has_trailing_block {
+            args.len() - 1
+        } else {
+            args.len()
+        };
+        let named_args = &args[positional..named_args_end];
+
+        // The trailing block targets the last parameter if not already provided positionally.
+        let trailing_param_idx = if has_trailing_block && signature.params.len() > positional {
+            Some(signature.params.len() - 1)
+        } else {
+            None
+        };
+
         let mut resolved: Vec<ResolvedArgument<'a>> = Vec::with_capacity(signature.params.len());
         let mut consumed = 0usize;
         for (index, param) in signature.params.iter().enumerate() {
@@ -815,9 +843,22 @@ impl IrBuilder {
                 consumed += 1;
                 continue;
             }
-            match args
+            if Some(index) == trailing_param_idx {
+                if let Some(tb) = trailing_arg {
+                    // Reject if a named argument also targeted this parameter.
+                    if named_args
+                        .iter()
+                        .any(|arg| arg.name.as_deref() == Some(param.name.as_str()))
+                    {
+                        return None;
+                    }
+                    resolved.push(ResolvedArgument::Provided(&tb.value));
+                    consumed += 1;
+                    continue;
+                }
+            }
+            match named_args
                 .iter()
-                .skip(positional)
                 .find(|arg| arg.name.as_deref() == Some(param.name.as_str()))
             {
                 Some(named) => {
@@ -2066,6 +2107,9 @@ impl IrBuilder {
                             defer_fixed: false,
                             span: *span,
                         });
+                        if self.invariant_hooks.contains(name) {
+                            self.build_invariant_check(name, *span, out);
+                        }
                         return;
                     }
                 }
@@ -2142,8 +2186,15 @@ impl IrBuilder {
                 }
                 // canon: `invariant()` is verified at the end of construction, so it observes
                 // exactly what `init` assigned (the field assignments above have already run).
-                if self.invariant_hooks.contains(type_name) {
-                    self.build_invariant_check(type_name, *span, out);
+                let inv_target = if self.invariant_hooks.contains(type_name) {
+                    Some(type_name.as_str())
+                } else {
+                    type_name.split_once('.').and_then(|(parent, _)| {
+                        self.invariant_hooks.contains(parent).then_some(parent)
+                    })
+                };
+                if let Some(target) = inv_target {
+                    self.build_invariant_check(target, *span, out);
                 }
                 if has_init {
                     out.push(CoreInst::SealStruct(*span));
@@ -2318,12 +2369,22 @@ fn collect_free_stmt(stmt: &HirStmt, seen: &mut HashSet<String>, out: &mut Vec<S
             }
         }
         HirStmt::FnDecl(f) => {
-            // A nested local function declares its own name; its body is collected when the
-            // closure itself is built, not as free references of the enclosing frame.
-            // Still, the declared name binds in the enclosing block, so record it in
-            // `seen` to avoid a later sibling use being misclassified as free
-            // (auditoria IR-4).
             seen.insert(f.name.clone());
+            let mut inner_seen = HashSet::new();
+            inner_seen.insert(f.name.clone());
+            for p in &f.params {
+                inner_seen.insert(p.name.clone());
+            }
+            let mut inner_free = Vec::new();
+            for stmt in &f.body {
+                collect_free_stmt(stmt, &mut inner_seen, &mut inner_free);
+            }
+            for name in inner_free {
+                if !seen.contains(&name) {
+                    seen.insert(name.clone());
+                    out.push(name);
+                }
+            }
         }
         HirStmt::Attempt(s) => {
             for stmt in &s.body {
@@ -2394,12 +2455,21 @@ fn collect_free_expr(expr: &HirExpr, seen: &mut HashSet<String>, out: &mut Vec<S
             collect_free_expr(then_b, seen, out);
             collect_free_expr(else_b, seen, out);
         }
-        HirExpr::Fn(_) => {
-            // A nested closure declares its own parameters and locals and resolves its
-            // captures transitively in `build_closure`/`ensure_capture` when it is built.
-            // Walking the body here would leak the closure's internal bindings into the
-            // enclosing collection and misclassify sibling references (auditoria IR-14),
-            // so this mirrors the `HirStmt::FnDecl` arm.
+        HirExpr::Fn(f) => {
+            let mut inner_seen = HashSet::new();
+            for p in &f.params {
+                inner_seen.insert(p.name.clone());
+            }
+            let mut inner_free = Vec::new();
+            for stmt in &f.body {
+                collect_free_stmt(stmt, &mut inner_seen, &mut inner_free);
+            }
+            for name in inner_free {
+                if !seen.contains(&name) {
+                    seen.insert(name.clone());
+                    out.push(name);
+                }
+            }
         }
         HirExpr::Literal(_, _) => {}
     }

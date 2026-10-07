@@ -565,4 +565,13 @@ mod tests {
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
+
+    /// Accessing a non-existent member on a known collection type is caught statically (D3).
+    #[test]
+    fn test_unknown_collection_member_d3() {
+        let code = "var l = [1, 2, 3]\nl.pop()";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+    }
 }

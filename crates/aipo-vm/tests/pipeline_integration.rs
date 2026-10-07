@@ -273,3 +273,69 @@ b //= 4
     assert_eq!(vm.get_global("a"), Some(&Value::Int(4)));
     assert_eq!(vm.get_global("b"), Some(&Value::Int(6)));
 }
+
+#[test]
+fn test_nested_closure_upvalue_capture_d2() {
+    let src = Source::new(
+        SourceId::next(),
+        "d2.aipo",
+        r#"
+fn outer(cb) {
+    let f = fn() {
+        let inner = fn() {
+            return cb(10)
+        }
+        return inner()
+    }
+    return f()
+}
+let res = outer(fn(x) { return x * 3 })
+"#,
+    );
+
+    let (ast, parse_diags) = parse(&src);
+    assert!(parse_diags.is_empty(), "parse errors: {:?}", parse_diags);
+
+    let hir = lower(ast);
+    let ir = lower_to_ir(&hir);
+    let bytecode = compile(&ir).expect("compilation failed");
+
+    let mut vm = Vm::new();
+    let _ = vm.run(&bytecode).expect("vm execution failed");
+
+    assert_eq!(vm.get_global("res"), Some(&Value::Int(30)));
+}
+
+#[test]
+fn test_named_args_plus_trailing_block_d1() {
+    let src = Source::new(
+        SourceId::next(),
+        "d1.aipo",
+        r#"
+var val = 0
+fn f8(a = 0, b = 0, c = 0, d = 0, e = 0, g = 0, h = 0, body = none) -> String {
+    if body != none {
+        body()
+    }
+    return "f8"
+}
+let r = f8(a = 1) do { val = 42 }
+"#,
+    );
+
+    let (ast, parse_diags) = parse(&src);
+    assert!(parse_diags.is_empty(), "parse errors: {:?}", parse_diags);
+
+    let hir = lower(ast);
+    let ir = lower_to_ir(&hir);
+    let bytecode = compile(&ir).expect("compilation failed");
+
+    let mut vm = Vm::new();
+    let _ = vm.run(&bytecode).expect("vm execution failed");
+
+    assert_eq!(vm.get_global("val"), Some(&Value::Int(42)));
+    assert_eq!(
+        vm.get_global("r"),
+        Some(&Value::String(std::rc::Rc::new("f8".to_string())))
+    );
+}

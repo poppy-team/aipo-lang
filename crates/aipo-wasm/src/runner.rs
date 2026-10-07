@@ -19,7 +19,16 @@ impl std::fmt::Display for WasmRuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Instantiation(msg) => write!(f, "Wasm instantiation error: {msg}"),
-            Self::Execution(msg) => write!(f, "Wasm execution error: {msg}"),
+            Self::Execution(msg) => {
+                if msg.contains("divide by zero") {
+                    write!(
+                        f,
+                        "[AIPO_RT_DIV_ZERO] runtime fault [AIPO_RT_DIV_ZERO]: division by zero"
+                    )
+                } else {
+                    write!(f, "Wasm execution error: {msg}")
+                }
+            }
             Self::MissingExport(name) => write!(f, "Wasm missing export: `{name}`"),
         }
     }
@@ -147,31 +156,31 @@ pub fn execute_wasm(wasm_bytes: &[u8], stdout: &mut dyn Write) -> Result<i64, Wa
         if let Ok(func) = instance.get_typed_func::<(), i64>(&mut store, "__top_level__") {
             return func
                 .call(&mut store, ())
-                .map_err(|e| WasmRuntimeError::Execution(e.to_string()));
+                .map_err(|e| WasmRuntimeError::Execution(format!("{e:#}")));
         }
         if let Ok(func) = instance.get_typed_func::<(), ()>(&mut store, "__top_level__") {
             func.call(&mut store, ())
-                .map_err(|e| WasmRuntimeError::Execution(e.to_string()))?;
+                .map_err(|e| WasmRuntimeError::Execution(format!("{e:#}")))?;
             return Ok(0);
         }
         if let Ok(func) = instance.get_typed_func::<(), i64>(&mut store, "run") {
             return func
                 .call(&mut store, ())
-                .map_err(|e| WasmRuntimeError::Execution(e.to_string()));
+                .map_err(|e| WasmRuntimeError::Execution(format!("{e:#}")));
         }
         if let Ok(func) = instance.get_typed_func::<(), ()>(&mut store, "run") {
             func.call(&mut store, ())
-                .map_err(|e| WasmRuntimeError::Execution(e.to_string()))?;
+                .map_err(|e| WasmRuntimeError::Execution(format!("{e:#}")))?;
             return Ok(0);
         }
         if let Ok(func) = instance.get_typed_func::<(), i64>(&mut store, "main") {
             return func
                 .call(&mut store, ())
-                .map_err(|e| WasmRuntimeError::Execution(e.to_string()));
+                .map_err(|e| WasmRuntimeError::Execution(format!("{e:#}")));
         }
         if let Ok(func) = instance.get_typed_func::<(), ()>(&mut store, "main") {
             func.call(&mut store, ())
-                .map_err(|e| WasmRuntimeError::Execution(e.to_string()))?;
+                .map_err(|e| WasmRuntimeError::Execution(format!("{e:#}")))?;
             return Ok(0);
         }
         Ok(0)

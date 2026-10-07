@@ -183,3 +183,85 @@ fn test_enum(s: Status) -> Int {
         "match variant pattern must return UnsupportedStmt in Wasm backend, got {result:?}"
     );
 }
+
+#[test]
+fn test_match_with_guard() {
+    let code = r#"
+fn check_num(x: Int) -> Int {
+  match x {
+    when 10 if true {
+      return 100
+    }
+    when 10 if false {
+      return 200
+    }
+    else {
+      return 0
+    }
+  }
+}
+"#;
+    let source = Source::new(SourceId::next(), "test.aipo", code);
+    let (ast, diags) = parse(&source);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:?}");
+    let hir = lower(ast);
+    let wasm_bytes = compile_hir(&hir).expect("compilation to Wasm succeeds");
+    let engine = Engine::default();
+    let module = Module::new(&engine, &wasm_bytes).expect("valid module");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiation");
+    let f = instance
+        .get_typed_func::<i64, i64>(&mut store, "check_num")
+        .expect("exported function");
+
+    assert_eq!(f.call(&mut store, 10).unwrap(), 100);
+    assert_eq!(f.call(&mut store, 5).unwrap(), 0);
+}
+
+#[test]
+fn test_match_destructure_struct() {
+    let code = r#"
+struct Point {
+  x: Int,
+  y: Int,
+}
+fn sum_coords(p: Point) -> Int {
+  match p {
+    when { x, y } {
+      return x + y
+    }
+    else {
+      return 0
+    }
+  }
+}
+"#;
+    let source = Source::new(SourceId::next(), "test.aipo", code);
+    let (ast, diags) = parse(&source);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:?}");
+    let hir = lower(ast);
+    let wasm_bytes = compile_hir(&hir).expect("compilation to Wasm succeeds");
+    let engine = Engine::default();
+    let module = Module::new(&engine, &wasm_bytes).expect("valid module");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiation");
+    let f = instance
+        .get_typed_func::<i64, i64>(&mut store, "sum_coords")
+        .expect("exported function");
+
+    // Allocate Point in linear memory
+    let alloc = instance
+        .get_typed_func::<i32, i32>(&mut store, "__aipo_alloc")
+        .expect("allocator");
+    let ptr = alloc.call(&mut store, 16).unwrap();
+
+    let memory = instance.get_memory(&mut store, "memory").unwrap();
+    memory
+        .write(&mut store, ptr as usize, &15i64.to_le_bytes())
+        .unwrap();
+    memory
+        .write(&mut store, (ptr + 8) as usize, &27i64.to_le_bytes())
+        .unwrap();
+
+    assert_eq!(f.call(&mut store, ptr as i64).unwrap(), 42);
+}

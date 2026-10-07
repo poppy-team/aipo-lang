@@ -485,12 +485,26 @@ impl<'a> Lexer<'a> {
         };
 
         let is_raw = matches!(prefix, StringPrefix::Raw | StringPrefix::FormatRaw);
+        let is_format = matches!(prefix, StringPrefix::Format | StringPrefix::FormatRaw);
         let mut content = String::new();
+        let mut brace_depth = 0usize;
 
         loop {
             match self.advance() {
                 Some('"') => {
-                    if is_multiline {
+                    if brace_depth > 0 {
+                        content.push('"');
+                        while let Some(ch) = self.advance() {
+                            content.push(ch);
+                            if ch == '\\' {
+                                if let Some(esc) = self.advance() {
+                                    content.push(esc);
+                                }
+                            } else if ch == '"' {
+                                break;
+                            }
+                        }
+                    } else if is_multiline {
                         if self.peek() == Some('"') && self.peek_ahead(1) == Some('"') {
                             self.advance();
                             self.advance();
@@ -500,6 +514,26 @@ impl<'a> Lexer<'a> {
                         }
                     } else {
                         break;
+                    }
+                }
+                Some('{') if is_format => {
+                    if self.peek() == Some('{') {
+                        self.advance();
+                        content.push('{');
+                        content.push('{');
+                    } else {
+                        brace_depth += 1;
+                        content.push('{');
+                    }
+                }
+                Some('}') if is_format => {
+                    if self.peek() == Some('}') {
+                        self.advance();
+                        content.push('}');
+                        content.push('}');
+                    } else {
+                        brace_depth = brace_depth.saturating_sub(1);
+                        content.push('}');
                     }
                 }
                 Some('\\') if !is_raw => {
