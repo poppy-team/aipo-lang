@@ -58,29 +58,6 @@ const LIST_MEMBERS: &[&str] = &[
     "clone",
 ];
 
-const DICT_MEMBERS: &[&str] = &[
-    "has",
-    "get",
-    "keys",
-    "values",
-    "entries",
-    "remove",
-    "clear",
-    "is_empty",
-    "len",
-    "lazy",
-    "set",
-    "contains",
-    "clone",
-    "each",
-    "map",
-    "transform",
-    "filter",
-    "any",
-    "all",
-    "reduce",
-];
-
 const STRING_MEMBERS: &[&str] = &[
     "len",
     "byte_len",
@@ -114,7 +91,6 @@ fn extract_inferred_type(expr: &HirExpr) -> Option<String> {
     match expr {
         HirExpr::Construct(target, _, _) => Some(target.clone()),
         HirExpr::List(..) => Some("List".to_string()),
-        HirExpr::Dict(..) => Some("Dict".to_string()),
         HirExpr::Literal(Literal::String(..), _) => Some("String".to_string()),
         _ => None,
     }
@@ -402,6 +378,49 @@ impl<'a> SemanticAnalyzer<'a> {
                         format!("{}.{}", impl_block.target, m.name),
                         DeclaredContract::of(m),
                     );
+                }
+            } else if let HirItem::Batch(binding) = item {
+                for function_name in &binding.functions {
+                    if let Some(source) = program.items.iter().find_map(|it| match it {
+                        HirItem::Fn(f) if &f.name == function_name => Some(f),
+                        _ => None,
+                    }) {
+                        if source.params.first().is_some_and(|p| p.is_self) {
+                            let min_args = source
+                                .params
+                                .iter()
+                                .filter(|p| !p.is_self && p.default.is_none())
+                                .count();
+                            let max_args = source.params.iter().filter(|p| !p.is_self).count();
+                            let is_mut_self = source.params.iter().any(|p| p.is_self && p.is_mut);
+                            let param_types = source
+                                .params
+                                .iter()
+                                .filter(|p| !p.is_self)
+                                .map(|p| (p.name.clone(), p.type_annotation.clone()))
+                                .collect();
+                            let methods =
+                                self.impl_methods.entry(binding.target.clone()).or_default();
+                            methods.insert(
+                                function_name.clone(),
+                                MethodSignature {
+                                    min_args,
+                                    max_args,
+                                    is_mut_self,
+                                    is_async: source.is_async,
+                                    param_types,
+                                    return_type: source.return_type.clone(),
+                                },
+                            );
+                            if source.is_async {
+                                self.async_methods.insert(function_name.clone());
+                            }
+                            self.fn_contracts.insert(
+                                format!("{}.{}", binding.target, function_name),
+                                DeclaredContract::of(source),
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -925,6 +944,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let fn_scope = self.facts.scopes.new_scope(Some(parent));
         self.current_scope = fn_scope;
 
+        let prev_var_types = self.var_struct_types.clone();
         let prev_fn_is_mut = self.current_fn_is_mut;
         self.current_fn_is_mut = f.params.iter().any(|p| p.is_self && p.is_mut);
         let prev_return_contract = self.current_return_contract.clone();
@@ -961,6 +981,7 @@ impl<'a> SemanticAnalyzer<'a> {
 
         self.current_fn_is_mut = prev_fn_is_mut;
         self.current_return_contract = prev_return_contract;
+        self.var_struct_types = prev_var_types;
         self.current_scope = parent;
     }
 
@@ -2205,7 +2226,6 @@ impl<'a> SemanticAnalyzer<'a> {
             HirExpr::Identifier(name, _) if name == "self" => self.current_struct.clone(),
             HirExpr::Identifier(name, _) => self.var_struct_types.get(name).cloned(),
             HirExpr::List(..) => Some("List".to_string()),
-            HirExpr::Dict(..) => Some("Dict".to_string()),
             HirExpr::Literal(Literal::String(..), _) => Some("String".to_string()),
             _ => None,
         };
@@ -2218,17 +2238,6 @@ impl<'a> SemanticAnalyzer<'a> {
                             Diagnostic::error(
                                 DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
                                 format!("type 'List' has no member '{member}'"),
-                            )
-                            .with_primary_span(self.source, span),
-                        );
-                    }
-                }
-                "Dict" => {
-                    if !DICT_MEMBERS.contains(&member) {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
-                                format!("type 'Dict' has no member '{member}'"),
                             )
                             .with_primary_span(self.source, span),
                         );
@@ -2282,7 +2291,9 @@ impl<'a> SemanticAnalyzer<'a> {
         let parent = self.current_scope;
         let block_scope = self.facts.scopes.new_scope(Some(parent));
         self.current_scope = block_scope;
+        let prev_var_types = self.var_struct_types.clone();
         f(self);
+        self.var_struct_types = prev_var_types;
         self.current_scope = parent;
     }
 }

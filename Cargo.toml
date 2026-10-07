@@ -86,3 +86,11 @@ toml = "1.1"
 unicode-segmentation = "1.12"
 unicode-normalization = "0.1"
 regex = "1.11"
+
+[profile.nano]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -126,8 +126,8 @@ impl EguiSession {
             raw_input.events.push(Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
                 delta: vec2(options.scroll_x, options.scroll_y),
-                phase: egui::TouchPhase::Move,
                 modifiers: Default::default(),
+                phase: egui::TouchPhase::Move,
             });
         }
 

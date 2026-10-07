@@ -66,9 +66,9 @@ fn Bullet(speed: Float, angle: Float) -> Behavior {
         # angle in degrees, -90 is up, 90 is down, 0 is right, 180 is left
         if angle == -90.0 {
             actor.y -= speed * dt
-        } else if angle == 90.0 {
+        } elif angle == 90.0 {
             actor.y += speed * dt
-        } else if angle == 180.0 {
+        } elif angle == 180.0 {
             actor.x -= speed * dt
         } else {
             actor.x += speed * dt
@@ -101,13 +101,13 @@ fn WrapScreen(margin: Float) -> Behavior {
         # Screen bounds wrap
         if actor.x < -margin {
             actor.x = 800.0 + margin
-        } else if actor.x > 800.0 + margin {
+        } elif actor.x > 800.0 + margin {
             actor.x = -margin
         }
 
         if actor.y < -margin {
             actor.y = 600.0 + margin
-        } else if actor.y > 600.0 + margin {
+        } elif actor.y > 600.0 + margin {
             actor.y = -margin
         }
     }
@@ -124,13 +124,13 @@ fn KeepInScreen(margin: Float) -> Behavior {
     let update = fn(actor, dt) {
         if actor.x < margin {
             actor.x = margin
-        } else if actor.x > 800.0 - margin {
+        } elif actor.x > 800.0 - margin {
             actor.x = 800.0 - margin
         }
 
         if actor.y < margin {
             actor.y = margin
-        } else if actor.y > 600.0 - margin {
+        } elif actor.y > 600.0 - margin {
             actor.y = 600.0 - margin
         }
     }

@@ -6563,7 +6563,7 @@ fn compile_logical_short_circuit(
 /// mirrors the stack VM's `CheckFailure` opcode together with its handler stack.
 fn emit_failure_check(
     func: &mut Function,
-    control_stack: &mut [ControlFrame],
+    control_stack: &[ControlFrame],
     fail_globals: FailureGlobals,
     return_type: Option<WasmType>,
 ) {
@@ -6749,7 +6749,7 @@ fn infer_expr_is_range(
     expr: &HirExpr,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
     functions: &HashMap<String, (u32, u32, WasmFnType)>,
-    structs: &HashMap<String, StructLayout>,
+    _structs: &HashMap<String, StructLayout>,
     table_indices: &HashMap<String, u32>,
 ) -> bool {
     match expr {
@@ -6758,11 +6758,11 @@ fn infer_expr_is_range(
             .get(name)
             .is_some_and(|(_, _, kind)| matches!(kind, LocalKind::Range)),
         HirExpr::If(_, then_expr, else_expr, _) => {
-            infer_expr_is_range(then_expr, locals, functions, structs, table_indices)
-                && infer_expr_is_range(else_expr, locals, functions, structs, table_indices)
+            infer_expr_is_range(then_expr, locals, functions, _structs, table_indices)
+                && infer_expr_is_range(else_expr, locals, functions, _structs, table_indices)
         }
         _ => {
-            let _ = (functions, structs, table_indices);
+            let _ = (functions, table_indices, _structs);
             false
         }
     }

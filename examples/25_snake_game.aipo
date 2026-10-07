@@ -71,7 +71,7 @@ SnakeGame:is_snake_body(self, x, y) {
             # Relocate apple to fixed next spot for deterministic testing
             if self.apple.x == 5 and self.apple.y == 3 {
                 self.apple = Point{ x: 8, y: 3 }
-            } else if self.apple.x == 8 and self.apple.y == 3 {
+            } elif self.apple.x == 8 and self.apple.y == 3 {
                 self.apple = Point{ x: 8, y: 6 }
             } else {
                 self.apple = Point{ x: 2, y: 2 }

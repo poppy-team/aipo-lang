@@ -347,7 +347,7 @@ covariante:
 | `alvo = expr` | atribuição simples |
 | `alvo op= expr` | `+=` `-=` `*=` `/=` `//=` `%=` |
 | `alvo with { campo: valor }` | atualização funcional; devolve novo valor, base intacto |
-| `if c { } elif c { } else { }` | sem parênteses na condição; `else if c { }` equivale a `elif` |
+| `if c { } elif c { } else { }` | sem parênteses na condição; usa `elif` (`else if` é rejeitado) |
 | `if c then a else b` | **inline, com valor** |
 | `match alvo { when p1, p2 { } else { } }` | `when`, nunca `case` |
 | `loop { }` | laço infinito canônico |
@@ -618,7 +618,7 @@ pendente, e o par **precisa** ser feito junto para não haver conflito.
 
 | Forma antiga / Item | Status atual | Alvo / Realizado |
 |---|---|---|
-| `end` como terminador | aceito em transição | remover no ciclo final de fixtures |
+| `end` como terminador | **removido** | blocos exigem `{ ... }` exclusivamente |
 | `div` / `div=` | **removido** | `div` é identificador comum; `//` e `//=` são os únicos operadores de divisão inteira |
 | `self!` / `nome!` | **removido** | `var self` e `var nome` exclusivos |
 | `impl Tipo { }` | legado aceito | `Tipo:nome` implementado e canônico |

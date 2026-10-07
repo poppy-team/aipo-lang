@@ -71,8 +71,8 @@ fn test_with_expression_basic_functional_update() {
     let temp = std::env::temp_dir().join("aipo_with_basic.aipo");
     let source = r#"
 struct Point {
-    x
-    y
+    var x
+    var y
 }
 
 let p1 = Point{x = 1, y = 2}
@@ -93,9 +93,9 @@ fn test_with_expression_multiple_overrides_and_chaining() {
     let temp = std::env::temp_dir().join("aipo_with_multi.aipo");
     let source = r#"
 struct Point {
-    x
-    y
-    z
+    var x
+    var y
+    var z
 }
 
 let p = Point{x = 1, y = 2, z = 3}
@@ -122,8 +122,8 @@ fn test_with_expression_on_call_result() {
     let temp = std::env::temp_dir().join("aipo_with_call.aipo");
     let source = r#"
 struct Point {
-    x
-    y
+    var x
+    var y
 }
 
 fn make_point(x, y) {
@@ -142,11 +142,11 @@ io.println(String(p.x) + "," + String(p.y))
 
 #[test]
 fn test_with_expression_static_error_on_unknown_field() {
-    let temp = std::env::temp_dir().join("aipo_with_err_field.aipo");
+    let temp = std::env::temp_dir().join("aipo_with_err_unknown.aipo");
     let source = r#"
 struct Point {
-    x
-    y
+    var x
+    var y
 }
 
 let p = Point{x = 1, y = 2} with { nope: 9 }

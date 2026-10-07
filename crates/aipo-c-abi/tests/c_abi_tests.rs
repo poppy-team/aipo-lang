@@ -425,3 +425,35 @@ fn test_null_pointer_safety() {
     let written = unsafe { aipo_last_error(std::ptr::null(), std::ptr::null_mut(), 0) };
     assert_eq!(written, 0);
 }
+
+#[test]
+fn test_reg_vm_c_abi() {
+    use aipo_bytecode::{RegInstruction, RegOpCode};
+
+    let vm = aipo_reg_vm_create();
+    assert!(!vm.is_null());
+
+    unsafe {
+        assert_eq!(aipo_reg_vm_set_reg_int(vm, 1, 100), aipo_status_t::AIPO_OK);
+        assert_eq!(aipo_reg_vm_set_reg_int(vm, 2, 250), aipo_status_t::AIPO_OK);
+
+        let mut read_back = 0i64;
+        assert_eq!(
+            aipo_reg_vm_get_reg_int(vm, 1, &mut read_back),
+            aipo_status_t::AIPO_OK
+        );
+        assert_eq!(read_back, 100);
+
+        let code = [
+            RegInstruction::encode_abc(RegOpCode::Add, 0, 1, 2).0,
+            RegInstruction::encode_abc(RegOpCode::Return, 0, 0, 0).0,
+        ];
+
+        let mut out_res = 0i64;
+        let status = aipo_reg_vm_run(vm, code.as_ptr(), code.len(), &mut out_res);
+        assert_eq!(status, aipo_status_t::AIPO_OK);
+        assert_eq!(out_res, 350);
+
+        aipo_reg_vm_destroy(vm);
+    }
+}

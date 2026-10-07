@@ -23,6 +23,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use aipo_host::{Capability, CapabilitySet, Handle, HandleTable, HostFault, HostValue};
+#[cfg(feature = "unicode")]
 use unicode_normalization::UnicodeNormalization;
 
 use crate::fault::VmFault;
@@ -177,7 +178,10 @@ pub fn host_value_to_value(host: &HostValue) -> Result<Value, VmFault> {
         HostValue::Float(value) => check_finite_float(*value).map(Value::Float),
         // The host side keeps `HostValue::String` a raw snapshot (see its docs), so NFC is
         // applied here, where a snapshot becomes a language `String`.
+        #[cfg(feature = "unicode")]
         HostValue::String(text) => Ok(Value::String(Rc::new(text.nfc().collect()))),
+        #[cfg(not(feature = "unicode"))]
+        HostValue::String(text) => Ok(Value::String(Rc::new(text.clone()))),
         HostValue::Bytes(bytes) => Ok(Value::Bytes(Rc::new(RefCell::new(bytes.clone())))),
         HostValue::Handle(handle) => Ok(Value::HostHandle(*handle)),
     }
@@ -585,8 +589,8 @@ impl HostContext {
                 Ok(())
             }
             Value::BoundMethod(bm) => self.walk(&bm.receiver, site, visited),
-            Value::StructMethod { receiver, .. } => {
-                self.walk(&Value::Struct(receiver.clone()), site, visited)
+            Value::StructMethod(sm) => {
+                self.walk(&Value::Struct(sm.receiver.clone()), site, visited)
             }
             Value::Sequence(pipeline) => {
                 if !visited.insert(Rc::as_ptr(pipeline) as usize) {

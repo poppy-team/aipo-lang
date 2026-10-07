@@ -8,10 +8,10 @@
 
 #![forbid(unsafe_code)]
 
+use crate::string::normalize_nfc_str;
 use aipo_vm::{DictMap, FailureValue, Value, VmFault};
 use std::cell::RefCell;
 use std::rc::Rc;
-use unicode_normalization::UnicodeNormalization;
 
 const BASE64_STANDARD_TABLE: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -271,7 +271,7 @@ pub fn encoding_utf8_decode(args: &[Value]) -> Result<Value, VmFault> {
     let data = b.borrow();
     match std::str::from_utf8(&data) {
         Ok(s) => {
-            let nfc_string: String = s.nfc().collect();
+            let nfc_string: String = normalize_nfc_str(s);
             Ok(Value::String(Rc::new(nfc_string)))
         }
         Err(_) => Ok(recoverable("bytes are not valid UTF-8")),

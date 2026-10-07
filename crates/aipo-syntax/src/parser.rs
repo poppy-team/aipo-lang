@@ -1358,22 +1358,31 @@ impl<'a> Parser<'a> {
 
         let else_branch = if self.match_token(&TokenKind::Else) {
             self.skip_newlines();
-            // `else if` nests a conditional without braces (equivalent to `elif`).
             if self.check(&TokenKind::If) {
-                Some(vec![self.parse_stmt()?])
-            } else {
-                self.expect(&TokenKind::LBrace, "expected '{' to open else body")?;
-                self.skip_newlines();
-                let mut else_body = Vec::new();
-                while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
-                    if let Some(s) = self.parse_stmt() {
-                        else_body.push(s);
-                    }
-                    self.skip_newlines();
-                }
-                self.expect(&TokenKind::RBrace, "expected '}' after else body")?;
-                Some(else_body)
+                let span = self
+                    .peek_token()
+                    .map(|t| t.span)
+                    .unwrap_or_else(|| SourceSpan::empty(self.source.len()));
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                        "`else if` is not supported; use `elif` instead",
+                    )
+                    .with_primary_span(self.source, span),
+                );
+                return None;
             }
+            self.expect(&TokenKind::LBrace, "expected '{' to open else body")?;
+            self.skip_newlines();
+            let mut else_body = Vec::new();
+            while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+                if let Some(s) = self.parse_stmt() {
+                    else_body.push(s);
+                }
+                self.skip_newlines();
+            }
+            self.expect(&TokenKind::RBrace, "expected '}' after else body")?;
+            Some(else_body)
         } else {
             None
         };

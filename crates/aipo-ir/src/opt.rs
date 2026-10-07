@@ -3,7 +3,7 @@
 //! Every pass rewrites one function's instruction stream and returns an
 //! index map so absolute jump targets can be re-noted. Removing an instruction
 //! renumbers every target after it, so the passes are only correct together
-//! with [`remap_jump_targets`]; that function is applied after each round.
+//! with `remap_jump_targets`; that function is applied after each round.
 //!
 //! The passes never change observable behaviour: constant folding evaluates
 //! only total subexpressions, peephole removes no-op shapes, and dead-code

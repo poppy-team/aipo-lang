@@ -62,7 +62,7 @@ fn draw_node_text(node, r) -> Int {
     var lines = []
     if allow_wrap and max_lines > 0 and r.width > 0.0 {
         lines = text_mod.text_wrap(raw, r.width, size, weight, max_lines)
-    } else if max_lines > 0 {
+    } elif max_lines > 0 {
         # No wrapping requested, but the text is clamped: lay it out on a single
         # line and ellipsize to the node width.
         var single = raw

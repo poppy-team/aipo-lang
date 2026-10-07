@@ -35,7 +35,7 @@ fn generate_draw_commands(node: UINode, commands: List) {
                     font_weight: ""
                 })
         }
-    } else if node.kind == "Text" {
+    } elif node.kind == "Text" {
         commands.add(DrawCommand {
                 kind: "Text",
                 rect: r,
@@ -47,7 +47,7 @@ fn generate_draw_commands(node: UINode, commands: List) {
                 font_size: layout_mod.prop_of(node, "font_size", 14.0),
                 font_weight: layout_mod.prop_of(node, "font_weight", "normal")
             })
-    } else if node.kind == "Button" {
+    } elif node.kind == "Button" {
         # Default button rendering: background rectangle + centered label
         commands.add(DrawCommand {
                 kind: "Rect",

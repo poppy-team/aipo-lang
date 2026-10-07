@@ -475,12 +475,12 @@ impl Vm {
                             if let Some((entry_ip, total_arity, is_async)) =
                                 self.lookup_struct_method(&type_name, field_name)
                             {
-                                self.push(Value::StructMethod {
-                                    receiver: inst.clone(),
-                                    entry_ip: entry_ip as u32,
-                                    total_arity: total_arity as u16,
+                                self.push(Value::struct_method(
+                                    inst.clone(),
+                                    entry_ip as u32,
+                                    total_arity as u16,
                                     is_async,
-                                })?;
+                                ))?;
                             } else if let Some((arity, func)) = self
                                 .method_natives
                                 .get(&(type_name.clone(), field_name.clone()))
@@ -644,30 +644,30 @@ impl Vm {
                 }
 
                 match (&target, &index) {
-                    (Value::List(l), Value::Range { start, end }) => {
+                    (Value::List(l), Value::Range(r)) => {
                         let items = l.borrow().clone();
-                        let (from, to) = normalize_range(*start, *end, items.len());
+                        let (from, to) = normalize_range(r.start, r.end, items.len());
                         let slice: Vec<Value> = items[from..to].to_vec();
                         self.push(Value::List(Rc::new(RefCell::new(slice))))?;
                     }
-                    (Value::String(s), Value::Range { start, end }) => {
+                    (Value::String(s), Value::Range(r)) => {
                         let chars: Vec<char> = s.chars().collect();
-                        let (from, to) = normalize_range(*start, *end, chars.len());
+                        let (from, to) = normalize_range(r.start, r.end, chars.len());
                         let slice: String = chars[from..to].iter().collect();
                         self.push(Value::String(Rc::new(slice)))?;
                     }
-                    (Value::Bytes(b), Value::Range { start, end }) => {
+                    (Value::Bytes(b), Value::Range(r)) => {
                         let bytes = b.borrow();
-                        let (from, to) = normalize_range(*start, *end, bytes.len());
+                        let (from, to) = normalize_range(r.start, r.end, bytes.len());
                         self.push(Value::Bytes(Rc::new(RefCell::new(
                             bytes[from..to].to_vec(),
                         ))))?;
                     }
-                    (Value::Range { start, end }, Value::Int(i)) => {
+                    (Value::Range(r), Value::Int(i)) => {
                         // Positional access into a half-open range, which is what makes
                         // `each i in 0..n` (documented canon) lower to the same
                         // index-based loop every other iterable uses.
-                        let len = usize::try_from((*end - *start).max(0)).unwrap_or(0);
+                        let len = usize::try_from((r.end - r.start).max(0)).unwrap_or(0);
                         #[allow(clippy::cast_possible_wrap)]
                         let actual = if *i < 0 { (len as i64) + *i } else { *i };
                         let resolved = usize::try_from(actual)
@@ -676,7 +676,7 @@ impl Vm {
                             .ok_or(VmFault::IndexOutOfRange { index: *i, len })?;
                         #[allow(clippy::cast_possible_wrap)]
                         let offset = resolved as i64;
-                        self.push(Value::Int(start + offset))?;
+                        self.push(Value::Int(r.start + offset))?;
                     }
                     (Value::Bytes(b), Value::Int(i)) => {
                         let bytes = b.borrow();
@@ -1121,9 +1121,7 @@ impl Vm {
                 let end = self.pop()?;
                 let start = self.pop()?;
                 match (start, end) {
-                    (Value::Int(s), Value::Int(e)) => {
-                        self.push(Value::Range { start: s, end: e })?
-                    }
+                    (Value::Int(s), Value::Int(e)) => self.push(Value::range(s, e))?,
                     (a, b) => {
                         return Err(VmFault::TypeMismatch {
                             expected: "Int range bounds".to_string(),
@@ -1503,8 +1501,8 @@ impl Vm {
                     .ok_or(VmFault::IndexOutOfRange { index, len })?;
                 Ok(Value::Byte(bytes.borrow()[position]))
             }
-            Value::Range { start, end } => {
-                let len = usize::try_from((*end - *start).max(0)).unwrap_or(0);
+            Value::Range(r) => {
+                let len = usize::try_from((r.end - r.start).max(0)).unwrap_or(0);
                 #[allow(clippy::cast_possible_wrap)]
                 let actual = if index < 0 {
                     (len as i64) + index
@@ -1515,7 +1513,7 @@ impl Vm {
                     .ok()
                     .filter(|position| *position < len)
                     .ok_or(VmFault::IndexOutOfRange { index, len })?;
-                Ok(Value::Int(start + position as i64))
+                Ok(Value::Int(r.start + position as i64))
             }
             Value::Sequence(pipeline) => {
                 let items = self.sequence_items(module, pipeline)?;

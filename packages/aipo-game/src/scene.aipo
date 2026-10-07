@@ -125,7 +125,7 @@ fn step_simulation(sc: Scene, dt: Float) {
     each a in sc.actors {
         if a.is_alive {
             alive_actors.add(a)
-        } else if a.on_destroy_fn != none {
+        } elif a.on_destroy_fn != none {
             (a.on_destroy_fn)(a)
         }
     }
