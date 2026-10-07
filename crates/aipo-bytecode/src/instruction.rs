@@ -80,6 +80,8 @@ pub enum RegOpCode {
     CallPipe = 41,
     /// Return `B` values starting at register `R[A]`.
     Return = 42,
+    /// Instantiate / load function: `R[A] = Function[Bx]`.
+    MakeFunction = 43,
 
     // --- Tables, Fields & Structs ---
     /// Read global: `R[A] = Globals[Names[Bx]]`.
@@ -127,6 +129,7 @@ impl RegOpCode {
             40 => Some(Self::Call),
             41 => Some(Self::CallPipe),
             42 => Some(Self::Return),
+            43 => Some(Self::MakeFunction),
             50 => Some(Self::GetGlobal),
             51 => Some(Self::SetGlobal),
             52 => Some(Self::GetField),

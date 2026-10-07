@@ -11,6 +11,8 @@ use std::collections::HashMap;
 pub struct RegCompiledFunction {
     /// Function name.
     pub name: String,
+    /// Parameter count (arity).
+    pub arity: usize,
     /// 32-bit register bytecode instructions.
     pub instructions: Vec<RegInstruction>,
     /// Constant pool.
@@ -19,11 +21,23 @@ pub struct RegCompiledFunction {
     pub num_registers: usize,
 }
 
+/// A compiled module for the virtual register machine.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RegCompiledModule {
+    /// Top-level script.
+    pub top_level: RegCompiledFunction,
+    /// Functions in the module.
+    pub functions: Vec<RegCompiledFunction>,
+    /// Shared constant pool.
+    pub constants: Vec<Constant>,
+}
+
 /// Emitter for converting `CoreFunction` into `RegCompiledFunction`.
 #[derive(Debug, Default)]
 pub struct RegEmitter {
     constants: Vec<Constant>,
     instructions: Vec<RegInstruction>,
+    function_index: HashMap<String, usize>,
     max_reg: usize,
 }
 
@@ -256,6 +270,19 @@ impl RegEmitter {
                         top = callee + 1;
                     }
                 }
+                CoreInst::MakeFunction(name, _) => {
+                    let func_idx = *self
+                        .function_index
+                        .get(name)
+                        .expect("function not found in function_index");
+                    self.track_reg(top);
+                    self.emit(RegInstruction::encode_abx(
+                        RegOpCode::MakeFunction,
+                        top as u8,
+                        func_idx as u32,
+                    ));
+                    top += 1;
+                }
                 CoreInst::GetField(name, _) => {
                     if top > 0 {
                         let rec = top - 1;
@@ -360,6 +387,7 @@ impl RegEmitter {
 
         RegCompiledFunction {
             name: func.name.clone(),
+            arity: func.params.len(),
             instructions: self.instructions,
             constants: self.constants,
             num_registers: (self.max_reg + 1).max(1),
@@ -383,6 +411,49 @@ impl RegEmitter {
             let pos = self.constants.len();
             self.constants.push(c);
             pos
+        }
+    }
+
+    /// Compiles a CoreModule into a RegCompiledModule.
+    pub fn compile_module(mut self, module: &aipo_ir::CoreModule) -> RegCompiledModule {
+        // First pass: assign function indices so MakeFunction can resolve them.
+        for (idx, func) in module.functions.iter().enumerate() {
+            self.function_index.insert(func.name.clone(), idx);
+        }
+        let shared_index = self.function_index.clone();
+        let mut functions = Vec::with_capacity(module.functions.len());
+        let mut module_constants: Vec<Constant> = Vec::new();
+
+        // Second pass: compile each function with a fresh emitter sharing the index.
+        for func in &module.functions {
+            let emitter = RegEmitter {
+                constants: Vec::new(),
+                instructions: Vec::new(),
+                function_index: shared_index.clone(),
+                max_reg: 0,
+            };
+            let compiled = emitter.compile_function(func);
+            for c in &compiled.constants {
+                if !module_constants.contains(c) {
+                    module_constants.push(c.clone());
+                }
+            }
+            functions.push(compiled);
+        }
+
+        // Third pass: compile top-level script with function indices available.
+        let top_emitter = RegEmitter {
+            constants: Vec::new(),
+            instructions: Vec::new(),
+            function_index: shared_index,
+            max_reg: 0,
+        };
+        let top_level = top_emitter.compile_function(&module.top_level);
+
+        RegCompiledModule {
+            top_level,
+            functions,
+            constants: module_constants,
         }
     }
 }

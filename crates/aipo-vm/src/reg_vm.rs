@@ -498,6 +498,26 @@ impl RegVm {
                 RegOpCode::Return => {
                     return Ok(self.registers[a].clone());
                 }
+                RegOpCode::MakeFunction => {
+                    let bx = inst.bx() as usize;
+                    if let Some(Value::Function {
+                        entry_ip,
+                        arity,
+                        is_async,
+                    }) = self.constants.get(bx).cloned()
+                    {
+                        self.registers[a] = Value::Function {
+                            entry_ip,
+                            arity,
+                            is_async,
+                        };
+                    } else {
+                        return Err(VmFault::CorruptedBytecode {
+                            offset: self.pc - 1,
+                            reason: "invalid function constant for MakeFunction".to_string(),
+                        });
+                    }
+                }
             }
         }
         Ok(Value::None)
