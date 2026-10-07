@@ -33,6 +33,8 @@ pub enum TokenKind {
     Async,
     /// `await` (drives a `Task` to its value inside `async fn` or `await do`)
     Await,
+    /// `with` (functional struct update: `base with { field: value }`)
+    With,
     /// `struct`
     Struct,
     /// `impl`

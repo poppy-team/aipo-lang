@@ -91,6 +91,7 @@ pub fn classify(kind: &TokenKind) -> Class {
         | TokenKind::Fn
         | TokenKind::Async
         | TokenKind::Await
+        | TokenKind::With
         | TokenKind::Struct
         | TokenKind::Impl
         | TokenKind::Interface
@@ -214,6 +215,7 @@ pub fn keyword_text(kind: &TokenKind) -> &'static str {
         TokenKind::Fn => "fn",
         TokenKind::Async => "async",
         TokenKind::Await => "await",
+        TokenKind::With => "with",
         TokenKind::Struct => "struct",
         TokenKind::Impl => "impl",
         TokenKind::Interface => "interface",

@@ -1,63 +1,136 @@
 # Aipo — Referência Canônica de Sintaxe
 
-**Status:** normative
-**Escopo:** superfície sintática aceita pelo compilador nesta revisão
-**Verificado contra:** `crates/aipo-lexer/src/token.rs`, `crates/aipo-syntax/src/parser.rs`, `crates/aipo-ast/src/ast.rs`
-**Corpus de prova:** `examples/*.aipo`, `docs/conformance/programs/*.aipo`, `docs/conformance/formatting/*.expected.aipo`
-**Complementa:** `docs/manual/*` (narrativo), `docs/language/authority-map.md` (hierarquia de autoridade)
+**Status:** normative — alvo da linguagem, **ainda não implementado**
+**Norma:** [`docs/decisions/adr-001-canonical-syntax.md`](docs/decisions/adr-001-canonical-syntax.md)
+**Escopo:** superfície sintática da Aipo V1 conforme o ADR-001
+**Estado do compilador:** a gramática atual ainda aceita `end`, `div`, `impl`,
+`satisfy` e `self!`. Este documento descreve o **alvo**. A tabela de divergência
+está em [§16](#16-divergência-com-o-compilador-atual).
 
-Este documento existe porque o manual em `docs/manual/` é narrativo e não lista
-a superfície completa. As tabelas abaixo foram extraídas do código, não da
-documentação — divergências entre manual e compilador foram registradas em
-`docs/journal/` no mesmo commit.
+Aipo é projetada para leitura, escrita e manutenção por pessoas neurodivergentes
+(TDAH, dislexia, sobrecarga cognitiva). Quatro regras governam toda a superfície:
+
+1. **Uma forma só para cada coisa** — nunca duas grafias para a mesma operação.
+2. **Palavra completa vence símbolo** — `and` sobre `&&`, `not` sobre `!`.
+3. **Zero cerimônia para o caso comum** — o que aparece em todo arquivo é curto.
+4. **O erro diz o que fazer** — aponta a posição, nomeia o problema, oferece a correção.
 
 ---
 
 ## 0. TL;DR
 
-- **46 keywords** e **36 operadores**.
-- Comentário é **`#`** até o fim da linha. **`//` NÃO é comentário** — é divisão inteira.
-- Todo bloco aceita **duas** terminações: `end` **ou** `{ }`. Escolha uma e mantenha.
-- **Não existe:** `enum`, `try`/`catch`/`throw`, `defer`, generics, `pub`/`private`,
-  `for`, `class`, `const`, bitwise, `;`, `@attr`, cast com `as`.
+- **41 keywords.** Removidas: `end`, `div`, `self!`, `impl`, `satisfy`.
+- Bloco abre com `{` e fecha com `}`. **Não existe `end`.**
+- Comentário é `#`. Não existe comentário de bloco.
+- **`//` NÃO é comentário** — é divisão inteira. Use `#`.
+- Método pertence a um tipo por `Tipo:nome`. `self` é implícito; `var self` declara mutação.
+- `fn` é só para função **livre**. `interface` satisfaz por **tipagem estrutural** — sem declaração.
+- `#!` introduz **diretivas**: `#!satisfies`, `#!test`, `#!deprecated`, `#!todo`.
 
 ---
 
 ## 1. Terminação de bloco
 
-Toda construção que abre bloco aceita as duas formas. Misturar no mesmo arquivo
-é permitido pelo compilador, mas é anti-padrão de legibilidade.
+Toda abertura usa `{`, todo fechamento usa `}`.
 
 ```aipo
-if ativo {            # forma de chaves
+if ativo {
     io.println("ok")
 }
-
-if ativo then         # forma `end`
-    io.println("ok")
-end
 ```
 
-Aplica-se a: `fn`, `async fn`, `struct`, `impl`, `init`, `invariant`,
-`interface`, `if`/`elif`/`else`, `match` (e cada braço `when`), `loop`,
-`while`, `repeat`, `each`, `attempt`/`failed`, `await do`, bloco trailer.
+Aplica-se a: `fn`, `async fn`, `struct`, `interface`, `if`/`elif`/`else`,
+`match` (cada braço `when`), `loop`, `while`, `repeat`, `each`,
+`attempt`/`failed`, `await do`, bloco trailer `do`.
+
+### 1.1 `then`
+
+| Forma | `then` |
+|---|---|
+| Bloco — `if c { }` | **nunca** |
+| Inline com valor — `if c then a else b` | **sempre** |
+
+Regra: tem `{}`? Sem `then`. Não tem `{}`? Com `then`.
 
 ---
 
-## 2. Comentários e trivia
+## 2. Comentários e diretivas
 
 | Item | Regra |
 |---|---|
-| Comentário de linha | `#` até o fim da linha — **único** comentário da linguagem |
+| Comentário de linha | `#` até o fim da linha — **único** comentário |
 | Comentário de bloco | não existe |
+| Diretiva | `#!nome` — lida pelo compilador, aplica-se ao **próximo item** |
 | Newline | **significativo** — termina statement; newlines consecutivos colapsam em um |
-| Espaços | espaço, tab e CR são ignorados |
+| Espaços | espaço, tab e CR ignorados |
 | BOM | removido; CRLF/CR normalizados para LF |
 | Identificadores | começam com `_` ou letra Unicode; continuam com `_` ou alfanumérico Unicode |
 | NFC | aplicado ao **conteúdo de literais de string**, não a identificadores |
 
-> **Armadilha:** `//` é `SlashSlash` (divisão inteira). Escrever um comentário com
-> `//` produz `AIPO_RT_DIV_ZERO` ou `AIPO_SEM_UNKNOWN_NAME` — nunca um comentário.
+### 2.1 A armadilha do `//`
+
+`//` é divisão inteira, não comentário — colide com o hábito formado em JavaScript,
+Java, C, C++, Rust, Go, C#, PHP e Swift.
+
+Mitigação: quando `//` aparece onde nenhuma expressão válida pode segui-lo, o
+diagnóstico sugere `#`.
+
+### 2.2 Diretivas
+
+| Diretiva | Posição | Efeito |
+|---|---|---|
+| `#!satisfies I1, I2` | antes de `struct` | Exige que o tipo satisfaça as interfaces. Erro se falhar. |
+| `#!test` | antes de `fn` livre | Marca a função como teste unitário. |
+| `#!test[tag]` | idem | Teste com etiqueta, filtrável por `aipo test --filter tag`. |
+| `#!test("nome")` | idem | Teste com nome descritivo explícito. |
+| `#!deprecated` / `#!deprecated("msg")` | antes de `fn`, `struct` ou método | Marca o item como obsoleto; analisador emite aviso no uso. |
+| `#!todo` / `#!todo("msg")` | antes de qualquer item | Anota débito técnico ou pendência rastreável por ferramentas. |
+
+```aipo
+#!deprecated("use Circle{ raio: Float }")
+struct CirculoAntigo {
+    r: Float
+}
+
+#!todo("otimizar para evitar raiz quadrada desnecessária")
+fn distancia(x1: Float, y1: Float, x2: Float, y2: Float) -> Float {
+    let dx = x2 - x1
+    let dy = y2 - y1
+    return math.sqrt(dx * dx + dy * dy)
+}
+
+#!satisfies Drawable
+struct Circle {
+    raio: Float
+}
+
+#!test[geometry]
+fn area_de_circulo_unitario() {
+    io.println(String(Circle{ raio: 1 }.area()))
+}
+
+#!test("divisão inteira trunca em direção a zero")
+fn divide_trunca() {
+    io.println(String(7 // 2))    # 3
+}
+```
+
+Limites:
+
+- A diretiva aplica-se ao **item seguinte**; diretiva sem item seguinte é erro de parse.
+- No máximo uma `#!test` por função.
+- `#!test` marca **funções livres**; um método `Tipo:nome` não é teste, porque precisa de `self`.
+- Forma e argumento são validados: `#!test` não aceita conteúdo fora de `[...]` ou `"..."`.
+
+### 2.3 Descoberta de testes
+
+Duas vias, ambas ativas:
+
+- **Convenção de arquivo:** `*_test.aipo`, `test_*.aipo`
+- **Diretiva:** `#!test` dentro de qualquer `.aipo`
+
+Um teste por arquivo deixa de ser obrigatório: funções pequenas ficam agrupadas no
+arquivo do que testam.
 
 ---
 
@@ -67,17 +140,17 @@ Aplica-se a: `fn`, `async fn`, `struct`, `impl`, `init`, `invariant`,
 
 | Forma | Nome |
 |---|---|
-| `"..."` | string normal |
-| `f"..."` | formatada (interpolada) |
-| `r"..."` | raw (barras literais) |
-| `fr"..."` / `rf"..."` | raw + formatada (ambas as ordens) |
+| `"..."` | normal |
+| `f"..."` | interpolada |
+| `r"..."` | raw |
+| `fr"..."` / `rf"..."` | raw interpolada |
 | `"""..."""` | multilinha |
 | `r"""..."""` / `fr"""..."""` | raw multilinha |
 
 - Escapes (fora de raw): `\n` `\r` `\t` `\\` `\"` `\0` `\u{HEX}`
-- String de linha única **não** pode conter newline cru
+- String de linha única **não** contém newline cru
 - F-string: `f"{expr}"`; `{{` e `}}` produzem brace literal; `}` isolado é erro
-- F-strings são dessucradas no parser para `"seg" + String(expr) + "seg"`
+- Conteúdo é normalizado em **NFC** no boundary de construção
 
 ```aipo
 let pasta = "logs"
@@ -96,37 +169,37 @@ let json = f"{{\"k\": \"{chave}\"}}"            # {"k": "..."}
 
 - `_` é separador **apenas entre dois dígitos da mesma base**: `1_000_000` ✓, `0xFF_FF` ✓
 - Inválidos: `_1`, `1_`, `1__0`, `1e_5`, `0x_FF` → `AIPO_LEX_INVALID_NUMBER`
-- `Int` é inteiro assinado de 64 bits. Overflow de literal é adiado para o load → `AIPO_RT_OVERFLOW`
-- `Float` é IEEE 754 de 64 bits. **Sem `NaN` e sem `Infinity`** — divisão por zero e
-  raiz de negativo geram falha estruturada
+- `Int` é inteiro assinado de 64 bits com faixa segura ±(2^53−1); overflow → `AIPO_RT_OVERFLOW`
+- `Float` é IEEE 754 de 64 bits. **Sem `NaN` e sem `Infinity`.**
 
 ### 3.3 Literais nomeados
 
-`true` · `false` · `none` · `_` (descarte em padrão de binding)
+`true` · `false` · `none` · `_`
 
 ---
 
 ## 4. Declarações de topo
 
-Sete formas de `Item`:
-
 ```aipo
-fn nome(params) -> T { } | end
-async fn nome(params) -> T { } | end
-struct Nome { campos }                     # ou: struct Nome ... end
-impl Tipo { init / invariant / fn / async fn }
-interface Nome { fn assinatura(params) -> T }
-satisfy Tipo: Interface1, Interface2
+fn nome(params) -> T { }
+async fn nome(params) -> T { }
+struct Nome { campos }
+Tipo:init(params) { }
+Tipo:invariant { }
+Tipo:metodo(params) -> T { }
+Tipo::[funcao_livre, outra]
+interface Nome { assinatura(params) -> T }
 import a.b.c [as alias] [: n1, n2]
 export n1, n2, n3
 ```
 
 | Observação | Regra |
 |---|---|
-| `interface` | contém **apenas assinaturas** (`fn` ou `async fn`), nunca corpo |
-| `satisfy` | `:` obrigatório, lista separada por vírgula |
+| `fn` | **só** função livre; método não usa `fn` |
+| `Tipo:` | associa método ou hook a um tipo |
+| `interface` | só assinaturas — sem corpo, sem `fn`, sem `self` |
 | `export` | apenas **nomes simples** — `export mod.Nome` é erro de parse |
-| `import` | caminho pontilhado é válido (`auth.user`), alias com `as`, seleção com `:` |
+| `import` | caminho pontilhado (`auth.user`), alias com `as`, seleção com `:` |
 | Módulo | **um arquivo `.aipo` é um módulo.** Não há declaração de módulo |
 
 ---
@@ -135,47 +208,133 @@ export n1, n2, n3
 
 ```aipo
 struct Servidor {
-    id                       # fixo (imutável) por padrão
-    var status = "online"    # var = mutável
-    var carga = 0.0          # com valor padrão
+    id: Int                        # imutável por padrão
+    var status: String = "online"  # var = mutável
+    var carga: Float = 0.0
 }
 ```
 
-- Campos de struct **não aceitam anotação de tipo**. `x: Float` é erro de parse.
-- Bare `x` = fixo sem default; `var x` = mutável sem default; `x = v` / `var x = v` = com default.
-- Reatribuir campo fixo após a construção → `AIPO_SEM_IMMUTABLE_FIELD_REASSIGN`.
+- Anotação de tipo no campo é **opcional**.
+- Bare `x` = imutável sem default; `var x` = mutável sem default; `x = v` / `var x = v` = com default.
+- Reatribuir campo imutável após construção → `AIPO_SEM_IMMUTABLE_FIELD_REASSIGN`.
+- `struct` contém **só dados**. Comportamento fica em `Tipo:nome`.
 
 ### 5.1 Construção
 
 ```aipo
 let s = Servidor{ id: 1, status: "online" }   # ':' e '=' ambos aceitos
 let s = Servidor{ 1, "online" }                # posicional também
+let s = mod.Servidor{ id: 1 }                  # construção qualificada
 ```
 
 > **Armadilha:** construção `Tipo{...}` exige **primeira letra maiúscula**.
-> `mod.tipo{...}` nunca é reconhecido como construção.
+> `ponto{...}` nunca é construção — o diagnóstico sugere capitalize.
 
-### 5.2 `impl` — hooks e métodos
+### 5.2 Métodos e hooks
 
 ```aipo
-impl Servidor {
-    init(id) { self.id = id }              # hook de construção
-    invariant { self.inicio <= self.fim }  # invariante estrutural
-    fn atual(self) -> Int { return self.x }
-    fn bump(var self) { self.x += 1 }      # var self = receptor mutável
+Point:init(x, y) {
+    self.x = x
+    self.y = y
+}
+
+Point:invariant {
+    self.x >= 0
+}
+
+Point:dist() -> Float {
+    return math.sqrt(self.x * self.x + self.y * self.y)
+}
+
+Point:move(var self, dx, dy) {
+    self.x += dx
+    self.y += dy
 }
 ```
 
-- `init` recebe `self` mutável automaticamente se você não declarar.
-- `invariant` é verificado a cada mutação de campo; dentro de `attempt`, viola
-  dispara rollback do journal.
-- `self` é só-leitura por padrão. `self!` e `var self` declaram mutabilidade.
+| Regra | Detalhe |
+|---|---|
+| Receptor implícito | Não se escreve `self` em método imutável; o parser injeta. |
+| Receptor mutável | `var self` **obrigatório** para mutar. `var` significa mutável em toda a linguagem. |
+| Hooks | `init` e `invariant` reconhecidos pelo nome; demais nomes são métodos. |
+| `fn` | Não aparece — `Tipo:` já declara que é função. |
 
-### 5.3 Interfaces
+Chamada usa `.`:
 
-Subtipagem **estrutural e automática**: um tipo satisfaz uma `interface` só com os
-métodos de assinatura compatível. Nenhuma declaração é necessária. `satisfy` existe
-como declaração explícita e redundante.
+```aipo
+let d = p.dist()      # passa
+let m = p.move(var dx = 1, dy = 1)
+```
+
+`:` marca associação na **declaração**; `.` marca acesso no **uso**.
+
+### 5.3 Binding em lote
+
+```aipo
+fn desloca(var self, dx, dy) {
+    self.x += dx
+    self.y += dy
+}
+
+Ponto::[desloca]
+```
+
+`::` é o token de associação **em lote**. Cada nome listado promove a função livre
+a método do tipo.
+
+| Regra | Detalhe |
+|---|---|
+| Primeiro parâmetro | **Obrigatoriamente `self`.** Função sem `self` na origem é erro. |
+| Receptor mutável | `var self` na origem → método mutável. `self` → método read-only. |
+| Forma livre | A função continua chamável como `fn`: `desloca(p, 1, 2)`. |
+| Receiver obrigatório | A chamada é sempre `p.desloca(1, 2)` — sem auto-`self` escondido. |
+
+A promoção é **adição, não movimento**: a função existe nas duas formas. É uma
+**promoção**, não uma cópia.
+
+`self` na origem é o mesmo `self` de `Tipo:nome` (§5.2) — mesma palavra, mesmo
+significado. Não existe token separado para "self mutável em lote".
+
+```aipo
+fn area_de(l, a) {
+    return l * a
+}
+
+Ponto::[area_de]        # erro: 'area_de' não tem 'self' como primeiro parâmetro
+```
+
+**Por que a restrição:** batch existe para promover *comportamento do tipo*. Uma função
+que nunca toca no receiver não é comportamento do tipo — é namespacing, e continua
+função livre. Permitir deixaria um receiver injetado e morto, que é pior que rejeitar.
+
+> **Armadilha:** ler `self` exige `self` **na assinatura**, não só no corpo.
+> Um corpo que menciona `self` sem declarar o parâmetro é `AIPO_SEM_UNKNOWN_NAME`.
+
+### 5.4 Interfaces
+
+```aipo
+interface Drawable {
+    draw() -> Int
+}
+```
+
+Satisfação **estrutural e automática**: um tipo satisfaz uma interface quando possui
+todos os métodos com assinatura compatível. Nenhuma declaração é necessária.
+
+Para **exigir** a relação e documentá-la, use a diretiva:
+
+```aipo
+#!satisfies Drawable
+struct Circle {
+    raio: Float
+}
+```
+
+Comparação de assinatura inclui retorno e parâmetros. Mutabilidade do receptor é
+covariante:
+
+- Interface `draw()` aceita implementação `draw(var self)` — mais forte, seguro.
+- Interface `move(var self)` exige implementação mutável.
 
 ---
 
@@ -186,9 +345,10 @@ como declaração explícita e redundante.
 | `let <padrão> = expr` | imutável |
 | `var <padrão> = expr` | mutável |
 | `alvo = expr` | atribuição simples |
-| `alvo op= expr` | `+=` `-=` `*=` `/=` `div=` `//=` `%=` |
-| `if c { } elif c { } else { }` | `then` opcional; sem parênteses na condição |
-| `if c then a else b` | **inline, com valor** — expressão e statement |
+| `alvo op= expr` | `+=` `-=` `*=` `/=` `//=` `%=` |
+| `alvo with { campo: valor }` | atualização funcional; devolve novo valor, base intacto |
+| `if c { } elif c { } else { }` | sem parênteses na condição |
+| `if c then a else b` | **inline, com valor** |
 | `match alvo { when p1, p2 { } else { } }` | `when`, nunca `case` |
 | `loop { }` | laço infinito canônico |
 | `while c { }` | sem palavra `do` |
@@ -199,22 +359,50 @@ como declaração explícita e redundante.
 | `fail expr` | ou `return fail(...)` |
 | `attempt { } failed [erro] { }` | `failed` obrigatório, binding opcional |
 | `fn nome(...) { }` | função local, auto-recursão resolvida |
-| `await expr` / `await do { }` | ver §10 |
+| `await expr` / `await do { }` | ver §9 |
 
 Padrões de binding: `nome` · `_` · `[a, b]` · `{x, y}`
+
+### 6.1 `match` — destructuring e guards
+
+```aipo
+match u
+    when { name, age } if age >= 65 {
+        io.println("senior " + name)
+    }
+    when { name, age } if age >= 18 {
+        io.println("adult " + name)
+    }
+    else {
+        io.println("minor")
+    }
+```
+
+- `when { campo, ... }` desestrutura o alvo em nomes do **escopo do braço**.
+- `if guard` é opcional; guard `false` cai para o **próximo braço**, não para o `else`.
+- Guard é condição: exige `Bool`.
+- Extrair campo ausente é o mesmo fault de `valor.campo`.
 
 ---
 
 ## 7. Falhas
 
 ```aipo
-fail "mensagem"                          # ou return fail("mensagem")
-attempt { risky() } failed erro { io.println(erro.message) }
-let porta = ler_porta() or_else 8080
+fail "mensagem"
+let v = ler_porta() or_else 8080
+let w = risky()?
+attempt { ... } failed erro { io.println(erro.message) }
 ```
 
-Modelo transacional: `attempt` registra um journal e reverte atomicamente todas as
-mutações em caso de `fail` ou violação de invariante.
+| Forma | Semântica |
+|---|---|
+| `expr?` | propaga `Failure` ao `attempt` mais próximo ou ao caller |
+| `or_else` | avalia a direita se a esquerda disparar `fail` |
+| `attempt`/`failed` | captura `Failure` de um bloco |
+| `fail` | cria `Failure` |
+
+Modelo transacional: `attempt` registra um journal e reverte as mutações em caso de
+`fail` ou violação de invariante.
 
 **Não existe:** `try`, `catch`, `finally`, `throw`, `raise`, `defer`.
 
@@ -223,38 +411,53 @@ mutações em caso de `fail` ou violação de invariante.
 ## 8. Funções
 
 ```aipo
-fn soma(a, b) { return a + b }
+fn soma(a, b) -> Int { return a + b }
 fn conecta(host, porta = 8080, timeout = 5000) { }
 conecta("api", timeout = 1000)                 # argumento nomeado
 
-fn(x) { ... }                                  # closure com captura léxica
-x => x * 2     (a, b) => a + b     () => e     # lambda curto
-f(a) do ... end     f do ... end                # bloco trailer
+fn(x) { }                                       # closure com captura léxica
+x => x * 2     (a, b) => a + b     () => e        # lambda curto
+f(a) do { }     f do { }                          # bloco trailer
 ```
 
-Formas de parâmetro aceitas: `nome` · `var nome` · `nome!` · `self` · `self!` ·
-`var self` · `_` — cada uma opcionalmente com `: T`, `: T?` e `= default`.
+Formas de parâmetro: `nome` · `var nome` · `nome: T` · `var nome: T` ·
+`nome = default` · `var nome: T = default` · `_`.
+
+Duas dimensões ortogonais: **mutabilidade** (`var` ou não) × **tipo** (`: T` ou nada).
 
 Retorno: `-> T` e `-> T?`. Sem `->`, o contrato não é declarado.
 
 > **Armadilha:** anotação de tipo aceita **um único nome simples**.
 > `fn f(x: mod.Tipo)` é erro de parse — use `fn f(x: Tipo)` e importe o módulo.
 
+### 8.1 `fn` é marcador de função livre
+
+```aipo
+fn soma(a, b) -> Int { return a + b }    # livre → usa fn
+Point:dist() -> Float { }                 # associado → sem fn
+```
+
 ---
 
 ## 9. Async
 
 ```aipo
-async fn buscar(recurso) { task.sleep(50)  return recurso }
-let t = buscar("usuarios")
-let v = await t
+async fn buscar(recurso) {
+    task.sleep(50)
+    return recurso
+}
 
-await do {              # bloco sequencial
+let v = await buscar("usuarios")
+
+await do {
     let a = await etapa_1()
     let b = await etapa_2()
     return a + b
 }
 ```
+
+`await` é legal em statement, inicializador e valor de retorno. Subexpressão é
+`AIPO_SEM_AWAIT_IN_SUBEXPRESSION`.
 
 Combinadores são stdlib, não sintaxe: `task.spawn`, `task.sleep`, `task.all`,
 `task.race`, `task.timeout`, `task.cancel`, `task.group`.
@@ -272,11 +475,19 @@ import math_util: somar, dobro   # seletivo
 export somar, dobro
 ```
 
-- **Privado por padrão.** Acesso a símbolo não exportado → `AIPO_SEM_UNKNOWN_NAME`.
+- **Privado por padrão.** Símbolo não exportado → `AIPO_SEM_UNKNOWN_NAME`.
 - `import.types` (sem espaço) é **erro de parse**. Use `import types`.
 - Pacote = manifesto `aipo.toml` com coordenadas `namespace.name`.
 - Dependência remota exige **commit SHA de 40 dígitos**; branch e tag são rejeitados.
 - `aipo run` e `aipo build` nunca acessam a rede.
+
+### 10.1 Emprego dos operadores de caminho
+
+| Token | Significado |
+|---|---|
+| `.` | acesso a **valor**: campo de struct e membro de módulo |
+| `:` | associação na **declaration**: `Point:dist()` |
+| `::` | associação em **lote**: `Retangulo::[f1, f2]` |
 
 ---
 
@@ -294,18 +505,20 @@ Do mais fraco ao mais forte:
 | 6 | `==` `!=` `<` `<=` `>` `>=` `is` / `is T?` |
 | 7 | `..` (range e slice) |
 | 8 | `+` `-` |
-| 9 | `*` `/` `div` `//` `%` |
-| 10 | prefixo `-x` `+x` · pós-fixos `()` `[]` `.` `?.` `do` |
+| 9 | `*` `/` `//` `%` |
+| 10 | prefixo `-x` `+x` · pós-fixos `()` `[]` `.` `?.` `do` `?` `with` |
 
 ### 11.1 Notas por operador
 
 | Operador | Semântica |
 |---|---|
 | `/` | **sempre** retorna `Float` |
-| `//` e `div` | mesma coisa: divisão inteira truncada |
-| `//=` e `div=` | mesma coisa: atribuição com divisão inteira |
+| `//` | divisão inteira truncada em direção a zero |
+| `//=` | atribuição com divisão inteira |
 | `\|>` | passa o valor como **primeiro** argumento da chamada à direita |
 | `or_else` | avalia a direita se a esquerda disparar `fail` |
+| `?` | propaga `Failure` |
+| `with` | atualização funcional de struct |
 | `..` | range como valor (`0..3`) e em slice |
 | `?.` | encadeável; qualquer elo `none` propaga `none` |
 | `is T?` | teste de tipo anulável |
@@ -325,44 +538,46 @@ Açúcar multi-sujeito em `is`: `a, b, c is Int` → os três `is Int`.
 
 ---
 
-## 12. Lista completa de keywords (46)
+## 12. Keywords (42)
 
 | Grupo | Keywords |
 |---|---|
-| Binding | `let` `var` `fixed` |
+| Binding | `let` `var` |
 | Função | `fn` `async` `await` |
-| Tipo | `struct` `impl` `interface` `satisfy` |
+| Tipo | `struct` `interface` `enum` |
 | Hook | `init` `invariant` |
-| Controle | `if` `elif` `else` `then` `end` `match` `when` `loop` `while` `repeat` `each` `in` `break` `continue` `return` |
+| Controle | `if` `elif` `else` `then` `match` `when` `loop` `while` `repeat` `each` `in` `break` `continue` `return` |
 | Falha | `fail` `or_else` `attempt` `failed` |
 | Módulo | `import` `export` |
-| Operador-word | `is` `not` `and` `or` `div` `as` |
+| Operador-word | `is` `not` `and` `or` `as` |
 | Literal | `true` `false` `none` |
-| Receptor | `self` `self!` |
+| Receptor | `self` |
 | Bloco | `do` |
 | Descarte | `_` |
 
-Contextuais: `self!` (só após `self`) e `div=` (só após `div`).
+Removidas neste ciclo: `end` · `div` · `self!` · `impl` · `satisfy`.
 
-> **Armadilha:** `as` **não** é cast. Aparece só em alias de `import` e em
-> `repeat N as i`. `div` e `self!` são palavras-chave — não podem ser identificadores.
+Tokens não-keyword novos: `:` (associação) · `::` (lote) · `//=` (composto).
+
+> `as` **não** é cast. Aparece só em alias de `import` e em `repeat N as i`.
+> `self` é palavra-chave e não pode ser identificador comum.
 
 ---
 
-## 13. Palavras-chave que NÃO existem
+## 13. O que NÃO existe
 
-`enum` · `defer` · `try` · `catch` · `finally` · `throw` · `raise` · `for` ·
+`defer` · `try` · `catch` · `finally` · `throw` · `raise` · `for` ·
 `class` · `const` · `static` · `pub` · `private` · `public` · `unsafe` ·
-`yield` · `lambda` · `module` · `package` · `void` · `case`
+`yield` · `lambda` · `module` · `package` · `void` · `case` · `where` ·
+generics · bitwise
 
 Operadores inexistentes: `&&` · `||` · `++` · `--` · `**` · `&` · `;` ·
-`<<` · `>>` · `~` · `^` · `@attr` · `?:` · cast `as` · `*ref` · `->campo`
+`<<` · `>>` · `~` · `^` · `@attr` · `?:` · cast com `as` · `*ref` · `->campo`
 
 Os caracteres `@`, `&`, `;`, `&&`, `||`, `++` não são tokenizados: caem em
 `unexpected character`. Um `|` isolado é erro com dica *"did you mean '|>'?"*.
 
-**`enum` está no backlog pós-V1** (`docs/canon/Aipo — Backlog de Sintaxe …`),
-não na linguagem atual.
+**`enum` está promovido a V1** — ver §17.
 
 ---
 
@@ -379,11 +594,11 @@ não na linguagem atual.
 
 | Fonte | Caminho |
 |---|---|
+| Norma desta sintaxe | `docs/decisions/adr-001-canonical-syntax.md` |
 | Tokens e keywords | `crates/aipo-lexer/src/token.rs`, `crates/aipo-lexer/src/lexer.rs` |
 | Tabela de grafia | `crates/aipo-formatter/src/tokens.rs` |
 | Gramática e precedência | `crates/aipo-syntax/src/parser.rs` |
 | AST | `crates/aipo-ast/src/ast.rs` |
-| Exemplos executáveis | `examples/*.aipo` |
 | Snapshots de saída | `docs/conformance/programs/*.stdout` |
 | Código que **deve** falhar | `docs/conformance/diagnostics/*.aipo` + `.code` |
 | Fonte canônica por convenção | `docs/conformance/formatting/*.expected.aipo` |
@@ -391,3 +606,177 @@ não na linguagem atual.
 Para alterar a gramática: o corpus de conformidade é o árbitro. `*.stdout` é a
 saída exata de `aipo run`; `*.code` lista um código de diagnóstico por linha e
 falhar pelo motivo errado também falha.
+
+---
+
+## 16. Divergência com o compilador atual
+
+O compilador ainda aceita as formas antigas. Cada item abaixo é trabalho
+pendente, e o par **precisa** ser feito junto para não haver conflito.
+
+| Forma antiga | Ainda aceita? | Alvo |trabalho |
+|---|---|---|---|
+| `end` como terminador | sim | remover | lexer, parser, formatter, fixtures, exemplos |
+| `div` / `div=` | sim | remover; `div` volta a ser identificador | lexer, parser, formatter, docs |
+| `self!` | sim | remover; resta `self` e `var self` | lexer (`SelfMut`), `parse_params` |
+| `impl Tipo { }` | sim | remover; métodos viram `Tipo:nome` | AST (`ImplBlock`), HIR, IR, sema, VM, Wasm, JS |
+| `satisfy T: I` | sim | remover; satisfaction já é estrutural | AST (`SatisfyDecl`), parser, sema |
+| `fn` dentro de `impl` | sim | `fn` só para função livre | parser, formatter |
+| Campos sem anotação de tipo | sim | anotação **opcional** (back-compat) | parser, AST, sema |
+| `#!` diretiva | **não** | implementar | lexer (`Directive`), parser, CLI test discovery |
+| `:` e `::` tokens | **não** | implementar | lexer, parser, AST, HIR, IR, formatter |
+| `mod.Tipo{...}` qualificada | **não** | implementar | parser, sema |
+| Diagnóstico "// é divisão" | **não** | implementar | parser |
+
+### 16.1 Ordem sugerida de implementação
+
+1. **Remoções puras** — `end`, `div`/`div=`, `self!`. Sem mudança de semântica; só
+   recusa de formas antigas. Actualiza fixtures e `examples/` na mesma mudança.
+2. **Tokens novos** — `:`, `::`, `#!`. Parser aceita mas ainda sem semântica.
+3. **`impl` → `Tipo:nome`** — a maior mudança; HIR/IR/VM/Wasm/JS juntos.
+4. **`satisfy` → `#!satisfies`** — remove a declaração, adiciona a diretiva.
+5. **Binding em lote** — `Tipo::[f1, f2]`.
+6. **`#!test`** — descoberta por diretiva, mantendo convenção de nome.
+7. **Construção qualificada** — `mod.Tipo{...}`.
+8. **Diagnóstico do `//`.**
+9. **`enum`** — ver §17.
+
+---
+
+## 17. `enum` — tipo de soma
+
+`enum` é um **tipo fechado**: o conjunto de valores é escrito uma vez, no tipo, e o
+compilador conhece todos os casos. Serve para "isto é A **ou** B", que `struct` não
+expressa — `struct` é "isto tem estes campos".
+
+### 17.1 Declaração
+
+```aipo
+enum Estado {
+    Inicial,
+    Ativo { desde: Int },
+    Desligado(motivo: String),
+    Erro,
+}
+```
+
+Um item pode assumir três formas:
+
+| Forma | Payload | Lê-se como |
+|---|---|---|
+| `Nome` | nenhum | valor constante |
+| `Nome { a: T, b: T }` | campos nomeados | "este caso carrega estes campos" |
+| `Nome(valor: T)` | um campo posicional | "este caso carrega este valor" |
+
+Regras: vírgula obrigatória entre itens; `}` fecha; `,` final é obrigatório; variantes
+vazias `{}` são erro de parse; nomes de variante seguem regra de identificador comum
+(`Maiuscula` recomendado por convenção, não exigido).
+
+### 17.2 Construção
+
+O nome qualificado **é** o construtor:
+
+```aipo
+let a = Estado.Inicial
+let b = Estado.Ativo { desde: 2024 }
+let c = Estado.Desligado("manutenção")
+```
+
+Sem `new`, sem `::`, sem palavra `variant`. A construção de `struct` é `Tipo{...}`;
+a de `enum` é `Tipo.Variante{...}` ou `Tipo.Variante(...)`.
+
+### 17.3 `match` — o único lugar que conhece os casos
+
+```aipo
+match e {
+    when Estado.Inicial {
+        ret = 0
+    }
+    when Estado.Ativo { desde } {
+        ret = desde
+    }
+    when Estado.Desligado(motivo) {
+        io.println(motivo)
+    }
+    when Estado.Erro {
+        ret = -1
+    }
+}
+```
+
+| Regra | Detalhe |
+|---|---|
+| Forma do padrão | `when Tipo.Variante { campos }` — nomeia tipo **e** variante |
+| Payload nomeado | `{ desde }` liga o campo à variável de mesmo nome |
+| Payload posicional | `(motivo)` liga o único valor à variável `motivo` |
+| Variante sem payload | `when Estado.Erro { }` — sem parênteses, sem chaves |
+
+O `match` reusa o destructure de §6.1; a diferença é que aqui o `{ ... }` nomeia
+**variante + campos**, não só campos.
+
+### 17.4 Exhaustividade — o ganho real
+
+`match` sobre `enum` **sem** `else` e sem todas as variantes é erro de compilação:
+
+```aipo
+match e {
+    when Estado.Inicial { }      # erro: falta Ativo, Desligado, Erro
+}
+```
+
+Este é o motivo de `enum` existir na linguagem: sem ele, cobertura de casos é
+convenção; com ele, é verificada. Um `enum` fechado não tem "variante desconhecida"
+em runtime — o `match` é total por construção.
+
+### 17.5 Rejeições explícitas
+
+| Construção | Código | Por quê |
+|---|---|---|
+| `enum` sem corpo | parse | tipo vazio não tem valor |
+| Variante com payload sem tipo | parse | tipo fechado exige contrato |
+| `match` sem `else` cobrindo tudo | sema | exhaustividade é obligation |
+| Variante duplicada | sema | nome identifica o caso |
+| `Estado.Inicial` sem `match`/atribuição | sema | payload sem tipo é erro |
+| Enum sem `enum` (sintaxe antiga) | parse | não existe forma implícita |
+
+### 17.6 Mutabilidade e invariantes
+
+Variantes **não** têm `invariant` próprio: o hook pertence ao tipo, como em §5.2.
+
+```aipo
+Estado:invariant {
+    self is Estado
+}
+```
+
+A forma `Tipo:invariant` (§5.2) aplica-se igualmente a `enum`, porque `enum` é
+um tipo de primeira classe para efeitos de hook e `match`.
+
+### 17.7 Relação com `interface`
+
+`enum` satisfaz uma interface como `struct`, se tiver os métodos:
+
+```aipo
+#!satisfies Descritivel
+enum Estado {
+    Inicial,
+    Ativo { desde: Int },
+    Estado:descrever() -> String { }    # métodos declarados com Tipo:nome
+}
+```
+
+O `enum` é um tipo fechado de **dados**; o comportamento vem de `Tipo:nome`, igual
+ao `struct`. Os dois compartilham hooks, interfaces e batch (§5.3).
+
+### 17.8 Reuso das formas existentes
+
+`enum` não introduz conceito novo dePattern ou binding:
+
+| Precisa de | Forma | Onde já existe |
+|---|---|---|
+| Falhar com variante | `fail Estado.Erro` | §7 |
+| Transportar em `Task` | `async fn` → `Task<Estado>` | §9 |
+| Serializar | `json.stringify(v)` | stdlib |
+
+`enum` acrescenta **um** conceito: o tipo fechado com conjunto de variantes
+conhecido. Todo o resto é composição.

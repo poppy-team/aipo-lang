@@ -1,7 +1,9 @@
 //! WebAssembly JIT runtime execution engine for Aipo programs using Wasmtime (ADP-013).
 
 use std::io::Write;
+#[cfg(feature = "wasmtime")]
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "wasmtime")]
 use wasmtime::{Caller, Engine, Linker, Module, Store};
 
 /// Errors encountered during WebAssembly execution.
@@ -37,11 +39,13 @@ pub fn disassemble_wasm(wasm_bytes: &[u8]) -> Result<String, String> {
 }
 
 /// State held by the Wasmtime store during execution.
+#[cfg(feature = "wasmtime")]
 #[derive(Clone)]
 struct HostState {
     output: Arc<Mutex<Vec<u8>>>,
 }
 
+#[cfg(feature = "wasmtime")]
 impl HostState {
     fn write_str(&self, text: &str) {
         if let Ok(mut buf) = self.output.lock() {
@@ -60,6 +64,7 @@ impl HostState {
 /// # Errors
 ///
 /// Returns a [`WasmRuntimeError`] if instantiation fails or execution traps.
+#[cfg(feature = "wasmtime")]
 pub fn execute_wasm(wasm_bytes: &[u8], stdout: &mut dyn Write) -> Result<i64, WasmRuntimeError> {
     let engine = Engine::default();
     let module = Module::new(&engine, wasm_bytes)
@@ -186,4 +191,16 @@ pub fn execute_wasm(wasm_bytes: &[u8], stdout: &mut dyn Write) -> Result<i64, Wa
     }
 
     result
+}
+
+/// Fallback execution function when `wasmtime` is disabled.
+///
+/// # Errors
+/// Always returns [`WasmRuntimeError::Execution`] indicating that the execution engine is disabled.
+#[cfg(not(feature = "wasmtime"))]
+pub fn execute_wasm(_wasm_bytes: &[u8], _stdout: &mut dyn Write) -> Result<i64, WasmRuntimeError> {
+    Err(WasmRuntimeError::Execution(
+        "WebAssembly JIT execution is disabled in this build (wasmtime feature not enabled)"
+            .to_string(),
+    ))
 }

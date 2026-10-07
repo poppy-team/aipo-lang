@@ -58,47 +58,54 @@ features:
 ```aipo
 # Interface with automatic structural subtyping
 interface Notifiable {
-    fn summary(self) -> String
+    summary() -> String
+}
+
+# Closed sum type enum
+enum AccountStatus {
+    Active,
+    Suspended(reason: String),
 }
 
 # Struct with fields immutable by default and explicit var mutability
+#!satisfies Notifiable
 struct Account {
     id: Int
     holder: String
     var balance: Int
+    var status: AccountStatus = AccountStatus.Active
 }
 
-impl Account {
-    # Transactional integrity invariant
-    invariant() {
-        self.balance >= 0
+# Transactional integrity invariant
+Account:invariant {
+    self.balance >= 0
+}
+
+# Explicit receiver mutation with `var self`
+Account:transfer(var self, var target: Account, amount: Int) {
+    if amount <= 0 {
+        fail "transfer amount must be positive"
     }
 
-    # Explicit receiver mutation with `var self`
-    fn transfer(var self, target: Account, amount: Int) {
-        if amount <= 0 {
-            fail("transfer amount must be positive")
-        }
-
-        # If any rule is broken, both accounts undergo an atomic rollback
-        attempt {
-            self.balance -= amount
-            target.balance += amount
-        } failed err {
-            fail(f"transfer safely aborted: {err.message}")
-        }
+    # If any rule is broken, both accounts undergo an atomic rollback
+    attempt {
+        self.balance -= amount
+        target.balance += amount
+    } failed err {
+        fail f"transfer safely aborted: {err.message}"
     }
+}
 
-    fn summary(self) -> String {
-        return f"Account #{self.id} ({self.holder}): ${self.balance // 100}"
-    }
+# Immutable reader method (implicit self)
+Account:summary() -> String {
+    return f"Account #{self.id} ({self.holder}): ${self.balance // 100}"
 }
 
 # Symmetrical colon instantiation
 var a1 = Account{ id: 101, holder: "Alex", balance: 25000 }
 var a2 = Account{ id: 102, holder: "Beatrice", balance: 5000 }
 
-a1.transfer(a2, 5000)
+a1.transfer(var a2, 5000)
 io.println(a1.summary())
 io.println(a2.summary())
 ```

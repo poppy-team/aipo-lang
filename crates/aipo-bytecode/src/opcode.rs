@@ -180,6 +180,13 @@ pub enum OpCode {
     Call3 = 71,
     /// Specialized call with 4 arguments: no operands.
     Call4 = 72,
+    /// Copy the struct on top of the stack, replacing it with the copy: no operands.
+    ///
+    /// Backs the functional update `base with { ... }`. A struct is a shared
+    /// `Rc<RefCell<..>>`, so the update needs its own allocation rather than an alias;
+    /// `Dup` would leave both names pointing at one instance. A non-struct on top of the
+    /// stack is a `TypeMismatch` fault, matching what the frontend can prove statically.
+    CloneStruct = 73,
 }
 
 impl TryFrom<u8> for OpCode {
@@ -259,6 +266,7 @@ impl TryFrom<u8> for OpCode {
             70 => Ok(OpCode::Call2),
             71 => Ok(OpCode::Call3),
             72 => Ok(OpCode::Call4),
+            73 => Ok(OpCode::CloneStruct),
             other => Err(other),
         }
     }

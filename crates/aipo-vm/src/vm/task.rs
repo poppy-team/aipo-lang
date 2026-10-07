@@ -1644,7 +1644,7 @@ impl Vm {
             | Value::Closure(_)
             | Value::Native(_)
             | Value::BoundMethod(_)
-            | Value::StructMethod { .. }
+            | Value::StructMethod(_)
             | Value::Type(_) => Ok(arg.clone()),
             other => Err(VmFault::NotCallable {
                 type_name: format!("{} as {operation} callable", other.type_name()),
@@ -1873,7 +1873,7 @@ impl Vm {
                 .chars()
                 .map(|ch| Value::String(Rc::new(ch.to_string())))
                 .collect()),
-            Value::Range { start, end } => Ok((*start..*end).map(Value::Int).collect()),
+            Value::Range(r) => Ok((r.start..r.end).map(Value::Int).collect()),
             Value::Bytes(bytes) => Ok(bytes
                 .borrow()
                 .iter()

@@ -29,6 +29,34 @@ members = [
 
 exclude = ["fuzz"]
 
+# Host/GUI crates are leaves: no language-crate depends on them. Keeping them out of
+# `default-members` means bare `cargo build` and `cargo test` only exercise the language
+# stack, so a dependency bump in a host cannot block language work. They stay full members,
+# so `cargo test -p aipo-egui` still works.
+default-members = [
+    "crates/aipo-source",
+    "crates/aipo-diagnostics",
+    "crates/aipo-lexer",
+    "crates/aipo-ast",
+    "crates/aipo-syntax",
+    "crates/aipo-hir",
+    "crates/aipo-sema",
+    "crates/aipo-ir",
+    "crates/aipo-bytecode",
+    "crates/aipo-vm",
+    "crates/aipo-runtime",
+    "crates/aipo-stdlib",
+    "crates/aipo-formatter",
+    "crates/aipo-cli",
+    "crates/aipo-js",
+    "crates/aipo-host",
+    "crates/aipo-package",
+    "crates/aipo-testkit",
+    "crates/aipo-bench",
+    "crates/aipo-c-abi",
+    "crates/aipo-wasm",
+]
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
@@ -58,3 +86,11 @@ toml = "1.1"
 unicode-segmentation = "1.12"
 unicode-normalization = "0.1"
 regex = "1.11"
+
+[profile.nano]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

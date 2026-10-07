@@ -6,10 +6,12 @@
 
 pub mod builder;
 pub mod ir;
+pub mod opt;
 
 pub use aipo_ast::{BinaryOp, UnaryOp};
 pub use builder::IrBuilder;
 pub use ir::*;
+pub use opt::optimize;
 
 use aipo_hir::HirProgram;
 

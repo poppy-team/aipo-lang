@@ -13,30 +13,40 @@ rust-version.workspace = true
 name = "aipo"
 path = "src/main.rs"
 
+[[bin]]
+name = "aipo-sh"
+path = "src/sh_main.rs"
+
 [dependencies]
 aipo-bytecode = { path = "../aipo-bytecode" }
 aipo-diagnostics = { path = "../aipo-diagnostics" }
-aipo-formatter = { path = "../aipo-formatter" }
+aipo-formatter = { path = "../aipo-formatter", optional = true }
 aipo-hir = { path = "../aipo-hir" }
 aipo-host = { path = "../aipo-host" }
 aipo-ir = { path = "../aipo-ir" }
-aipo-js = { path = "../aipo-js" }
+aipo-js = { path = "../aipo-js", optional = true }
 aipo-package = { path = "../aipo-package" }
 aipo-runtime = { path = "../aipo-runtime" }
 aipo-sema = { path = "../aipo-sema" }
 aipo-source = { path = "../aipo-source" }
-aipo-stdlib = { path = "../aipo-stdlib" }
+aipo-stdlib = { path = "../aipo-stdlib", default-features = false }
 aipo-syntax = { path = "../aipo-syntax" }
-aipo-vm = { path = "../aipo-vm" }
-aipo-wasm = { path = "../aipo-wasm" }
+aipo-vm = { path = "../aipo-vm", default-features = false }
+aipo-wasm = { path = "../aipo-wasm", default-features = false, optional = true }
 
 [dev-dependencies]
 aipo-testkit = { path = "../aipo-testkit" }
 aipo-lexer = { path = "../aipo-lexer" }
 
 [features]
-default = []
+default = ["formatter", "js", "wasm", "wasmtime-runner", "regex", "unicode"]
+formatter = ["dep:aipo-formatter"]
+js = ["dep:aipo-js"]
+wasm = ["dep:aipo-wasm"]
+regex = ["aipo-stdlib/regex"]
+unicode = ["aipo-stdlib/unicode", "aipo-vm/unicode"]
 github-http = ["aipo-package/http"]
+wasmtime-runner = ["wasm", "aipo-wasm/wasmtime"]
 
 [lints]
 workspace = true

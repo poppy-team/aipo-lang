@@ -1,0 +1,57 @@
+# Padrões de tratamento de erro e reversão transacional em Aipo V1
+import io
+
+export Carteira, transferir
+
+struct Carteira {
+    id: Int
+    var saldo: Float
+}
+
+Carteira:invariant {
+    self.id > 0
+    self.saldo >= 0.0    # Violação de invariante dispara falha transacional
+}
+
+Carteira:sacar(var self, valor: Float) {
+    if valor > self.saldo {
+        fail "saldo insuficiente"
+    }
+    self.saldo -= valor
+}
+
+Carteira:depositar(var self, valor: Float) {
+    if valor <= 0.0 {
+        fail "depósito deve ser positivo"
+    }
+    self.saldo += valor
+}
+
+# Transferência atômica: se Carteira B falhar, Carteira A reverte o saque automaticamente!
+fn transferir(var origem: Carteira, var destino: Carteira, valor: Float) -> Bool {
+    attempt {
+        origem.sacar(valor)
+        destino.depositar(valor)
+        return true
+    } failed err {
+        io.println(f"Transferência abortada pelo runtime: {err.message}")
+        return false
+    }
+}
+
+#!test("reversão atômica em falha")
+fn test_reversao_transacional() {
+    var c1 = Carteira{ id: 1, saldo: 100.0 }
+    var c2 = Carteira{ id: 2, saldo: 50.0 }
+
+    # Tenta transferir valor superior ao saldo
+    let ok = transferir(var c1, var c2, 150.0)
+    if ok {
+        fail "transferência deveria ter sido rejeitada"
+    }
+
+    # Saldo original deve permanecer estritamente intocado
+    if c1.saldo != 100.0 or c2.saldo != 50.0 {
+        fail "journal transacional falhou em reverter os saldos"
+    }
+}

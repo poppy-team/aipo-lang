@@ -14,7 +14,7 @@ Para garantir código limpo, de alta performance e fácil de ler (especialmente 
 | `struct Ponto { x, var y = 0 }` (Campos imutáveis por padrão) | Mutações globais ou campos mutáveis desnecessários | Mantém integridade de estruturas; mutabilidade exige intenção explícita com `var`. |
 | `Usuario{ nome: "Ana", idade: 28 }` (Chave-valor com `:`) | Sintaxe divergente de mapeamento | Dois-pontos unifica a sintaxe de associação em dicionários e structs sem conflito motor. |
 | `if condicao { ... }` (Blocos com chaves) | Parênteses redundantes ao redor de condições | Sintaxe enxuta, sem parênteses extras e compatível com realce visual por pares (*rainbow brackets*). |
-| `fn depositar(var self, valor)` (Receptor mutável explícito) | Efeitos colaterais ocultos em métodos | `var` é a palavra universal de mutabilidade na linguagem, tornando efeitos colaterais visíveis. |
+| `Tipo:depositar(var self, valor)` (Receptor mutável explícito) | Efeitos colaterais ocultos em métodos | `var` é a palavra universal de mutabilidade na linguagem, tornando efeitos colaterais visíveis. |
 | `a // b` e `a //= b` (Divisão inteira) | Conversões manuais truncadas | Operador aritmético canônico expressivo e simétrico com `+`, `-`, `*`, `/`. |
 | `f"Usuário {id}: {email}"` (Interpolação direta) | Concatenação `"Usuário " + String(id) + ": " + email` | Interpolação direta elimina ruído visual e múltiplas alocações temporárias no heap. |
 | `r"C:\dados\relatorio.csv"` (Strings brutas) | Sequências de escape `"C:\\dados\\relatorio.csv"` | Strings brutas eliminam o excesso de barras invertidas em caminhos de arquivos e regex. |
@@ -260,6 +260,19 @@ let pares_triplicados = numeros.lazy()
     .collect()
 
 io.println(pares_triplicados) # [6, 12]
+```
+
+### 5. Enums (`enum`)
+O `enum` define um tipo de soma fechado com variantes conhecidas pelo compilador, suportando variantes sem payload, com payload posicional ou com campos nomeados:
+
+```aipo
+enum ModoExecucao {
+    Depuracao,
+    Otimizado { nivel: Int },
+    Perfilado(arquivo: String),
+}
+
+let modo = ModoExecucao.Otimizado { nivel: 3 }
 ```
 
 ---

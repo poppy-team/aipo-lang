@@ -20,7 +20,7 @@ use crate::fault::HostFault;
 /// require holding that many slots, so the table needs no invented error path for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Handle {
-    index: usize,
+    index: u32,
     generation: u32,
 }
 
@@ -28,7 +28,7 @@ impl Handle {
     /// The slot index, for host-side diagnostics and tests.
     #[must_use]
     pub fn index(self) -> usize {
-        self.index
+        self.index as usize
     }
 
     /// The generation this handle was minted in.
@@ -40,7 +40,10 @@ impl Handle {
     /// Reconstructs a handle from its raw index and generation.
     #[must_use]
     pub const fn from_raw(index: usize, generation: u32) -> Self {
-        Self { index, generation }
+        Self {
+            index: index as u32,
+            generation,
+        }
     }
 }
 
@@ -107,7 +110,10 @@ impl<T> HandleTable<T> {
                     generation,
                     value: Some(value),
                 });
-                Handle { index, generation }
+                Handle {
+                    index: u32::try_from(index).unwrap_or(u32::MAX),
+                    generation,
+                }
             }
             None => {
                 let index = self.slots.len();
@@ -116,7 +122,7 @@ impl<T> HandleTable<T> {
                     value: Some(value),
                 }));
                 Handle {
-                    index,
+                    index: u32::try_from(index).unwrap_or(u32::MAX),
                     generation: 1,
                 }
             }
@@ -130,7 +136,7 @@ impl<T> HandleTable<T> {
     /// Use this wherever the declared contract admits a stale handle resolving to `none`.
     #[must_use]
     pub fn get(&self, handle: Handle) -> Option<&T> {
-        let slot = self.slots.get(handle.index)?.as_ref()?;
+        let slot = self.slots.get(handle.index as usize)?.as_ref()?;
         if slot.generation != handle.generation {
             return None;
         }
@@ -140,7 +146,7 @@ impl<T> HandleTable<T> {
     /// The value behind `handle` mutably, or `None` when the handle is stale or unknown.
     #[must_use]
     pub fn get_mut(&mut self, handle: Handle) -> Option<&mut T> {
-        let slot = self.slots.get_mut(handle.index)?.as_mut()?;
+        let slot = self.slots.get_mut(handle.index as usize)?.as_mut()?;
         if slot.generation != handle.generation {
             return None;
         }
@@ -170,7 +176,7 @@ impl<T> HandleTable<T> {
     ///
     /// Returns `None` for a handle that is already stale, so a double release is harmless.
     pub fn remove(&mut self, handle: Handle) -> Option<T> {
-        let slot = self.slots.get_mut(handle.index)?.as_mut()?;
+        let slot = self.slots.get_mut(handle.index as usize)?.as_mut()?;
         if slot.generation != handle.generation {
             return None;
         }
@@ -181,11 +187,11 @@ impl<T> HandleTable<T> {
         // so `handle` can never resolve to the replacement value. An exhausted generation
         // retires the slot instead of wrapping.
         if slot.generation == u32::MAX {
-            self.slots[handle.index] = None;
+            self.slots[handle.index as usize] = None;
             return Some(value);
         }
         slot.generation += 1;
-        self.free.push(handle.index);
+        self.free.push(handle.index as usize);
         Some(value)
     }
 
@@ -208,7 +214,7 @@ impl<T> HandleTable<T> {
             let value = slot.value.as_ref()?;
             Some((
                 Handle {
-                    index,
+                    index: u32::try_from(index).unwrap_or(u32::MAX),
                     generation: slot.generation,
                 },
                 value,
@@ -403,10 +409,7 @@ mod tests {
             generation: u32::MAX,
             value: Some(1),
         });
-        let last = Handle {
-            index,
-            generation: u32::MAX,
-        };
+        let last = Handle::from_raw(index, u32::MAX);
         assert_eq!(table.remove(last), Some(1));
 
         // The slot is not reused, so no handle can address a wrapped generation.

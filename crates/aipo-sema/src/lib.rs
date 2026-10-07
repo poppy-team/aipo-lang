@@ -8,6 +8,8 @@ pub mod analyzer;
 pub mod prelude;
 pub mod symbol;
 
+pub(crate) mod flow;
+
 pub use analyzer::{SemanticAnalyzer, SemanticFacts};
 pub use prelude::{HostFunction, HostParameter, PreludeSurface};
 pub use symbol::{MethodSignature, Mutability, Scope, ScopeTree, Symbol, SymbolKind};
@@ -300,6 +302,186 @@ mod tests {
     #[test]
     fn test_modern_interface_and_var_self() {
         let code = "interface Counter {\n  fn increment(var self)\n}\n\nstruct Ticker {\n  var count\n}\n\nimpl Ticker {\n  fn increment(var self) {\n    self.count += 1\n  }\n}\n\nsatisfy Ticker: Counter";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    // --- control-flow analysis ---
+
+    /// A `return <value>` next to a bare `return` leaves the caller unable to know
+    /// which shape it received, so it is reported instead of left to runtime.
+    #[test]
+    fn test_mixed_return_shapes_are_reported() {
+        let code = "fn pick(flag: Bool) -> Int\n  if flag\n    return 1\n  end\n  return\nend";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(
+            diags[0].code,
+            DiagnosticCode::AIPO_SEM_RETURN_VALUE_MISMATCH
+        );
+    }
+
+    /// Every `return` carrying a value is the ordinary shape and must stay silent.
+    #[test]
+    fn test_uniform_value_returns_are_accepted() {
+        let code = "fn pick(flag: Bool) -> Int\n  if flag\n    return 1\n  end\n  return 2\nend";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    /// Every bare `return` is consistent for a function with no value contract.
+    #[test]
+    fn test_uniform_void_returns_are_accepted() {
+        let code = "fn stop(flag: Bool)\n  if flag\n    return\n  end\n  return\nend";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    /// A function that promises a value but can reach its end without producing
+    /// one would hand the caller `none`, so the path is reported.
+    #[test]
+    fn test_declared_contract_with_falling_path_is_reported() {
+        let code = "fn maybe(flag: Bool) -> Int\n  if flag\n    return 1\n  end\nend";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(
+            diags[0].code,
+            DiagnosticCode::AIPO_SEM_PATH_MISSING_RETURN_VALUE
+        );
+    }
+
+    /// When every path returns a value, no path falls off the end and the check
+    /// must stay silent.
+    #[test]
+    fn test_total_returns_are_not_reported_as_missing() {
+        let code = "fn total(flag: Bool) -> Int\n  if flag\n    return 1\n  else\n    return 2\n  end\nend";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    /// `match` with an `else` that returns on every arm is total.
+    #[test]
+    fn test_match_with_total_arms_is_accepted() {
+        let code = "fn classify(v: Int) -> Int\n  match v\n    when 1\n      return 10\n    else\n      return 0\n  end\nend";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    /// `match` without an `else` can fall out of the statement, so a value
+    /// contract is not honoured on that path.
+    #[test]
+    fn test_match_without_else_can_fall_through() {
+        let code = "fn classify(v: Int) -> Int\n  match v\n    when 1\n      return 10\n  end\nend";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(
+            diags[0].code,
+            DiagnosticCode::AIPO_SEM_PATH_MISSING_RETURN_VALUE
+        );
+    }
+
+    /// `loop` without a reachable `break` never completes, so nothing falls off
+    /// the end and the missing-value path must not be reported.
+    #[test]
+    fn test_infinite_loop_is_not_a_missing_value_path() {
+        let code = "fn forever() -> Int\n  loop\n    return 1\n  end\nend";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    /// `fail` ends the path like `return`, so it satisfies a value contract.
+    #[test]
+    fn test_fail_ends_the_path() {
+        let code = "fn checked(v: Int) -> Int\n  if v < 0\n    fail (\"negative\")\n  end\n  return v\nend";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    /// `break` exits only the loop, so the function can still fall off the end.
+    #[test]
+    fn test_break_does_not_end_the_function_path() {
+        let code = "fn first(limit: Int) -> Int\n  var total = 0\n  var i = 0\n  loop\n    if i >= limit\n      break\n    end\n    total = total + i\n    i = i + 1\n  end\n  return total\nend";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    // --- non-Bool conditions ---
+
+    /// An integer literal is provably not a `Bool`, so the condition is reported
+    /// before execution rather than faulting at runtime.
+    #[test]
+    fn test_integer_literal_condition_is_reported() {
+        let diags = analyze_source("if 42\n  let x = 1\nend");
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_NON_BOOL_CONDITION);
+    }
+
+    /// A `while` with a literal condition has the same problem.
+    #[test]
+    fn test_while_literal_condition_is_reported() {
+        let diags = analyze_source("while 0\n  break\nend");
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_NON_BOOL_CONDITION);
+    }
+
+    /// `and` and `or` short-circuit on a `Bool`; a literal operand is reported.
+    #[test]
+    fn test_logical_operator_literal_operands_are_reported() {
+        let diags = analyze_source("let flag = 1 and 2");
+        assert_eq!(diags.len(), 2, "found: {diags:?}");
+        assert!(
+            diags
+                .iter()
+                .all(|d| d.code == DiagnosticCode::AIPO_SEM_NON_BOOL_CONDITION)
+        );
+    }
+
+    /// `not` also requires a `Bool`.
+    #[test]
+    fn test_not_of_literal_is_reported() {
+        let diags = analyze_source("let flag = not 7");
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_NON_BOOL_CONDITION);
+    }
+
+    /// A `Bool` literal is the canonical condition and must stay silent.
+    #[test]
+    fn test_bool_literal_condition_is_accepted() {
+        let diags = analyze_source("if true\n  let x = 1\nend");
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    /// A condition whose type is not statically known is left to the runtime,
+    /// so a dynamic program keeps working.
+    #[test]
+    fn test_dynamic_condition_is_accepted() {
+        let diags = analyze_source("var ready = 1\nif ready\n  let x = 1\nend");
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    /// The diagnostic carries a replacement, so an editor can offer a quick fix.
+    #[test]
+    fn test_non_bool_condition_carries_a_suggestion() {
+        let diags = analyze_source("if 42\n  let x = 1\nend");
+        assert_eq!(diags[0].suggestions.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].suggestions[0].replacement, "42 != 0");
+    }
+
+    // --- struct construction ---
+
+    /// A field the struct does not declare is a typo, caught at the call site.
+    #[test]
+    fn test_unknown_struct_field_is_reported() {
+        let code = "struct Point\n  x\n  y\nend\n\nlet p = Point{x: 1, z: 3}";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+    }
+
+    /// A declared field supplied exactly once is the ordinary shape.
+    #[test]
+    fn test_struct_with_all_fields_is_accepted() {
+        let code = "struct Point\n  x\n  y\nend\n\nlet p = Point{x: 1, y: 2}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }

@@ -39,20 +39,41 @@ io.println(message) # "Online"
 
 ## Pattern Matching (`match ... when`)
 
-The `match` construct branches execution by comparing an expression against one or more patterns per branch:
+The `match` construct branches execution by comparing an expression against literals, struct destructuring patterns, and enum variants:
+
+### Simple Patterns & Conditional Guards
+Each branch begins with `when` (never `case`). It supports optional boolean guards using `if <condition>`:
 
 ```aipo
-let status = "approved"
-
-match status {
-    when "pending" {
-        io.println("Awaiting confirmation...")
+match user {
+    when { name, age } if age >= 65 {
+        io.println(f"Senior: {name}")
     }
-    when "approved", "completed" {
-        io.println("Operation finished successfully!")
+    when { name, age } if age >= 18 {
+        io.println(f"Adult: {name}")
     }
     else {
-        io.println("Status unrecognized")
+        io.println("Minor")
+    }
+}
+```
+
+### Enum Variant Matching & Exhaustiveness
+When matching over an `enum`, the compiler strictly enforces exhaustive checking. If no `else` branch is supplied, all variants must be explicitly covered:
+
+```aipo
+match state {
+    when ConnectionState.Disconnected {
+        io.println("Disconnected")
+    }
+    when ConnectionState.Connecting(a) {
+        io.println(f"Connecting attempt #{a}")
+    }
+    when ConnectionState.Connected { ip, ping_ms } {
+        io.println(f"Connected to {ip}")
+    }
+    when ConnectionState.Error(r) {
+        io.println(f"Error: {r}")
     }
 }
 ```

@@ -263,12 +263,38 @@ pub struct IfStmt {
 pub struct MatchStmt {
     /// Target expression evaluated once.
     pub target: Expr,
-    /// When branches: expressions to match against and corresponding statements.
-    pub when_arms: Vec<(Vec<Expr>, Vec<Stmt>)>,
+    /// When branches: patterns to match, optional guard, and statements.
+    pub when_arms: Vec<MatchArm>,
     /// Optional else fallback branch.
     pub else_arm: Option<Vec<Stmt>>,
     /// Source span.
     pub span: SourceSpan,
+}
+
+/// One `when` branch of a `match`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MatchArm {
+    /// Alternatives, tested left to right; the first that matches wins.
+    pub patterns: Vec<MatchPattern>,
+    /// Optional Boolean condition evaluated after a pattern matches
+    /// (`when pattern if guard then`). A `false` guard falls through to the next arm.
+    pub guard: Option<Expr>,
+    /// Statements executed when this arm is selected.
+    pub body: Vec<Stmt>,
+    /// Source span covering the patterns, the guard and the body.
+    pub span: SourceSpan,
+}
+
+/// A pattern a `when` arm can match.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MatchPattern {
+    /// Equality against the target, as canon's `==` comparison: `when "ready"`.
+    Value(Expr),
+    /// Struct destructuring `when { name, age }`.
+    ///
+    /// Every listed name binds to that field of the target and is visible in the
+    /// guard and the arm body. The block names only the fields the arm uses.
+    Destructure(Vec<Ident>),
 }
 
 /// `attempt ... failed err ... end`
@@ -344,6 +370,28 @@ pub enum Expr {
     If(Box<Expr>, Box<Expr>, Box<Expr>, SourceSpan),
     /// Suspension point: `await task` drives a `Task` to its value.
     Await(Box<Expr>, SourceSpan),
+    /// Failure propagation: `expr?` evaluates `expr`, propagates a `Failure`
+    /// to the enclosing handler or caller, otherwise yields the value.
+    Try(Box<Expr>, SourceSpan),
+    /// Functional struct update: `base with { field: value, ... }`.
+    ///
+    /// Produces a **new** instance: the base is copied and the named fields are
+    /// replaced. The base itself is never mutated, and fields omitted from the
+    /// block keep the value they had, so the block lists only what changes.
+    With(Box<Expr>, WithExpr),
+}
+
+/// Functional struct update `base with { ... }`.
+///
+/// The field list mirrors [`ConstructExpr`]'s so the frontend validates both with
+/// the same rules; only the meaning differs, since the block is a sparse set of
+/// overrides rather than a full initializer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WithExpr {
+    /// Fields being replaced, in source order.
+    pub fields: Vec<ConstructField>,
+    /// Span of the whole update, from the base through the closing brace.
+    pub span: SourceSpan,
 }
 
 impl Expr {
@@ -360,11 +408,13 @@ impl Expr {
             | Self::List(_, span)
             | Self::Dict(_, span)
             | Self::If(_, _, _, span)
-            | Self::Await(_, span) => *span,
+            | Self::Await(_, span)
+            | Self::Try(_, span) => *span,
             Self::Identifier(ident) => ident.span,
             Self::Call(call) => call.span,
             Self::Construct(construct) => construct.span,
             Self::Fn(func) => func.span,
+            Self::With(_, with) => with.span,
         }
     }
 }

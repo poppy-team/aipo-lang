@@ -222,11 +222,33 @@ pub struct HirMatchStmt {
     /// Value being matched.
     pub target: HirExpr,
     /// Pattern arms.
-    pub when_arms: Vec<(Vec<HirExpr>, Vec<HirStmt>)>,
+    pub when_arms: Vec<HirMatchArm>,
     /// Fallback arm.
     pub else_arm: Option<Vec<HirStmt>>,
     /// Source span.
     pub span: SourceSpan,
+}
+
+/// One `when` arm of a `match`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HirMatchArm {
+    /// Alternative patterns tested left to right.
+    pub patterns: Vec<HirMatchPattern>,
+    /// Optional Boolean guard condition evaluated after a pattern matches.
+    pub guard: Option<HirExpr>,
+    /// Statements executed when this arm is selected.
+    pub body: Vec<HirStmt>,
+    /// Source span covering the patterns, the guard and the body.
+    pub span: SourceSpan,
+}
+
+/// A pattern in a `when` arm.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HirMatchPattern {
+    /// Equality against the target: `when expr`.
+    Value(HirExpr),
+    /// Struct destructuring: `when { name, age }`.
+    Destructure(Vec<String>),
 }
 
 /// HIR attempt-failed statement.
@@ -275,6 +297,19 @@ pub enum HirExpr {
     OrElse(Box<HirExpr>, Box<HirExpr>, SourceSpan),
     /// Suspension point: `await task` drives a `Task` to its value.
     Await(Box<HirExpr>, SourceSpan),
+    /// Failure propagation: `expr?`.
+    ///
+    /// Evaluates the operand, then propagates a `Failure` to the enclosing
+    /// handler or caller and otherwise yields the value. Lowering is a plain
+    /// `PropagateFailure` after the operand, which is the same check the VM
+    /// already runs at every statement boundary.
+    Try(Box<HirExpr>, SourceSpan),
+    /// Functional struct update: `base with { field: value, ... }`.
+    ///
+    /// Yields a **new** instance: the base is copied and the named fields are replaced,
+    /// so the block lists only what changes and the base is never mutated. Every entry
+    /// carries a field name — a positional field has no meaning in a sparse update.
+    With(Box<HirExpr>, Vec<(String, HirExpr)>, SourceSpan),
 }
 
 /// Argument in an HIR call.
@@ -321,7 +356,9 @@ impl HirExpr {
             | HirExpr::Construct(_, _, span)
             | HirExpr::If(_, _, _, span)
             | HirExpr::OrElse(_, _, span)
-            | HirExpr::Await(_, span) => *span,
+            | HirExpr::Await(_, span)
+            | HirExpr::Try(_, span)
+            | HirExpr::With(_, _, span) => *span,
             HirExpr::Fn(f) => f.span,
         }
     }

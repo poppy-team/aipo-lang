@@ -404,3 +404,9 @@ impl aipo_value_t {
         }
     }
 }
+
+/// Opaque handle to a virtual register machine instance.
+#[repr(C)]
+pub struct aipo_reg_vm_t {
+    _private: [u8; 0],
+}

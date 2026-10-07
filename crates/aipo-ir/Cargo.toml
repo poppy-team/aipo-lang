@@ -20,6 +20,10 @@ aipo-hir = { path = "../aipo-hir" }
 aipo-lexer = { path = "../aipo-lexer" }
 aipo-sema = { path = "../aipo-sema" }
 serde = { workspace = true }
+unicode-normalization = { workspace = true }
 
 [dev-dependencies]
 aipo-syntax = { path = "../aipo-syntax" }
+aipo-testkit = { path = "../aipo-testkit" }
+aipo-bytecode = { path = "../aipo-bytecode" }
+aipo-vm = { path = "../aipo-vm" }

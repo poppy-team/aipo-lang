@@ -127,6 +127,7 @@ impl EguiSession {
                 unit: egui::MouseWheelUnit::Point,
                 delta: vec2(options.scroll_x, options.scroll_y),
                 modifiers: Default::default(),
+                phase: egui::TouchPhase::Move,
             });
         }
 
@@ -154,20 +155,22 @@ impl EguiSession {
         }
 
         self.ui_stack.clear();
-        let full_output = self.ctx.end_pass();
+        let mut full_output = self.ctx.end_pass();
         self.is_frame_active = false;
 
         let shapes_list: Vec<Value> = full_output.shapes.iter().map(shape_to_value).collect();
         let cursor_name = format!("{:?}", full_output.platform_output.cursor_icon);
 
+        full_output.textures_delta.clear();
+
         let entries = vec![
             (
                 Value::String(Rc::new("wants_pointer_input".to_string())),
-                Value::Bool(self.ctx.wants_pointer_input()),
+                Value::Bool(self.ctx.egui_wants_pointer_input()),
             ),
             (
                 Value::String(Rc::new("wants_keyboard_input".to_string())),
-                Value::Bool(self.ctx.wants_keyboard_input()),
+                Value::Bool(self.ctx.egui_wants_keyboard_input()),
             ),
             (
                 Value::String(Rc::new("cursor".to_string())),
@@ -219,7 +222,7 @@ impl EguiSession {
         let mut window_ui = Ui::new(self.ctx.clone(), window_id, builder);
 
         // Window styling & header
-        let frame = egui::Frame::window(&self.ctx.style());
+        let frame = egui::Frame::window(&egui::Style::default());
         window_ui.painter().add(frame.paint(rect));
         window_ui.heading(title);
         window_ui.separator();

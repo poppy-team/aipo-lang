@@ -5,7 +5,8 @@ use crate::error::WasmCompileError;
 use crate::types::{WasmFnType, WasmType};
 use aipo_ast::{BinaryOp, Literal, UnaryOp};
 use aipo_hir::{
-    HirExpr, HirFunctionDecl, HirIfStmt, HirItem, HirParam, HirProgram, HirStmt, HirStructDecl,
+    HirAttemptStmt, HirExpr, HirFunctionDecl, HirIfStmt, HirItem, HirMatchStmt, HirParam,
+    HirProgram, HirStmt, HirStructDecl,
 };
 use aipo_lexer::{parse_float_literal, parse_int_literal};
 use aipo_source::SourceSpan;
@@ -23,6 +24,8 @@ enum ControlFrame {
     RepeatStep,
     /// Standard structured block (e.g., `if` condition or inline block).
     Block,
+    /// Handler block of an `attempt` statement (target for failure propagation).
+    AttemptHandler,
 }
 
 /// High-level type tag for local variables to disambiguate field accesses, string properties, and function pointers.
@@ -35,6 +38,12 @@ enum LocalKind {
     Struct(String),
     Fn(u32),
     Task,
+    /// A `Range` value produced by the `..` operator.
+    Range,
+    /// A `List` value produced by a list literal.
+    List,
+    /// A `Dict` value produced by a dict literal.
+    Dict,
 }
 
 /// Describes the byte layout of a struct in linear memory.
@@ -59,6 +68,20 @@ pub struct HostIoHelpers {
     pub println_idx: u32,
 }
 
+/// Helper containing global indices used by the hybrid `Failure` model.
+///
+/// A `Failure` never changes the static type of an expression: functions keep
+/// returning their declared scalar. Instead a pending failure is recorded in a
+/// module-level status flag together with the message pointer, and the statement
+/// boundary propagates it exactly like the stack VM's `CheckFailure`.
+#[derive(Debug, Clone, Copy)]
+struct FailureGlobals {
+    /// `i32`: 0 when no failure is pending, 1 otherwise.
+    status_idx: u32,
+    /// `i32`: pointer into the static string pool holding the failure message.
+    message_idx: u32,
+}
+
 /// Helper containing function indices of built-in async runtime functions and host I/O helpers.
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
@@ -69,6 +92,8 @@ struct AsyncHelpers {
     task_sleep_idx: u32,
     task_cancel_idx: u32,
     host_io: Option<HostIoHelpers>,
+    /// Failure status/message globals implementing the hybrid failure model.
+    fail_globals: FailureGlobals,
 }
 
 /// Compiles an `HirProgram` into a standard WebAssembly binary module (`.wasm`).
@@ -162,6 +187,33 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
         &ConstExpr::i64_const(0),
     );
     emitter.export_global("__aipo_virtual_time", virtual_time_idx);
+
+    // Global 2: Failure status flag (`__aipo_failure_status`)
+    let failure_status_idx = emitter.add_global(
+        GlobalType {
+            val_type: ValType::I32,
+            mutable: true,
+            shared: false,
+        },
+        &ConstExpr::i32_const(0),
+    );
+    emitter.export_global("__aipo_failure_status", failure_status_idx);
+
+    // Global 3: Failure message pointer (`__aipo_failure_msg`)
+    let failure_msg_idx = emitter.add_global(
+        GlobalType {
+            val_type: ValType::I32,
+            mutable: true,
+            shared: false,
+        },
+        &ConstExpr::i32_const(0),
+    );
+    emitter.export_global("__aipo_failure_msg", failure_msg_idx);
+
+    let failure_globals = FailureGlobals {
+        status_idx: failure_status_idx,
+        message_idx: failure_msg_idx,
+    };
 
     // Optional Host I/O Imports (Milestone 6 / ADP-013)
     let has_io = scan_program_for_io(program);
@@ -279,6 +331,161 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
         ),
     );
 
+    // Function 6: `__aipo_range_new(start: i64, end: i64) -> i32`
+    let range_new_fn_type =
+        WasmFnType::new(vec![WasmType::I64, WasmType::I64], vec![WasmType::I32]);
+    let range_new_type_idx = emitter.add_type(range_new_fn_type.clone());
+    let range_new_fn = build_range_new_function(alloc_func_idx);
+    let range_new_func_idx = emitter.add_function(range_new_type_idx, range_new_fn);
+    emitter.export_function("__aipo_range_new", range_new_func_idx);
+    functions.insert(
+        "__aipo_range_new".to_string(),
+        (range_new_func_idx, range_new_type_idx, range_new_fn_type),
+    );
+
+    // Function 7: `__aipo_range_len(range_ptr: i32) -> i64`
+    let range_len_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I64]);
+    let range_len_type_idx = emitter.add_type(range_len_fn_type.clone());
+    let range_len_fn = build_range_len_function();
+    let range_len_func_idx = emitter.add_function(range_len_type_idx, range_len_fn);
+    emitter.export_function("__aipo_range_len", range_len_func_idx);
+    functions.insert(
+        "__aipo_range_len".to_string(),
+        (range_len_func_idx, range_len_type_idx, range_len_fn_type),
+    );
+
+    // Function 8: `__aipo_list_new(len: i32) -> i32`
+    let list_new_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I32]);
+    let list_new_type_idx = emitter.add_type(list_new_fn_type.clone());
+    let list_new_fn = build_list_new_function(alloc_func_idx);
+    let list_new_func_idx = emitter.add_function(list_new_type_idx, list_new_fn);
+    emitter.export_function("__aipo_list_new", list_new_func_idx);
+    functions.insert(
+        "__aipo_list_new".to_string(),
+        (list_new_func_idx, list_new_type_idx, list_new_fn_type),
+    );
+
+    // Function 9: `__aipo_list_get(list_ptr: i32, index: i32) -> i64`
+    let list_get_fn_type = WasmFnType::new(vec![WasmType::I32, WasmType::I32], vec![WasmType::I64]);
+    let list_get_type_idx = emitter.add_type(list_get_fn_type.clone());
+    let list_get_fn = build_list_get_function();
+    let list_get_func_idx = emitter.add_function(list_get_type_idx, list_get_fn);
+    emitter.export_function("__aipo_list_get", list_get_func_idx);
+    functions.insert(
+        "__aipo_list_get".to_string(),
+        (list_get_func_idx, list_get_type_idx, list_get_fn_type),
+    );
+
+    // Function 10: `__aipo_list_set(list_ptr: i32, index: i32, value: i64) -> i64`
+    let list_set_fn_type = WasmFnType::new(
+        vec![WasmType::I32, WasmType::I32, WasmType::I64],
+        vec![WasmType::I64],
+    );
+    let list_set_type_idx = emitter.add_type(list_set_fn_type.clone());
+    let list_set_fn = build_list_set_function();
+    let list_set_func_idx = emitter.add_function(list_set_type_idx, list_set_fn);
+    emitter.export_function("__aipo_list_set", list_set_func_idx);
+    functions.insert(
+        "__aipo_list_set".to_string(),
+        (list_set_func_idx, list_set_type_idx, list_set_fn_type),
+    );
+
+    // Function 11: `__aipo_list_len(list_ptr: i32) -> i64`
+    let list_len_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I64]);
+    let list_len_type_idx = emitter.add_type(list_len_fn_type.clone());
+    let list_len_fn = build_list_len_function();
+    let list_len_func_idx = emitter.add_function(list_len_type_idx, list_len_fn);
+    emitter.export_function("__aipo_list_len", list_len_func_idx);
+    functions.insert(
+        "__aipo_list_len".to_string(),
+        (list_len_func_idx, list_len_type_idx, list_len_fn_type),
+    );
+
+    // Function 12: `__aipo_range_get(range_ptr: i32, index: i32) -> i64`
+    let range_get_fn_type =
+        WasmFnType::new(vec![WasmType::I32, WasmType::I32], vec![WasmType::I64]);
+    let range_get_type_idx = emitter.add_type(range_get_fn_type.clone());
+    let range_get_fn = build_range_get_function();
+    let range_get_func_idx = emitter.add_function(range_get_type_idx, range_get_fn);
+    emitter.export_function("__aipo_range_get", range_get_func_idx);
+    functions.insert(
+        "__aipo_range_get".to_string(),
+        (range_get_func_idx, range_get_type_idx, range_get_fn_type),
+    );
+
+    // Function 13: `__aipo_dict_new(capacity: i32) -> i32`
+    let dict_new_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I32]);
+    let dict_new_type_idx = emitter.add_type(dict_new_fn_type.clone());
+    let dict_new_fn = build_dict_new_function(alloc_func_idx);
+    let dict_new_func_idx = emitter.add_function(dict_new_type_idx, dict_new_fn);
+    emitter.export_function("__aipo_dict_new", dict_new_func_idx);
+    functions.insert(
+        "__aipo_dict_new".to_string(),
+        (dict_new_func_idx, dict_new_type_idx, dict_new_fn_type),
+    );
+
+    // Function 14: `__aipo_dict_set(dict: i32, key: i64, value: i64) -> i64`
+    let dict_set_fn_type = WasmFnType::new(
+        vec![WasmType::I32, WasmType::I64, WasmType::I64],
+        vec![WasmType::I64],
+    );
+    let dict_set_type_idx = emitter.add_type(dict_set_fn_type.clone());
+    let dict_set_fn = build_dict_set_function();
+    let dict_set_func_idx = emitter.add_function(dict_set_type_idx, dict_set_fn);
+    emitter.export_function("__aipo_dict_set", dict_set_func_idx);
+    functions.insert(
+        "__aipo_dict_set".to_string(),
+        (dict_set_func_idx, dict_set_type_idx, dict_set_fn_type),
+    );
+
+    // Function 15: `__aipo_dict_get(dict: i32, key: i64) -> i64`
+    let dict_get_fn_type = WasmFnType::new(vec![WasmType::I32, WasmType::I64], vec![WasmType::I64]);
+    let dict_get_type_idx = emitter.add_type(dict_get_fn_type.clone());
+    let dict_get_fn = build_dict_get_function();
+    let dict_get_func_idx = emitter.add_function(dict_get_type_idx, dict_get_fn);
+    emitter.export_function("__aipo_dict_get", dict_get_func_idx);
+    functions.insert(
+        "__aipo_dict_get".to_string(),
+        (dict_get_func_idx, dict_get_type_idx, dict_get_fn_type),
+    );
+
+    // Function 16: `__aipo_dict_len(dict: i32) -> i64`
+    let dict_len_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I64]);
+    let dict_len_type_idx = emitter.add_type(dict_len_fn_type.clone());
+    let dict_len_fn = build_dict_len_function();
+    let dict_len_func_idx = emitter.add_function(dict_len_type_idx, dict_len_fn);
+    emitter.export_function("__aipo_dict_len", dict_len_func_idx);
+    functions.insert(
+        "__aipo_dict_len".to_string(),
+        (dict_len_func_idx, dict_len_type_idx, dict_len_fn_type),
+    );
+
+    // Function 17: `__aipo_dict_has(dict: i32, key: i64) -> i32`
+    let dict_has_fn_type = WasmFnType::new(vec![WasmType::I32, WasmType::I64], vec![WasmType::I32]);
+    let dict_has_type_idx = emitter.add_type(dict_has_fn_type.clone());
+    let dict_has_fn = build_dict_has_function();
+    let dict_has_func_idx = emitter.add_function(dict_has_type_idx, dict_has_fn);
+    emitter.export_function("__aipo_dict_has", dict_has_func_idx);
+    functions.insert(
+        "__aipo_dict_has".to_string(),
+        (dict_has_func_idx, dict_has_type_idx, dict_has_fn_type),
+    );
+
+    // Function 18: `__aipo_string_hash(ptr: i32) -> i64`
+    let string_hash_fn_type = WasmFnType::new(vec![WasmType::I32], vec![WasmType::I64]);
+    let string_hash_type_idx = emitter.add_type(string_hash_fn_type.clone());
+    let string_hash_fn = build_string_hash_function();
+    let string_hash_func_idx = emitter.add_function(string_hash_type_idx, string_hash_fn);
+    emitter.export_function("__aipo_string_hash", string_hash_func_idx);
+    functions.insert(
+        "__aipo_string_hash".to_string(),
+        (
+            string_hash_func_idx,
+            string_hash_type_idx,
+            string_hash_fn_type,
+        ),
+    );
+
     let async_helpers = AsyncHelpers {
         task_create_idx: task_create_func_idx,
         task_drive_idx: task_drive_func_idx,
@@ -286,6 +493,7 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
         task_sleep_idx: task_sleep_func_idx,
         task_cancel_idx: task_cancel_func_idx,
         host_io,
+        fail_globals: failure_globals,
     };
 
     // Pass 1: Collect signatures of all declared and anonymous functions
@@ -470,6 +678,34 @@ fn collect_stmts_anon_functions(
                 collect_expr_anon_functions(count, anon_map, anon_decls);
                 collect_stmts_anon_functions(body, anon_map, anon_decls);
             }
+            HirStmt::Each(_, iterable, body, _) => {
+                collect_expr_anon_functions(iterable, anon_map, anon_decls);
+                collect_stmts_anon_functions(body, anon_map, anon_decls);
+            }
+            HirStmt::Fail(expr, _) => {
+                collect_expr_anon_functions(expr, anon_map, anon_decls);
+            }
+            HirStmt::Attempt(a) => {
+                collect_stmts_anon_functions(&a.body, anon_map, anon_decls);
+                collect_stmts_anon_functions(&a.handler, anon_map, anon_decls);
+            }
+            HirStmt::Match(m) => {
+                collect_expr_anon_functions(&m.target, anon_map, anon_decls);
+                for arm in &m.when_arms {
+                    for p in &arm.patterns {
+                        if let aipo_hir::HirMatchPattern::Value(expr) = p {
+                            collect_expr_anon_functions(expr, anon_map, anon_decls);
+                        }
+                    }
+                    if let Some(guard) = &arm.guard {
+                        collect_expr_anon_functions(guard, anon_map, anon_decls);
+                    }
+                    collect_stmts_anon_functions(&arm.body, anon_map, anon_decls);
+                }
+                if let Some(else_body) = &m.else_arm {
+                    collect_stmts_anon_functions(else_body, anon_map, anon_decls);
+                }
+            }
             HirStmt::AwaitDo(stmts, _) => {
                 collect_stmts_anon_functions(stmts, anon_map, anon_decls);
             }
@@ -596,6 +832,34 @@ fn scan_stmts_for_constructs(stmts: &[HirStmt], structs: &mut HashMap<String, St
                 scan_expr_for_constructs(count, structs);
                 scan_stmts_for_constructs(body, structs);
             }
+            HirStmt::Each(_, iterable, body, _) => {
+                scan_expr_for_constructs(iterable, structs);
+                scan_stmts_for_constructs(body, structs);
+            }
+            HirStmt::Fail(expr, _) => {
+                scan_expr_for_constructs(expr, structs);
+            }
+            HirStmt::Attempt(a) => {
+                scan_stmts_for_constructs(&a.body, structs);
+                scan_stmts_for_constructs(&a.handler, structs);
+            }
+            HirStmt::Match(m) => {
+                scan_expr_for_constructs(&m.target, structs);
+                for arm in &m.when_arms {
+                    for p in &arm.patterns {
+                        if let aipo_hir::HirMatchPattern::Value(expr) = p {
+                            scan_expr_for_constructs(expr, structs);
+                        }
+                    }
+                    if let Some(guard) = &arm.guard {
+                        scan_expr_for_constructs(guard, structs);
+                    }
+                    scan_stmts_for_constructs(&arm.body, structs);
+                }
+                if let Some(else_body) = &m.else_arm {
+                    scan_stmts_for_constructs(else_body, structs);
+                }
+            }
             HirStmt::AwaitDo(stmts, _) => {
                 scan_stmts_for_constructs(stmts, structs);
             }
@@ -648,6 +912,21 @@ fn scan_expr_for_constructs(expr: &HirExpr, structs: &mut HashMap<String, Struct
         HirExpr::Dot(receiver, _, _) => {
             scan_expr_for_constructs(receiver, structs);
         }
+        HirExpr::List(elements, _) => {
+            for elem in elements {
+                scan_expr_for_constructs(elem, structs);
+            }
+        }
+        HirExpr::Dict(entries, _) => {
+            for (key, value) in entries {
+                scan_expr_for_constructs(key, structs);
+                scan_expr_for_constructs(value, structs);
+            }
+        }
+        HirExpr::Index(target, index, _) => {
+            scan_expr_for_constructs(target, structs);
+            scan_expr_for_constructs(index, structs);
+        }
         _ => {}
     }
 }
@@ -678,6 +957,10 @@ fn scan_stmts_for_io(stmts: &[HirStmt]) -> bool {
                 }
             }
             HirStmt::Return(Some(expr), _) if scan_expr_for_io(expr) => return true,
+            HirStmt::Fail(expr, _) if scan_expr_for_io(expr) => return true,
+            HirStmt::Attempt(a) if scan_stmts_for_io(&a.body) || scan_stmts_for_io(&a.handler) => {
+                return true;
+            }
             HirStmt::If(s) => {
                 if scan_expr_for_io(&s.condition)
                     || scan_stmts_for_io(&s.then_branch)
@@ -697,6 +980,11 @@ fn scan_stmts_for_io(stmts: &[HirStmt]) -> bool {
             }
             HirStmt::Repeat(count, _, body, _)
                 if scan_expr_for_io(count) || scan_stmts_for_io(body) =>
+            {
+                return true;
+            }
+            HirStmt::Each(_, iterable, body, _)
+                if scan_expr_for_io(iterable) || scan_stmts_for_io(body) =>
             {
                 return true;
             }
@@ -1080,6 +1368,588 @@ fn build_task_cancel_function() -> Function {
     func
 }
 
+/// Builds `__aipo_range_new(start: i64, end: i64) -> i32`.
+///
+/// A range is a 16-byte heap block: `[start_lo, start_hi, end_lo, end_hi]`,
+/// holding the inclusive-exclusive integer bounds produced by the `..` operator.
+fn build_range_new_function(alloc_func_idx: u32) -> Function {
+    let mut func = Function::new([(1, ValType::I32)]);
+    // local 2 is the allocated ptr
+    func.instruction(&Instruction::I32Const(16));
+    func.instruction(&Instruction::Call(alloc_func_idx));
+    func.instruction(&Instruction::LocalSet(2));
+
+    // store start (local 0) at offset 0
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Store(MemArg {
+        offset: 0,
+        align: 3,
+        memory_index: 0,
+    }));
+
+    // store end (local 1) at offset 8
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I64Store(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_range_len(range_ptr: i32) -> i64`.
+///
+/// Returns `max(0, end - start)`, the number of steps the range yields.
+fn build_range_len_function() -> Function {
+    let mut func = Function::new([]);
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 0,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::I64Sub);
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 0,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::I64GtS);
+    func.instruction(&Instruction::I64ExtendI32U);
+    func.instruction(&Instruction::I64Mul);
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_range_get(range_ptr: i32, index: i32) -> i64`.
+///
+/// Index `0` reads `start`, any other index reads `end`.
+fn build_range_get_function() -> Function {
+    let mut func = Function::new([]);
+    // if index == 0 { load start } else { load end }
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::I32Eq);
+    func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 0,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::Else);
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::End);
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_dict_new(capacity: i32) -> i32`.
+///
+/// A dictionary is a heap block laid out as an 8-byte entry count header
+/// followed by `capacity` fixed-width 16-byte entries (`key: i64`,
+/// `value: i64`). Entries are filled in order and searched linearly.
+///
+/// `ponytail:` linear scan is `O(n)` per lookup. Replace with an open-addressing
+/// table once dictionaries above a few dozen entries show up in benchmarks.
+fn build_dict_new_function(alloc_func_idx: u32) -> Function {
+    let mut func = Function::new([(1, ValType::I32)]);
+    // bytes = 8 (8-byte aligned entry count header) + capacity * 16
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Const(4));
+    func.instruction(&Instruction::I32Shl);
+    func.instruction(&Instruction::I32Const(8));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::Call(alloc_func_idx));
+    func.instruction(&Instruction::LocalSet(1));
+
+    // entry count starts at 0
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_dict_set(dict: i32, key: i64, value: i64) -> i64`.
+///
+/// Replaces the value when the key is already present, otherwise appends a new
+/// entry. Returns `value` so the call can stay in expression position.
+fn build_dict_set_function() -> Function {
+    // locals: 0=dict, 1=key, 2=value, 3=index, 4=entry_count
+    let mut func = Function::new([(2, ValType::I32)]);
+
+    // entry_count = dict[0]
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalSet(4));
+
+    // Scan for an existing key, remembering the first free slot.
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::LocalSet(3));
+
+    // block $done
+    func.instruction(&Instruction::Block(BlockType::Empty));
+    // loop
+    func.instruction(&Instruction::Loop(BlockType::Empty));
+
+    // if index == entry_count then leave the loop
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::LocalGet(4));
+    func.instruction(&Instruction::I32GeS);
+    func.instruction(&Instruction::BrIf(1));
+
+    // entry key = dict[4 + index*16]
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32Const(4));
+    func.instruction(&Instruction::I32Shl);
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I32Const(8));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 0,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I64Eq);
+    func.instruction(&Instruction::If(BlockType::Empty));
+    // key matched: overwrite the value in place.
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32Const(4));
+    func.instruction(&Instruction::I32Shl);
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I32Const(8));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::I64Store(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+    // Depth 2 leaves both the `if` and the `loop`, landing after the outer block.
+    func.instruction(&Instruction::Br(2));
+    func.instruction(&Instruction::End);
+
+    // index += 1
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32Const(1));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::LocalSet(3));
+    func.instruction(&Instruction::Br(0));
+
+    func.instruction(&Instruction::End);
+    func.instruction(&Instruction::End);
+
+    // Append at index.
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32Const(4));
+    func.instruction(&Instruction::I32Shl);
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I32Const(8));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I64Store(MemArg {
+        offset: 0,
+        align: 3,
+        memory_index: 0,
+    }));
+
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32Const(4));
+    func.instruction(&Instruction::I32Shl);
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I32Const(8));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::I64Store(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+
+    // entry_count = index + 1
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32Const(1));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_dict_get(dict: i32, key: i64) -> i64`.
+///
+/// Returns the stored value, or `none` (0) when the key is absent.
+fn build_dict_get_function() -> Function {
+    // locals: 0=dict, 1=key, 2=index, 3=entry_count
+    let mut func = Function::new([(2, ValType::I32)]);
+
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalSet(3));
+
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::LocalSet(2));
+
+    func.instruction(&Instruction::Block(BlockType::Empty));
+    func.instruction(&Instruction::Loop(BlockType::Empty));
+
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32GeS);
+    func.instruction(&Instruction::BrIf(1));
+
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::I32Const(4));
+    func.instruction(&Instruction::I32Shl);
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I32Const(8));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 0,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I64Eq);
+    func.instruction(&Instruction::If(BlockType::Empty));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::I32Const(4));
+    func.instruction(&Instruction::I32Shl);
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I32Const(8));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::Return);
+    func.instruction(&Instruction::End);
+
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::I32Const(1));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::LocalSet(2));
+    func.instruction(&Instruction::Br(0));
+
+    func.instruction(&Instruction::End);
+    func.instruction(&Instruction::End);
+
+    func.instruction(&Instruction::I64Const(0));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_dict_len(dict: i32) -> i64`.
+fn build_dict_len_function() -> Function {
+    let mut func = Function::new([]);
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::I64ExtendI32U);
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_dict_has(dict: i32, key: i64) -> i32`.
+///
+/// Returns 1 when the key is present, 0 otherwise.
+fn build_dict_has_function() -> Function {
+    // locals: 0=dict, 1=key, 2=index, 3=entry_count
+    let mut func = Function::new([(2, ValType::I32)]);
+
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalSet(3));
+
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::LocalSet(2));
+
+    func.instruction(&Instruction::Block(BlockType::Empty));
+    func.instruction(&Instruction::Loop(BlockType::Empty));
+
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32GeS);
+    func.instruction(&Instruction::BrIf(1));
+
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::I32Const(4));
+    func.instruction(&Instruction::I32Shl);
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I32Const(8));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 0,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I64Eq);
+    func.instruction(&Instruction::If(BlockType::Empty));
+    func.instruction(&Instruction::I32Const(1));
+    func.instruction(&Instruction::Return);
+    func.instruction(&Instruction::End);
+
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::I32Const(1));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::LocalSet(2));
+    func.instruction(&Instruction::Br(0));
+
+    func.instruction(&Instruction::End);
+    func.instruction(&Instruction::End);
+
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_string_hash(ptr: i32) -> i64`.
+///
+/// FNV-1a 64-bit hash over the string bytes so identical strings with different
+/// pointers can collide onto the same key bucket when hashing is introduced.
+fn build_string_hash_function() -> Function {
+    // locals: 0=ptr, 1=hash(i64), 2=len(i32), 3=i(i32)
+    let mut func = Function::new([(1, ValType::I64), (2, ValType::I32)]);
+
+    // hash = 0xcbf29ce484222325 (FNV offset basis)
+    func.instruction(&Instruction::I64Const(-3750763034362895579i64));
+    func.instruction(&Instruction::LocalSet(1));
+
+    // len = [ptr+0]
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalSet(2));
+
+    // i = 0
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::LocalSet(3));
+
+    func.instruction(&Instruction::Block(BlockType::Empty));
+    func.instruction(&Instruction::Loop(BlockType::Empty));
+
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::I32GeS);
+    func.instruction(&Instruction::BrIf(1));
+
+    // hash = (hash ^ byte) * 0x100000001b3
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I64Load8U(MemArg {
+        offset: 4,
+        align: 0,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::I64Xor);
+    func.instruction(&Instruction::I64Const(1099511628211i64));
+    func.instruction(&Instruction::I64Mul);
+    func.instruction(&Instruction::LocalSet(1));
+
+    func.instruction(&Instruction::LocalGet(3));
+    func.instruction(&Instruction::I32Const(1));
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::LocalSet(3));
+    func.instruction(&Instruction::Br(0));
+
+    func.instruction(&Instruction::End);
+    func.instruction(&Instruction::End);
+
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_list_new(len: i32) -> i32`.
+///
+/// A list is a heap block whose first i32 is the element count, followed by
+/// `len` i64 slots (one per element). Elements are stored unboxed as i64,
+/// which covers `Int`, `Bool`, and raw bit patterns.
+fn build_list_new_function(alloc_func_idx: u32) -> Function {
+    let mut func = Function::new([(1, ValType::I32)]);
+    // bytes = 8 header/padding + len * 8 per element
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I64ExtendI32U);
+    func.instruction(&Instruction::I64Const(8));
+    func.instruction(&Instruction::I64Mul);
+    func.instruction(&Instruction::I64Const(8));
+    func.instruction(&Instruction::I64Add);
+    func.instruction(&Instruction::I32WrapI64);
+    func.instruction(&Instruction::Call(alloc_func_idx));
+    func.instruction(&Instruction::LocalSet(1));
+
+    // store len at offset 0
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Store(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_list_get(list_ptr: i32, index: i32) -> i64`.
+fn build_list_get_function() -> Function {
+    let mut func = Function::new([]);
+    // bounds check: if index < 0 trap; if index >= len trap
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::I32LtS);
+    func.instruction(&Instruction::If(BlockType::Empty));
+    func.instruction(&Instruction::Unreachable);
+    func.instruction(&Instruction::End);
+
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::I32GeS);
+    func.instruction(&Instruction::If(BlockType::Empty));
+    func.instruction(&Instruction::Unreachable);
+    func.instruction(&Instruction::End);
+
+    // element address = list_ptr + index * 8, then load at the +8 header
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I32Const(3));
+    func.instruction(&Instruction::I32Shl);
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::I64Load(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_list_len(list_ptr: i32) -> i64`.
+fn build_list_len_function() -> Function {
+    let mut func = Function::new([]);
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::I64ExtendI32U);
+    func.instruction(&Instruction::End);
+    func
+}
+
+/// Builds `__aipo_list_set(list_ptr: i32, index: i32, value: i64) -> i64`.
+fn build_list_set_function() -> Function {
+    let mut func = Function::new([]);
+    // bounds check: if index < 0 or index >= len trap
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::I32LtS);
+    func.instruction(&Instruction::If(BlockType::Empty));
+    func.instruction(&Instruction::Unreachable);
+    func.instruction(&Instruction::End);
+
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::I32Load(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::I32GeS);
+    func.instruction(&Instruction::If(BlockType::Empty));
+    func.instruction(&Instruction::Unreachable);
+    func.instruction(&Instruction::End);
+
+    // element address = list_ptr + index * 8, stored at the +8 header offset
+    func.instruction(&Instruction::LocalGet(0));
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::I32Const(3));
+    func.instruction(&Instruction::I32Shl);
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::I64Store(MemArg {
+        offset: 8,
+        align: 3,
+        memory_index: 0,
+    }));
+    func.instruction(&Instruction::LocalGet(2));
+    func.instruction(&Instruction::End);
+    func
+}
+
 /// Builds a wrapper function for an `async fn` that creates a `Task` handle and returns it (`task_ptr: i32`).
 fn build_async_wrapper_function(
     inner_table_idx: u32,
@@ -1172,6 +2042,39 @@ fn collect_stmts_strings(
                 collect_expr_strings(count, static_strings, data_segments, next_offset);
                 collect_stmts_strings(body, static_strings, data_segments, next_offset);
             }
+            HirStmt::Each(_, iterable, body, _) => {
+                collect_expr_strings(iterable, static_strings, data_segments, next_offset);
+                collect_stmts_strings(body, static_strings, data_segments, next_offset);
+            }
+            HirStmt::Fail(expr, _) => {
+                collect_expr_strings(expr, static_strings, data_segments, next_offset);
+            }
+            HirStmt::Attempt(a) => {
+                collect_stmts_strings(&a.body, static_strings, data_segments, next_offset);
+                collect_stmts_strings(&a.handler, static_strings, data_segments, next_offset);
+            }
+            HirStmt::Match(match_stmt) => {
+                collect_expr_strings(
+                    &match_stmt.target,
+                    static_strings,
+                    data_segments,
+                    next_offset,
+                );
+                for arm in &match_stmt.when_arms {
+                    for p in &arm.patterns {
+                        if let aipo_hir::HirMatchPattern::Value(expr) = p {
+                            collect_expr_strings(expr, static_strings, data_segments, next_offset);
+                        }
+                    }
+                    if let Some(guard) = &arm.guard {
+                        collect_expr_strings(guard, static_strings, data_segments, next_offset);
+                    }
+                    collect_stmts_strings(&arm.body, static_strings, data_segments, next_offset);
+                }
+                if let Some(else_body) = &match_stmt.else_arm {
+                    collect_stmts_strings(else_body, static_strings, data_segments, next_offset);
+                }
+            }
             HirStmt::AwaitDo(stmts, _) => {
                 collect_stmts_strings(stmts, static_strings, data_segments, next_offset);
             }
@@ -1207,6 +2110,21 @@ fn collect_expr_strings(
         HirExpr::Binary(_, left, right, _) => {
             collect_expr_strings(left, static_strings, data_segments, next_offset);
             collect_expr_strings(right, static_strings, data_segments, next_offset);
+        }
+        HirExpr::Dict(entries, _) => {
+            for (key, value) in entries {
+                collect_expr_strings(key, static_strings, data_segments, next_offset);
+                collect_expr_strings(value, static_strings, data_segments, next_offset);
+            }
+        }
+        HirExpr::List(elements, _) => {
+            for elem in elements {
+                collect_expr_strings(elem, static_strings, data_segments, next_offset);
+            }
+        }
+        HirExpr::Index(target, index, _) => {
+            collect_expr_strings(target, static_strings, data_segments, next_offset);
+            collect_expr_strings(index, static_strings, data_segments, next_offset);
         }
         HirExpr::Unary(_, inner, _) => {
             collect_expr_strings(inner, static_strings, data_segments, next_offset);
@@ -1358,7 +2276,8 @@ fn infer_body_return_type(
             }
             HirStmt::While(_, loop_body, _)
             | HirStmt::Loop(loop_body, _)
-            | HirStmt::Repeat(_, _, loop_body, _) => {
+            | HirStmt::Repeat(_, _, loop_body, _)
+            | HirStmt::Each(_, _, loop_body, _) => {
                 if let Some(ty) = infer_body_return_type(
                     loop_body,
                     locals,
@@ -1508,6 +2427,113 @@ fn pre_scan_stmts(
                     repeat_id,
                 )?;
             }
+            HirStmt::Match(match_stmt) => {
+                *repeat_id += 1;
+                let id = *repeat_id;
+                let slot = (params_count + declared_locals.len()) as u32;
+                declared_locals.push(WasmType::I64);
+                locals.insert(
+                    format!("__match_target_{id}"),
+                    (slot, WasmType::I64, LocalKind::Int),
+                );
+                for arm in &match_stmt.when_arms {
+                    let arm_body = &arm.body;
+                    pre_scan_stmts(
+                        arm_body,
+                        params_count,
+                        locals,
+                        declared_locals,
+                        functions,
+                        structs,
+                        table_indices,
+                        anon_map,
+                        repeat_id,
+                    )?;
+                }
+                if let Some(else_body) = &match_stmt.else_arm {
+                    pre_scan_stmts(
+                        else_body,
+                        params_count,
+                        locals,
+                        declared_locals,
+                        functions,
+                        structs,
+                        table_indices,
+                        anon_map,
+                        repeat_id,
+                    )?;
+                }
+            }
+            HirStmt::Attempt(attempt_stmt) => {
+                // The error binding points at the static string pool, like any
+                // other string value.
+                if let Some(err_name) = &attempt_stmt.error_binding {
+                    let slot = (params_count + declared_locals.len()) as u32;
+                    declared_locals.push(WasmType::I32);
+                    locals.insert(err_name.clone(), (slot, WasmType::I32, LocalKind::String));
+                }
+                pre_scan_stmts(
+                    &attempt_stmt.body,
+                    params_count,
+                    locals,
+                    declared_locals,
+                    functions,
+                    structs,
+                    table_indices,
+                    anon_map,
+                    repeat_id,
+                )?;
+                pre_scan_stmts(
+                    &attempt_stmt.handler,
+                    params_count,
+                    locals,
+                    declared_locals,
+                    functions,
+                    structs,
+                    table_indices,
+                    anon_map,
+                    repeat_id,
+                )?;
+            }
+            HirStmt::Each(bindings, iterable, body, _) => {
+                *repeat_id += 1;
+                let id = *repeat_id;
+                let seq_idx = (params_count + declared_locals.len()) as u32;
+                declared_locals.push(WasmType::I32);
+                locals.insert(
+                    format!("__each_seq_{id}"),
+                    (seq_idx, WasmType::I32, LocalKind::List),
+                );
+                let cur_idx = (params_count + declared_locals.len()) as u32;
+                declared_locals.push(WasmType::I64);
+                locals.insert(
+                    format!("__each_cursor_{id}"),
+                    (cur_idx, WasmType::I64, LocalKind::Int),
+                );
+                let len_idx = (params_count + declared_locals.len()) as u32;
+                declared_locals.push(WasmType::I64);
+                locals.insert(
+                    format!("__each_len_{id}"),
+                    (len_idx, WasmType::I64, LocalKind::Int),
+                );
+                for name in bindings {
+                    let slot = (params_count + declared_locals.len()) as u32;
+                    declared_locals.push(WasmType::I64);
+                    locals.insert(name.clone(), (slot, WasmType::I64, LocalKind::Int));
+                }
+                let _ = iterable;
+                pre_scan_stmts(
+                    body,
+                    params_count,
+                    locals,
+                    declared_locals,
+                    functions,
+                    structs,
+                    table_indices,
+                    anon_map,
+                    repeat_id,
+                )?;
+            }
             HirStmt::AwaitDo(stmts, _) => {
                 pre_scan_stmts(
                     stmts,
@@ -1565,6 +2591,9 @@ fn infer_expr_kind(
                 LocalKind::Int
             }
         }
+        HirExpr::Binary(BinaryOp::Range, ..) => LocalKind::Range,
+        HirExpr::List(..) => LocalKind::List,
+        HirExpr::Dict(..) => LocalKind::Dict,
         HirExpr::Binary(BinaryOp::Add, left, right, _) => {
             let lk = infer_expr_kind(left, locals, functions, table_indices, anon_map);
             let rk = infer_expr_kind(right, locals, functions, table_indices, anon_map);
@@ -1652,6 +2681,36 @@ fn compile_function_body(
         declared_locals.push(WasmType::I32);
         locals.insert(
             format!("__call_temp_{d}"),
+            (idx, WasmType::I32, LocalKind::Int),
+        );
+    }
+
+    // Allocate 8 helper scratch locals for list literal construction nesting
+    for d in 0..8 {
+        let idx = (params.len() + declared_locals.len()) as u32;
+        declared_locals.push(WasmType::I32);
+        locals.insert(
+            format!("__list_temp_{d}"),
+            (idx, WasmType::I32, LocalKind::Int),
+        );
+    }
+
+    // Allocate 8 helper scratch i64 locals for `or_else` primary value staging
+    for d in 0..8 {
+        let idx = (params.len() + declared_locals.len()) as u32;
+        declared_locals.push(WasmType::I64);
+        locals.insert(
+            format!("__or_else_temp_{d}"),
+            (idx, WasmType::I64, LocalKind::Int),
+        );
+    }
+
+    // Allocate 8 helper scratch locals for dict literal construction nesting
+    for d in 0..8 {
+        let idx = (params.len() + declared_locals.len()) as u32;
+        declared_locals.push(WasmType::I32);
+        locals.insert(
+            format!("__dict_temp_{d}"),
             (idx, WasmType::I32, LocalKind::Int),
         );
     }
@@ -1883,6 +2942,150 @@ fn compile_stmts(
                             message: format!("unknown field `{field_name}` on struct"),
                             span: *span,
                         });
+                    }
+                }
+                HirExpr::Index(target_coll, index, _) => {
+                    let coll_kind =
+                        infer_expr_kind(target_coll, locals, functions, table_indices, anon_map);
+                    if matches!(coll_kind, LocalKind::Dict) {
+                        let (dict_set_idx, _, _) = functions["__aipo_dict_set"];
+                        let (string_hash_idx, _, _) = functions["__aipo_string_hash"];
+
+                        let c_ty = compile_expr(
+                            target_coll,
+                            func,
+                            locals,
+                            functions,
+                            control_stack,
+                            structs,
+                            static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
+                            alloc_func_idx,
+                            async_helpers,
+                            struct_depth,
+                            call_depth,
+                        )?;
+                        coerce_type(func, c_ty, WasmType::I32);
+
+                        let index_kind =
+                            infer_expr_kind(index, locals, functions, table_indices, anon_map);
+                        if matches!(index_kind, LocalKind::String) {
+                            let i_ty = compile_expr(
+                                index,
+                                func,
+                                locals,
+                                functions,
+                                control_stack,
+                                structs,
+                                static_strings,
+                                table_indices,
+                                anon_map,
+                                indirect_sigs,
+                                alloc_func_idx,
+                                async_helpers,
+                                struct_depth,
+                                call_depth,
+                            )?;
+                            coerce_type(func, i_ty, WasmType::I32);
+                            func.instruction(&Instruction::Call(string_hash_idx));
+                        } else {
+                            let i_ty = compile_expr(
+                                index,
+                                func,
+                                locals,
+                                functions,
+                                control_stack,
+                                structs,
+                                static_strings,
+                                table_indices,
+                                anon_map,
+                                indirect_sigs,
+                                alloc_func_idx,
+                                async_helpers,
+                                struct_depth,
+                                call_depth,
+                            )?;
+                            coerce_type(func, i_ty, WasmType::I64);
+                        }
+
+                        let val_ty = compile_expr(
+                            expr,
+                            func,
+                            locals,
+                            functions,
+                            control_stack,
+                            structs,
+                            static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
+                            alloc_func_idx,
+                            async_helpers,
+                            struct_depth,
+                            call_depth,
+                        )?;
+                        coerce_type(func, val_ty, WasmType::I64);
+                        func.instruction(&Instruction::Call(dict_set_idx));
+                        func.instruction(&Instruction::Drop);
+                    } else {
+                        let (list_set_idx, _, _) = functions["__aipo_list_set"];
+                        let c_ty = compile_expr(
+                            target_coll,
+                            func,
+                            locals,
+                            functions,
+                            control_stack,
+                            structs,
+                            static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
+                            alloc_func_idx,
+                            async_helpers,
+                            struct_depth,
+                            call_depth,
+                        )?;
+                        coerce_type(func, c_ty, WasmType::I32);
+
+                        let i_ty = compile_expr(
+                            index,
+                            func,
+                            locals,
+                            functions,
+                            control_stack,
+                            structs,
+                            static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
+                            alloc_func_idx,
+                            async_helpers,
+                            struct_depth,
+                            call_depth,
+                        )?;
+                        coerce_type(func, i_ty, WasmType::I32);
+
+                        let val_ty = compile_expr(
+                            expr,
+                            func,
+                            locals,
+                            functions,
+                            control_stack,
+                            structs,
+                            static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
+                            alloc_func_idx,
+                            async_helpers,
+                            struct_depth,
+                            call_depth,
+                        )?;
+                        coerce_type(func, val_ty, WasmType::I64);
+                        func.instruction(&Instruction::Call(list_set_idx));
+                        func.instruction(&Instruction::Drop);
                     }
                 }
                 _ => {
@@ -2156,6 +3359,48 @@ fn compile_stmts(
                     call_depth,
                 )?;
             }
+            HirStmt::Each(bindings, iterable, loop_body, _) => {
+                compile_each_stmt(
+                    bindings,
+                    iterable,
+                    loop_body,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    return_type,
+                    repeat_id,
+                    struct_depth,
+                    call_depth,
+                )?;
+            }
+            HirStmt::Match(match_stmt) => {
+                compile_match_stmt(
+                    match_stmt,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    return_type,
+                    repeat_id,
+                    struct_depth,
+                    call_depth,
+                )?;
+            }
             HirStmt::Break(span) => {
                 if let Some(pos) = control_stack
                     .iter()
@@ -2232,12 +3477,89 @@ fn compile_stmts(
                     terminated = true;
                 }
             }
+            HirStmt::Fail(expr, _) => {
+                let msg_ty = compile_expr(
+                    expr,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    struct_depth,
+                    call_depth,
+                )?;
+                coerce_type(func, msg_ty, WasmType::I32);
+                func.instruction(&Instruction::GlobalSet(
+                    async_helpers.fail_globals.message_idx,
+                ));
+                func.instruction(&Instruction::I32Const(1));
+                func.instruction(&Instruction::GlobalSet(
+                    async_helpers.fail_globals.status_idx,
+                ));
+
+                // Inside an `attempt`, raising a failure unwinds to the handler
+                // block instead of returning from the function.
+                if let Some(depth) = control_stack
+                    .iter()
+                    .rev()
+                    .position(|frame| *frame == ControlFrame::AttemptHandler)
+                {
+                    func.instruction(&Instruction::Br(depth as u32));
+                } else {
+                    match return_type {
+                        Some(WasmType::I64) => {
+                            func.instruction(&Instruction::I64Const(0));
+                        }
+                        Some(WasmType::I32) => {
+                            func.instruction(&Instruction::I32Const(0));
+                        }
+                        Some(WasmType::F64) => {
+                            func.instruction(&Instruction::F64Const(0.0.into()));
+                        }
+                        None => {}
+                    }
+                    func.instruction(&Instruction::Return);
+                }
+                terminated = true;
+            }
+            HirStmt::Attempt(attempt_stmt) => {
+                compile_attempt_stmt(
+                    attempt_stmt,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    return_type,
+                    repeat_id,
+                    struct_depth,
+                    call_depth,
+                )?;
+            }
             other => {
                 return Err(WasmCompileError::UnsupportedStmt {
                     message: format!("statement `{other:?}` is scheduled for Milestone 5"),
                     span: program_stmt_span(other),
                 });
             }
+        }
+
+        // Statement-boundary failure propagation. Skipped once the path is
+        // already terminated, since `Return`/`Break` leave no code to guard.
+        if !terminated && stmt_may_fail(stmt) {
+            emit_failure_check(func, control_stack, async_helpers.fail_globals, return_type);
         }
     }
 
@@ -2650,6 +3972,481 @@ fn compile_repeat_stmt(
     control_stack.pop();
     func.instruction(&Instruction::End);
 
+    Ok(())
+}
+
+/// Compiles an `each item in iterable` statement.
+#[allow(clippy::too_many_arguments)]
+fn compile_each_stmt(
+    bindings: &[String],
+    iterable: &HirExpr,
+    loop_body: &[HirStmt],
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType, LocalKind)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    structs: &HashMap<String, StructLayout>,
+    static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
+    alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
+    return_type: Option<WasmType>,
+    repeat_id: &mut u32,
+    struct_depth: usize,
+    call_depth: usize,
+) -> Result<(), WasmCompileError> {
+    *repeat_id += 1;
+    let id = *repeat_id;
+    let seq_slot = locals[&format!("__each_seq_{id}")].0;
+    let cur_slot = locals[&format!("__each_cursor_{id}")].0;
+    let len_slot = locals[&format!("__each_len_{id}")].0;
+
+    let is_range = infer_expr_is_range(iterable, locals, functions, structs, table_indices);
+
+    let iter_ty = compile_expr(
+        iterable,
+        func,
+        locals,
+        functions,
+        control_stack,
+        structs,
+        static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
+        alloc_func_idx,
+        async_helpers,
+        struct_depth,
+        call_depth,
+    )?;
+    coerce_type(func, iter_ty, WasmType::I32);
+    func.instruction(&Instruction::LocalSet(seq_slot));
+
+    func.instruction(&Instruction::LocalGet(seq_slot));
+    if is_range {
+        let (range_len_idx, _, _) = functions["__aipo_range_len"];
+        func.instruction(&Instruction::Call(range_len_idx));
+    } else {
+        let (list_len_idx, _, _) = functions["__aipo_list_len"];
+        func.instruction(&Instruction::Call(list_len_idx));
+    }
+    func.instruction(&Instruction::LocalSet(len_slot));
+
+    func.instruction(&Instruction::I64Const(0));
+    func.instruction(&Instruction::LocalSet(cur_slot));
+
+    control_stack.push(ControlFrame::LoopBreak);
+    func.instruction(&Instruction::Block(BlockType::Empty));
+
+    control_stack.push(ControlFrame::LoopContinue);
+    func.instruction(&Instruction::Loop(BlockType::Empty));
+
+    func.instruction(&Instruction::LocalGet(cur_slot));
+    func.instruction(&Instruction::LocalGet(len_slot));
+    func.instruction(&Instruction::I64LtS);
+    func.instruction(&Instruction::I32Eqz);
+    let break_depth = control_stack
+        .iter()
+        .rev()
+        .position(|f| *f == ControlFrame::LoopBreak)
+        .unwrap() as u32;
+    func.instruction(&Instruction::BrIf(break_depth));
+
+    if let Some(first_binding) = bindings.first() {
+        let elem_slot = locals[first_binding].0;
+        if is_range {
+            func.instruction(&Instruction::LocalGet(seq_slot));
+            func.instruction(&Instruction::I64Load(MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
+            func.instruction(&Instruction::LocalGet(cur_slot));
+            func.instruction(&Instruction::I64Add);
+        } else {
+            let (list_get_idx, _, _) = functions["__aipo_list_get"];
+            func.instruction(&Instruction::LocalGet(seq_slot));
+            func.instruction(&Instruction::LocalGet(cur_slot));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::Call(list_get_idx));
+        }
+        func.instruction(&Instruction::LocalSet(elem_slot));
+    }
+
+    if let Some(second_binding) = bindings.get(1) {
+        let idx_slot = locals[second_binding].0;
+        func.instruction(&Instruction::LocalGet(cur_slot));
+        func.instruction(&Instruction::LocalSet(idx_slot));
+    }
+
+    control_stack.push(ControlFrame::RepeatStep);
+    func.instruction(&Instruction::Block(BlockType::Empty));
+    compile_stmts(
+        loop_body,
+        func,
+        locals,
+        functions,
+        control_stack,
+        structs,
+        static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
+        alloc_func_idx,
+        async_helpers,
+        return_type,
+        false,
+        repeat_id,
+        struct_depth,
+        call_depth,
+    )?;
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+
+    func.instruction(&Instruction::LocalGet(cur_slot));
+    func.instruction(&Instruction::I64Const(1));
+    func.instruction(&Instruction::I64Add);
+    func.instruction(&Instruction::LocalSet(cur_slot));
+
+    let loop_depth = control_stack
+        .iter()
+        .rev()
+        .position(|f| *f == ControlFrame::LoopContinue)
+        .unwrap() as u32;
+    func.instruction(&Instruction::Br(loop_depth));
+
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+
+    Ok(())
+}
+
+/// Compiles a `match target when ... else ...` statement.
+///
+/// Each `when` arm lists one or more literal patterns compared by equality
+/// against the target value; the first matching arm runs. Comparison uses the
+/// type of the target as the reference, and literals are coerced to it.
+#[allow(clippy::too_many_arguments)]
+fn compile_match_stmt(
+    match_stmt: &HirMatchStmt,
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType, LocalKind)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    structs: &HashMap<String, StructLayout>,
+    static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
+    alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
+    return_type: Option<WasmType>,
+    repeat_id: &mut u32,
+    struct_depth: usize,
+    call_depth: usize,
+) -> Result<(), WasmCompileError> {
+    *repeat_id += 1;
+    let id = *repeat_id;
+    let target_slot = locals[&format!("__match_target_{id}")].0;
+
+    let target_ty = compile_expr(
+        &match_stmt.target,
+        func,
+        locals,
+        functions,
+        control_stack,
+        structs,
+        static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
+        alloc_func_idx,
+        async_helpers,
+        struct_depth,
+        call_depth,
+    )?;
+
+    // The target lives in an i64 scratch slot so it can be re-read once per arm.
+    coerce_type(func, target_ty, WasmType::I64);
+    func.instruction(&Instruction::LocalSet(target_slot));
+
+    // One block wraps the whole match so `br` skips the remaining arms.
+    control_stack.push(ControlFrame::Block);
+    func.instruction(&Instruction::Block(BlockType::Empty));
+
+    for arm in &match_stmt.when_arms {
+        // Struct destructuring binds fields into locals, and a guard adds a second
+        // boolean test after the pattern chain. Neither is implemented by this backend
+        // yet, so both are reported instead of silently compiling to the wrong thing.
+        if let Some(aipo_hir::HirMatchPattern::Destructure(fields)) = arm
+            .patterns
+            .iter()
+            .find(|p| matches!(p, aipo_hir::HirMatchPattern::Destructure(_)))
+        {
+            return Err(WasmCompileError::UnsupportedStmt {
+                message: format!(
+                    "match destructuring is not supported by the Wasm backend yet (fields: {})",
+                    fields.join(", ")
+                ),
+                span: match_stmt.span,
+            });
+        }
+        if arm.guard.is_some() {
+            return Err(WasmCompileError::UnsupportedStmt {
+                message: "match guards are not supported by the Wasm backend yet".to_string(),
+                span: match_stmt.span,
+            });
+        }
+
+        // Each arm may list several patterns. Build a nested
+        // `if a then 1 else (if b then 1 else ... 0)` chain so exactly one boolean
+        // is left on the stack, then use it to guard the arm body.
+        if arm.patterns.is_empty() {
+            func.instruction(&Instruction::I32Const(0));
+        } else {
+            for pattern in &arm.patterns {
+                let aipo_hir::HirMatchPattern::Value(pattern) = pattern else {
+                    unreachable!("destructuring was rejected above")
+                };
+                compile_match_condition(
+                    pattern,
+                    target_slot,
+                    target_ty,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    struct_depth,
+                    call_depth,
+                )?;
+                func.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
+                func.instruction(&Instruction::I32Const(1));
+                func.instruction(&Instruction::Else);
+            }
+            // All patterns failed.
+            func.instruction(&Instruction::I32Const(0));
+            // Close one `if` per pattern, innermost first.
+            for _ in &arm.patterns {
+                func.instruction(&Instruction::End);
+            }
+        }
+
+        func.instruction(&Instruction::If(BlockType::Empty));
+        compile_stmts(
+            &arm.body,
+            func,
+            locals,
+            functions,
+            control_stack,
+            structs,
+            static_strings,
+            table_indices,
+            anon_map,
+            indirect_sigs,
+            alloc_func_idx,
+            async_helpers,
+            return_type,
+            false,
+            repeat_id,
+            struct_depth,
+            call_depth,
+        )?;
+        func.instruction(&Instruction::End);
+    }
+
+    if let Some(else_body) = &match_stmt.else_arm {
+        compile_stmts(
+            else_body,
+            func,
+            locals,
+            functions,
+            control_stack,
+            structs,
+            static_strings,
+            table_indices,
+            anon_map,
+            indirect_sigs,
+            alloc_func_idx,
+            async_helpers,
+            return_type,
+            false,
+            repeat_id,
+            struct_depth,
+            call_depth,
+        )?;
+    }
+
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+    Ok(())
+}
+
+/// Compiles a single `when` pattern, leaving a boolean `i32` on the stack.
+///
+/// String patterns compare pointers, so they use a raw pointer equality check
+/// against the static string pool entry the compiler already allocated.
+#[allow(clippy::too_many_arguments)]
+fn compile_match_condition(
+    pattern: &HirExpr,
+    target_slot: u32,
+    target_ty: WasmType,
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType, LocalKind)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    structs: &HashMap<String, StructLayout>,
+    static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
+    alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
+    struct_depth: usize,
+    call_depth: usize,
+) -> Result<(), WasmCompileError> {
+    if let HirExpr::Literal(Literal::String(text, _), _) = pattern {
+        let ptr = static_strings.get(text.as_str()).copied().ok_or(
+            WasmCompileError::UnsupportedExpr {
+                message: "string pattern is missing from the static pool".into(),
+                span: pattern.span(),
+            },
+        )?;
+        func.instruction(&Instruction::LocalGet(target_slot));
+        func.instruction(&Instruction::I32Const(ptr));
+        func.instruction(&Instruction::I32Eq);
+    } else {
+        let pat_ty = compile_expr(
+            pattern,
+            func,
+            locals,
+            functions,
+            control_stack,
+            structs,
+            static_strings,
+            table_indices,
+            anon_map,
+            indirect_sigs,
+            alloc_func_idx,
+            async_helpers,
+            struct_depth,
+            call_depth,
+        )?;
+        coerce_type(func, pat_ty, WasmType::I64);
+        func.instruction(&Instruction::LocalGet(target_slot));
+        match target_ty {
+            WasmType::F64 => {
+                func.instruction(&Instruction::F64Eq);
+            }
+            _ => {
+                func.instruction(&Instruction::I64Eq);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Compiles `attempt { body } failed [err] { handler }`.
+///
+/// The body runs inside a block marked as the target for failure propagation, so
+/// a statement-boundary failure check inside the body branches out instead of
+/// returning from the function. Whether the body fell through or unwound is
+/// then decided by the failure flag, which the handler clears before running.
+#[allow(clippy::too_many_arguments)]
+fn compile_attempt_stmt(
+    attempt: &HirAttemptStmt,
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType, LocalKind)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    structs: &HashMap<String, StructLayout>,
+    static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
+    alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
+    return_type: Option<WasmType>,
+    repeat_id: &mut u32,
+    struct_depth: usize,
+    call_depth: usize,
+) -> Result<(), WasmCompileError> {
+    let fg = async_helpers.fail_globals;
+
+    control_stack.push(ControlFrame::AttemptHandler);
+    func.instruction(&Instruction::Block(BlockType::Empty));
+
+    compile_stmts(
+        &attempt.body,
+        func,
+        locals,
+        functions,
+        control_stack,
+        structs,
+        static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
+        alloc_func_idx,
+        async_helpers,
+        return_type,
+        false,
+        repeat_id,
+        struct_depth,
+        call_depth,
+    )?;
+
+    control_stack.pop();
+    func.instruction(&Instruction::End);
+
+    // A non-zero status means the body unwound here with a pending failure.
+    func.instruction(&Instruction::GlobalGet(fg.status_idx));
+    func.instruction(&Instruction::If(BlockType::Empty));
+
+    // Clear the failure flag before the handler body runs, so the handler is
+    // free to raise its own failure.
+    func.instruction(&Instruction::I32Const(0));
+    func.instruction(&Instruction::GlobalSet(fg.status_idx));
+
+    // Bind the error variable, if the source named one.
+    if let Some(err_name) = &attempt.error_binding {
+        if let Some(&(slot, _, _)) = locals.get(err_name) {
+            func.instruction(&Instruction::GlobalGet(fg.message_idx));
+            func.instruction(&Instruction::LocalSet(slot));
+        }
+    }
+
+    compile_stmts(
+        &attempt.handler,
+        func,
+        locals,
+        functions,
+        control_stack,
+        structs,
+        static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
+        alloc_func_idx,
+        async_helpers,
+        return_type,
+        false,
+        repeat_id,
+        struct_depth,
+        call_depth,
+    )?;
+
+    func.instruction(&Instruction::End);
     Ok(())
 }
 
@@ -3227,6 +5024,87 @@ fn compile_expr(
                     };
                     Ok(WasmType::I32)
                 }
+                BinaryOp::And => {
+                    compile_logical_short_circuit(
+                        left,
+                        right,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                        false,
+                    )?;
+                    Ok(WasmType::I32)
+                }
+                BinaryOp::Or => {
+                    compile_logical_short_circuit(
+                        left,
+                        right,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                        true,
+                    )?;
+                    Ok(WasmType::I32)
+                }
+                BinaryOp::Range => {
+                    let l_ty = compile_expr(
+                        left,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                    )?;
+                    coerce_type(func, l_ty, WasmType::I64);
+                    let r_ty = compile_expr(
+                        right,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                    )?;
+                    coerce_type(func, r_ty, WasmType::I64);
+                    let (range_fn_idx, _, _) = functions["__aipo_range_new"];
+                    func.instruction(&Instruction::Call(range_fn_idx));
+                    Ok(WasmType::I32)
+                }
                 other => Err(WasmCompileError::UnsupportedExpr {
                     message: format!("operator `{other:?}` is not yet supported in Wasm backend"),
                     span: *span,
@@ -3476,8 +5354,126 @@ fn compile_expr(
                 type_index: type_idx,
                 table_index: 0,
             });
-
             Ok(ret_ty.unwrap_or(WasmType::I64))
+        }
+        HirExpr::Dict(entries, span) => {
+            if entries.is_empty() {
+                return Err(WasmCompileError::UnsupportedExpr {
+                    message: "empty dict literals require an element type annotation, \
+                              which the Wasm backend does not infer yet"
+                        .into(),
+                    span: *span,
+                });
+            }
+
+            let (dict_new_idx, _, _) = functions["__aipo_dict_new"];
+            let (dict_set_idx, _, _) = functions["__aipo_dict_set"];
+            let (string_hash_idx, _, _) = functions["__aipo_string_hash"];
+
+            let dict_temp_name = format!("__dict_temp_{}", struct_depth.min(7));
+            let dict_temp = locals[&dict_temp_name].0;
+
+            // Reserve one slot per entry; over-allocating is safe since the
+            // entry count tracks actual use.
+            func.instruction(&Instruction::I32Const(entries.len() as i32));
+            func.instruction(&Instruction::Call(dict_new_idx));
+            func.instruction(&Instruction::LocalSet(dict_temp));
+
+            for (key, value) in entries {
+                func.instruction(&Instruction::LocalGet(dict_temp));
+
+                // Keys are unboxed to an i64 that the dict search compares raw.
+                // Float, Bool, and small numeric keys use their bit pattern;
+                // strings hash to their FNV-1a value first.
+                let key_kind = infer_expr_kind(key, locals, functions, table_indices, anon_map);
+                if matches!(key_kind, LocalKind::String) {
+                    let key_ty = compile_expr(
+                        key,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                    )?;
+                    coerce_type(func, key_ty, WasmType::I32);
+                    func.instruction(&Instruction::Call(string_hash_idx));
+                } else {
+                    // Float keys round-trip through their bit pattern so a
+                    // Float(1.5) and an Int(1.5-bits) never compare equal.
+                    let key_ty = compile_expr(
+                        key,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                    )?;
+                    coerce_type(func, key_ty, WasmType::I64);
+                }
+
+                let val_ty = compile_expr(
+                    value,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    struct_depth,
+                    call_depth,
+                )?;
+                coerce_type(func, val_ty, WasmType::I64);
+                func.instruction(&Instruction::Call(dict_set_idx));
+                func.instruction(&Instruction::Drop);
+            }
+
+            func.instruction(&Instruction::LocalGet(dict_temp));
+            Ok(WasmType::I32)
+        }
+        HirExpr::Await(inner, _span) => {
+            // Compile the inner expression — should produce task_ptr (I32)
+            let inner_ty = compile_expr(
+                inner,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth,
+            )?;
+            // Coerce to I32 if needed (task handle is an I32 pointer)
+            coerce_type(func, inner_ty, WasmType::I32);
+            // Call __aipo_await(task_ptr) -> i64
+            func.instruction(&Instruction::Call(async_helpers.await_idx));
+            Ok(WasmType::I64)
         }
         HirExpr::Construct(type_name, fields, span) => {
             if let Some(struct_layout) = structs.get(type_name) {
@@ -3580,6 +5576,77 @@ fn compile_expr(
                     || (receiver_struct_name.is_none()
                         && !structs.values().any(|s| s.fields.contains_key("len"))))
             {
+                // Lists and Ranges expose their element count through the
+                // runtime helpers rather than the static string length path.
+                let receiver_kind =
+                    infer_expr_kind(receiver, locals, functions, table_indices, anon_map);
+                if matches!(receiver_kind, LocalKind::List) {
+                    let (list_len_idx, _, _) = functions["__aipo_list_len"];
+                    let r_ty = compile_expr(
+                        receiver,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                    )?;
+                    coerce_type(func, r_ty, WasmType::I32);
+                    func.instruction(&Instruction::Call(list_len_idx));
+                    return Ok(WasmType::I64);
+                }
+                if matches!(receiver_kind, LocalKind::Dict) {
+                    let (dict_len_idx, _, _) = functions["__aipo_dict_len"];
+                    let r_ty = compile_expr(
+                        receiver,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                    )?;
+                    coerce_type(func, r_ty, WasmType::I32);
+                    func.instruction(&Instruction::Call(dict_len_idx));
+                    return Ok(WasmType::I64);
+                }
+                if matches!(receiver_kind, LocalKind::Range) {
+                    let (range_len_idx, _, _) = functions["__aipo_range_len"];
+                    let r_ty = compile_expr(
+                        receiver,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                    )?;
+                    coerce_type(func, r_ty, WasmType::I32);
+                    func.instruction(&Instruction::Call(range_len_idx));
+                    return Ok(WasmType::I64);
+                }
+
                 let r_ty = compile_expr(
                     receiver,
                     func,
@@ -3667,10 +5734,18 @@ fn compile_expr(
                 }
             }
         }
-        HirExpr::Await(inner, _span) => {
-            // Compile the inner expression — should produce task_ptr (I32)
-            let inner_ty = compile_expr(
-                inner,
+        HirExpr::OrElse(left, right, _) => {
+            // `a or_else b`: evaluate `a`; if a failure is pending, clear the
+            // flag and evaluate `b` instead.
+            //
+            // Both branches store through an i64 scratch local and agree on an
+            // i64 result on the stack, so the `if` type-checks regardless of
+            // which branch runs.
+            let result_ty = infer_expr_type(left, locals, functions, structs, table_indices)?;
+            let fg = async_helpers.fail_globals;
+
+            let l_ty = compile_expr(
+                left,
                 func,
                 locals,
                 functions,
@@ -3685,10 +5760,255 @@ fn compile_expr(
                 struct_depth,
                 call_depth,
             )?;
-            // Coerce to I32 if needed (task handle is an I32 pointer)
-            coerce_type(func, inner_ty, WasmType::I32);
-            // Call __aipo_await(task_ptr) -> i64
-            func.instruction(&Instruction::Call(async_helpers.await_idx));
+            coerce_type(func, l_ty, WasmType::I64);
+
+            // Save the primary value, then branch on the failure flag.
+            func.instruction(&Instruction::LocalSet(
+                locals[&format!("__or_else_temp_{}", struct_depth.min(7))].0,
+            ));
+            func.instruction(&Instruction::GlobalGet(fg.status_idx));
+            func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+
+            // Failure pending: clear the flag and use the fallback.
+            func.instruction(&Instruction::I32Const(0));
+            func.instruction(&Instruction::GlobalSet(fg.status_idx));
+            let r_ty = compile_expr(
+                right,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth,
+            )?;
+            coerce_type(func, r_ty, WasmType::I64);
+
+            func.instruction(&Instruction::Else);
+            // No failure: use the saved primary value.
+            func.instruction(&Instruction::LocalGet(
+                locals[&format!("__or_else_temp_{}", struct_depth.min(7))].0,
+            ));
+            func.instruction(&Instruction::End);
+
+            // Both branches produced i64; narrow to the inferred result type.
+            coerce_type(func, WasmType::I64, result_ty);
+            Ok(result_ty)
+        }
+        HirExpr::List(elements, span) => {
+            if elements.is_empty() {
+                return Err(WasmCompileError::UnsupportedExpr {
+                    message: "empty list literals require an element type annotation, \
+                              which the Wasm backend does not infer yet"
+                        .into(),
+                    span: *span,
+                });
+            }
+
+            // Determine the element type so every slot can be coerced uniformly.
+            let _elem_ty = elements
+                .iter()
+                .map(|e| infer_expr_type(e, locals, functions, structs, table_indices))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .reduce(|acc, ty| {
+                    if acc == WasmType::F64 || ty == WasmType::F64 {
+                        WasmType::F64
+                    } else {
+                        acc
+                    }
+                })
+                .unwrap_or(WasmType::I64);
+
+            let (list_new_idx, _, _) = functions["__aipo_list_new"];
+            let (list_set_idx, _, _) = functions["__aipo_list_set"];
+
+            let list_temp_name = format!("__list_temp_{}", struct_depth.min(7));
+            let list_temp = locals[&list_temp_name].0;
+
+            func.instruction(&Instruction::I32Const(elements.len() as i32));
+            func.instruction(&Instruction::Call(list_new_idx));
+            func.instruction(&Instruction::LocalSet(list_temp));
+
+            for (i, element) in elements.iter().enumerate() {
+                func.instruction(&Instruction::LocalGet(list_temp));
+                func.instruction(&Instruction::I32Const(i as i32));
+                let val_ty = compile_expr(
+                    element,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    struct_depth,
+                    call_depth,
+                )?;
+                coerce_type(func, val_ty, WasmType::I64);
+                func.instruction(&Instruction::Call(list_set_idx));
+                func.instruction(&Instruction::Drop);
+            }
+
+            func.instruction(&Instruction::LocalGet(list_temp));
+            Ok(WasmType::I32)
+        }
+        HirExpr::Index(target, index, span) => {
+            let target_kind = infer_expr_kind(target, locals, functions, table_indices, anon_map);
+
+            // A Range index reads a bound; a Dict index looks the key up.
+            if matches!(target_kind, LocalKind::Range) {
+                let t_ty = compile_expr(
+                    target,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    struct_depth,
+                    call_depth,
+                )?;
+                coerce_type(func, t_ty, WasmType::I32);
+                let i_ty = compile_expr(
+                    index,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    struct_depth,
+                    call_depth,
+                )?;
+                coerce_type(func, i_ty, WasmType::I32);
+                let (range_get_idx, _, _) = functions["__aipo_range_get"];
+                func.instruction(&Instruction::Call(range_get_idx));
+                return Ok(WasmType::I64);
+            }
+
+            if matches!(target_kind, LocalKind::Dict) {
+                let t_ty = compile_expr(
+                    target,
+                    func,
+                    locals,
+                    functions,
+                    control_stack,
+                    structs,
+                    static_strings,
+                    table_indices,
+                    anon_map,
+                    indirect_sigs,
+                    alloc_func_idx,
+                    async_helpers,
+                    struct_depth,
+                    call_depth,
+                )?;
+                coerce_type(func, t_ty, WasmType::I32);
+
+                let index_kind = infer_expr_kind(index, locals, functions, table_indices, anon_map);
+                if matches!(index_kind, LocalKind::String) {
+                    let i_ty = compile_expr(
+                        index,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                    )?;
+                    coerce_type(func, i_ty, WasmType::I32);
+                    let (string_hash_idx, _, _) = functions["__aipo_string_hash"];
+                    func.instruction(&Instruction::Call(string_hash_idx));
+                } else {
+                    let i_ty = compile_expr(
+                        index,
+                        func,
+                        locals,
+                        functions,
+                        control_stack,
+                        structs,
+                        static_strings,
+                        table_indices,
+                        anon_map,
+                        indirect_sigs,
+                        alloc_func_idx,
+                        async_helpers,
+                        struct_depth,
+                        call_depth,
+                    )?;
+                    coerce_type(func, i_ty, WasmType::I64);
+                }
+
+                let (dict_get_idx, _, _) = functions["__aipo_dict_get"];
+                func.instruction(&Instruction::Call(dict_get_idx));
+                return Ok(WasmType::I64);
+            }
+
+            let _ = span;
+            let t_ty = compile_expr(
+                target,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth,
+            )?;
+            coerce_type(func, t_ty, WasmType::I32);
+            let i_ty = compile_expr(
+                index,
+                func,
+                locals,
+                functions,
+                control_stack,
+                structs,
+                static_strings,
+                table_indices,
+                anon_map,
+                indirect_sigs,
+                alloc_func_idx,
+                async_helpers,
+                struct_depth,
+                call_depth,
+            )?;
+            coerce_type(func, i_ty, WasmType::I32);
+            let (list_get_idx, _, _) = functions["__aipo_list_get"];
+            func.instruction(&Instruction::Call(list_get_idx));
             Ok(WasmType::I64)
         }
         other => Err(WasmCompileError::UnsupportedExpr {
@@ -3725,6 +6045,137 @@ fn emit_binary_op(
         }
     };
     Ok(())
+}
+
+/// Emits `left and right` / `left or right` with short-circuit semantics.
+///
+/// The right operand is only evaluated when the result depends on it:
+/// - `and` evaluates `right` only when `left` is true.
+/// - `or` evaluates `right` only when `left` is false.
+///
+/// The result is a normalized `i32` boolean (0 or 1).
+#[allow(clippy::too_many_arguments)]
+fn compile_logical_short_circuit(
+    left: &HirExpr,
+    right: &HirExpr,
+    func: &mut Function,
+    locals: &HashMap<String, (u32, WasmType, LocalKind)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    control_stack: &mut Vec<ControlFrame>,
+    structs: &HashMap<String, StructLayout>,
+    static_strings: &HashMap<String, i32>,
+    table_indices: &HashMap<String, u32>,
+    anon_map: &HashMap<SourceSpan, String>,
+    indirect_sigs: &HashMap<usize, u32>,
+    alloc_func_idx: u32,
+    async_helpers: AsyncHelpers,
+    struct_depth: usize,
+    call_depth: usize,
+    is_or: bool,
+) -> Result<(), WasmCompileError> {
+    // Evaluate the left operand, normalized to 0/1.
+    let l_ty = compile_expr(
+        left,
+        func,
+        locals,
+        functions,
+        control_stack,
+        structs,
+        static_strings,
+        table_indices,
+        anon_map,
+        indirect_sigs,
+        alloc_func_idx,
+        async_helpers,
+        struct_depth,
+        call_depth,
+    )?;
+    coerce_to_bool(func, l_ty);
+
+    func.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
+    if is_or {
+        func.instruction(&Instruction::I32Const(1));
+        func.instruction(&Instruction::Else);
+        let r_ty = compile_expr(
+            right,
+            func,
+            locals,
+            functions,
+            control_stack,
+            structs,
+            static_strings,
+            table_indices,
+            anon_map,
+            indirect_sigs,
+            alloc_func_idx,
+            async_helpers,
+            struct_depth,
+            call_depth,
+        )?;
+        coerce_to_bool(func, r_ty);
+    } else {
+        let r_ty = compile_expr(
+            right,
+            func,
+            locals,
+            functions,
+            control_stack,
+            structs,
+            static_strings,
+            table_indices,
+            anon_map,
+            indirect_sigs,
+            alloc_func_idx,
+            async_helpers,
+            struct_depth,
+            call_depth,
+        )?;
+        coerce_to_bool(func, r_ty);
+        func.instruction(&Instruction::Else);
+        func.instruction(&Instruction::I32Const(0));
+    }
+    func.instruction(&Instruction::End);
+    Ok(())
+}
+
+/// Emits a statement-boundary failure check.
+///
+/// When the failure status global is non-zero the function either branches to
+/// the nearest enclosing `attempt` handler, or - when there is none - returns
+/// immediately with a zero-valued dummy of the expected return type. This
+/// mirrors the stack VM's `CheckFailure` opcode together with its handler stack.
+fn emit_failure_check(
+    func: &mut Function,
+    control_stack: &[ControlFrame],
+    fail_globals: FailureGlobals,
+    return_type: Option<WasmType>,
+) {
+    func.instruction(&Instruction::GlobalGet(fail_globals.status_idx));
+    func.instruction(&Instruction::If(BlockType::Empty));
+
+    if let Some(depth) = control_stack
+        .iter()
+        .rev()
+        .position(|frame| *frame == ControlFrame::AttemptHandler)
+    {
+        // A pending failure unwinds to the nearest `attempt` handler block.
+        func.instruction(&Instruction::Br(depth as u32));
+    } else {
+        match return_type {
+            Some(WasmType::I64) => {
+                func.instruction(&Instruction::I64Const(0));
+            }
+            Some(WasmType::I32) => {
+                func.instruction(&Instruction::I32Const(0));
+            }
+            Some(WasmType::F64) => {
+                func.instruction(&Instruction::F64Const(0.0.into()));
+            }
+            None => {}
+        }
+        func.instruction(&Instruction::Return);
+    }
+    func.instruction(&Instruction::End);
 }
 
 /// Coerces a value on top of the Wasm stack to boolean `i32` (0 or 1).
@@ -3772,6 +6223,133 @@ fn coerce_type(func: &mut Function, from: WasmType, to: WasmType) {
     }
 }
 
+/// Returns `true` when evaluating a statement can leave a `Failure` pending.
+///
+/// The check mirrors the stack VM's `CheckFailure`, which fires at every
+/// statement boundary. Keeping it conservative (any call may fail) preserves
+/// semantics; the emitted guard is only two instructions, so the cost is
+/// confined to statements that can actually raise.
+fn stmt_may_fail(stmt: &HirStmt) -> bool {
+    match stmt {
+        HirStmt::Fail(..) => true,
+        HirStmt::Attempt(..) => false,
+        HirStmt::Let(_, expr, _) | HirStmt::Var(_, expr, _) => expr_may_fail(expr),
+        HirStmt::Return(Some(expr), _) => expr_may_fail(expr),
+        HirStmt::Return(None, _) => false,
+        HirStmt::Assign(_, expr, _) => expr_may_fail(expr),
+        HirStmt::Expr(expr) => expr_may_fail(expr),
+        HirStmt::CompoundAssign(..) => true,
+        HirStmt::If(if_stmt) => {
+            expr_may_fail(&if_stmt.condition)
+                || stmts_may_fail(&if_stmt.then_branch)
+                || if_stmt
+                    .elif_branches
+                    .iter()
+                    .any(|(cond, body)| expr_may_fail(cond) || stmts_may_fail(body))
+                || if_stmt
+                    .else_branch
+                    .as_ref()
+                    .is_some_and(|body| stmts_may_fail(body))
+        }
+        HirStmt::Match(match_stmt) => {
+            expr_may_fail(&match_stmt.target)
+                || match_stmt.when_arms.iter().any(|arm| {
+                    arm.patterns.iter().any(|p| match p {
+                        aipo_hir::HirMatchPattern::Value(e) => expr_may_fail(e),
+                        aipo_hir::HirMatchPattern::Destructure(_) => true,
+                    }) || arm.guard.as_ref().map(expr_may_fail).unwrap_or(false)
+                        || stmts_may_fail(&arm.body)
+                })
+                || match_stmt
+                    .else_arm
+                    .as_ref()
+                    .is_some_and(|body| stmts_may_fail(body))
+        }
+        HirStmt::While(cond, body, _) => expr_may_fail(cond) || stmts_may_fail(body),
+        HirStmt::Loop(body, _) | HirStmt::AwaitDo(body, _) => stmts_may_fail(body),
+        HirStmt::Repeat(count, _, body, _) => expr_may_fail(count) || stmts_may_fail(body),
+        HirStmt::Each(_, iterable, body, _) => expr_may_fail(iterable) || stmts_may_fail(body),
+        HirStmt::Break(_) | HirStmt::Continue(_) => false,
+        HirStmt::FnDecl(decl) => {
+            stmts_may_fail(&decl.body) || decl.params.iter().any(|p| p.default.is_some())
+        }
+    }
+}
+
+/// Returns `true` when any statement in the slice can leave a `Failure` pending.
+fn stmts_may_fail(stmts: &[HirStmt]) -> bool {
+    stmts.iter().any(stmt_may_fail)
+}
+
+/// Returns `true` when evaluating an expression can leave a `Failure` pending.
+fn expr_may_fail(expr: &HirExpr) -> bool {
+    match expr {
+        // `or_else` consumes a failure itself, so it only propagates when its
+        // fallback can raise.
+        HirExpr::OrElse(_, fallback, _) => expr_may_fail(fallback),
+        HirExpr::Call(callee, args, _) => {
+            // Calls into the module may reach `fail`; the runtime helpers and
+            // the primitive conversions below are pure and never raise.
+            let is_pure_builtin = matches!(&**callee, HirExpr::Identifier(name, _)
+                if name == "String"
+                    || name.starts_with("__aipo_")
+                    || name == "int"
+                    || name == "float"
+                    || name == "bool"
+                    || name == "str"
+                    || name == "len");
+            !is_pure_builtin || args.iter().any(|a| expr_may_fail(&a.value))
+        }
+        HirExpr::Await(inner, _) => expr_may_fail(inner),
+        HirExpr::Try(..) => true,
+        // `with` copies then writes; the write can fault on a `fixed` field, so treat the
+        // whole update as failing rather than assuming the base's fields stay writable.
+        HirExpr::With(base, _, _) => expr_may_fail(base),
+        HirExpr::Literal(..) | HirExpr::Identifier(..) | HirExpr::Fn(..) => false,
+        HirExpr::Unary(_, inner, _)
+        | HirExpr::Index(inner, _, _)
+        | HirExpr::Dot(inner, _, _)
+        | HirExpr::QuestionDot(inner, _, _) => expr_may_fail(inner),
+        HirExpr::Binary(_, lhs, rhs, _) => expr_may_fail(lhs) || expr_may_fail(rhs),
+        HirExpr::List(items, _) => items.iter().any(expr_may_fail),
+        HirExpr::Dict(entries, _) => entries
+            .iter()
+            .any(|(k, v)| expr_may_fail(k) || expr_may_fail(v)),
+        HirExpr::Construct(_, fields, _) => fields.iter().any(|(_, v)| expr_may_fail(v)),
+        HirExpr::If(cond, then_expr, else_expr, _) => {
+            expr_may_fail(cond) || expr_may_fail(then_expr) || expr_may_fail(else_expr)
+        }
+    }
+}
+
+/// Returns `true` when the expression is statically known to evaluate to a `Range`.
+///
+/// Only the shapes the backend can resolve without runtime type information are
+/// recognised: a local initialised from a `..` expression, or a call to
+/// `__aipo_range_new`.
+fn infer_expr_is_range(
+    expr: &HirExpr,
+    locals: &HashMap<String, (u32, WasmType, LocalKind)>,
+    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    _structs: &HashMap<String, StructLayout>,
+    table_indices: &HashMap<String, u32>,
+) -> bool {
+    match expr {
+        HirExpr::Binary(BinaryOp::Range, ..) => true,
+        HirExpr::Identifier(name, _) => locals
+            .get(name)
+            .is_some_and(|(_, _, kind)| matches!(kind, LocalKind::Range)),
+        HirExpr::If(_, then_expr, else_expr, _) => {
+            infer_expr_is_range(then_expr, locals, functions, _structs, table_indices)
+                && infer_expr_is_range(else_expr, locals, functions, _structs, table_indices)
+        }
+        _ => {
+            let _ = (functions, table_indices, _structs);
+            false
+        }
+    }
+}
+
 /// Infers the Wasm type of an HIR expression without emitting instructions.
 fn infer_expr_type(
     expr: &HirExpr,
@@ -3815,7 +6393,10 @@ fn infer_expr_type(
             | BinaryOp::Less
             | BinaryOp::LessEqual
             | BinaryOp::Greater
-            | BinaryOp::GreaterEqual => Ok(WasmType::I32),
+            | BinaryOp::GreaterEqual
+            | BinaryOp::And
+            | BinaryOp::Or => Ok(WasmType::I32),
+            BinaryOp::Range => Ok(WasmType::I32),
             BinaryOp::Add => {
                 let left_ty = infer_expr_type(left, locals, functions, structs, table_indices)?;
                 let right_ty = infer_expr_type(right, locals, functions, structs, table_indices)?;
@@ -3846,6 +6427,21 @@ fn infer_expr_type(
         }
         HirExpr::Await(..) => Ok(WasmType::I64),
         HirExpr::Construct(..) => Ok(WasmType::I32),
+        HirExpr::List(..) | HirExpr::Dict(..) => Ok(WasmType::I32),
+        HirExpr::Index(..) => Ok(WasmType::I64),
+        HirExpr::OrElse(left, right, _) => {
+            let l_ty = infer_expr_type(left, locals, functions, structs, table_indices)?;
+            let r_ty = infer_expr_type(right, locals, functions, structs, table_indices)?;
+            // Both branches contribute the result type; prefer the wider one so
+            // the fallback is not truncated.
+            if l_ty == WasmType::F64 || r_ty == WasmType::F64 {
+                Ok(WasmType::F64)
+            } else if l_ty == WasmType::I32 || r_ty == WasmType::I32 {
+                Ok(WasmType::I32)
+            } else {
+                Ok(WasmType::I64)
+            }
+        }
         HirExpr::Dot(receiver, field_name, _) => {
             let receiver_struct_name = match &**receiver {
                 HirExpr::Identifier(name, _) => {

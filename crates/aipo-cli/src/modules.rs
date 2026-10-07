@@ -593,11 +593,16 @@ fn rewrite_stmt(statement: HirStmt, scope: &ModuleScope) -> HirStmt {
         }
         HirStmt::Match(mut stmt) => {
             stmt.target = rewrite_expr(stmt.target, scope);
-            for (patterns, body) in &mut stmt.when_arms {
-                for pattern in patterns {
-                    *pattern = rewrite_expr(pattern.clone(), scope);
+            for arm in &mut stmt.when_arms {
+                for pattern in &mut arm.patterns {
+                    if let aipo_hir::HirMatchPattern::Value(expr) = pattern {
+                        *expr = rewrite_expr(expr.clone(), scope);
+                    }
                 }
-                rewrite_block(body, scope);
+                if let Some(guard) = &mut arm.guard {
+                    *guard = rewrite_expr(guard.clone(), scope);
+                }
+                rewrite_block(&mut arm.body, scope);
             }
             if let Some(arm) = &mut stmt.else_arm {
                 rewrite_block(arm, scope);

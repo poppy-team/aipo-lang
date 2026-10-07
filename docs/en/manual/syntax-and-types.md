@@ -14,7 +14,7 @@ To guarantee clean, high-performance, and accessible code (especially welcoming 
 | `struct Point { x, var y = 0 }` (Immutable fields by default) | Global mutations or unstructured state | Guarantees struct integrity; mutation requires explicit intent via `var`. |
 | `User{ name: "Ana", age: 28 }` (Key-value with `:`) | Divergent mapping syntax | Colon unifies key-value association across dictionaries and structs without motor confusion. |
 | `if condition { ... }` (Brace blocks) | Redundant parentheses around conditions | Lean syntax without parenthesis clutter, fully compatible with native rainbow brackets and code folding. |
-| `fn deposit(var self, amount)` (Explicit mutator receiver) | Hidden side effects in methods | `var` is the universal keyword for mutability, making side effects visually clear. |
+| `Type:deposit(var self, amount)` (Explicit mutator receiver) | Hidden side effects in methods | `var` is the universal keyword for mutability, making side effects visually clear. |
 | `a // b` and `a //= b` (Integer division) | Truncated manual casts | Expressive and symmetric canonical arithmetic operator alongside `+`, `-`, `*`, `/`. |
 | `f"User {id}: {email}"` (Direct interpolation) | String concatenation `"User " + String(id) + ": " + email` | Direct interpolation eliminates visual clutter and intermediate heap allocations. |
 | `r"C:\data\report.csv"` (Raw strings) | Escape sequences `"C:\\data\\report.csv"` | Raw strings eliminate backslash pollution in file paths and regex patterns. |
@@ -248,12 +248,12 @@ io.println(tags.to_list())       # ["backend", "compiler", "cli"]
 ```
 
 ### 4. Lazy Sequences (`Sequence`)
-To process high-volume datasets without allocating intermediate collections, create an on-demand sequence with `.lazy()`:
+To process large datasets without allocating intermediate collections, create a lazy sequence with `.lazy()`:
 
 ```aipo
 let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-# The pipeline below evaluates on demand in constant memory:
+# Chained operations evaluate on-demand in constant memory:
 let tripled_evens = numbers.lazy()
     .filter(x => x % 2 == 0)
     .map(x => x * 3)
@@ -261,6 +261,19 @@ let tripled_evens = numbers.lazy()
     .collect()
 
 io.println(tripled_evens) # [6, 12]
+```
+
+### 5. Enums (`enum`)
+`enum` defines a closed sum type with compiler-verified variants, supporting unit variants, positional payloads, and named field payloads:
+
+```aipo
+enum ExecutionMode {
+    Debug,
+    Optimized { level: Int },
+    Profiled(output_file: String),
+}
+
+let mode = ExecutionMode.Optimized { level: 3 }
 ```
 
 ---

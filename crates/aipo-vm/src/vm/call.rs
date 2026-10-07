@@ -275,17 +275,12 @@ impl Vm {
                     }
                 }
             }
-            Value::StructMethod {
-                receiver,
-                entry_ip,
-                total_arity,
-                is_async,
-            } => {
+            Value::StructMethod(sm) => {
                 if self.metrics_enabled {
                     self.metrics.bound_method_calls =
                         self.metrics.bound_method_calls.saturating_add(1);
                 }
-                let total_arity = total_arity as usize;
+                let total_arity = sm.total_arity as usize;
                 if arg_count + 1 != total_arity {
                     return Err(VmFault::TypeMismatch {
                         expected: format!("{} arguments", total_arity.saturating_sub(1)),
@@ -293,14 +288,14 @@ impl Vm {
                     }
                     .into());
                 }
-                if is_async {
+                if sm.is_async {
                     let callee = Value::Function {
-                        entry_ip,
+                        entry_ip: sm.entry_ip,
                         arity: total_arity as u16,
-                        is_async,
+                        is_async: sm.is_async,
                     };
                     let mut args = Vec::with_capacity(total_arity);
-                    args.push(Value::Struct(receiver));
+                    args.push(Value::Struct(sm.receiver.clone()));
                     args.extend(
                         self.stack[callee_idx + 1..callee_idx + 1 + arg_count]
                             .iter()
@@ -311,7 +306,7 @@ impl Vm {
                     self.push(Value::Task(id))?;
                     return Ok(());
                 }
-                self.stack[callee_idx] = Value::Struct(receiver);
+                self.stack[callee_idx] = Value::Struct(sm.receiver.clone());
                 let journal_start = self.mutation_journal.len();
                 self.frames.push(CallFrame::method(
                     self.ip,
@@ -321,7 +316,7 @@ impl Vm {
                 ));
                 self.upvalue_frames.push(None);
                 self.refresh_frame_base();
-                self.ip = entry_ip as usize;
+                self.ip = sm.entry_ip as usize;
             }
             other => {
                 return Err(VmFault::NotCallable {
@@ -439,7 +434,7 @@ impl Vm {
             Value::Function { arity, .. } => *arity as usize,
             Value::Closure(c) => c.arity,
             Value::Native(n) => n.arity,
-            Value::StructMethod { total_arity, .. } => (*total_arity as usize).saturating_sub(1),
+            Value::StructMethod(sm) => (sm.total_arity as usize).saturating_sub(1),
             other => {
                 return Err(VmFault::TypeMismatch {
                     expected: "callable test body".to_string(),

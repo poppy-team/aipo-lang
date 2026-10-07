@@ -1,0 +1,81 @@
+{
+  "id": "lang-aipo",
+  "name": "Aipo Language Canonical Engineering & Zero-Hallucination Contract",
+  "version": 1,
+  "schema_version": 2,
+  "purpose": "Enforce canonical Aipo V1 syntax (ADR-001): braces blocks, hash comments, Tipo:metodo association, structural interfaces, transactional failure handling, and zero-hallucination guardrails for LLMs.",
+  "risk_level": "medium",
+  "modes": [
+    "implementation",
+    "review",
+    "testing",
+    "architecture"
+  ],
+  "inputs": [
+    "Source code",
+    "Architecture specifications",
+    "Task acceptance criteria"
+  ],
+  "outputs": [
+    "Canonical Aipo V1 source code",
+    "Unit and integration tests",
+    "Package manifests (aipo.toml)"
+  ],
+  "requires": [
+    "clean-code",
+    "testing-quality"
+  ],
+  "conflicts": [],
+  "capabilities": [
+    "filesystem.read",
+    "filesystem.write",
+    "process.spawn"
+  ],
+  "references": [
+    "knowledge/grammar-matrix.md",
+    "knowledge/anti-patterns.md",
+    "knowledge/stdlib-inventory.md"
+  ],
+  "templates": [],
+  "checks": [
+    "knowledge/anti-patterns.md"
+  ],
+  "scripts": [
+    "scripts/verify.sh",
+    "scripts/lint_aipo.py"
+  ],
+  "examples": [
+    "examples/app_cli.aipo",
+    "examples/lib_module.aipo",
+    "examples/domain_entity.aipo",
+    "examples/error_handling.aipo",
+    "examples/async_tasks.aipo",
+    "examples/batch_binding.aipo",
+    "examples/enum_state_machine.aipo"
+  ],
+  "required_evidence": [
+    "syntax-check",
+    "test"
+  ],
+  "stop_conditions": [
+    "Code passes canonical Aipo V1 syntax checks with zero forbidden tokens",
+    "All invariants and tests verified",
+    "Token budget exhausted"
+  ],
+  "provenance": {
+    "origin": "aipo-core",
+    "license": "MIT",
+    "source": "aipo-lang",
+    "version": "1.0.0",
+    "checksum": "",
+    "modified": "2026-10-06"
+  },
+  "select": {
+    "stack_any": [
+      "aipo",
+      "aipo-lang"
+    ]
+  },
+  "requires_any": [],
+  "tools": []
+}

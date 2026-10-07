@@ -15,6 +15,7 @@ use crate::value::{FailureValue, Value, check_finite_float, check_safe_int};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
+#[cfg(feature = "unicode")]
 use unicode_normalization::UnicodeNormalization;
 
 /// Inclusive upper bound of the Aipo `Byte` value range.
@@ -124,7 +125,7 @@ impl TypeTag {
                 | (Self::List, Value::List(_))
                 | (Self::Dict, Value::Dict(_))
                 | (Self::Bytes, Value::Bytes(_))
-                | (Self::Range, Value::Range { .. })
+                | (Self::Range, Value::Range(_))
                 | (Self::Set, Value::Set(_))
                 | (Self::Sequence, Value::Sequence(_))
                 | (Self::Task, Value::Task(_))
@@ -333,7 +334,10 @@ pub fn convert_string(value: &Value) -> Result<Value, VmFault> {
         | Value::Type(_) => {
             // Canon makes NFC an invariant of `String`, so an explicit conversion is a
             // construction boundary and its result is normalized before the program sees it.
+            #[cfg(feature = "unicode")]
             let text: String = value.to_string().nfc().collect();
+            #[cfg(not(feature = "unicode"))]
+            let text: String = value.to_string();
             Ok(Value::String(Rc::new(text)))
         }
         Value::Failure(f) => Ok(Value::Failure(Rc::clone(f))),

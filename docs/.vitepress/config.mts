@@ -6,8 +6,12 @@ const aipoLanguage = {
   displayName: 'Aipo',
   patterns: [
     {
-      name: 'comment.line.double-slash.aipo',
-      match: '//.*$'
+      name: 'comment.line.number-sign.directive.aipo',
+      match: '#!.*$'
+    },
+    {
+      name: 'comment.line.number-sign.aipo',
+      match: '#.*$'
     },
     {
       name: 'string.quoted.double.aipo',
@@ -15,11 +19,11 @@ const aipoLanguage = {
     },
     {
       name: 'keyword.control.aipo',
-      match: '\\b(if|then|else|while|loop|repeat|until|each|in|do|end|break|continue|return|fail|attempt|recover|async|await|and|or|not|or_else|import|as)\\b'
+      match: '\\b(if|then|elif|else|while|loop|repeat|each|in|do|break|continue|return|fail|attempt|failed|async|await|and|or|not|or_else|import|export|as|is|when|match)\\b'
     },
     {
       name: 'keyword.declaration.aipo',
-      match: '\\b(fn|let|var|fixed|struct|impl|interface|satisfy|invariant|init)\\b'
+      match: '\\b(fn|let|var|struct|enum|interface|invariant|init|self)\\b'
     },
     {
       name: 'constant.language.aipo',
@@ -104,6 +108,7 @@ export default defineConfig({
           },
           { text: 'Ferramentas', link: '/tools/' },
           { text: 'Exemplos', link: '/examples/' },
+          { text: 'Guia LLMs', link: '/llm/' },
           { text: 'Zoe UI', link: '/zoe/' },
           {
             text: 'Pacotes',
@@ -129,6 +134,18 @@ export default defineConfig({
         ],
 
         sidebar: {
+          '/llm/': [
+            {
+              text: 'Guia Canônico para LLMs (V1)',
+              items: [
+                { text: 'Visão Geral & Índice', link: '/llm/' },
+                { text: 'Regras Positivas & Negativas', link: '/llm/rules' },
+                { text: 'Clean Code & Ergonomia', link: '/llm/clean-code' },
+                { text: 'Estrutura de Projetos', link: '/llm/project-structure' },
+                { text: 'Cheat Sheet Ultra-Compacto', link: '/llm/cheatsheet' }
+              ]
+            }
+          ],
           '/zoe/': [
             {
               text: 'Zoe UI Framework',
@@ -248,6 +265,7 @@ export default defineConfig({
                 { text: 'Macroarquitetura', link: '/architecture/' },
                 { text: 'Frontend do Compilador', link: '/architecture/compiler-frontend' },
                 { text: 'Bytecode & Máquina Virtual', link: '/architecture/bytecode-and-vm' },
+                { text: 'Perfil Embedded & Shell', link: '/architecture/embedded-and-shell-profile' },
                 { text: 'Backend JavaScript', link: '/architecture/js-emitter' },
                 { text: 'Host ABI & Sandboxing', link: '/architecture/host-abi' },
                 { text: 'Contratos das Crates', link: '/architecture/crates' }
@@ -271,7 +289,8 @@ export default defineConfig({
                 { text: 'ADP-010: Thin Proofs (Rust, C, JS)', link: '/decisions/adp-010' },
                 { text: 'ADP-011: Roteiro Performance & Ergonomia', link: '/decisions/adp-011' },
                 { text: 'ADP-012: Modernização Ergonômica', link: '/decisions/adp-012' },
-                { text: 'ADP-013: Substrato WebAssembly & Self-Hosting', link: '/decisions/adp-013' }
+                { text: 'ADP-013: Substrato WebAssembly & Self-Hosting', link: '/decisions/adp-013' },
+                { text: 'ADP-014: Perfil Embedded & Dual-Track', link: '/decisions/adp-014' }
               ]
             }
           ],

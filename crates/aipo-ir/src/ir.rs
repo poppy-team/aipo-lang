@@ -96,6 +96,14 @@ pub enum CoreInst {
     SetField(String, SourceSpan),
     /// Index get: `coll[idx]`.
     GetIndex(SourceSpan),
+    /// Deep-copy the struct on top of the stack, replacing it with the copy.
+    ///
+    /// Backs the functional update `base with { ... }`. A struct value is a shared
+    /// `Rc<RefCell<..>>`, so `Dup` would alias the base and the update would mutate it;
+    /// this makes the copy that keeps the base intact. Field values are carried over
+    /// by reference, which matches every other copy in the VM (a `List` in two structs
+    /// is still the same list until something writes to it).
+    CloneStruct(SourceSpan),
     /// Index set: `coll[idx] = val`.
     ///
     /// Pops the value, the index and the collection; on success the stack is exactly as

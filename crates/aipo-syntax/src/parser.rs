@@ -80,6 +80,11 @@ pub struct Parser<'a> {
     depth_aborted: bool,
     /// Whether multiple comma-separated subjects before `is` (`a, b, c is T`) are permitted in the current context.
     allow_comma_is: bool,
+    /// Whether the expression being parsed is the type operand of an `is` test.
+    ///
+    /// There, a trailing `?` is the nullable marker of `is Int?`, not the failure
+    /// propagation `expr?`. The flag suspends the postfix so the caller can consume it.
+    in_is_type: bool,
 }
 
 /// Maximum expression nesting before the parser bails out with
@@ -115,6 +120,7 @@ impl<'a> Parser<'a> {
             block_depth: 0,
             depth_aborted: false,
             allow_comma_is: true,
+            in_is_type: false,
         }
     }
 
@@ -1064,7 +1070,15 @@ impl<'a> Parser<'a> {
         }
 
         let mut elif_branches = Vec::new();
-        while self.match_token(&TokenKind::Elif) {
+        while self.match_token(&TokenKind::Elif)
+            || (self.check(&TokenKind::Else)
+                && self.cursor + 1 < self.tokens.len()
+                && self.tokens[self.cursor + 1].kind == TokenKind::If)
+        {
+            if self.check(&TokenKind::Else) {
+                self.advance(); // 'else'
+                self.advance(); // 'if'
+            }
             let elif_cond = self.parse_expr()?;
             let _ = self.match_token(&TokenKind::Then);
             self.skip_newlines();
@@ -1137,17 +1151,47 @@ impl<'a> Parser<'a> {
 
         let mut when_arms = Vec::new();
         while self.match_token(&TokenKind::When) {
+            let arm_start = self.tokens[self.cursor - 1].span;
             let mut patterns = Vec::new();
             loop {
-                let old = self.allow_comma_is;
-                self.allow_comma_is = false;
-                let pat = self.parse_expr()?;
-                self.allow_comma_is = old;
-                patterns.push(pat);
+                // Struct destructuring: `when { name, age }`
+                if self.check(&TokenKind::LBrace) {
+                    let _ = self.advance(); // consume '{'
+                    self.skip_newlines();
+                    let mut fields = Vec::new();
+                    while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+                        fields.push(self.parse_ident()?);
+                        self.skip_newlines();
+                        if !self.match_token(&TokenKind::Comma) {
+                            break;
+                        }
+                        self.skip_newlines();
+                    }
+                    self.expect(
+                        &TokenKind::RBrace,
+                        "expected '}' to close destructuring pattern",
+                    )?;
+                    patterns.push(MatchPattern::Destructure(fields));
+                } else {
+                    let old = self.allow_comma_is;
+                    self.allow_comma_is = false;
+                    let pat = self.parse_expr()?;
+                    self.allow_comma_is = old;
+                    patterns.push(MatchPattern::Value(pat));
+                }
                 if !self.match_token(&TokenKind::Comma) {
                     break;
                 }
             }
+
+            // Optional guard: `when pattern if guard then`
+            let guard = if self.match_token(&TokenKind::If) {
+                let cond = self.parse_expr()?;
+                Some(cond)
+            } else {
+                None
+            };
+
             let _ = self.match_token(&TokenKind::Then);
             self.skip_newlines();
             let arm_brace = self.match_token(&TokenKind::LBrace);
@@ -1169,7 +1213,13 @@ impl<'a> Parser<'a> {
                 self.expect(&TokenKind::RBrace, "expected '}' after when arm")?;
                 self.skip_newlines();
             }
-            when_arms.push((patterns, arm_body));
+            let arm_end = self.tokens[self.cursor - 1].span;
+            when_arms.push(MatchArm {
+                patterns,
+                guard,
+                body: arm_body,
+                span: arm_start.merge(arm_end),
+            });
         }
 
         let else_arm = if self.match_token(&TokenKind::Else) {
@@ -1863,7 +1913,11 @@ impl<'a> Parser<'a> {
             );
             return None;
         }
-        let type_expr = self.parse_pratt_expr(Precedence::Comparison)?;
+        let was_in_is_type = self.in_is_type;
+        self.in_is_type = true;
+        let type_expr = self.parse_pratt_expr(Precedence::Comparison);
+        self.in_is_type = was_in_is_type;
+        let type_expr = type_expr?;
         let is_nullable = self.match_token(&TokenKind::Question);
         let comp_op = if is_nullable {
             BinaryOp::IsNullable
@@ -2246,7 +2300,11 @@ impl<'a> Parser<'a> {
                     );
                     return None;
                 }
-                let right = self.parse_pratt_expr(Precedence::Comparison)?;
+                let was_in_is_type = self.in_is_type;
+                self.in_is_type = true;
+                let right = self.parse_pratt_expr(Precedence::Comparison);
+                self.in_is_type = was_in_is_type;
+                let right = right?;
                 let is_nullable = self.match_token(&TokenKind::Question);
                 let op = if is_nullable {
                     BinaryOp::IsNullable
@@ -2277,7 +2335,11 @@ impl<'a> Parser<'a> {
                                 );
                                 return None;
                             }
-                            let right = self.parse_pratt_expr(Precedence::Comparison)?;
+                            let was_in_is_type = self.in_is_type;
+                            self.in_is_type = true;
+                            let right = self.parse_pratt_expr(Precedence::Comparison);
+                            self.in_is_type = was_in_is_type;
+                            let right = right?;
                             let is_nullable = self.match_token(&TokenKind::Question);
                             let comp_op = if is_nullable {
                                 BinaryOp::IsNullable
@@ -2418,6 +2480,23 @@ impl<'a> Parser<'a> {
                 Some(Expr::QuestionDot(Box::new(left), field, span))
             }
 
+            // Failure propagation: `expr?` propagates a `Failure` and otherwise
+            // yields the value, so it chains postfix like `foo()?.bar?`.
+            TokenKind::Question => {
+                let span = left.span().merge(op_span);
+                Some(Expr::Try(Box::new(left), span))
+            }
+
+            // Functional struct update: `base with { field: value, ... }` produces
+            // a new instance; the base is copied and only the named fields are
+            // replaced, so the field block lists what changes and nothing else.
+            TokenKind::With => {
+                let start = left.span();
+                let (fields, end) = self.parse_braced_fields("expected '{' after 'with'")?;
+                let span = start.merge(end);
+                Some(Expr::With(Box::new(left), WithExpr { fields, span }))
+            }
+
             // Index access: `target[index]`, including half-open slices with omitted
             // bounds (`target[..2]`, `target[2..]`, `target[..]`), which canon allows.
             TokenKind::LBracket => {
@@ -2488,11 +2567,18 @@ impl<'a> Parser<'a> {
     }
 
     fn peek_precedence(&self) -> Precedence {
+        // The `?` after an `is` type belongs to the nullable marker, not to propagation,
+        // so it must not out-rank the operand's own precedence and pull the Pratt loop.
+        if self.in_is_type && matches!(self.peek(), TokenKind::Question) {
+            return Precedence::Lowest;
+        }
         match self.peek() {
             TokenKind::LParen
             | TokenKind::Dot
             | TokenKind::QuestionDot
+            | TokenKind::Question
             | TokenKind::LBracket
+            | TokenKind::With
             | TokenKind::Do => Precedence::Call,
             TokenKind::Star
             | TokenKind::Slash
@@ -2518,7 +2604,23 @@ impl<'a> Parser<'a> {
 
     fn parse_construct_expr(&mut self, target: Ident) -> Option<Expr> {
         let start = target.span;
-        self.expect(&TokenKind::LBrace, "expected '{' in struct construction")?;
+        let (fields, end) = self.parse_braced_fields("expected '{' in struct construction")?;
+        Some(Expr::Construct(ConstructExpr {
+            target,
+            fields,
+            span: start.merge(end),
+        }))
+    }
+
+    /// Parses a `{ ... }` field list shared by construction and `with` updates.
+    ///
+    /// Both spellings accept the same field syntax — named (`x: 1`, `x = 1`) or positional —
+    /// so the loop lives here once. Returns the fields and the span of the closing brace.
+    fn parse_braced_fields(
+        &mut self,
+        missing_brace: &str,
+    ) -> Option<(Vec<ConstructField>, SourceSpan)> {
+        self.expect(&TokenKind::LBrace, missing_brace)?;
         self.skip_newlines();
 
         let mut fields = Vec::new();
@@ -2559,11 +2661,7 @@ impl<'a> Parser<'a> {
                 "expected '}' to close struct construction",
             )?
             .span;
-        Some(Expr::Construct(ConstructExpr {
-            target,
-            fields,
-            span: start.merge(end),
-        }))
+        Some((fields, end))
     }
 
     fn parse_trailing_block(&mut self) -> Option<TrailingBlock> {

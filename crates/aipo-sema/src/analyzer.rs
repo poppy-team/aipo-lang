@@ -60,6 +60,17 @@ fn contract_label(annotation: &TypeAnnotation) -> String {
     }
 }
 
+/// Renders a literal as its source text for a diagnostic message.
+fn describe_literal(literal: &Literal) -> String {
+    match literal {
+        Literal::Int(raw) => raw.clone(),
+        Literal::Float(raw) => raw.clone(),
+        Literal::Bool(value) => value.to_string(),
+        Literal::String(text, _) => format!("\"{text}\""),
+        Literal::None => "none".to_string(),
+    }
+}
+
 /// One declared parameter contract, aligned with its declaration position.
 #[derive(Debug, Clone)]
 struct ParameterContract {
@@ -651,9 +662,53 @@ impl<'a> SemanticAnalyzer<'a> {
             self.analyze_stmt(stmt);
         }
 
+        self.check_return_consistency(f);
+
         self.current_fn_is_mut = prev_fn_is_mut;
         self.current_return_contract = prev_return_contract;
         self.current_scope = parent;
+    }
+
+    /// Reports a function whose `return` statements disagree about producing a value.
+    ///
+    /// Mixing `return x` with a bare `return` leaves the caller unable to know
+    /// which shape it received, so it is reported once per function. A body that
+    /// returns values on every path but can also fall off the end is reported
+    /// separately, since the caller would observe `none` instead of a value.
+    fn check_return_consistency(&mut self, f: &HirFunctionDecl) {
+        let report = crate::flow::analyze_function(f);
+
+        if report.returns == crate::flow::ReturnShape::Mixed {
+            let message = if f.return_type.is_some() {
+                "function declares a value contract but mixes `return <value>` with a bare \
+                 `return`"
+            } else {
+                "function mixes `return <value>` with a bare `return`"
+            };
+            self.diagnostics.push(
+                Diagnostic::error(DiagnosticCode::AIPO_SEM_RETURN_VALUE_MISMATCH, message)
+                    .with_primary_span(self.source, f.span),
+            );
+        }
+
+        // A missing value only matters when the caller was promised one, either
+        // by a written contract or by the value-returning paths themselves.
+        let promises_value =
+            f.return_type.is_some() || report.returns == crate::flow::ReturnShape::AllValues;
+        if promises_value && report.missing_value_path {
+            let message = if let Some(ret_ty) = &f.return_type {
+                format!(
+                    "function declares `-> {}` but a path reaches the end without returning a value",
+                    contract_label(ret_ty)
+                )
+            } else {
+                "a path reaches the end of the function without returning a value".to_string()
+            };
+            self.diagnostics.push(
+                Diagnostic::error(DiagnosticCode::AIPO_SEM_PATH_MISSING_RETURN_VALUE, message)
+                    .with_primary_span(self.source, f.span),
+            );
+        }
     }
 
     fn analyze_stmt(&mut self, stmt: &HirStmt) {
@@ -688,6 +743,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.check_assignment_target(target, *span);
             }
             HirStmt::If(s) => {
+                self.check_condition_bool(&s.condition);
                 self.analyze_expr(&s.condition);
                 self.with_block_scope(|this| {
                     for st in &s.then_branch {
@@ -695,6 +751,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                 });
                 for (cond, body) in &s.elif_branches {
+                    self.check_condition_bool(cond);
                     self.analyze_expr(cond);
                     self.with_block_scope(|this| {
                         for st in body {
@@ -712,12 +769,30 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             HirStmt::Match(s) => {
                 self.analyze_expr(&s.target);
-                for (patterns, body) in &s.when_arms {
-                    for p in patterns {
-                        self.analyze_expr(p);
+                for arm in &s.when_arms {
+                    for p in &arm.patterns {
+                        if let aipo_hir::HirMatchPattern::Value(expr) = p {
+                            self.analyze_expr(expr);
+                        }
                     }
                     self.with_block_scope(|this| {
-                        for st in body {
+                        // The arm's destructured fields exist inside its scope and guard.
+                        for p in &arm.patterns {
+                            if let aipo_hir::HirMatchPattern::Destructure(fields) = p {
+                                for field in fields {
+                                    this.declare_binding(
+                                        field,
+                                        Mutability::Immutable,
+                                        aipo_source::SourceSpan::empty(0),
+                                    );
+                                }
+                            }
+                        }
+                        if let Some(guard) = &arm.guard {
+                            this.check_condition_bool(guard);
+                            this.analyze_expr(guard);
+                        }
+                        for st in &arm.body {
                             this.analyze_stmt(st);
                         }
                     });
@@ -738,6 +813,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 });
             }
             HirStmt::While(cond, body, _) => {
+                self.check_condition_bool(cond);
                 self.analyze_expr(cond);
                 self.with_block_scope(|this| {
                     for st in body {
@@ -881,6 +957,39 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.check_forgotten_task(expr);
             }
         }
+    }
+
+    /// Reports a condition operand whose category is provably not `Bool`.
+    ///
+    /// Only a literal is decidable before execution, which is exactly the case
+    /// worth catching: the author wrote `if 42 then`, not a value whose type is
+    /// merely unknown. Every other expression is accepted, leaving a
+    /// dynamically-typed program to decide at runtime.
+    fn check_condition_bool(&mut self, expr: &HirExpr) {
+        let Some(problem) = crate::flow::non_bool_condition(expr) else {
+            return;
+        };
+        let crate::flow::ConditionProblem::Literal(literal) = problem;
+        let found = describe_literal(&literal);
+        let span = expr.span();
+        let replacement = format!("{found} != 0");
+        let suggestion = aipo_diagnostics::Suggestion {
+            message: "compare the value against zero".to_string(),
+            replacement,
+            start: span.start,
+            end: span.end,
+        };
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::AIPO_SEM_NON_BOOL_CONDITION,
+                format!("condition must be `Bool`, found `{found}`"),
+            )
+            .with_primary_span(self.source, span)
+            .with_note(format!(
+                "a condition is `true` or `false`; `{found}` is not one"
+            ))
+            .with_suggestion(suggestion),
+        );
     }
 
     /// Walks an expression in statement, initializer or return position, where
@@ -1378,7 +1487,13 @@ impl<'a> SemanticAnalyzer<'a> {
                     );
                 }
             }
-            HirExpr::Unary(_, inner, _) => self.analyze_expr(inner),
+            HirExpr::Unary(op, inner, _) => {
+                // `not` requires a Bool operand, exactly like `and`/`or`.
+                if matches!(op, aipo_ast::UnaryOp::Not) {
+                    self.check_condition_bool(inner);
+                }
+                self.analyze_expr(inner);
+            }
             HirExpr::Await(inner, span) => {
                 // Explicit `await` lives in statements, initializers and
                 // returns (checked via `analyze_expr_top`); anywhere else it
@@ -1392,7 +1507,61 @@ impl<'a> SemanticAnalyzer<'a> {
                 );
                 self.analyze_expr(inner);
             }
-            HirExpr::Binary(_, left, right, _) => {
+            HirExpr::Try(inner, _) => {
+                // `expr?` is legal in any expression position; it evaluates the
+                // operand and propagates a `Failure` immediately.
+                self.analyze_expr(inner);
+            }
+            HirExpr::With(base, updates, span) => {
+                // Functional struct update. When the base is a struct literal, its type
+                // is known statically, so the block is checked against the declaration
+                // up front: every name must exist and none may be `fixed`, turning a
+                // typo into a diagnostic rather than a runtime fault. Any other base
+                // (a variable, a call result) is checked by the VM instead.
+                self.analyze_expr(base);
+                let declared = match &**base {
+                    HirExpr::Construct(target, _, _) => self
+                        .facts
+                        .scopes
+                        .lookup(self.current_scope, target)
+                        .and_then(|symbol| match &symbol.kind {
+                            SymbolKind::Struct { fields } => Some((target.clone(), fields.clone())),
+                            _ => None,
+                        }),
+                    _ => None,
+                };
+                for (name, value) in updates {
+                    if let Some((target, fields)) = &declared {
+                        match fields.get(name) {
+                            None => self.diagnostics.push(
+                                Diagnostic::error(
+                                    DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                    format!("struct '{target}' has no field '{name}'"),
+                                )
+                                .with_primary_span(self.source, *span),
+                            ),
+                            Some(true) => self.diagnostics.push(
+                                Diagnostic::error(
+                                    DiagnosticCode::AIPO_SEM_READONLY_MUTATION,
+                                    format!(
+                                        "cannot replace fixed field '{name}' through 'with'; 'fixed' is part of the type's identity"
+                                    ),
+                                )
+                                .with_primary_span(self.source, *span),
+                            ),
+                            Some(false) => {}
+                        }
+                    }
+                    self.analyze_expr(value);
+                }
+            }
+            HirExpr::Binary(op, left, right, _) => {
+                // `and`/`or` short-circuit on a Bool: a non-Bool literal is
+                // provable before execution and reported, like a wrong `if`.
+                if matches!(op, aipo_ast::BinaryOp::And | aipo_ast::BinaryOp::Or) {
+                    self.check_condition_bool(left);
+                    self.check_condition_bool(right);
+                }
                 self.analyze_expr(left);
                 self.analyze_expr(right);
             }
@@ -1480,22 +1649,47 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             HirExpr::Construct(target, fields, span) => {
-                if self
+                let declared_fields = self
                     .facts
                     .scopes
                     .lookup(self.current_scope, target)
-                    .is_none()
-                {
+                    .and_then(|symbol| match &symbol.kind {
+                        SymbolKind::Struct { fields } => Some(fields.clone()),
+                        _ => None,
+                    });
+
+                if declared_fields.is_none() {
                     self.diagnostics.push(
                         Diagnostic::error(
                             DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
-                            format!("unknown struct type '{}' in construction", target),
+                            format!("unknown struct type '{target}' in construction"),
                         )
                         .with_primary_span(self.source, *span),
                     );
                 }
-                for (_, f_expr) in fields {
-                    self.analyze_expr(f_expr);
+
+                if let Some(known) = declared_fields {
+                    for (maybe_name, f_expr) in fields {
+                        // Positional fields cannot be validated against a name.
+                        let Some(name) = maybe_name else {
+                            self.analyze_expr(f_expr);
+                            continue;
+                        };
+                        if !known.contains_key(name) {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                    format!("struct '{target}' has no field '{name}'"),
+                                )
+                                .with_primary_span(self.source, *span),
+                            );
+                        }
+                        self.analyze_expr(f_expr);
+                    }
+                } else {
+                    for (_, f_expr) in fields {
+                        self.analyze_expr(f_expr);
+                    }
                 }
             }
             HirExpr::Fn(f) => {
