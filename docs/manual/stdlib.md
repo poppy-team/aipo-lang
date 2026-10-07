@@ -59,30 +59,28 @@ struct Pendulo {
     velocidade_angular
 }
 
-impl Pendulo {
-    init(comprimento, gravidade, angulo, velocidade_angular) {
-        self.comprimento = comprimento
-        self.gravidade = gravidade
-        self.angulo = angulo
-        self.velocidade_angular = velocidade_angular
-    }
+Pendulo:init(comprimento, gravidade, angulo, velocidade_angular) {
+    self.comprimento = comprimento
+    self.gravidade = gravidade
+    self.angulo = angulo
+    self.velocidade_angular = velocidade_angular
+}
 
-    fn atualizar(self, delta_tempo) {
-        # Aceleração angular: (-g / L) * sin(theta)
-        let aceleracao = (-self.gravidade / self.comprimento) * math.sin(self.angulo)
-        
-        let nova_vel = self.velocidade_angular + aceleracao * delta_tempo
-        let novo_angulo = self.angulo + nova_vel * delta_tempo
-        
-        # Mantém o ângulo contido no intervalo seguro [-pi, pi]
-        let angulo_normalizado = math.clamp(novo_angulo, -math.pi, math.pi)
-        
-        return Pendulo{
-            comprimento: self.comprimento,
-            gravidade: self.gravidade,
-            angulo: angulo_normalizado,
-            velocidade_angular: nova_vel,
-        }
+Pendulo:atualizar(delta_tempo) {
+    # Aceleração angular: (-g / L) * sin(theta)
+    let aceleracao = (-self.gravidade / self.comprimento) * math.sin(self.angulo)
+    
+    let nova_vel = self.velocidade_angular + aceleracao * delta_tempo
+    let novo_angulo = self.angulo + nova_vel * delta_tempo
+    
+    # Mantém o ângulo contido no intervalo seguro [-pi, pi]
+    let angulo_normalizado = math.clamp(novo_angulo, -math.pi, math.pi)
+    
+    return Pendulo{
+        comprimento: self.comprimento,
+        gravidade: self.gravidade,
+        angulo: angulo_normalizado,
+        velocidade_angular: nova_vel,
     }
 }
 

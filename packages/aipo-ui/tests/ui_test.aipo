@@ -5,7 +5,7 @@
 
 import aipo.ui as ui
 
-test("layout tags build the canonical token") do
+test("layout tags build the canonical token") do {
     expect.equal(ui.align_start().value, "start")
     expect.equal(ui.align_center().value, "center")
     expect.equal(ui.align_end().value, "end")
@@ -25,9 +25,8 @@ test("layout tags build the canonical token") do
     expect.equal(ui.overflow_visible().value, "visible")
     expect.equal(ui.overflow_hidden().value, "hidden")
     expect.equal(ui.overflow_scroll().value, "scroll")
-end
-
-test("color constructors and palette") do
+}
+test("color constructors and palette") do {
     let opaque = ui.rgb(10, 20, 30)
     expect.equal(opaque.r, 10)
     expect.equal(opaque.g, 20)
@@ -44,9 +43,8 @@ test("color constructors and palette") do
 
     # hex strips the leading marker; a 6-digit body reaches the host delegate
     expect.equal(ui.hex("#ffffff").r, 255)
-end
-
-test("a node tree is built from the block body") do
+}
+test("a node tree is built from the block body") do {
     let root = ui.Box(
         background = ui.white(),
         body = fn () {
@@ -68,9 +66,8 @@ test("a node tree is built from the block body") do
 
     # ids are unique across the collector
     expect.true (root.children[0].id != root.children[1].id)
-end
-
-test("an unset prop stays none instead of falling back") do
+}
+test("an unset prop stays none instead of falling back") do {
     # Box writes `align_items` as none when no alignment is given. A stored
     # none must not be replaced by the layout default.
     let bare = ui.Box()
@@ -78,17 +75,15 @@ test("an unset prop stays none instead of falling back") do
 
     let aligned = ui.Box(align = "center")
     expect.equal(aligned.props["align_items"], "center")
-end
-
-test("text falls back to the palette white") do
+}
+test("text falls back to the palette white") do {
     let plain = ui.Text("x")
     expect.equal(plain.props["color"].r, 255)
 
     let custom = ui.Text("x", 14.0, "normal", ui.rgb(9, 9, 9))
     expect.equal(custom.props["color"].r, 9)
-end
-
-test("layout primitives record their own style") do
+}
+test("layout primitives record their own style") do {
     let row = ui.Row(gap = 8, justify = "space-between")
     expect.equal(row.kind, "Row")
     expect.equal(row.props["flex_direction"], "row")
@@ -104,9 +99,8 @@ test("layout primitives record their own style") do
 
     let stack = ui.Stack()
     expect.equal(stack.props["display"], "stack")
-end
-
-test("widget primitives carry their props") do
+}
+test("widget primitives carry their props") do {
     let button = ui.Button("Save", variant = "danger", disabled = true)
     expect.equal(button.kind, "Button")
     expect.equal(button.props["label"], "Save")
@@ -129,13 +123,11 @@ test("widget primitives carry their props") do
     let bar = ui.ProgressBar(0.25, 4.0)
     expect.approx(bar.props["progress"], 0.25, 0.001)
     expect.approx(bar.props["height"], 4.0, 0.001)
-end
-
-test("named arguments reach the underlying node") do
+}
+test("named arguments reach the underlying node") do {
     let node = ui.Text("t", align = "center")
     expect.equal(node.props["text_align"], "center")
-end
-
+}
 # --- MVU fixture -----------------------------------------------------------
 # `struct` and `fn` are top-level items, so the MVU harness lives at module
 # scope and the test below only drives it.
@@ -162,9 +154,9 @@ fn view(m, dispatch) {
 
 # -----------------------------------------------------------------------------
 
-test("an MVU mount builds the tree without a host bridge") do
+test("an MVU mount builds the tree without a host bridge") do {
     # render_frame assigns the view result to root_node; before that was wired
     # the descriptor pass received `none` and faulted.
     ui.mount_desktop("test", 320, 240, Model{ count = 7 }, bump, view)
     expect.true (true)
-end
+}

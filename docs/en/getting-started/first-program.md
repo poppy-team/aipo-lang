@@ -33,47 +33,45 @@ Let's model a bank account with an invariant guaranteeing a non-negative balance
 ```aipo
 # account.aipo
 struct Account {
-    holder
-    account_number
-    var balance = 0.0
+    holder: String
+    account_number: Int
+    var balance: Float = 0.0
 }
 
-impl Account {
-    init(holder, account_number = 0, balance = 0.0) {
-        self.holder = holder
-        self.account_number = account_number
-        self.balance = balance
-    }
+Account:init(holder: String, account_number: Int = 0, balance: Float = 0.0) {
+    self.holder = holder
+    self.account_number = account_number
+    self.balance = balance
+}
 
-    # Invariant: executed upon construction and every field mutation
-    invariant {
-        self.balance >= 0.0
-    }
+# Invariant: executed upon construction and every field mutation
+Account:invariant {
+    self.balance >= 0.0
+}
 
-    fn deposit(var self, amount: Float) {
-        if amount <= 0.0 {
-            return fail("Deposit amount must be positive")
-        }
-        self.balance += amount
+Account:deposit(var self, amount: Float) {
+    if amount <= 0.0 {
+        return fail("Deposit amount must be positive")
     }
+    self.balance += amount
+}
 
-    fn withdraw(var self, amount: Float) {
-        if amount <= 0.0 {
-            return fail("Withdrawal amount must be positive")
-        }
-        
-        # Tries to execute the withdrawal. If self.balance >= 0.0 fails,
-        # the attempt block rolls back the mutation automatically!
-        attempt {
-            self.balance -= amount
-        } failed err {
-            return fail("Withdrawal rejected: insufficient balance")
-        }
+Account:withdraw(var self, amount: Float) {
+    if amount <= 0.0 {
+        return fail("Withdrawal amount must be positive")
+    }
+    
+    # Tries to execute the withdrawal. If self.balance >= 0.0 fails,
+    # the attempt block rolls back the mutation automatically!
+    attempt {
+        self.balance -= amount
+    } failed err {
+        return fail("Withdrawal rejected: insufficient balance")
     }
 }
 
 # Instantiating the account using consistent colon (:) syntax
-let acc = Account{ holder: "Alice Johnson", account_number: 1042, balance: 150.0 }
+var acc = Account{ holder: "Alice Johnson", account_number: 1042, balance: 150.0 }
 
 io.println(f"Account created for: {acc.holder}")
 io.println(f"Initial balance: {acc.balance}")

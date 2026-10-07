@@ -1,0 +1,44 @@
+# Aplicação CLI canônica em Aipo V1
+import sys
+import io
+
+export main
+
+struct Config {
+    limite: Int = 10
+    modo_verboso: Bool = false
+}
+
+fn parsear_argumentos(args: List) -> Config {
+    var limite = 10
+    var verboso = false
+
+    each arg in args {
+        if arg == "-v" or arg == "--verbose" {
+            verboso = true
+        } elif arg.starts_with("--limite=") {
+            let partes = arg.split("=")
+            limite = Int(partes[1]) or_else 10
+        }
+    }
+
+    return Config{ limite: limite, modo_verboso: verboso }
+}
+
+fn main() {
+    let args = sys.args()
+    let cfg = parsear_argumentos(args)
+
+    if cfg.modo_verboso {
+        io.println(f"Iniciando processamento com limite={cfg.limite}")
+    }
+
+    var total_processado = 0
+    repeat cfg.limite as i {
+        let valor = (i + 1) * 2
+        io.println(f"Item #{i + 1}: valor={valor}")
+        total_processado += 1
+    }
+
+    io.println(f"Concluído com sucesso. Total: {total_processado}")
+}

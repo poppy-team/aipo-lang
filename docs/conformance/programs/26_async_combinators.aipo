@@ -1,15 +1,15 @@
 # The scheduler is cooperative and deterministic: `sleep` advances virtual time
 # in ticks (1s = 1000), so combinators resolve in an order the source decides,
 # never in an order the host happens to produce.
-async fn quick()
+async fn quick() {
     task.sleep(1)
     return "quick"
-end
+}
 
-async fn slow()
+async fn slow() {
     task.sleep(3)
     return "slow"
-end
+}
 
 # `race` takes the first completion in deterministic scheduler order.
 io.println(task.race([task.spawn(slow, []), task.spawn(quick, [])]))

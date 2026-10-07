@@ -127,6 +127,7 @@ fn inst_to_json(inst: &CoreInst) -> Json {
         CoreInst::SetField(f, _) => json!({"op":"SetField","f": f}),
         CoreInst::GetIndex(_) => json!({"op":"GetIndex"}),
         CoreInst::SetIndex(_) => json!({"op":"SetIndex"}),
+        CoreInst::IsVariant(v, _) => json!({"op":"IsVariant","variant": v}),
         CoreInst::BuildList(n, _) => json!({"op":"BuildList","n": n}),
         CoreInst::BuildDict(n, _) => json!({"op":"BuildDict","n": n}),
         CoreInst::BuildStruct {

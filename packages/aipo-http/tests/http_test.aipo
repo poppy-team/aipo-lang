@@ -2,7 +2,7 @@
 
 import aipo.http as http
 
-test("basic routing and context responses (text, json, html)") do
+test("basic routing and context responses (text, json, html)") do {
     let app = http.create()
 
     app.get("/", fn (c) {
@@ -35,9 +35,8 @@ test("basic routing and context responses (text, json, html)") do
     expect.equal(res3["status"], 200)
     expect.equal(res3["body"], "<h1>Bem-vindo!</h1>")
     expect.equal(res3["headers"]["content-type"], "text/html; charset=utf-8")
-end
-
-test("route parameters and wildcards") do
+}
+test("route parameters and wildcards") do {
     let app = http.create()
 
     app.get("/users/:id", fn (c) {
@@ -70,9 +69,8 @@ test("route parameters and wildcards") do
     let res3 = app.handle_request({ "method": "GET", "path": "/static/css/theme/dark.css" })
     expect.equal(res3["status"], 200)
     expect.equal(res3["body"], "serving: css/theme/dark.css")
-end
-
-test("query parameters and json body parsing") do
+}
+test("query parameters and json body parsing") do {
     let app = http.create()
 
     app.get("/search", fn (c) {
@@ -109,9 +107,8 @@ test("query parameters and json body parsing") do
     expect.equal(res2["headers"]["x-created-by"], "aipo-engine")
     expect.true(res2["body"].contains("\"username\": \"alice\""))
     expect.true(res2["body"].contains("\"created\": true"))
-end
-
-test("onion middleware pipeline execution and short-circuit") do
+}
+test("onion middleware pipeline execution and short-circuit") do {
     let app = http.create()
     var order_log = []
 
@@ -176,9 +173,8 @@ test("onion middleware pipeline execution and short-circuit") do
     })
     expect.equal(allowed["status"], 200)
     expect.equal(allowed["body"], "top secret data")
-end
-
-test("built-in middlewares: cors and recover") do
+}
+test("built-in middlewares: cors and recover") do {
     # 1. CORS middleware
     let app = http.create()
     app.use(http.cors({
@@ -212,9 +208,8 @@ test("built-in middlewares: cors and recover") do
     let crashed_res = err_app.handle_request({ "method": "GET", "path": "/crash" })
     expect.equal(crashed_res["status"], 500)
     expect.true(crashed_res["body"].contains("Internal Server Error"))
-end
-
-test("route grouping and 404 handling") do
+}
+test("route grouping and 404 handling") do {
     let app = http.create()
 
     # Route group /api/v1
@@ -238,4 +233,4 @@ test("route grouping and 404 handling") do
     let not_found = app.handle_request({ "method": "GET", "path": "/api/v1/unknown" })
     expect.equal(not_found["status"], 404)
     expect.true(not_found["body"].contains("Not Found"))
-end
+}

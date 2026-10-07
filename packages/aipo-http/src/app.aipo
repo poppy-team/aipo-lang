@@ -127,38 +127,36 @@ fn app_handle_request(app: App, req_dict: Dict) -> Dict {
     }
 }
 
-impl App {
-    fn use(self, mw) {
-        app_use(self, mw)
-    }
+App:use(self, mw) {
+    app_use(self, mw)
+}
 
-    fn get(self, path: String, handler) {
-        app_get(self, path, handler)
-    }
+App:get(self, path: String, handler) {
+    app_get(self, path, handler)
+}
 
-    fn post(self, path: String, handler) {
-        app_post(self, path, handler)
-    }
+App:post(self, path: String, handler) {
+    app_post(self, path, handler)
+}
 
-    fn put(self, path: String, handler) {
-        app_put(self, path, handler)
-    }
+App:put(self, path: String, handler) {
+    app_put(self, path, handler)
+}
 
-    fn delete(self, path: String, handler) {
-        app_delete(self, path, handler)
-    }
+App:delete(self, path: String, handler) {
+    app_delete(self, path, handler)
+}
 
-    fn patch(self, path: String, handler) {
-        app_patch(self, path, handler)
-    }
+App:patch(self, path: String, handler) {
+    app_patch(self, path, handler)
+}
 
-    fn group(self, prefix: String) -> App {
-        return app_group(self, prefix)
-    }
+App:group(self, prefix: String) -> App {
+    return app_group(self, prefix)
+}
 
-    fn handle_request(self, req_dict: Dict) -> Dict {
-        return app_handle_request(self, req_dict)
-    }
+App:handle_request(self, req_dict: Dict) -> Dict {
+    return app_handle_request(self, req_dict)
 }
 
 export App, create_app, app_use, app_get, app_post, app_put, app_delete, app_patch, app_group, app_handle_request, combine_path

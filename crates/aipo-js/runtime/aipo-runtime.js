@@ -4616,6 +4616,12 @@ function stepFn(m) {
       m.stack[i] = vStruct(v.type, v.fields.map((f) => [f[0], f[1]]), new Set(v.fixed), false);
       break;
     }
+    case 'IsVariant': {
+      const v = mPop(m);
+      const matches = v && v.t === 'struct' && (v.type === inst.variant || v.type.endsWith('.' + inst.variant));
+      mPush(m, vBool(Boolean(matches)));
+      break;
+    }
     case 'GetField': {
       const t = mPop(m);
       mPush(m, doGetField(m, t, inst.f));
@@ -4855,9 +4861,7 @@ function doReturn(m, v) {
 export function runModule(module) {
   const m = makeMachine(module);
   for (const f of module.functions) {
-    if (!f.name.includes('.')) {
-      m.globals.set(f.name, { t: 'func', idx: m.funcIndex.get(f.name), arity: f.params.length });
-    }
+    m.globals.set(f.name, { t: 'func', idx: m.funcIndex.get(f.name), arity: f.params.length });
   }
   const top = module.top;
   m.frames.push({ fn: top, ip: 0, vars: new Array(top.localNames.length), cells: null, base: 0, journalStart: 0 });

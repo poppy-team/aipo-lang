@@ -84,7 +84,11 @@ impl BytecodeVerifier {
                     }
                     cursor += 3;
                 }
-                OpCode::GetGlobal | OpCode::SetGlobal | OpCode::GetField | OpCode::SetField => {
+                OpCode::GetGlobal
+                | OpCode::SetGlobal
+                | OpCode::GetField
+                | OpCode::SetField
+                | OpCode::IsVariant => {
                     if cursor + 3 <= module.code.len() {
                         let idx =
                             BigEndian::read_u16(&module.code[cursor + 1..cursor + 3]) as usize;
@@ -391,6 +395,7 @@ impl BytecodeVerifier {
             | OpCode::SetUpvalue
             | OpCode::MakeFunction
             | OpCode::AssertInvariant
+            | OpCode::IsVariant
             | OpCode::FillSelfCapture => 3,
             // The contract operand list is variable length, so it is sized from the slice by
             // `assert_contract_size` rather than from this table.

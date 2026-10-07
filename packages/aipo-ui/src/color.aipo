@@ -3,16 +3,16 @@
 
 import types as types_mod
 
-fn make_rgb(r: Int, g: Int, b: Int) - > Color{
+fn make_rgb(r: Int, g: Int, b: Int) -> Color {
     return Color{ r: r, g: g, b: b, a: 1.0 }
 }
 
-fn make_rgba(r: Int, g: Int, b: Int, a: Float) - > Color{
+fn make_rgba(r: Int, g: Int, b: Int, a: Float) -> Color {
     return Color{ r: r, g: g, b: b, a: a }
 }
 
 # Parse a `#rrggbb` hex string. Anything else resolves to opaque black.
-fn make_hex(hex_code: String) - > Color{
+fn make_hex(hex_code: String) -> Color {
     var s = hex_code
     if s.starts_with("#") {
         s = s.slice(1, s.len())

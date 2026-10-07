@@ -36,7 +36,7 @@ Tentar reatribuir um campo imutável após a construção da instância dispara 
 
 ## Hook de Construção (`init`)
 
-O hook `init` é declarado dentro do bloco `impl StructName { ... }` e permite validar, transformar e inicializar os campos da instância antes de sua publicação final:
+O hook `init` se associa ao tipo pelo prefixo `Tipo:` e permite validar, transformar e inicializar os campos da instância antes de sua publicação final:
 
 ```aipo
 struct Usuario {
@@ -44,14 +44,12 @@ struct Usuario {
     nome
 }
 
-impl Usuario {
-    init(email, nome) {
-        if not email.contains("@") {
-            return fail("Formato de e-mail inválido")
-        }
-        self.email = email
-        self.nome = nome
+Usuario:init(email, nome) {
+    if not email.contains("@") {
+        return fail("Formato de e-mail inválido")
     }
+    self.email = email
+    self.nome = nome
 }
 
 let u = Usuario{ email: "user@example.com", nome: "Dev" }
@@ -62,7 +60,7 @@ io.println(u.email) # "user@example.com"
 
 ## Invariantes Estruturais (`invariant`)
 
-As invariantes declaram predicados lógicos dentro do bloco `impl` que **devem permanecer verdadeiros durante todo o ciclo de vida do objeto**:
+As invariantes declaram predicados lógicos em `Tipo:invariant` que **devem permanecer verdadeiros durante todo o ciclo de vida do objeto**:
 
 ```aipo
 struct Intervalo {
@@ -70,15 +68,13 @@ struct Intervalo {
     var fim = 0
 }
 
-impl Intervalo {
-    init(inicio, fim) {
-        self.inicio = inicio
-        self.fim = fim
-    }
+Intervalo:init(inicio, fim) {
+    self.inicio = inicio
+    self.fim = fim
+}
 
-    invariant {
-        self.inicio <= self.fim
-    }
+Intervalo:invariant {
+    self.inicio <= self.fim
 }
 
 let inter = Intervalo{ inicio: 5, fim: 10 }
@@ -92,7 +88,7 @@ Sempre que um campo de uma estrutura com bloco `invariant` for alterado, o motor
 
 ## Métodos e Mutabilidade Universal (`var self`)
 
-Métodos associados a um tipo são definidos dentro de blocos `impl StructName { ... }`. 
+Métodos são associados a um tipo pelo prefixo `Tipo:`. O receptor `self` é implícito em métodos imutáveis e explícito como `var self` em métodos que mutam.
 
 Por padrão de segurança, o receptor `self` é **somente leitura**. Quando um método precisa alterar o estado interno da instância, ele declara explicitamente `var self`, alinhando a mutabilidade de métodos à mesma regra universal de variáveis da linguagem:
 
@@ -101,16 +97,14 @@ struct Contador {
     var valor = 0
 }
 
-impl Contador {
-    # Método de leitura: self é imutável
-    fn atual(self) -> Int {
-        return self.valor
-    }
+# Método de leitura: self é implícito e imutável
+Contador:atual() -> Int {
+    return self.valor
+}
 
-    # Método mutador: var self declara explicitamente a intenção de modificar
-    fn incrementar(var self) {
-        self.valor += 1
-    }
+# Método mutador: var self declara explicitamente a intenção de modificar
+Contador:incrementar(var self) {
+    self.valor += 1
 }
 ```
 
@@ -124,21 +118,22 @@ Se uma estrutura implementa todos os métodos exigidos por uma `interface` com a
 
 ```aipo
 interface Renderizavel {
-    fn desenhar(self) -> String
+    desenhar() -> String
 }
 
+#!satisfies Renderizavel
 struct Botao {
     texto
 }
 
-impl Botao {
-    fn desenhar(self) -> String {
-        return f"[Botão: {self.texto}]"
-    }
+Botao:desenhar() -> String {
+    return f"[Botão: {self.texto}]"
 }
 
-# Botao satisfaz Renderizavel automaticamente por correspondência estrutural de métodos.
-# Nenhuma declaração explícita de implementação é necessária.
+# Botao satisfaz Renderizavel por correspondência estrutural de métodos.
+# A diretiva #!satisfies exige essa relação e verifica em tempo de compilação;
+# sem ela, a correspondência continua válida — a diretiva apenas documenta
+# a intenção e falha se a conformidade deixar de valer.
 
 # Aceita qualquer valor que satisfaça a interface Renderizavel
 fn renderizar_elemento(item: Renderizavel) -> String {
@@ -150,3 +145,88 @@ io.println(renderizar_elemento(btn)) # "[Botão: Salvar]"
 ```
 
 A conformidade é verificada estaticamente pelo analisador semântico (`aipo-sema`), checando a existência dos métodos, número de argumentos, tipos de parâmetros e retornos, e a mutabilidade compatível do receptor (`self` vs `var self`).
+
+---
+
+## Associação em Lote (`::`)
+
+Funções livres existentes podem ser promovidas em lote para métodos associados a um tipo através do token `::`:
+
+```aipo
+fn perimetro(self) -> Float {
+    return 2.0 * (self.largura + self.altura)
+}
+
+fn duplicar(var self) {
+    self.largura *= 2.0
+    self.altura *= 2.0
+}
+
+# Promove ambas as funções para métodos de Retangulo
+Retangulo::[perimetro, duplicar]
+```
+
+| Regra | Detalhe |
+|---|---|
+| **Primeiro Parâmetro** | **Obrigatoriamente `self` ou `var self`.** Funções sem `self` como primeiro parâmetro são rejeitadas com erro estático pelo compilador. |
+| **Mutabilidade** | Preservada da origem: `self` gera método somente leitura; `var self` gera método mutador. |
+| **Acesso** | A função original continua acessível livremente (`perimetro(ret)`) e como método (`ret.perimetro()`). |
+
+---
+
+## Enums: Tipos de Soma Fechados (`enum`)
+
+O `enum` representa tipos algébricos fechados ("isto é A **ou** B"), onde o conjunto de valores possíveis é conhecido em tempo de compilação:
+
+```aipo
+enum EstadoConexao {
+    Desconectado,
+    Tentando(tentativa: Int),
+    Conectado { ip: String, ping_ms: Int },
+    Erro(mensagem: String),
+}
+```
+
+### Formas de Variante
+1. **Sem payload:** Valor constante (`Desconectado`).
+2. **Payload posicional:** Um valor entre parênteses (`Tentando(tentativa: Int)`).
+3. **Payload nomeado:** Campos rotulados entre chaves (`Conectado { ip: String, ping_ms: Int }`).
+
+### Construção e Pattern Matching
+A construção de um enum qualifica o tipo diretamente (`EstadoConexao.Desconectado`), sem `new` ou `::`.
+
+O `match` sobre enum é verificado por **exaustividade**: se não houver um braço `else`, **todas** as variantes devem ser cobertas obrigatoriamente:
+
+```aipo
+fn relatar(estado: EstadoConexao) -> String {
+    return match estado {
+        when EstadoConexao.Desconectado {
+            "Sem conexão"
+        }
+        when EstadoConexao.Tentando(t) {
+            f"Tentativa #{t}"
+        }
+        when EstadoConexao.Conectado { ip, ping_ms } {
+            f"Conectado a {ip} ({ping_ms}ms)"
+        }
+        when EstadoConexao.Erro(motivo) {
+            f"Falha: {motivo}"
+        }
+    }
+}
+```
+
+Enums também suportam métodos (`EstadoConexao:metodo()`), invariantes (`EstadoConexao:invariant`) e diretiva de interface `#!satisfies`.
+
+---
+
+## Diretivas do Compilador (`#!nome`)
+
+Diretivas são comentários estruturados lidos diretamente pelo compilador que se aplicam ao item imediatamente seguinte:
+
+| Diretiva | Aplicação | Efeito |
+|---|---|---|
+| `#!satisfies I1, I2` | `struct` ou `enum` | Exige conformidade estrutural com as interfaces em tempo de compilação. |
+| `#!test` / `#!test[tag]` / `#!test("nome")` | `fn` livre | Marca a função como teste unitário descoberto pelo runner de testes. |
+| `#!deprecated("msg")` | `fn`, `struct` ou método | Emite avisos durante a checagem semântica indicando obsolescência. |
+| `#!todo("msg")` | qualquer item | Rastreia débitos técnicos sem interromper o fluxo de compilação. |

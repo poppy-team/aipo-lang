@@ -50,11 +50,11 @@ fn check_program(source: &str) -> Result<String, String> {
 }
 
 fn param_case(contract: &str, argument: &str) -> String {
-    format!("fn f(x: {contract})\nreturn x\nend\nf({argument})\n")
+    format!("fn f(x: {contract}) {{\nreturn x\n}}\nf({argument})\n")
 }
 
 fn return_case(contract: &str, returned: &str) -> String {
-    format!("fn f() -> {contract}\nreturn {returned}\nend\nf()\n")
+    format!("fn f() -> {contract} {{\nreturn {returned}\n}}\nf()\n")
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn test_parameter_contract_matrix() {
         ("List", "[1]", true),
         ("List", "5", false),
         ("Dict", "{\"k\": 1}", true),
-        ("Function", "fn (x) return x end", true),
+        ("Function", "fn (x) { return x }", true),
         ("Function", "5", false),
     ];
     for (contract, argument, passes) in cases {
@@ -101,7 +101,7 @@ fn test_parameter_contract_matrix() {
     ];
     for (contract, argument, passes) in struct_cases {
         let program =
-            format!("struct S\nx\nend\nfn f(v: {contract})\nreturn v\nend\nf({argument})\n");
+            format!("struct S {{\nx\n}}\nfn f(v: {contract}) {{\nreturn v\n}}\nf({argument})\n");
         let outcome = check_program(&program);
         assert_eq!(
             outcome.is_ok(),
@@ -142,7 +142,7 @@ fn test_return_contract_matrix() {
 fn test_bare_return_respects_the_return_contract() {
     // A bare `return` yields `none`; a non-nullable contract must reject it instead of
     // silently returning `none` (auditoria IR-17). A nullable contract accepts it.
-    let violated = check_program("fn f() -> Int\nreturn\nend\nf()\n");
+    let violated = check_program("fn f() -> Int {\nreturn\n}\nf()\n");
     assert!(
         violated.is_err(),
         "bare return under `-> Int` must fault: {violated:?}"
@@ -152,6 +152,6 @@ fn test_bare_return_respects_the_return_contract() {
         "the violation is a contract fault"
     );
 
-    let accepted = check_program("fn f() -> Int?\nreturn\nend\nf()\n");
+    let accepted = check_program("fn f() -> Int? {\nreturn\n}\nf()\n");
     assert!(accepted.is_ok(), "`-> Int?` accepts none: {accepted:?}");
 }

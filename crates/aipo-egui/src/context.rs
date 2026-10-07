@@ -126,6 +126,7 @@ impl EguiSession {
             raw_input.events.push(Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
                 delta: vec2(options.scroll_x, options.scroll_y),
+                phase: egui::TouchPhase::Move,
                 modifiers: Default::default(),
             });
         }
@@ -154,8 +155,11 @@ impl EguiSession {
         }
 
         self.ui_stack.clear();
-        let full_output = self.ctx.end_pass();
+        let mut full_output = self.ctx.end_pass();
         self.is_frame_active = false;
+        // Headless adapter: no GPU uploader consumes texture deltas, so acknowledge
+        // and drop them explicitly (epaint panics on an unhandled drop).
+        full_output.textures_delta.clear();
 
         let shapes_list: Vec<Value> = full_output.shapes.iter().map(shape_to_value).collect();
         let cursor_name = format!("{:?}", full_output.platform_output.cursor_icon);
@@ -163,11 +167,11 @@ impl EguiSession {
         let entries = vec![
             (
                 Value::String(Rc::new("wants_pointer_input".to_string())),
-                Value::Bool(self.ctx.wants_pointer_input()),
+                Value::Bool(self.ctx.egui_wants_pointer_input()),
             ),
             (
                 Value::String(Rc::new("wants_keyboard_input".to_string())),
-                Value::Bool(self.ctx.wants_keyboard_input()),
+                Value::Bool(self.ctx.egui_wants_keyboard_input()),
             ),
             (
                 Value::String(Rc::new("cursor".to_string())),
@@ -219,7 +223,7 @@ impl EguiSession {
         let mut window_ui = Ui::new(self.ctx.clone(), window_id, builder);
 
         // Window styling & header
-        let frame = egui::Frame::window(&self.ctx.style());
+        let frame = egui::Frame::window(&self.ctx.style_of(self.ctx.theme()));
         window_ui.painter().add(frame.paint(rect));
         window_ui.heading(title);
         window_ui.separator();

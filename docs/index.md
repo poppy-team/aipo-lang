@@ -56,49 +56,56 @@ features:
 O **Aipo** foi projetado para desenvolvedores que valorizam clareza de raciocínio, previsibilidade e velocidade. Em vez de coerções implícitas perigosas (como `"1" + 2 == "12"`), o Aipo combina tipagem dinâmica e forte com **contratos estruturais opcionais**, **recuperação transacional com rollback automático** e um **ecossistema completo sem dependências externas**.
 
 ```aipo
-# Interface com inferência estrutural automática
+# Interface com satisfação estrutural automática
 interface Notificavel {
-    fn resumo(self) -> String
+    resumo() -> String
+}
+
+# Enum canônico (tipo fechado de soma)
+enum StatusConta {
+    Ativa,
+    Bloqueada(motivo: String),
 }
 
 # Struct com campos imutáveis por padrão e campo mutável explícito
+#!satisfies Notificavel
 struct Conta {
     id: Int
     titular: String
     var saldo: Int
+    var status: StatusConta = StatusConta.Ativa
 }
 
-impl Conta {
-    # Invariante de integridade transacional
-    invariant() {
-        self.saldo >= 0
+# Invariante de integridade transacional
+Conta:invariant {
+    self.saldo >= 0
+}
+
+# Mutação explícita com `var self`
+Conta:transferir(var self, var destino: Conta, valor: Int) {
+    if valor <= 0 {
+        fail "o valor da transferência deve ser positivo"
     }
 
-    # Mutação explícita com `var self`
-    fn transferir(var self, destino: Conta, valor: Int) {
-        if valor <= 0 {
-            fail("o valor da transferência deve ser positivo")
-        }
-
-        # Se qualquer regra for violada, as duas contas sofrem rollback atômico
-        attempt {
-            self.saldo -= valor
-            destino.saldo += valor
-        } failed err {
-            fail(f"transferência abortada com segurança: {err.message}")
-        }
+    # Se qualquer regra for violada, as duas contas sofrem rollback atômico
+    attempt {
+        self.saldo -= valor
+        destino.saldo += valor
+    } failed err {
+        fail f"transferência abortada com segurança: {err.message}"
     }
+}
 
-    fn resumo(self) -> String {
-        return f"Conta #{self.id} ({self.titular}): R$ {self.saldo // 100}"
-    }
+# Método de leitura (self implícito)
+Conta:resumo() -> String {
+    return f"Conta #{self.id} ({self.titular}): R$ {self.saldo // 100}"
 }
 
 # Iniciação simétrica com dois-pontos
 var c1 = Conta{ id: 101, titular: "Alex", saldo: 25000 }
 var c2 = Conta{ id: 102, titular: "Beatriz", saldo: 5000 }
 
-c1.transferir(c2, 5000)
+c1.transferir(var c2, 5000)
 io.println(c1.resumo())
 io.println(c2.resumo())
 ```

@@ -12,10 +12,10 @@ io.println(numbers.contains(2))
 io.println(numbers.count(3))
 io.println(numbers.find(9))
 
-io.println(numbers.transform(fn (x) return x * 2 end))
-io.println(numbers.filter(fn (x) return x > 2 end))
+io.println(numbers.transform(fn (x) { return x * 2 }))
+io.println(numbers.filter(fn (x) { return x > 2 }))
 io.println(numbers.sort())
-io.println(numbers.sort_by(fn (x) return 0 - x end))
+io.println(numbers.sort_by(fn (x) { return 0 - x }))
 io.println(numbers.reverse())
 
 numbers.remove(3)

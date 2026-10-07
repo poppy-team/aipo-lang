@@ -5,17 +5,14 @@ interface Greeter {
     fn greet(self) - > String
     }
 
+    #!satisfies Greeter
     struct Robot {
         name
     }
 
-    impl Robot {
-        fn greet(self) - > String{
-            return "beep " + self.name
-        }
+    Robot:greet() -> String {
+        return "beep " + self.name
     }
-
-    satisfy Robot: Greeter
 
         # O parâmetro declara a interface; a conferência é estrutural em runtime.
         fn announce(who: Greeter) - > String{
@@ -37,15 +34,13 @@ interface Greeter {
             var balance
         }
 
-        impl Account {
-            invariant () {
-                self.balance >= 0
-            }
+        Account:invariant {
+            self.balance >= 0
+        }
 
-            fn withdraw(var self, amount: Int) {
-                self.balance = self.balance - amount
-                return self.balance
-            }
+        Account:withdraw(var self, amount: Int) {
+            self.balance = self.balance - amount
+            return self.balance
         }
 
         let robot = Robot{ name: "r2" }

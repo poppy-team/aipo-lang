@@ -36,22 +36,20 @@ Reassigning an immutable field after construction triggers the static semantic d
 
 ## Construction Hook (`init`)
 
-The `init` hook is declared inside an `impl StructName { ... }` block to validate, normalize, and initialize instance fields before publication:
+The `init` hook is bound to a type using the `Type:` prefix to validate, normalize, and initialize instance fields before publication:
 
 ```aipo
 struct User {
-    email
-    name
+    email: String
+    name: String
 }
 
-impl User {
-    init(email, name) {
-        if not email.contains("@") {
-            return fail("Invalid email address format")
-        }
-        self.email = email
-        self.name = name
+User:init(email: String, name: String) {
+    if not email.contains("@") {
+        return fail("Invalid email address format")
     }
+    self.email = email
+    self.name = name
 }
 
 let u = User{ email: "user@example.com", name: "Dev" }
@@ -62,23 +60,21 @@ io.println(u.email) # "user@example.com"
 
 ## Structural Invariants (`invariant`)
 
-Invariants declare logical predicates inside the `impl` block that **must remain true throughout the lifetime of the object**:
+Invariants declare logical predicates bound to the type that **must remain true throughout the lifetime of the object**:
 
 ```aipo
 struct Interval {
-    var start = 0
-    var end_val = 0
+    var start: Int = 0
+    var end_val: Int = 0
 }
 
-impl Interval {
-    init(start, end_val) {
-        self.start = start
-        self.end_val = end_val
-    }
+Interval:init(start: Int, end_val: Int) {
+    self.start = start
+    self.end_val = end_val
+}
 
-    invariant {
-        self.start <= self.end_val
-    }
+Interval:invariant {
+    self.start <= self.end_val
 }
 
 let inter = Interval{ start: 5, end_val: 10 }
@@ -92,25 +88,23 @@ Whenever a field is mutated, the invariant predicate is automatically re-evaluat
 
 ## Methods and Universal Mutability (`var self`)
 
-Methods associated with a type are defined inside `impl StructName { ... }` blocks.
+Methods are declared using the `Type:method_name` syntax. The receiver `self` is implicit in read-only methods and explicit as `var self` when mutating.
 
 By default, the `self` receiver is **read-only**. When a method needs to mutate internal instance state, it explicitly declares `var self`, harmonizing method mutability with the universal variable rules of the language:
 
 ```aipo
 struct Counter {
-    var count = 0
+    var count: Int = 0
 }
 
-impl Counter {
-    # Read-only method: self is immutable
-    fn current(self) -> Int {
-        return self.count
-    }
+# Read-only method: self is implicit and immutable (no 'fn' keyword)
+Counter:current() -> Int {
+    return self.count
+}
 
-    # Mutator method: var self explicitly signals state modification
-    fn increment(var self) {
-        self.count += 1
-    }
+# Mutator method: var self explicitly signals state modification
+Counter:increment(var self) {
+    self.count += 1
 }
 ```
 
@@ -118,29 +112,25 @@ impl Counter {
 
 ## Interfaces and Automatic Structural Subtyping (`interface`)
 
-Interfaces define method contracts. In Aipo, interface conformance requires no ceremony or orphan statements: **subtyping is structural and automatic** (inspired by modern languages like Go and Luau).
+Interfaces define method signatures without bodies. In Aipo, interface conformance requires no ceremony: **subtyping is structural and automatic** (inspired by Go and Luau).
 
-If a struct implements all methods required by an `interface` with compatible signatures and contracts (including receiver mutability `var self` vs `self`), it **automatically satisfies the interface**:
+If a struct or enum implements all methods required by an `interface` with compatible signatures and contracts, it **automatically satisfies the interface**:
 
 ```aipo
 interface Drawable {
-    fn draw(self) -> String
+    draw() -> String
 }
 
+#!satisfies Drawable
 struct Button {
-    label
+    label: String
 }
 
-impl Button {
-    fn draw(self) -> String {
-        return f"[Button: {self.label}]"
-    }
+Button:draw() -> String {
+    return f"[Button: {self.label}]"
 }
 
-# Button satisfies Drawable automatically via structural method matching.
-# No explicit implementation declaration is required.
-
-# Function accepting any type that fulfills the Drawable contract
+# Accepts any type satisfying the Drawable contract
 fn render_element(item: Drawable) -> String {
     return item.draw()
 }
@@ -149,4 +139,57 @@ let btn = Button{ label: "Submit" }
 io.println(render_element(btn)) # "[Button: Submit]"
 ```
 
-Conformance is verified statically by the semantic analyzer (`aipo-sema`), checking method existence, parameter arity, parameter and return types, and receiver mutability compatibility (`self` vs `var self`).
+---
+
+## Batch Promotion (`::`)
+
+Free functions can be batch-promoted to methods of a type using the `::` token:
+
+```aipo
+fn perimeter(self) -> Float {
+    return 2.0 * (self.width + self.height)
+}
+
+fn scale(var self, factor: Float) {
+    self.width *= factor
+    self.height *= factor
+}
+
+Rectangle::[perimeter, scale]
+```
+
+**Rule:** The promoted function MUST declare `self` (or `var self`) as its first parameter.
+
+---
+
+## Enums: Closed Sum Types (`enum`)
+
+`enum` defines closed algebraic sum types with compiler-verified exhaustiveness in `match`:
+
+```aipo
+enum ConnectionState {
+    Disconnected,
+    Connecting(attempt: Int),
+    Connected { ip: String, ping_ms: Int },
+    Error(reason: String),
+}
+
+fn describe(state: ConnectionState) -> String {
+    return match state {
+        when ConnectionState.Disconnected { "Offline" }
+        when ConnectionState.Connecting(a) { f"Attempt #{a}" }
+        when ConnectionState.Connected { ip, ping_ms } { f"{ip}:{ping_ms}" }
+        when ConnectionState.Error(r) { f"Error: {r}" }
+    }
+}
+```
+
+---
+
+## Compiler Directives (`#!name`)
+
+Directives are compiler annotations attached to the immediately following item:
+- `#!satisfies I1, I2`: Enforces interface conformance at compile time.
+- `#!test` / `#!test[tag]` / `#!test("name")`: Marks unit tests.
+- `#!deprecated("msg")`: Warns on usage of obsolete APIs.
+- `#!todo("msg")`: Tracks technical debt.

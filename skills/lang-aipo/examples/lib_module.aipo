@@ -1,0 +1,50 @@
+# Módulo de biblioteca com interface estrutural, invariante e testes
+export Formatador, JsonFormatador, criar_formatador
+
+interface Formatador {
+    formatar(dados: Dict) -> String
+}
+
+#!satisfies Formatador
+struct JsonFormatador {
+    indentacao: Int = 2
+    compacto: Bool = false
+}
+
+JsonFormatador:invariant {
+    self.indentacao >= 0
+    self.indentacao <= 8
+}
+
+JsonFormatador:formatar(dados: Dict) -> String {
+    if self.compacto {
+        return f"{{\"tamanho\": {len(dados)}}}"
+    }
+    return f"{{\n  \"itens\": {len(dados)}\n}}"
+}
+
+fn criar_formatador(indentacao: Int = 2, compacto: Bool = false) -> JsonFormatador {
+    if indentacao < 0 or indentacao > 8 {
+        fail "indentação fora dos limites permitidos (0-8)"
+    }
+    return JsonFormatador{ indentacao: indentacao, compacto: compacto }
+}
+
+#!deprecated("use criar_formatador()")
+fn formatador_padrao() -> JsonFormatador {
+    return criar_formatador(2, false)
+}
+
+#!todo("implementar serialização direta para buffer de bytes")
+fn serializar_bytes(dados: Dict) -> String {
+    return "{}"
+}
+
+#!test("verificação do formatador json")
+fn test_formatador() {
+    let fmt = criar_formatador(2, true)
+    let saida = fmt.formatar({"chave": "valor"})
+    if not saida.contains("tamanho") {
+        fail "formatação compacta falhou"
+    }
+}

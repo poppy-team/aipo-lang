@@ -61,6 +61,8 @@ pub enum DiagnosticCode {
     AIPO_SEM_PATH_MISSING_RETURN_VALUE,
     /// Condition in `if`, `while`, `and`, `or`, or `not` is not a Bool.
     AIPO_SEM_NON_BOOL_CONDITION,
+    /// Match over an enum has uncovered variants without a fallback `else` arm.
+    AIPO_SEM_NON_EXHAUSTIVE_MATCH,
     /// Circular dependency detected in module imports.
     AIPO_SEM_IMPORT_CYCLE,
     /// Module import path could not be resolved.
@@ -77,6 +79,10 @@ pub enum DiagnosticCode {
     AIPO_SEM_NESTED_AWAIT_DO,
     /// Parametric `Name[Args]` contract before parametric contracts exist.
     AIPO_SEM_PARAMETRIC_CONTRACT,
+    /// Item is deprecated and its use emits a warning.
+    AIPO_SEM_DEPRECATED,
+    /// Item is marked with #!todo as pending work.
+    AIPO_SEM_TODO,
 
     // --- Package (AIPO_PKG_*) ---
     /// Package manifest, dependency graph, or capability resolution failed.
@@ -152,6 +158,7 @@ impl DiagnosticCode {
             Self::AIPO_SEM_RETURN_VALUE_MISMATCH => "AIPO_SEM_RETURN_VALUE_MISMATCH",
             Self::AIPO_SEM_PATH_MISSING_RETURN_VALUE => "AIPO_SEM_PATH_MISSING_RETURN_VALUE",
             Self::AIPO_SEM_NON_BOOL_CONDITION => "AIPO_SEM_NON_BOOL_CONDITION",
+            Self::AIPO_SEM_NON_EXHAUSTIVE_MATCH => "AIPO_SEM_NON_EXHAUSTIVE_MATCH",
             Self::AIPO_SEM_IMPORT_CYCLE => "AIPO_SEM_IMPORT_CYCLE",
             Self::AIPO_SEM_UNKNOWN_MODULE => "AIPO_SEM_UNKNOWN_MODULE",
             Self::AIPO_SEM_EXPORT_UNKNOWN => "AIPO_SEM_EXPORT_UNKNOWN",
@@ -160,6 +167,8 @@ impl DiagnosticCode {
             Self::AIPO_SEM_FORGOTTEN_TASK => "AIPO_SEM_FORGOTTEN_TASK",
             Self::AIPO_SEM_NESTED_AWAIT_DO => "AIPO_SEM_NESTED_AWAIT_DO",
             Self::AIPO_SEM_PARAMETRIC_CONTRACT => "AIPO_SEM_PARAMETRIC_CONTRACT",
+            Self::AIPO_SEM_DEPRECATED => "AIPO_SEM_DEPRECATED",
+            Self::AIPO_SEM_TODO => "AIPO_SEM_TODO",
             Self::AIPO_PKG_RESOLUTION => "AIPO_PKG_RESOLUTION",
             Self::AIPO_PKG_LOCK_STALE => "AIPO_PKG_LOCK_STALE",
             Self::AIPO_PKG_FETCH => "AIPO_PKG_FETCH",
@@ -208,6 +217,7 @@ impl DiagnosticCode {
             | Self::AIPO_SEM_RETURN_VALUE_MISMATCH
             | Self::AIPO_SEM_PATH_MISSING_RETURN_VALUE
             | Self::AIPO_SEM_NON_BOOL_CONDITION
+            | Self::AIPO_SEM_NON_EXHAUSTIVE_MATCH
             | Self::AIPO_SEM_IMPORT_CYCLE
             | Self::AIPO_SEM_UNKNOWN_MODULE
             | Self::AIPO_SEM_EXPORT_UNKNOWN
@@ -220,6 +230,8 @@ impl DiagnosticCode {
             | Self::AIPO_PKG_LOCK_STALE
             | Self::AIPO_PKG_FETCH
             | Self::AIPO_RT_FAILURE_UNCAUGHT => Severity::Error,
+
+            Self::AIPO_SEM_DEPRECATED | Self::AIPO_SEM_TODO => Severity::Warning,
 
             Self::AIPO_RT_OVERFLOW
             | Self::AIPO_RT_NON_FINITE_FLOAT

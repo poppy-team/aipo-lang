@@ -143,63 +143,63 @@ pub(crate) fn vm_workloads(rounds: usize, _quick: bool) -> Vec<Sample> {
     let cases = [
         (
             "vm/int-arith",
-            "var t = 0\nrepeat 200\nt = t + 3 * 7 - 1\nend\n",
+            "var t = 0\nrepeat 200 {\nt = t + 3 * 7 - 1\n}\n",
         ),
         (
             "vm/float-arith",
-            "var t = 0.5\nrepeat 200\nt = t * 1.5 + 0.25\nend\n",
+            "var t = 0.5\nrepeat 200 {\nt = t * 1.5 + 0.25\n}\n",
         ),
         (
             "vm/call-overhead",
-            "fn id(x)\nreturn x\nend\nvar t = 0\nrepeat 200\nt = id(t + 1)\nend\n",
+            "fn id(x) {\nreturn x\n}\nvar t = 0\nrepeat 200 {\nt = id(t + 1)\n}\n",
         ),
         (
             "vm/recursion",
-            "fn fib(n)\nif n < 2\nreturn n\nend\nreturn fib(n - 1) + fib(n - 2)\nend\nfib(20)\n",
+            "fn fib(n) {\nif n < 2 {\nreturn n\n}\nreturn fib(n - 1) + fib(n - 2)\n}\nfib(20)\n",
         ),
         (
             "vm/closure-shared-var",
-            "fn make()\nvar c = 0\nreturn fn ()\nc = c + 1\nreturn c\nend\nend\nlet f = make()\nrepeat 200\nf()\nend\n",
+            "fn make() {\nvar c = 0\nreturn fn () {\nc = c + 1\nreturn c\n}\n}\nlet f = make()\nrepeat 200 {\nf()\n}\n",
         ),
         (
             "vm/global-lookup",
-            "let g = 7\nvar t = 0\nrepeat 200\nt = t + g\nend\n",
+            "let g = 7\nvar t = 0\nrepeat 200 {\nt = t + g\n}\n",
         ),
         (
             "vm/list-build-iter",
-            "var xs = []\nrepeat 200\nxs.add(1)\nend\nvar t = 0\neach x in xs\nt = t + x\nend\n",
+            "var xs = []\nrepeat 200 {\nxs.add(1)\n}\nvar t = 0\neach x in xs {\nt = t + x\n}\n",
         ),
         (
             "vm/dict-insert-lookup",
-            "var d = {}\nrepeat 100\n d[\"k\"] = 1\nend\nvar t = 0\nrepeat 100\nt = t + d[\"k\"]\nend\n",
+            "var d = {}\nrepeat 100 {\n d[\"k\"] = 1\n}\nvar t = 0\nrepeat 100 {\nt = t + d[\"k\"]\n}\n",
         ),
         (
             "vm/string-concat",
-            "var s = \"\"\nrepeat 100\ns = s + \"ab\"\nend\n",
+            "var s = \"\"\nrepeat 100 {\ns = s + \"ab\"\n}\n",
         ),
         (
             "vm/interpolation",
-            "var t = 0\nrepeat 100\nt = len(f\"n={t}\")\nend\n",
+            "var t = 0\nrepeat 100 {\nt = len(f\"n={t}\")\n}\n",
         ),
         (
             "vm/bytes-alloc",
-            "var t = 0\nrepeat 20\nt = t + len(Bytes(4096))\nend\n",
+            "var t = 0\nrepeat 20 {\nt = t + len(Bytes(4096))\n}\n",
         ),
         (
             "vm/pipeline",
-            "var t = 0\nrepeat 100\nt = [t] |> len\nend\n",
+            "var t = 0\nrepeat 100 {\nt = [t] |> len\n}\n",
         ),
         (
             "vm/failure-propagate",
-            "fn maybe(x)\nif x > 100\nreturn fail(\"big\")\nend\nreturn x\nend\nvar t = 0\nrepeat 100\nt = maybe(t + 1) or_else -1\nend\n",
+            "fn maybe(x) {\nif x > 100 {\nreturn fail(\"big\")\n}\nreturn x\n}\nvar t = 0\nrepeat 100 {\nt = maybe(t + 1) or_else -1\n}\n",
         ),
         (
             "vm/attempt",
-            "var t = 0\nrepeat 50\nattempt\nt = Int(\"xx\")\nfailed err\nt = -1\nend\nend\n",
+            "var t = 0\nrepeat 50 {\nattempt {\nt = Int(\"xx\")\n} failed err {\nt = -1\n}\n}\n",
         ),
         (
             "vm/contracts",
-            "fn f(x: Int) -> Int\nreturn x + 1\nend\nvar t = 0\nrepeat 100\nt = f(t)\nend\n",
+            "fn f(x: Int) -> Int {\nreturn x + 1\n}\nvar t = 0\nrepeat 100 {\nt = f(t)\n}\n",
         ),
         (
             "vm/invariant-commit",
@@ -239,12 +239,12 @@ pub(crate) fn js_workloads(rounds: usize, _quick: bool) -> Vec<Sample> {
 pub(crate) fn scaling(rounds: usize, _quick: bool) -> Vec<String> {
     let mut lines = Vec::new();
     for (label, template) in [
-        ("list-build", "var xs = []\nrepeat {n}\nxs.add(1)\nend\n"),
+        ("list-build", "var xs = []\nrepeat {n} {\nxs.add(1)\n}\n"),
         (
             "list-iterate",
-            "var xs = []\nrepeat {n}\nxs.add(1)\nend\nvar t = 0\neach x in xs\nt = t + x\nend\n",
+            "var xs = []\nrepeat {n} {\nxs.add(1)\n}\nvar t = 0\neach x in xs {\nt = t + x\n}\n",
         ),
-        ("dict-insert", "var d = {}\nrepeat {n}\nd[\"k\"] = 1\nend\n"),
+        ("dict-insert", "var d = {}\nrepeat {n} {\nd[\"k\"] = 1\n}\n"),
     ] {
         let mut medians = Vec::new();
         for scale in [1usize, 2, 4, 8] {

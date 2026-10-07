@@ -120,7 +120,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "fn add(a, b) -> Int\n  return a + b\nend",
+            "fn add(a, b) -> Int {\n  return a + b\n}",
         );
         let (prog, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);
@@ -144,7 +144,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "struct Point\n  fixed x\n  var y\nend\n\nimpl Point\n  fn move_by(dx, dy)\n    self.x = self.x + dx\n  end\nend",
+            "struct Point {\n  fixed x\n  var y\n}\n\nPoint:move_by(dx, dy) {\n    self.x = self.x + dx\n}",
         );
         let (prog, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);
@@ -156,7 +156,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "items.each() do item\n  print(item)\nend",
+            "items.each() do item {\n  print(item)\n}",
         );
         let (prog, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);
@@ -168,7 +168,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "match status\n  when 200 then \"ok\"\n  when 404, 500 then \"err\"\n  else \"unknown\"\nend",
+            "match status {\n  when 200 then \"ok\"\n  when 404, 500 then \"err\"\n  else \"unknown\"\n}",
         );
         let (prog, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);
@@ -180,7 +180,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "if x > 10 then\n  y = 1\nelif x == 10 then\n  y = 0\nelse\n  y = -1\nend",
+            "if x > 10 {\n  y = 1\n} elif x == 10 {\n  y = 0\n} else {\n  y = -1\n}",
         );
         let (prog, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);
@@ -192,7 +192,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "while x > 0\n  x = x - 1\nend\nrepeat 5 as i\n  print(i)\nend\neach item in list\n  print(item)\nend",
+            "while x > 0 {\n  x = x - 1\n}\nrepeat 5 as i {\n  print(i)\n}\neach item in list {\n  print(item)\n}",
         );
         let (prog, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);
@@ -204,7 +204,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "attempt\n  risky_call()\nfailed err\n  handle(err)\nend",
+            "attempt {\n  risky_call()\n} failed err {\n  handle(err)\n}",
         );
         let (prog, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);
@@ -216,7 +216,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "interface Printable\n  fn print()\nend\n\nsatisfy Point: Printable",
+            "interface Printable {\n  fn print()\n}\n\n#!satisfies Printable\nstruct Point {\n  x\n}",
         );
         let (prog, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);
@@ -531,9 +531,9 @@ mod tests {
             let dict = {
                 "key": 42,
             }
-            struct P
+            struct P {
                 x = 0
-            end
+            }
             let p = P{
                 x = 10,
             }

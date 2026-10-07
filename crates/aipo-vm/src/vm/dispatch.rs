@@ -135,7 +135,7 @@ impl Vm {
                             expected: "struct".to_string(),
                             actual: other.type_name().to_string(),
                         }
-                        .into())
+                        .into());
                     }
                 };
                 let copied = Rc::new(RefCell::new(StructInstance {
@@ -148,6 +148,26 @@ impl Vm {
                     .checked_sub(1)
                     .ok_or(VmFault::StackUnderflow)?;
                 self.stack[slot] = Value::Struct(copied);
+            }
+            OpCode::IsVariant => {
+                let name_idx = self.read_u16(module)? as usize;
+                let expected =
+                    module
+                        .names
+                        .get(name_idx)
+                        .ok_or_else(|| VmFault::CorruptedBytecode {
+                            offset: self.ip - 2,
+                            reason: format!("name index {name_idx} out of bounds"),
+                        })?;
+                let val = self.pop()?;
+                let matches = match &val {
+                    Value::Struct(inst) => {
+                        let t = &inst.borrow().type_name;
+                        t == expected || t.ends_with(&format!(".{expected}"))
+                    }
+                    _ => false,
+                };
+                self.push(Value::Bool(matches))?;
             }
             OpCode::GetLocal => {
                 let slot = self.read_u16(module)? as usize;

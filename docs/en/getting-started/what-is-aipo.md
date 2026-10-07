@@ -16,26 +16,33 @@ In Aipo, values have concrete types and the runtime never performs arbitrary or 
 let x = "42"
 let y = 10
 
-// Runtime type fault:
-// Operator '+' does not concatenate String and Int implicitly
-let z = x + y // Explicit failure!
+# Runtime type fault:
+# Operator '+' does not concatenate String and Int implicitly
+let z = x + y # Explicit failure!
 ```
 
 Converting or concatenating values requires clear programmer intent.
 
-### 2. Structural Invariants & Contracts
+### 2. Structural Invariants, Contracts, and Enums
 
-While traditional languages require scattering manual assertions across every method, Aipo introduces the `invariant()` hook inside the struct's `impl` block:
+While traditional languages require scattering manual assertions across every method, Aipo introduces the `invariant` hook bound directly to the type:
 
 ```aipo
 struct Temperature {
-    var celsius = 0.0
+    var celsius: Float = 0.0
 }
 
-impl Temperature {
-    invariant {
-        self.celsius >= -273.15 # Cannot be below absolute zero
-    }
+Temperature:invariant {
+    self.celsius >= -273.15 # Cannot be below absolute zero
+}
+```
+
+Aipo also provides **closed sum type enums** with compiler-enforced exhaustiveness checks in `match`:
+
+```aipo
+enum RunMode {
+    Manual,
+    Automated { interval_ms: Int },
 }
 ```
 

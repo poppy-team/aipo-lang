@@ -46,7 +46,11 @@ fn run_program(path: &Path) -> (u8, String, String) {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         String::from_utf8_lossy(&buffer).into_owned()
     };
-    (code, program_output, String::from_utf8_lossy(&err).into_owned())
+    (
+        code,
+        program_output,
+        String::from_utf8_lossy(&err).into_owned(),
+    )
 }
 
 fn check_program(path: &Path) -> (u8, String, String) {
@@ -55,17 +59,21 @@ fn check_program(path: &Path) -> (u8, String, String) {
     let mut out = Vec::new();
     let mut err = Vec::new();
     let code = aipo_cli::run_with(&args, &mut out, &mut err);
-    (code, String::from_utf8_lossy(&out).into_owned(), String::from_utf8_lossy(&err).into_owned())
+    (
+        code,
+        String::from_utf8_lossy(&out).into_owned(),
+        String::from_utf8_lossy(&err).into_owned(),
+    )
 }
 
 #[test]
 fn test_with_expression_basic_functional_update() {
     let temp = std::env::temp_dir().join("aipo_with_basic.aipo");
     let source = r#"
-struct Point
+struct Point {
     x
     y
-end
+}
 
 let p1 = Point{x = 1, y = 2}
 let p2 = p1 with { y: 99 }
@@ -84,11 +92,11 @@ io.println(String(p2.x) + "," + String(p2.y))
 fn test_with_expression_multiple_overrides_and_chaining() {
     let temp = std::env::temp_dir().join("aipo_with_multi.aipo");
     let source = r#"
-struct Point
+struct Point {
     x
     y
     z
-end
+}
 
 let p = Point{x = 1, y = 2, z = 3}
 let updated = p with { x: 10, z: 30 }
@@ -113,14 +121,14 @@ io.println(String(a == b))
 fn test_with_expression_on_call_result() {
     let temp = std::env::temp_dir().join("aipo_with_call.aipo");
     let source = r#"
-struct Point
+struct Point {
     x
     y
-end
+}
 
-fn make_point(x, y)
+fn make_point(x, y) {
     return Point{x = x, y = y}
-end
+}
 
 let p = make_point(3, 4) with { y: 40 }
 io.println(String(p.x) + "," + String(p.y))
@@ -136,10 +144,10 @@ io.println(String(p.x) + "," + String(p.y))
 fn test_with_expression_static_error_on_unknown_field() {
     let temp = std::env::temp_dir().join("aipo_with_err_field.aipo");
     let source = r#"
-struct Point
+struct Point {
     x
     y
-end
+}
 
 let p = Point{x = 1, y = 2} with { nope: 9 }
 io.println(p)
@@ -162,10 +170,10 @@ io.println(p)
 fn test_with_expression_static_error_on_fixed_field() {
     let temp = std::env::temp_dir().join("aipo_with_err_fixed.aipo");
     let source = r#"
-struct Account
+struct Account {
     fixed id
     balance
-end
+}
 
 let a = Account{id = 1, balance = 100} with { id = 999 }
 io.println(a)
@@ -184,9 +192,9 @@ io.println(a)
 fn test_with_expression_runtime_fault_on_non_struct_base() {
     let temp = std::env::temp_dir().join("aipo_with_non_struct.aipo");
     let source = r#"
-fn get_val()
+fn get_val() {
     return 42
-end
+}
 
 let bad = get_val() with { y: 1 }
 io.println(bad)

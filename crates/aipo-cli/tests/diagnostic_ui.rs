@@ -78,7 +78,11 @@ fn expect_snapshot(stem: &str, extension: &str, actual: &str) {
 
 /// Check-time cases: fixture, expected code, expected `line:column`.
 const CHECK_CASES: &[(&str, &str, &str)] = &[
-    ("01_parse_missing_end", "AIPO_PARSE_UNEXPECTED_TOKEN", "3:1"),
+    (
+        "01_parse_missing_brace",
+        "AIPO_PARSE_UNEXPECTED_TOKEN",
+        "3:1",
+    ),
     ("04_sem_unknown_name", "AIPO_SEM_UNKNOWN_NAME", "1:12"),
     (
         "15_sem_contract_violation",
@@ -170,11 +174,11 @@ fn test_nesting_cascade_is_controlled() {
     let _guard = sink_guard();
     let mut deep = String::new();
     for _ in 0..600 {
-        deep.push_str("if true\n");
+        deep.push_str("if true {\n");
     }
     deep.push_str("io.println(1)\n");
     for _ in 0..600 {
-        deep.push_str("end\n");
+        deep.push_str("}\n");
     }
     let path = std::env::temp_dir().join("aipo-ui-nesting.aipo");
     std::fs::write(&path, &deep).expect("scratch is writable");

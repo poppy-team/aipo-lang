@@ -145,12 +145,22 @@ impl Diagnostic {
         serde_json::to_string(self)
     }
 
-    /// Renders a human-readable text representation of this diagnostic.
+    /// Formats the diagnostic as a human-readable compiler error string with source snippet.
     #[must_use]
     pub fn render_human(&self, source_map: Option<&SourceMap>) -> String {
+        self.render_human_with_locale(source_map, crate::locale::Locale::detect())
+    }
+
+    /// Formats the diagnostic as a human-readable compiler error string using the specified locale.
+    #[must_use]
+    pub fn render_human_with_locale(
+        &self,
+        source_map: Option<&SourceMap>,
+        locale: crate::locale::Locale,
+    ) -> String {
         let mut out = String::new();
         let code_str = self.code.as_str();
-        let severity_str = self.severity.as_str();
+        let severity_str = locale.severity_label(self.severity);
 
         if let Some(span) = &self.primary_span {
             out.push_str(&format!(
@@ -172,12 +182,17 @@ impl Diagnostic {
             out.push_str(&format!("{severity_str}: [{code_str}] {}\n", self.message));
         }
 
+        let note_lbl = locale.note_label();
         for note in &self.notes {
-            out.push_str(&format!("  = note: {note}\n"));
+            out.push_str(&format!("  = {note_lbl}: {note}\n"));
         }
 
+        let help_lbl = locale.help_label();
         for sug in &self.suggestions {
-            out.push_str(&format!("  = help: {}: {}\n", sug.message, sug.replacement));
+            out.push_str(&format!(
+                "  = {help_lbl}: {}: {}\n",
+                sug.message, sug.replacement
+            ));
         }
 
         out

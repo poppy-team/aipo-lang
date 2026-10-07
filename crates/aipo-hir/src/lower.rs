@@ -55,9 +55,16 @@ impl LoweringContext {
         match item {
             Item::Fn(f) => HirItem::Fn(self.lower_function_decl(f)),
             Item::Struct(s) => HirItem::Struct(self.lower_struct_decl(s)),
-            Item::Impl(i) => HirItem::Impl(Box::new(self.lower_impl_block(i))),
+            Item::Enum(e) => HirItem::Enum(self.lower_enum_decl(e)),
+            // `Tipo:nome` and `Tipo::[...]` desugar into the internal impl-block shape,
+            // so the IR/VM/backends see exactly what `impl Tipo { ... }` produced: the
+            // association is already resolved and the function is named `Tipo.metodo`.
+            Item::Method(method) => HirItem::Impl(Box::new(self.lower_method_decl(method))),
+            Item::Invariant(invariant) => {
+                HirItem::Impl(Box::new(self.lower_target_invariant(invariant)))
+            }
+            Item::Batch(batch) => HirItem::Batch(self.lower_batch_bind(batch)),
             Item::Interface(i) => HirItem::Interface(self.lower_interface_decl(i)),
-            Item::Satisfy(s) => HirItem::Satisfy(self.lower_satisfy_decl(s)),
             Item::Import(i) => HirItem::Import(self.lower_import_decl(i)),
             Item::Export(e) => HirItem::Export(self.lower_export_decl(e)),
         }
@@ -70,6 +77,7 @@ impl LoweringContext {
             self.lower_stmt(stmt, &mut body);
         }
         HirFunctionDecl {
+            directives: f.directives,
             name: f.name.name,
             is_async: f.is_async,
             params,
@@ -98,31 +106,94 @@ impl LoweringContext {
             .map(|f| HirStructField {
                 name: f.name.name,
                 is_fixed: f.is_fixed,
+                type_annotation: f.type_annotation,
                 default: f.default.map(|d| self.lower_expr(d)),
                 span: f.span,
             })
             .collect();
         HirStructDecl {
+            directives: s.directives,
             name: s.name.name,
             fields,
             span: s.span,
         }
     }
 
-    fn lower_impl_block(&mut self, i: ImplBlock) -> HirImplBlock {
-        let init = i.init.map(|init_fn| self.lower_function_decl(init_fn));
-        let invariant = i.invariant.map(|hook| self.lower_invariant_hook(hook));
-        let methods = i
-            .methods
+    fn lower_enum_decl(&mut self, e: EnumDecl) -> HirEnumDecl {
+        let variants = e
+            .variants
             .into_iter()
-            .map(|m| self.lower_function_decl(m))
+            .map(|v| HirEnumVariant {
+                name: v.name.name,
+                payload: match v.payload {
+                    EnumVariantPayload::Unit => HirEnumVariantPayload::Unit,
+                    EnumVariantPayload::Tuple(fields) => HirEnumVariantPayload::Tuple(
+                        fields
+                            .into_iter()
+                            .map(|f| HirEnumTupleField {
+                                name: f.name.map(|n| n.name),
+                                type_annotation: f.type_annotation,
+                                span: f.span,
+                            })
+                            .collect(),
+                    ),
+                    EnumVariantPayload::Struct(fields) => HirEnumVariantPayload::Struct(
+                        fields
+                            .into_iter()
+                            .map(|f| HirEnumStructField {
+                                name: f.name.name,
+                                type_annotation: f.type_annotation,
+                                span: f.span,
+                            })
+                            .collect(),
+                    ),
+                },
+                span: v.span,
+            })
             .collect();
+        HirEnumDecl {
+            name: e.name.name,
+            variants,
+            span: e.span,
+        }
+    }
+
+    /// Lowers `Tipo:init(...)` into the init slot of an impl block.
+    fn lower_method_decl(&mut self, m: MethodDecl) -> HirImplBlock {
+        let function = self.lower_function_decl(m.function);
+        // `init` fills the init slot; anything else is an ordinary method. The two
+        // branches are exclusive, so `function` moves exactly once.
+        let (init, methods) = if function.name == "init" {
+            (Some(function), Vec::new())
+        } else {
+            (None, vec![function])
+        };
         HirImplBlock {
-            target: i.target.name,
+            target: m.target.name,
             init,
-            invariant,
+            invariant: None,
             methods,
-            span: i.span,
+            span: m.span,
+        }
+    }
+
+    /// Lowers `Tipo:invariant { ... }` into the invariant slot of an impl block.
+    fn lower_target_invariant(&mut self, invariant: TargetInvariant) -> HirImplBlock {
+        HirImplBlock {
+            target: invariant.target.name,
+            init: None,
+            invariant: Some(self.lower_invariant_hook(invariant.hook)),
+            methods: Vec::new(),
+            span: invariant.span,
+        }
+    }
+
+    /// Lowers `Tipo::[fn1, fn2]`, the batch association form.
+    fn lower_batch_bind(&mut self, batch: BatchBind) -> HirBatchBind {
+        HirBatchBind {
+            target: batch.target.name,
+            functions: batch.functions.into_iter().map(|f| f.name).collect(),
+            span: batch.span,
         }
     }
 
@@ -160,6 +231,7 @@ impl LoweringContext {
         };
 
         HirFunctionDecl {
+            directives: Vec::new(),
             name: "invariant".to_string(),
             is_async: false,
             params: vec![self_param],
@@ -179,14 +251,6 @@ impl LoweringContext {
             name: i.name.name,
             methods,
             span: i.span,
-        }
-    }
-
-    fn lower_satisfy_decl(&mut self, s: SatisfyDecl) -> HirSatisfyDecl {
-        HirSatisfyDecl {
-            target: s.target.name,
-            interfaces: s.interfaces.into_iter().map(|i| i.name).collect(),
-            span: s.span,
         }
     }
 
@@ -282,6 +346,31 @@ impl LoweringContext {
                                     fields.into_iter().map(|field| field.name).collect(),
                                 )
                             }
+                            aipo_ast::MatchPattern::Variant {
+                                enum_name,
+                                variant_name,
+                                payload,
+                                span,
+                            } => HirMatchPattern::Variant {
+                                enum_name: enum_name.map(|id| id.name),
+                                variant_name: variant_name.name,
+                                payload: match payload {
+                                    aipo_ast::VariantPatternPayload::Unit => {
+                                        HirVariantPatternPayload::Unit
+                                    }
+                                    aipo_ast::VariantPatternPayload::Tuple(ids) => {
+                                        HirVariantPatternPayload::Tuple(
+                                            ids.into_iter().map(|id| id.name).collect(),
+                                        )
+                                    }
+                                    aipo_ast::VariantPatternPayload::Struct(ids) => {
+                                        HirVariantPatternPayload::Struct(
+                                            ids.into_iter().map(|id| id.name).collect(),
+                                        )
+                                    }
+                                },
+                                span,
+                            },
                         })
                         .collect();
                     let guard = arm.guard.map(|cond| self.lower_expr(cond));

@@ -105,7 +105,7 @@ fn test_set_global_catches_an_escaped_binding() {
 fn test_return_catches_an_escaped_binding() {
     assert_scope_escape(
         run_with_escaped_handle(
-            "fn leak()\n    return leaked\nend\nvar held = leak()\n",
+            "fn leak() {\n    return leaked\n}\nvar held = leak()\n",
             true,
         ),
         "a return value",
@@ -142,7 +142,7 @@ fn test_set_index_catches_an_escaped_binding() {
 fn test_set_field_catches_an_escaped_binding() {
     assert_scope_escape(
         run_with_escaped_handle(
-            "struct Box\n    held\nend\nvar b = Box{held = none}\nb.held = leaked\n",
+            "struct Box {\n    held\n}\nvar b = Box{held = none}\nb.held = leaked\n",
             true,
         ),
         "field 'held'",
@@ -198,7 +198,7 @@ fn test_closing_a_scope_releases_the_slot_before_anything_is_published() {
 fn test_closure_upvalue_catches_an_escaped_binding() {
     assert_scope_escape(
         run_with_escaped_handle(
-            "fn make_leak()\n    var local_leak = leaked\n    return () => local_leak\nend\nvar f = make_leak()\n",
+            "fn make_leak() {\n    var local_leak = leaked\n    return () => local_leak\n}\nvar f = make_leak()\n",
             true,
         ),
         "a return value",

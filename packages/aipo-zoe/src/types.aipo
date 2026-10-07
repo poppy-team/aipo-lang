@@ -19,13 +19,11 @@ struct Rect {
     var height = 0.0
 }
 
-impl Rect {
-    fn contains(self, px, py) {
-        if px >= self.x and px <= (self.x + self.width) and py >= self.y and py <= (self.y + self.height) {
-            return true
-        }
-        return false
+Rect:contains(self, px, py) {
+    if px >= self.x and px <= (self.x + self.width) and py >= self.y and py <= (self.y + self.height) {
+        return true
     }
+    return false
 }
 
 fn types_make_rect(x, y, w, h) {
@@ -86,10 +84,8 @@ struct StateSignal {
     var value
 }
 
-impl StateSignal {
-    fn get(self) {
-        return self.value
-    }
+StateSignal:get(self) {
+    return self.value
 }
 
 fn create_signal(id, value) {
@@ -106,10 +102,8 @@ struct MemoSignal {
     var compute_fn
 }
 
-impl MemoSignal {
-    fn get(self) {
-        return self.value
-    }
+MemoSignal:get(self) {
+    return self.value
 }
 
 fn create_memo(id, value, deps, compute_fn) {
@@ -131,10 +125,8 @@ struct TweenSignal {
     var easing
 }
 
-impl TweenSignal {
-    fn get(self) {
-        return self.value
-    }
+TweenSignal:get(self) {
+    return self.value
 }
 
 fn create_tween(id, value, target_val, duration, easing) {

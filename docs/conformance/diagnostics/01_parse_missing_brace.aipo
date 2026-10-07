@@ -1,2 +1,2 @@
-fn greet(name)
+fn greet(name) {
     io.println(name)

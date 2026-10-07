@@ -109,6 +109,8 @@ pub enum CoreInst {
     /// Pops the value, the index and the collection; on success the stack is exactly as
     /// it was. A `Failure` in any of the three propagates like [`CoreInst::SetField`].
     SetIndex(SourceSpan),
+    /// Tests whether the struct on top of the stack matches the variant name.
+    IsVariant(String, SourceSpan),
     /// Construct list with count items.
     BuildList(usize, SourceSpan),
     /// Construct dictionary with count key-value pairs.

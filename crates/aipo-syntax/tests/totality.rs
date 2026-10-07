@@ -20,7 +20,8 @@ fn alphabet() -> Vec<TokenKind> {
         TokenKind::Fn,
         TokenKind::If,
         TokenKind::Else,
-        TokenKind::End,
+        TokenKind::LBrace,
+        TokenKind::RBrace,
         TokenKind::Return,
         TokenKind::Match,
         TokenKind::When,
@@ -81,10 +82,11 @@ fn test_deeply_nested_tokens_hit_the_bound_not_the_stack() {
     for _ in 0..500 {
         tokens.push(token(TokenKind::If));
         tokens.push(token(TokenKind::True));
+        tokens.push(token(TokenKind::LBrace));
     }
     tokens.push(token(TokenKind::IntLiteral("1".to_string())));
     for _ in 0..500 {
-        tokens.push(token(TokenKind::End));
+        tokens.push(token(TokenKind::RBrace));
     }
     tokens.push(token(TokenKind::Eof));
     let source = Source::new(SourceId::next(), "deep.aipo", "x");

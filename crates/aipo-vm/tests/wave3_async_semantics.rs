@@ -75,9 +75,9 @@ fn run_error(code: &str) -> VmError {
 #[test]
 fn test_async_fn_call_yields_a_task_and_await_returns_the_value() {
     let vm = run(r#"
-        async fn double(x)
+        async fn double(x) {
             return x * 2
-        end
+        }
 
         let t = double(21)
         let value = await t
@@ -93,15 +93,13 @@ fn test_async_fn_call_yields_a_task_and_await_returns_the_value() {
 #[test]
 fn test_async_method_call_yields_a_task_carrying_the_receiver() {
     let vm = run(r#"
-        struct Counter
+        struct Counter {
             value
-        end
+        }
 
-        impl Counter
-            async fn doubled(self)
+        Counter:async doubled(self) {
                 return self.value * 2
-            end
-        end
+        }
 
         let counter = Counter{value = 21}
         let t = counter.doubled()
@@ -118,9 +116,9 @@ fn test_async_method_call_yields_a_task_carrying_the_receiver() {
 #[test]
 fn test_async_closure_call_yields_a_task() {
     let vm = run(r#"
-        let increment = async fn (n)
+        let increment = async fn (n) {
             return n + 1
-        end
+        }
 
         let t = increment(41)
         let value = await t
@@ -132,18 +130,18 @@ fn test_async_closure_call_yields_a_task() {
 #[test]
 fn test_failure_produced_inside_a_task_is_captured_by_attempt() {
     let vm = run(r#"
-        async fn risky()
+        async fn risky() {
             return fail("boom")
-        end
+        }
 
         var outcome = "pending"
-        attempt
+        attempt {
             let t = risky()
             let value = await t
             outcome = String(value)
-        failed err
+        } failed err {
             outcome = f"caught: {err.message}"
-        end
+        }
         "#);
 
     assert_eq!(
@@ -156,9 +154,9 @@ fn test_failure_produced_inside_a_task_is_captured_by_attempt() {
 fn test_failure_escaping_a_task_ends_the_program_as_uncaught() {
     let error = run_error(
         r#"
-        async fn risky()
+        async fn risky() {
             return fail("boom")
-        end
+        }
 
         let t = risky()
         let value = await t
@@ -174,18 +172,18 @@ fn test_fault_inside_a_driven_task_keeps_its_own_code() {
     // caller as `AIPO_RT_DIV_ZERO` instead of being downgraded to a capturable value.
     let error = run_error(
         r#"
-        async fn div_zero()
-            return 1 div 0
-        end
+        async fn div_zero() {
+            return 1 // 0
+        }
 
         var outcome = "pending"
-        attempt
+        attempt {
             let t = div_zero()
             let value = await t
             outcome = String(value)
-        failed err
+        } failed err {
             outcome = f"caught: {err.message}"
-        end
+        }
         "#,
     );
 
@@ -203,15 +201,15 @@ fn test_await_cycle_between_tasks_is_a_fault() {
         var first_holder = 0
         var second_holder = 0
 
-        async fn first()
+        async fn first() {
             let other = await second_holder
             return other
-        end
+        }
 
-        async fn second()
+        async fn second() {
             let other = await first_holder
             return other
-        end
+        }
 
         first_holder = first()
         second_holder = second()
@@ -229,10 +227,10 @@ fn test_await_cycle_between_tasks_is_a_fault() {
 fn test_awaiting_a_cancelled_task_faults_with_cancelled() {
     let error = run_error(
         r#"
-        async fn worker()
+        async fn worker() {
             task.sleep(5)
             return 1
-        end
+        }
 
         let t = worker()
         task.cancel(t)
@@ -253,15 +251,15 @@ fn test_await_cycle_across_join_is_a_fault() {
         var first_holder = 0
         var second_holder = 0
 
-        async fn first()
+        async fn first() {
             let other = task.all([second_holder])
             return other
-        end
+        }
 
-        async fn second()
+        async fn second() {
             let other = await first_holder
             return other
-        end
+        }
 
         first_holder = first()
         second_holder = second()

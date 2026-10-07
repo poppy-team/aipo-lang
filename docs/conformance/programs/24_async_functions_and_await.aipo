@@ -1,9 +1,9 @@
 # `async fn` is call protocol, not syntax sugar: calling it spawns the task
 # eagerly and yields its `Task` handle, and `await` is explicit everywhere
 # (canon: no implicit parallelism).
-async fn double(x)
+async fn double(x) {
     return x * 2
-end
+}
 
 let t = double(21)
 let doubled = await t
@@ -17,31 +17,29 @@ io.println(task.all(tasks))
 let spawned = task.spawn(double, [5])
 await spawned
 
-async fn composed()
+async fn composed() {
     return await double(10)
-end
+}
 let composed_value = await composed()
 io.println(composed_value)
 
 # An anonymous `async fn` is a closure with the same call protocol.
-let increment = async fn (n)
+let increment = async fn (n) {
     return n + 1
-end
+}
 let incremented = increment(41)
 let incremented_value = await incremented
 io.println(incremented_value)
 
 # An `impl` method declared `async fn` is an `async fn` too: the receiver travels
 # as argument 0 of the spawned task body.
-struct Counter
+struct Counter {
     value
-end
+}
 
-impl Counter
-    async fn doubled(self)
-        return self.value * 2
-    end
-end
+Counter:async doubled(self) {
+    return self.value * 2
+}
 
 let counter = Counter{value = 21}
 let doubled_counter = counter.doubled()

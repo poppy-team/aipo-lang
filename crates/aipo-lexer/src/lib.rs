@@ -22,7 +22,7 @@ mod tests {
 
     #[test]
     fn test_keywords_and_identifiers() {
-        let code = "let var fixed fn struct impl interface satisfy init invariant if elif else then end match when loop while repeat as each in break continue return fail or_else attempt failed import export is not and or true false none self self! do div div=";
+        let code = "let var fixed fn struct interface init invariant if elif else then match when loop while repeat as each in break continue return fail or_else attempt failed import export is not and or true false none self do div div= end";
         let source = Source::new(SourceId(1), "test.aipo", code);
         let (tokens, diags) = Lexer::new(&source).tokenize();
         assert!(diags.is_empty());
@@ -36,16 +36,13 @@ mod tests {
                 TokenKind::Fixed,
                 TokenKind::Fn,
                 TokenKind::Struct,
-                TokenKind::Impl,
                 TokenKind::Interface,
-                TokenKind::Satisfy,
                 TokenKind::Init,
                 TokenKind::Invariant,
                 TokenKind::If,
                 TokenKind::Elif,
                 TokenKind::Else,
                 TokenKind::Then,
-                TokenKind::End,
                 TokenKind::Match,
                 TokenKind::When,
                 TokenKind::Loop,
@@ -71,10 +68,11 @@ mod tests {
                 TokenKind::False,
                 TokenKind::None,
                 TokenKind::SelfVal,
-                TokenKind::SelfMut,
                 TokenKind::Do,
-                TokenKind::Div,
-                TokenKind::DivEq,
+                TokenKind::Identifier("div".to_string()),
+                TokenKind::Identifier("div".to_string()),
+                TokenKind::Equal,
+                TokenKind::Identifier("end".to_string()),
                 TokenKind::Eof,
             ]
         );
@@ -217,6 +215,41 @@ line 2"""
             literals[1],
             (r"e\u{0301}".to_string(), StringPrefix::Raw),
             "a raw literal keeps the escape text, which is already NFC"
+        );
+    }
+
+    /// `::` is the batch-association token (`Retangulo::[f1, f2]`): the two colons
+    /// lex as one, so a spaced `a : : b` stays two annotations and not one batch.
+    #[test]
+    fn test_colon_colon_lexes_as_single_token() {
+        let code = "Retangulo::[f1, f2]\nlet x: Int = 1";
+        let source = Source::new(SourceId(1), "test.aipo", code);
+        let (tokens, diags) = Lexer::new(&source).tokenize();
+        assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+
+        let kinds: Vec<_> = tokens
+            .into_iter()
+            .filter(|t| !matches!(t.kind, TokenKind::Newline | TokenKind::Eof))
+            .map(|t| t.kind)
+            .collect();
+
+        assert_eq!(
+            kinds,
+            vec![
+                TokenKind::Identifier("Retangulo".into()),
+                TokenKind::ColonColon,
+                TokenKind::LBracket,
+                TokenKind::Identifier("f1".into()),
+                TokenKind::Comma,
+                TokenKind::Identifier("f2".into()),
+                TokenKind::RBracket,
+                TokenKind::Let,
+                TokenKind::Identifier("x".into()),
+                TokenKind::Colon,
+                TokenKind::Identifier("Int".into()),
+                TokenKind::Equal,
+                TokenKind::IntLiteral("1".into()),
+            ]
         );
     }
 

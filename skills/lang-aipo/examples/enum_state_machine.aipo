@@ -1,0 +1,71 @@
+# Demonstração canônica de 'enum' (tipo de soma fechado) em Aipo V1
+import io
+
+export EstadoConexao, transicionar, avaliar_estado
+
+# Declaração do enum com as 3 formas de variante suportadas
+enum EstadoConexao {
+    Desconectado,
+    Tentando(tentativa: Int),
+    Conectado { ip: String, ping_ms: Int },
+    Erro(mensagem: String),
+}
+
+# Invariante associado ao enum
+EstadoConexao:invariant {
+    self is EstadoConexao
+}
+
+# Método associado ao enum (self implícito em leitura)
+EstadoConexao:esta_operacional() -> Bool {
+    return match self {
+        when EstadoConexao.Conectado { ip, ping_ms } {
+            ping_ms < 500
+        }
+        else {
+            false
+        }
+    }
+}
+
+fn avaliar_estado(estado: EstadoConexao) -> String {
+    # Match exaustivo sobre enum: todas as variantes cobertas
+    return match estado {
+        when EstadoConexao.Desconectado {
+            "Conexão inativa"
+        }
+        when EstadoConexao.Tentando(tentativa) {
+            f"Tentando reconectar (tentativa #{tentativa})"
+        }
+        when EstadoConexao.Conectado { ip, ping_ms } {
+            f"Conectado a {ip} ({ping_ms}ms)"
+        }
+        when EstadoConexao.Erro(mensagem) {
+            f"Falha de conexão: {mensagem}"
+        }
+    }
+}
+
+#!test("ciclo de vida e matching exaustivo de enum")
+fn test_enum_estados() {
+    let s1 = EstadoConexao.Desconectado
+    let s2 = EstadoConexao.Tentando(2)
+    let s3 = EstadoConexao.Conectado { ip: "192.168.1.1", ping_ms: 42 }
+    let s4 = EstadoConexao.Erro("Timeout de rede")
+
+    if avaliar_estado(s1) != "Conexão inativa" {
+        fail "avaliação de estado desconectado falhou"
+    }
+
+    if not avaliar_estado(s2).contains("#2") {
+        fail "payload posicional falhou"
+    }
+
+    if not s3.esta_operacional() {
+        fail "método associado ao enum falhou"
+    }
+
+    if not avaliar_estado(s4).contains("Timeout") {
+        fail "payload posicional de erro falhou"
+    }
+}

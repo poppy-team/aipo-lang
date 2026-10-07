@@ -49,21 +49,68 @@ pub enum Item {
     Fn(FunctionDecl),
     /// Data structure declaration.
     Struct(StructDecl),
-    /// Receiver-associated behavior block.
-    Impl(ImplBlock),
+    /// Closed algebraic data type (sum type) declaration.
+    Enum(EnumDecl),
+    /// Method or `init` hook declared as `Tipo:nome(...)`.
+    ///
+    /// The association lives in the declaration, so no wrapper block is needed and the
+    /// receiver is implicit unless the method needs `var self`.
+    Method(MethodDecl),
+    /// Structural invariant declared as `Tipo:invariant { ... }`.
+    Invariant(TargetInvariant),
+    /// Batch association `Tipo::[fn1, fn2]`, promoting free functions to methods.
+    Batch(BatchBind),
     /// Structural interface declaration.
     Interface(InterfaceDecl),
-    /// Interface satisfaction declaration.
-    Satisfy(SatisfyDecl),
     /// Module import declaration.
     Import(ImportDecl),
     /// Public module export declaration.
     Export(ExportDecl),
 }
 
+/// Method or `init` hook bound to a type by `Tipo:nome`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MethodDecl {
+    /// Type the method belongs to.
+    pub target: Ident,
+    /// Method name, or `init` for the construction hook.
+    pub function: FunctionDecl,
+    /// Source span covering `Tipo:nome(...) { ... }`.
+    pub span: SourceSpan,
+}
+
+/// Structural invariant bound to a type by `Tipo:invariant`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TargetInvariant {
+    /// Type the invariant belongs to.
+    pub target: Ident,
+    /// The hook body: Boolean conditions that must hold.
+    pub hook: InvariantHook,
+    /// Source span covering `Tipo:invariant { ... }`.
+    pub span: SourceSpan,
+}
+
+/// Batch association `Tipo::[fn1, fn2]`.
+///
+/// Each name refers to a free function; binding promotes it to a method of `target`,
+/// injecting the receiver as the first parameter while keeping the function callable
+/// on its own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BatchBind {
+    /// Type receiving the functions.
+    pub target: Ident,
+    /// Free function names being promoted.
+    pub functions: Vec<Ident>,
+    /// Source span covering `Tipo::[...]`.
+    pub span: SourceSpan,
+}
+
 /// Function declaration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionDecl {
+    /// Compiler directives `#!name ...` applied to this function.
+    #[serde(default)]
+    pub directives: Vec<Directive>,
     /// Function name.
     pub name: Ident,
     /// `true` for `async fn`: calling returns a `Task` instead of running.
@@ -83,7 +130,7 @@ pub struct FunctionDecl {
 pub struct Param {
     /// Parameter identifier.
     pub name: Ident,
-    /// True if marked mutable `name!` or `self!`.
+    /// True if marked mutable (`var name` / `var self`).
     pub is_mutable: bool,
     /// Optional contract `name: Type`.
     pub type_annotation: Option<TypeAnnotation>,
@@ -93,9 +140,26 @@ pub struct Param {
     pub span: SourceSpan,
 }
 
+/// Compiler directive `#!name ...` attached to the next item.
+///
+/// The `#[serde(default)]` keeps serialized fixtures valid without the field; the parser
+/// always fills the vector, even when empty.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Directive {
+    /// Directive name (`test`, `todo`, `deprecated`, `satisfies`, ...).
+    pub name: Ident,
+    /// Raw argument text after the name (`[tag]`, `"msg"`, or empty).
+    pub argument: Option<String>,
+    /// Source span covering `#!...`.
+    pub span: SourceSpan,
+}
+
 /// Struct declaration defining data fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StructDecl {
+    /// Compiler directives `#!name ...` applied to this struct.
+    #[serde(default)]
+    pub directives: Vec<Directive>,
     /// Struct name.
     pub name: Ident,
     /// Declared fields.
@@ -111,23 +175,69 @@ pub struct StructField {
     pub name: Ident,
     /// True if field is `fixed` (immutable after initialization).
     pub is_fixed: bool,
+    /// Optional declared type contract (`campo: Tipo`).
+    #[serde(default)]
+    pub type_annotation: Option<TypeAnnotation>,
     /// Optional default value.
     pub default: Option<Expr>,
     /// Source span.
     pub span: SourceSpan,
 }
 
-/// Impl block grouping associated functions and hooks for a type.
+/// Enum declaration defining a closed sum type with variants.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ImplBlock {
-    /// Target type name.
-    pub target: Ident,
-    /// Optional `init(...)` constructor hook.
-    pub init: Option<FunctionDecl>,
-    /// Optional `invariant()` validation hook.
-    pub invariant: Option<InvariantHook>,
-    /// Associated functions.
-    pub methods: Vec<FunctionDecl>,
+pub struct EnumDecl {
+    /// Compiler directives applied to this enum.
+    #[serde(default)]
+    pub directives: Vec<Directive>,
+    /// Enum type name.
+    pub name: Ident,
+    /// Declared variants.
+    pub variants: Vec<EnumVariant>,
+    /// Source span.
+    pub span: SourceSpan,
+}
+
+/// A variant of an enum.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumVariant {
+    /// Variant name.
+    pub name: Ident,
+    /// Payload carried by this variant.
+    pub payload: EnumVariantPayload,
+    /// Source span.
+    pub span: SourceSpan,
+}
+
+/// Payload carried by an enum variant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EnumVariantPayload {
+    /// Unit variant carrying no payload: `Inicial`.
+    Unit,
+    /// Positional payload: `Desligado(motivo: String)` or `Desligado(String)`.
+    Tuple(Vec<EnumTupleField>),
+    /// Named fields payload: `Ativo { desde: Int }`.
+    Struct(Vec<EnumStructField>),
+}
+
+/// Field of a tuple variant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumTupleField {
+    /// Optional field parameter name (e.g. `motivo` in `Desligado(motivo: String)`).
+    pub name: Option<Ident>,
+    /// Type contract.
+    pub type_annotation: TypeAnnotation,
+    /// Source span.
+    pub span: SourceSpan,
+}
+
+/// Field of a struct variant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumStructField {
+    /// Field name.
+    pub name: Ident,
+    /// Type contract.
+    pub type_annotation: Option<TypeAnnotation>,
     /// Source span.
     pub span: SourceSpan,
 }
@@ -148,17 +258,6 @@ pub struct InterfaceDecl {
     pub name: Ident,
     /// Required method signatures.
     pub methods: Vec<FunctionDecl>,
-    /// Source span.
-    pub span: SourceSpan,
-}
-
-/// `satisfy Type: Interface1, Interface2` structural check.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SatisfyDecl {
-    /// Target type.
-    pub target: Ident,
-    /// Satisfied interfaces.
-    pub interfaces: Vec<Ident>,
     /// Source span.
     pub span: SourceSpan,
 }
@@ -295,6 +394,28 @@ pub enum MatchPattern {
     /// Every listed name binds to that field of the target and is visible in the
     /// guard and the arm body. The block names only the fields the arm uses.
     Destructure(Vec<Ident>),
+    /// Enum variant pattern: `when Estado.Ativo { desde }` or `when Estado.Desligado(motivo)`.
+    Variant {
+        /// Optional enum type qualification (e.g. `Estado` in `Estado.Ativo`).
+        enum_name: Option<Ident>,
+        /// Variant name (e.g. `Ativo`).
+        variant_name: Ident,
+        /// Payload binding pattern.
+        payload: VariantPatternPayload,
+        /// Source span covering the variant pattern.
+        span: SourceSpan,
+    },
+}
+
+/// Payload binding in a variant pattern.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VariantPatternPayload {
+    /// No payload: `when Estado.Inicial`.
+    Unit,
+    /// Positional bindings: `when Estado.Desligado(motivo)`.
+    Tuple(Vec<Ident>),
+    /// Named bindings: `when Estado.Ativo { desde }`.
+    Struct(Vec<Ident>),
 }
 
 /// `attempt ... failed err ... end`
@@ -514,7 +635,7 @@ pub enum BinaryOp {
     Mul,
     /// `/`
     Div,
-    /// `div`
+    /// `//`
     IntDiv,
     /// `%`
     Mod,

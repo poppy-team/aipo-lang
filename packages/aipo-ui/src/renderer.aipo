@@ -23,7 +23,7 @@ fn generate_draw_commands(node: UINode, commands: List) {
     if node.kind == "Box" or node.kind == "Row" or node.kind == "Column" {
         let bg = layout_mod.prop_of(node, "background", none)
         if bg != none {
-            commands.add(DrawCommand{
+            commands.add(DrawCommand {
                     kind: "Rect",
                     rect: r,
                     color: bg,
@@ -36,7 +36,7 @@ fn generate_draw_commands(node: UINode, commands: List) {
                 })
         }
     } else if node.kind == "Text" {
-        commands.add(DrawCommand{
+        commands.add(DrawCommand {
                 kind: "Text",
                 rect: r,
                 color: layout_mod.prop_of(node, "color", none),
@@ -49,7 +49,7 @@ fn generate_draw_commands(node: UINode, commands: List) {
             })
     } else if node.kind == "Button" {
         # Default button rendering: background rectangle + centered label
-        commands.add(DrawCommand{
+        commands.add(DrawCommand {
                 kind: "Rect",
                 rect: r,
                 color: layout_mod.prop_of(node, "background", none),
@@ -60,7 +60,7 @@ fn generate_draw_commands(node: UINode, commands: List) {
                 font_size: 0.0,
                 font_weight: ""
             })
-        commands.add(DrawCommand{
+        commands.add(DrawCommand {
                 kind: "Text",
                 rect: r,
                 color: none,

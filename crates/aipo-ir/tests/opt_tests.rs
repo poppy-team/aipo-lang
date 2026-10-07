@@ -4,7 +4,7 @@
 //! the program: every corpus entry runs through the VM twice, once optimized and
 //! once not, and both runs must agree on the printed output and the return value.
 
-use aipo_ir::{optimize, CoreConstant, CoreFunction, CoreInst};
+use aipo_ir::{CoreConstant, CoreFunction, CoreInst, optimize};
 use aipo_testkit::pipeline::{lower_to_ir, run_capture};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -243,7 +243,10 @@ fn test_does_not_fold_overflowing_addition() {
     let instructions = &optimized.functions[0].instructions;
     // The two operands and the operator survive; nothing was folded away.
     assert!(
-        matches!(instructions.get(2), Some(CoreInst::Binary(aipo_ast::BinaryOp::Add, _))),
+        matches!(
+            instructions.get(2),
+            Some(CoreInst::Binary(aipo_ast::BinaryOp::Add, _))
+        ),
         "overflow must not become a folded constant: {instructions:?}"
     );
     assert!(
@@ -366,7 +369,10 @@ fn test_resolves_known_false_branch() {
     // body. The surviving stream therefore pushes `2` and returns.
     assert_eq!(instructions.len(), 2, "{instructions:?}");
     assert!(
-        matches!(instructions.first(), Some(CoreInst::Constant(CoreConstant::Int(2), _))),
+        matches!(
+            instructions.first(),
+            Some(CoreInst::Constant(CoreConstant::Int(2), _))
+        ),
         "the false branch resolved to the second arm: {instructions:?}"
     );
 }
@@ -459,9 +465,9 @@ fn test_jump_targets_survive_dead_code_removal() {
 fn test_folding_preserves_program_behaviour() {
     assert_same_output(
         r#"
-fn add(a, b)
+fn add(a, b) {
   return a + b
-end
+}
 io.println(String(add(2, 3) + add(10, 20)))
 io.println(String(2 * 3 + 4 * 5))
 "#,
@@ -473,18 +479,18 @@ io.println(String(2 * 3 + 4 * 5))
 fn test_control_flow_preserves_program_behaviour() {
     assert_same_output(
         r#"
-fn classify(v)
-  if v < 0
+fn classify(v) {
+  if v < 0 {
     return "negative"
-  elif v == 0
+  } elif v == 0 {
     return "zero"
-  else
+  } else {
     return "positive"
-  end
-end
-each n in [-2, -1, 0, 1, 2]
+  }
+}
+each n in [-2, -1, 0, 1, 2] {
   io.println(classify(n))
-end
+}
 "#,
     );
 }
@@ -496,16 +502,16 @@ fn test_loops_preserve_program_behaviour() {
         r#"
 var total = 0
 var i = 0
-while i < 20
+while i < 20 {
   i = i + 1
-  if i % 3 == 0
+  if i % 3 == 0 {
     continue
-  end
-  if i > 15
+  }
+  if i > 15 {
     break
-  end
+  }
   total = total + i
-end
+}
 io.println(String(total))
 "#,
     );
@@ -516,14 +522,14 @@ io.println(String(total))
 fn test_return_inside_loop_preserves_behaviour() {
     assert_same_output(
         r#"
-fn find_first_even(items)
-  each item in items
-    if item % 2 == 0
+fn find_first_even(items) {
+  each item in items {
+    if item % 2 == 0 {
       return item
-    end
-  end
+    }
+  }
   return -1
-end
+}
 io.println(String(find_first_even([1, 3, 4, 5, 6])))
 io.println(String(find_first_even([1, 3, 5])))
 "#,
@@ -535,19 +541,19 @@ io.println(String(find_first_even([1, 3, 5])))
 fn test_match_preserves_program_behaviour() {
     assert_same_output(
         r#"
-fn bucket(v)
-  match v
+fn bucket(v) {
+  match v {
     when 0, 1, 2
       io.println("low")
     when 3, 4
       io.println("mid")
     else
       io.println("high")
-  end
-end
-each n in [0, 1, 2, 3, 4, 9]
+  }
+}
+each n in [0, 1, 2, 3, 4, 9] {
   bucket(n)
-end
+}
 "#,
     );
 }
@@ -557,21 +563,21 @@ end
 fn test_attempt_preserves_program_behaviour() {
     assert_same_output(
         r#"
-fn risky(flag)
-  if flag
+fn risky(flag) {
+  if flag {
     fail ("boom")
-  end
+  }
   return 1
-end
+}
 
-fn guarded(flag)
-  attempt
+fn guarded(flag) {
+  attempt {
     let value = risky(flag)
     io.println(String(value))
-  failed err
+  } failed err {
     io.println("caught")
-  end
-end
+  }
+}
 
 guarded(false)
 guarded(true)
@@ -584,16 +590,14 @@ guarded(true)
 fn test_structs_preserve_program_behaviour() {
     assert_same_output(
         r#"
-struct Point
+struct Point {
   x
   y
-end
+}
 
-impl Point
-  fn sum(self)
+Point:sum(self) {
     return self.x + self.y
-  end
-end
+}
 
 let p = Point{x: 3, y: 4}
 io.println(String(p.sum()))
@@ -607,9 +611,9 @@ io.println(String(p.sum()))
 fn test_closures_preserve_program_behaviour() {
     assert_same_output(
         r#"
-fn apply_twice(f, v)
+fn apply_twice(f, v) {
   return f(f(v))
-end
+}
 let inc = n => n + 1
 io.println(String(apply_twice(inc, 5)))
 "#,
@@ -646,7 +650,7 @@ fn test_empty_module_is_stable() {
 fn test_optimization_is_idempotent() {
     let (_source, module) = lower_to_ir(
         "idempotent.aipo",
-        "fn add(a, b)\n  return a + b\nend\nio.println(String(add(1, 2)))",
+        "fn add(a, b) {\n  return a + b\n}\nio.println(String(add(1, 2)))",
     )
     .expect("module lowers");
 

@@ -163,8 +163,9 @@ fn unused() -> Int {
         .expect("exported `__aipo_string_hash`");
 
     assert!(instance.get_func(&mut store, "unused").is_some());
-    assert!(hash
-        .call(&mut store, 0)
-        .map(|value| value == hash.call(&mut store, 0).unwrap())
-        .unwrap_or(true));
+    assert!(
+        hash.call(&mut store, 0)
+            .map(|value| value == hash.call(&mut store, 0).unwrap())
+            .unwrap_or(true)
+    );
 }

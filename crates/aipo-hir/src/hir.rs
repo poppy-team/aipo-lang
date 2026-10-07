@@ -1,6 +1,6 @@
 //! High-Level Intermediate Representation (HIR) nodes for Aipo.
 
-use aipo_ast::{BinaryOp, Literal, TypeAnnotation, UnaryOp};
+use aipo_ast::{BinaryOp, Directive, Literal, TypeAnnotation, UnaryOp};
 use aipo_source::SourceSpan;
 use serde::{Deserialize, Serialize};
 
@@ -22,12 +22,17 @@ pub enum HirItem {
     Fn(HirFunctionDecl),
     /// Struct declaration.
     Struct(HirStructDecl),
+    /// Enum declaration.
+    Enum(HirEnumDecl),
     /// Impl block.
     Impl(Box<HirImplBlock>),
     /// Interface declaration.
     Interface(HirInterfaceDecl),
-    /// Interface satisfaction.
-    Satisfy(HirSatisfyDecl),
+    /// Batch association `Tipo::[fn1, fn2]`.
+    ///
+    /// Unlike every other item this reaches the IR as itself: binding a free function
+    /// as a method is not a method declaration, so it cannot desugar into an impl block.
+    Batch(HirBatchBind),
     /// Import declaration.
     Import(HirImportDecl),
     /// Export declaration.
@@ -37,6 +42,9 @@ pub enum HirItem {
 /// HIR function declaration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HirFunctionDecl {
+    /// Compiler directives applied to this function.
+    #[serde(default)]
+    pub directives: Vec<Directive>,
     /// Function name.
     pub name: String,
     /// `true` for `async fn`: calling returns a `Task` instead of running.
@@ -56,9 +64,9 @@ pub struct HirFunctionDecl {
 pub struct HirParam {
     /// Parameter name.
     pub name: String,
-    /// Mutability marker `!`.
+    /// Mutability marker (`var`).
     pub is_mut: bool,
-    /// Receiver marker `self` / `self!`.
+    /// Receiver marker `self` (`var self` when mutable).
     pub is_self: bool,
     /// Optional type contract.
     pub type_annotation: Option<TypeAnnotation>,
@@ -71,6 +79,9 @@ pub struct HirParam {
 /// HIR struct declaration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HirStructDecl {
+    /// Compiler directives applied to this struct.
+    #[serde(default)]
+    pub directives: Vec<Directive>,
     /// Struct name.
     pub name: String,
     /// Field declarations.
@@ -86,8 +97,66 @@ pub struct HirStructField {
     pub name: String,
     /// Whether field is immutable (`fixed`).
     pub is_fixed: bool,
+    /// Optional declared type contract (`campo: Tipo`).
+    #[serde(default)]
+    pub type_annotation: Option<TypeAnnotation>,
     /// Optional default value.
     pub default: Option<HirExpr>,
+    /// Source span.
+    pub span: SourceSpan,
+}
+
+/// HIR enum declaration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HirEnumDecl {
+    /// Enum name.
+    pub name: String,
+    /// Declared variants.
+    pub variants: Vec<HirEnumVariant>,
+    /// Source span.
+    pub span: SourceSpan,
+}
+
+/// HIR enum variant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HirEnumVariant {
+    /// Variant name.
+    pub name: String,
+    /// Payload.
+    pub payload: HirEnumVariantPayload,
+    /// Source span.
+    pub span: SourceSpan,
+}
+
+/// HIR enum variant payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HirEnumVariantPayload {
+    /// Unit variant.
+    Unit,
+    /// Tuple / positional variant.
+    Tuple(Vec<HirEnumTupleField>),
+    /// Struct / named fields variant.
+    Struct(Vec<HirEnumStructField>),
+}
+
+/// Field in a HIR tuple variant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HirEnumTupleField {
+    /// Parameter name if specified (e.g. `motivo` in `Desligado(motivo: String)`).
+    pub name: Option<String>,
+    /// Contract.
+    pub type_annotation: TypeAnnotation,
+    /// Source span.
+    pub span: SourceSpan,
+}
+
+/// Field in a HIR struct variant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HirEnumStructField {
+    /// Field name.
+    pub name: String,
+    /// Contract.
+    pub type_annotation: Option<TypeAnnotation>,
     /// Source span.
     pub span: SourceSpan,
 }
@@ -130,6 +199,17 @@ pub struct HirSatisfyDecl {
     pub target: String,
     /// Interfaces satisfied.
     pub interfaces: Vec<String>,
+    /// Source span.
+    pub span: SourceSpan,
+}
+
+/// HIR batch association `Tipo::[fn1, fn2]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HirBatchBind {
+    /// Type receiving the functions.
+    pub target: String,
+    /// Free function names being promoted to methods.
+    pub functions: Vec<String>,
     /// Source span.
     pub span: SourceSpan,
 }
@@ -249,6 +329,28 @@ pub enum HirMatchPattern {
     Value(HirExpr),
     /// Struct destructuring: `when { name, age }`.
     Destructure(Vec<String>),
+    /// Enum variant pattern: `when Estado.Ativo { desde }` or `when Estado.Desligado(motivo)`.
+    Variant {
+        /// Enum type name (e.g. "Estado").
+        enum_name: Option<String>,
+        /// Variant name (e.g. "Ativo").
+        variant_name: String,
+        /// Payload pattern.
+        payload: HirVariantPatternPayload,
+        /// Source span.
+        span: SourceSpan,
+    },
+}
+
+/// Payload binding in a HIR variant pattern.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HirVariantPatternPayload {
+    /// Unit variant: `when Estado.Inicial`.
+    Unit,
+    /// Positional payload: `when Estado.Desligado(motivo)`.
+    Tuple(Vec<String>),
+    /// Struct payload: `when Estado.Ativo { desde }`.
+    Struct(Vec<String>),
 }
 
 /// HIR attempt-failed statement.

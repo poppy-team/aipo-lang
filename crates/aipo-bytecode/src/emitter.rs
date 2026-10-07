@@ -540,6 +540,12 @@ impl BytecodeEmitter {
                 self.spans.push((offset, *span));
                 self.code.push(OpCode::SetIndex as u8);
             }
+            CoreInst::IsVariant(variant, span) => {
+                self.spans.push((offset, *span));
+                let idx = self.intern_name(variant);
+                self.code.push(OpCode::IsVariant as u8);
+                self.push_u16(idx);
+            }
             CoreInst::BuildList(count, span) => {
                 self.spans.push((offset, *span));
                 self.code.push(OpCode::BuildList as u8);

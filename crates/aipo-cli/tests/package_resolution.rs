@@ -135,7 +135,7 @@ fn github_token_env_is_explicit_for_mixed_locks() {
         "acme.app",
         &[],
         "src/main.aipo",
-        "export value\nfn value()\nreturn 1\nend\n",
+        "export value\nfn value() {\nreturn 1\n}\n",
     );
     let name = format!(
         "AIPO_CLI_TEST_MISSING_GITHUB_TOKEN_{}_{}",
@@ -191,7 +191,7 @@ fn mixed_local_root_lock_and_offline_source_commands_work() {
         "acme.local",
         &[],
         "src/main.aipo",
-        "export local_answer\nfn local_answer()\nreturn 1\nend\n",
+        "export local_answer\nfn local_answer() {\nreturn 1\n}\n",
     );
     let revision = "0123456789abcdef0123456789abcdef01234567";
     let remote_source = PackageSource::github_at("acme/packages", revision, "packages/remote")
@@ -213,7 +213,7 @@ fn mixed_local_root_lock_and_offline_source_commands_work() {
             &remote_source,
             GitHubArtifact::new(
                 b"[package]\nname = \"acme.remote\"\nversion = \"1.0.0\"\nentry = \"src/main.aipo\"\n",
-                b"export remote_answer\nfn remote_answer()\nreturn 42\nend\n",
+                b"export remote_answer\nfn remote_answer() {\nreturn 42\n}\n",
             ),
         )
         .expect("remote dependency stores in cache");
@@ -385,7 +385,7 @@ fn cache_prune_dry_run_and_apply_only_remove_unreferenced_entries() {
             &candidate_source,
             GitHubArtifact::new(
                 b"[package]\nname = \"acme.other\"\nversion = \"1.0.0\"\nentry = \"src/main.aipo\"\n",
-                b"export answer\nfn answer()\nreturn 7\nend\n",
+                b"export answer\nfn answer() {\nreturn 7\n}\n",
             ),
         )
         .expect("candidate stores");
@@ -425,7 +425,7 @@ fn cache_prune_refuses_corrupt_entries_without_deleting() {
             &candidate_source,
             GitHubArtifact::new(
                 b"[package]\nname = \"acme.other\"\nversion = \"1.0.0\"\nentry = \"src/main.aipo\"\n",
-                b"export answer\nfn answer()\nreturn 7\nend\n",
+                b"export answer\nfn answer() {\nreturn 7\n}\n",
             ),
         )
         .expect("candidate stores");
@@ -565,7 +565,7 @@ fn local_package_default_namespace_is_used_by_all_source_commands() {
         "acme.http",
         &[],
         "src/main.aipo",
-        "export double\nfn double(value)\nreturn value * 2\nend\n",
+        "export double\nfn double(value) {\nreturn value * 2\n}\n",
     );
     let entry = app.join("src/main.aipo");
 
@@ -601,7 +601,7 @@ fn local_package_alias_keeps_the_coordinate_for_resolution() {
         "acme.http",
         &[],
         "src/main.aipo",
-        "export double\nfn double(value)\nreturn value * 2\nend\n",
+        "export double\nfn double(value) {\nreturn value * 2\n}\n",
     );
 
     assert_success(
@@ -627,7 +627,7 @@ fn package_diagnostics_keep_the_full_coordinate() {
         "acme.http",
         &[],
         "src/main.aipo",
-        "fn secret()\nreturn 1\nend\n",
+        "fn secret() {\nreturn 1\n}\n",
     );
 
     let (code, _stdout, stderr) = run_command("check", &app.join("src/main.aipo"), None);
@@ -656,18 +656,18 @@ fn package_dependencies_recurse_from_each_mapped_entry_directory() {
         "acme.http",
         &[("acme.core", "../core")],
         "src/main.aipo",
-        "import acme.core as c\nimport helper\nexport triple\nfn triple(value)\nreturn c.base(value) + helper.offset(0)\nend\n",
+        "import acme.core as c\nimport helper\nexport triple\nfn triple(value) {\nreturn c.base(value) + helper.offset(0)\n}\n",
     );
     write_file(
         &http.join("src/helper.aipo"),
-        "export offset\nfn offset(value)\nreturn value + 1\nend\n",
+        "export offset\nfn offset(value) {\nreturn value + 1\n}\n",
     );
     write_package(
         &core,
         "acme.core",
         &[],
         "src/main.aipo",
-        "export base\nfn base(value)\nreturn value * 3\nend\n",
+        "export base\nfn base(value) {\nreturn value * 3\n}\n",
     );
 
     let entry = app.join("src/main.aipo");
@@ -682,7 +682,7 @@ fn source_without_manifest_keeps_the_legacy_module_path() {
     write_file(&entry, "import math\nlet answer = math.double(2)\n");
     write_file(
         &tree.path().join("math.aipo"),
-        "export double\nfn double(value)\nreturn value * 2\nend\n",
+        "export double\nfn double(value) {\nreturn value * 2\n}\n",
     );
 
     assert_success("check legacy import", run_command("check", &entry, None));
@@ -706,7 +706,7 @@ fn package_lock_writes_a_round_trippable_lockfile() {
         "acme.http",
         &[],
         "src/main.aipo",
-        "export double\nfn double(value)\nreturn value * 2\nend\n",
+        "export double\nfn double(value) {\nreturn value * 2\n}\n",
     );
 
     let (code, stdout, stderr) = run_package_command("lock", &app);
@@ -836,13 +836,13 @@ fn source_command_rejects_a_stale_lock_before_compiling() {
         "acme.http",
         &[],
         "src/main.aipo",
-        "export double\nfn double(value)\nreturn value * 2\nend\n",
+        "export double\nfn double(value) {\nreturn value * 2\n}\n",
     );
     assert_success("initial package lock", run_package_command("lock", &app));
 
     write_file(
         &http.join("src/main.aipo"),
-        "export double\nfn double(value)\nreturn value * 3\nend\n",
+        "export double\nfn double(value) {\nreturn value * 3\n}\n",
     );
     let (code, _stdout, stderr) = run_command("check", &app.join("src/main.aipo"), None);
     assert_eq!(code, EXIT_LANGUAGE_FAILURE, "{stderr}");
@@ -1035,7 +1035,7 @@ fn write_cached_remote_snapshot(tree: &TempTree) -> (PathBuf, PathBuf) {
             &dependency_source,
             GitHubArtifact::new(
                 b"[package]\nname = \"acme.http\"\nversion = \"1.0.0\"\nentry = \"src/main.aipo\"\n",
-                b"export answer\nfn answer()\nreturn 42\nend\n",
+                b"export answer\nfn answer() {\nreturn 42\n}\n",
             ),
         )
         .expect("dependency cache stores");

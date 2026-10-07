@@ -47,17 +47,17 @@ fn test_module_load_and_call_primitive_types() {
     let mod_name = CString::new("math_mod").unwrap();
     let source = CString::new(
         r#"
-fn add(a, b)
+fn add(a, b) {
     return a + b
-end
+}
 
-fn concat(prefix, suffix)
+fn concat(prefix, suffix) {
     return prefix + suffix
-end
+}
 
-fn is_positive(n)
+fn is_positive(n) {
     return n > 0
-end
+}
 "#,
     )
     .unwrap();
@@ -171,9 +171,9 @@ fn test_host_function_registration_and_callback() {
     let mod_name = CString::new("client_mod").unwrap();
     let source = CString::new(
         r#"
-fn compute_area(width, height)
+fn compute_area(width, height) {
     return host_mul(width, height)
-end
+}
 "#,
     )
     .unwrap();
@@ -262,9 +262,9 @@ fn test_capability_guarding_and_denial() {
     let mod_name = CString::new("vault_test").unwrap();
     let source = CString::new(
         r#"
-fn access_vault()
+fn access_vault() {
     return secure_vault()
-end
+}
 "#,
     )
     .unwrap();
@@ -352,7 +352,7 @@ fn test_error_and_diagnostic_reporting() {
 
     // 2. Runtime fault: division by zero
     let ok_mod = CString::new("calc").unwrap();
-    let ok_source = CString::new("fn div_zero() return 10 / 0 end").unwrap();
+    let ok_source = CString::new("fn div_zero() { return 10 / 0 }").unwrap();
     let status = unsafe { aipo_runtime_load_module(rt, ok_mod.as_ptr(), ok_source.as_ptr()) };
     assert_eq!(status, aipo_status_t::AIPO_OK);
 

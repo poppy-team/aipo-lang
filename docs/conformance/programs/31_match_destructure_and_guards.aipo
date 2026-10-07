@@ -3,21 +3,21 @@
 # the block names only the fields the arm uses. An optional `if guard` filters a matched
 # arm — a `false` guard falls through to the next arm, not straight to `else`. Bindings
 # belong to their arm and do not leak into siblings or past the statement.
-struct User
+struct User {
     name
     age
-end
+}
 
-fn describe(u)
-    match u
+fn describe(u) {
+    match u {
         when { name, age } if age >= 65 then
             return "senior " + name
         when { name, age } if age >= 18 then
             return "adult " + name
         else
             return "minor"
-    end
-end
+    }
+}
 
 let ana = User{name = "ana", age = 30}
 let bo = User{name = "bo", age = 7}
@@ -28,27 +28,27 @@ io.println(describe(bo))
 io.println(describe(kim))
 
 # Listing a single field is enough when the arm uses only that one.
-match ana
+match ana {
     when { name } then
         io.println("only name: " + name)
-end
+}
 
 # Guards compose with plain value matching, and the first matching arm wins.
-match 5
+match 5 {
     when 1, 2, 3 then
         io.println("small")
     when 4, 5, 6 if true then
         io.println("medium")
     else
         io.println("large")
-end
+}
 
 # A rejected guard continues with the following arm rather than the fallback.
-match ana
+match ana {
     when { age } if age > 100 then
         io.println("impossible")
     when { age } if age == 30 then
         io.println("exactly thirty")
     else
         io.println("neither")
-end
+}

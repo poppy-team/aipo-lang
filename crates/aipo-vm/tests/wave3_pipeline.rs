@@ -114,9 +114,9 @@ fn test_end_to_end_lazy_sequence() {
 fn test_end_to_end_task_spawn_and_await() {
     let vm = run_program(
         r#"
-        fn worker()
+        fn worker() {
             return 42
-        end
+        }
 
         var t = task.spawn(worker, [])
         var res = await t
@@ -130,12 +130,12 @@ fn test_end_to_end_task_spawn_and_await() {
 fn test_end_to_end_task_all_and_race() {
     let vm = run_program(
         r#"
-        fn work1()
+        fn work1() {
             return 10
-        end
-        fn work2()
+        }
+        fn work2() {
             return 20
-        end
+        }
 
         var t1 = task.spawn(work1, [])
         var t2 = task.spawn(work2, [])
@@ -159,9 +159,9 @@ fn test_end_to_end_task_all_and_race() {
 fn test_end_to_end_task_group() {
     let vm = run_program(
         r#"
-        fn worker(val)
+        fn worker(val) {
             return val * 2
-        end
+        }
 
         var g = task.group()
         var t1 = g.spawn(worker, [5])
@@ -181,10 +181,10 @@ fn test_end_to_end_task_group() {
 fn test_end_to_end_task_sleep_and_timeout() {
     let vm = run_program(
         r#"
-        fn worker()
+        fn worker() {
             task.sleep(1)
             return 99
-        end
+        }
 
         var t = task.spawn(worker, [])
         var timeout_res = task.timeout(t, 2)
@@ -198,10 +198,10 @@ fn test_end_to_end_task_sleep_and_timeout() {
 fn test_end_to_end_task_timeout_expires() {
     let vm = run_program(
         r#"
-        fn worker()
+        fn worker() {
             task.sleep(5)
             return 99
-        end
+        }
 
         var t = task.spawn(worker, [])
         var timeout_res = task.timeout(t, 1) or_else "timed_out"
@@ -218,10 +218,10 @@ fn test_end_to_end_task_timeout_expires() {
 fn test_end_to_end_task_cancel() {
     let _vm = run_program(
         r#"
-        fn worker()
+        fn worker() {
             task.sleep(10)
             return 1
-        end
+        }
 
         var t = task.spawn(worker, [])
         task.cancel(t)

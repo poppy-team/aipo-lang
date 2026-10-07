@@ -7,11 +7,13 @@
 pub mod code;
 pub mod diagnostic;
 pub mod emitter;
+pub mod locale;
 pub mod severity;
 
 pub use code::DiagnosticCode;
 pub use diagnostic::{Diagnostic, PrimarySpan, Suggestion};
 pub use emitter::{DiagnosticEmitter, MessageFormat};
+pub use locale::Locale;
 pub use severity::Severity;
 
 #[cfg(test)]
@@ -54,7 +56,7 @@ mod tests {
         )
         .with_primary_span(source, span);
 
-        let human = diag.render_human(Some(&map));
+        let human = diag.render_human_with_locale(Some(&map), Locale::En);
         assert!(
             human.contains("main.aipo:2:1: error: [AIPO_SEM_UNKNOWN_NAME] unknown variable 'y'")
         );
@@ -73,5 +75,51 @@ mod tests {
         assert!(output.ends_with('\n'));
         assert!(output.contains("\"code\":\"AIPO_RT_OVERFLOW\""));
         assert!(output.contains("\"severity\":\"fault\""));
+    }
+
+    #[test]
+    fn test_i18n_locale_pt_br() {
+        let text = "let x = 10\n";
+        let source = Source::new(SourceId(1), "teste.aipo", text);
+        let span = SourceSpan::new(4, 5);
+
+        let diag = Diagnostic::error(
+            DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+            "variável 'x' desconhecida",
+        )
+        .with_primary_span(&source, span)
+        .with_note("verifique a declaração")
+        .with_suggestion(Suggestion {
+            message: "declare com let".to_string(),
+            replacement: "let x".to_string(),
+            start: 4,
+            end: 5,
+        });
+
+        let rendered_pt = diag.render_human_with_locale(None, Locale::PtBr);
+        assert!(
+            rendered_pt.contains(
+                "teste.aipo:1:5: erro: [AIPO_SEM_UNKNOWN_NAME] variável 'x' desconhecida"
+            )
+        );
+        assert!(rendered_pt.contains("= nota: verifique a declaração"));
+        assert!(rendered_pt.contains("= dica: declare com let: let x"));
+
+        assert_eq!(
+            DiagnosticCode::AIPO_SEM_UNKNOWN_NAME.title(Locale::En),
+            "unknown identifier or unresolved name"
+        );
+        assert_eq!(
+            DiagnosticCode::AIPO_SEM_UNKNOWN_NAME.title(Locale::PtBr),
+            "identificador ou nome desconhecido"
+        );
+    }
+
+    #[test]
+    fn test_locale_detection() {
+        assert_eq!(Locale::from_str("pt-BR"), Locale::PtBr);
+        assert_eq!(Locale::from_str("pt_BR.UTF-8"), Locale::PtBr);
+        assert_eq!(Locale::from_str("en_US.UTF-8"), Locale::En);
+        assert_eq!(Locale::from_str("unknown"), Locale::En);
     }
 }

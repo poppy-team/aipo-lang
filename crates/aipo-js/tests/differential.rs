@@ -359,9 +359,9 @@ io.println(l.lazy())
 #[test]
 fn test_wave3_async_spawn_await_differential() {
     let code = r#"
-fn worker(x)
+fn worker(x) {
     return x * 2
-end
+}
 
 var t = task.spawn(worker, [21])
 var res = await t
@@ -377,12 +377,12 @@ io.println(res)
 #[test]
 fn test_wave3_async_all_and_race_differential() {
     let code = r#"
-fn f1()
+fn f1() {
     return 10
-end
-fn f2()
+}
+fn f2() {
     return 20
-end
+}
 
 var t1 = task.spawn(f1, [])
 var t2 = task.spawn(f2, [])
@@ -401,9 +401,9 @@ io.println(race_res)
 #[test]
 fn test_wave3_async_group_differential() {
     let code = r#"
-fn mult(val)
+fn mult(val) {
     return val * 3
-end
+}
 
 var g = task.group()
 var t1 = g.spawn(mult, [4])
@@ -421,19 +421,19 @@ io.println(res)
 #[test]
 fn test_wave3_async_sleep_and_timeout_differential() {
     let code = r#"
-fn worker()
+fn worker() {
     task.sleep(1)
     return 99
-end
+}
 
 var t = task.spawn(worker, [])
 var res = task.timeout(t, 2)
 io.println(res)
 
-fn slow_worker()
+fn slow_worker() {
     task.sleep(5)
     return 100
-end
+}
 
 var t2 = task.spawn(slow_worker, [])
 var timeout_res = task.timeout(t2, 1) or_else "timed_out"
@@ -449,10 +449,10 @@ io.println(timeout_res)
 #[test]
 fn test_wave3_async_cancel_differential() {
     let code = r#"
-fn worker()
+fn worker() {
     task.sleep(10)
     return 1
-end
+}
 
 var t = task.spawn(worker, [])
 task.cancel(t)
@@ -639,12 +639,12 @@ io.println(math.sign(0))
 io.println(math.sign(3.14))
 io.println(math.sign(-3.14))
 
-attempt
+attempt {
     let asin_err = math.asin(2.0)
     io.println(asin_err)
-failed err
+} failed err {
     io.println(err.message)
-end
+}
 
 let log_fallback = math.log(-1.0) or_else -999.0
 io.println(log_fallback)
@@ -700,12 +700,12 @@ io.println(parsed["active"])
 let encoded = json.stringify(parsed)
 io.println(encoded)
 
-attempt
+attempt {
     let bad = json.parse("{\"dup\": 1, \"dup\": 2}")
     io.println(bad)
-failed err
+} failed err {
     io.println("duplicate key caught")
-end
+}
 "#;
     let compiled = compile_code("json_differential.aipo", code);
     let vm_out = run_vm(&compiled);
@@ -739,12 +739,12 @@ io.println(hex)
 let dec_hex = encoding.hex_decode(hex)
 io.println(encoding.utf8_decode(dec_hex))
 
-attempt
+attempt {
     let bad = encoding.hex_decode("123")
     io.println(bad)
-failed err
+} failed err {
     io.println("invalid hex caught")
-end
+}
 "#;
     let compiled = compile_code("encoding_differential.aipo", code);
     let vm_out = run_vm(&compiled);
@@ -1026,26 +1026,24 @@ fn test_safe_navigation_differential() {
     // Canon: `a?.b` is `none` when the receiver is `none`, and the call form skips the
     // access and the arguments. Both backends must agree byte for byte.
     let code = r#"
-struct Player
+struct Player {
     name
-end
-fn label(p)
+}
+fn label(p) {
     return p?.name
-end
+}
 io.println(String(label(none)))
 io.println(String(label(Player{name = "ana"})))
 
-struct Doubler
+struct Doubler {
     n
-end
-impl Doubler
-    fn twice(self)
-        return self.n * 2
-    end
-end
-fn run(d)
+}
+Doubler:twice(self) {
+    return self.n * 2
+}
+fn run(d) {
     return d?.twice()
-end
+}
 io.println(String(run(none)))
 io.println(String(run(Doubler{n = 21})))
 "#;
@@ -1062,26 +1060,26 @@ fn test_or_else_is_lazy_differential() {
     // fallback propagates instead of being swallowed.
     let code = r#"
 var calls = 0
-fn fallback()
+fn fallback() {
     calls = calls + 1
     return 7
-end
-fn ok()
+}
+fn ok() {
     return 1
-end
-fn bad()
+}
+fn bad() {
     return Int("nope")
-end
+}
 io.println(String(ok() or_else fallback()))
 io.println(String(calls))
 io.println(String(bad() or_else fallback()))
 io.println(String(calls))
-attempt
+attempt {
     let x = bad() or_else bad()
     io.println(String(x))
-failed error
+} failed error {
     io.println("double failure caught")
-end
+}
 "#;
     let compiled = compile_code("or_else_lazy.aipo", code);
     let vm_out = run_vm(&compiled);
@@ -1095,32 +1093,32 @@ fn test_failure_in_conditions_propagates_differential() {
     // A recoverable `Failure` in a condition must propagate to `attempt`, not turn into a
     // type fault at the branch.
     let code = r#"
-fn value(flag)
-    if flag
+fn value(flag) {
+    if flag {
         return Int("12")
-    end
+    }
     return Int("bad")
-end
-attempt
+}
+attempt {
     var v = value(false)
-    if v > 0
+    if v > 0 {
         io.println("positive")
-    end
-failed error
+    }
+} failed error {
     io.println("condition failure caught")
-end
+}
 var count = 0
-while count < 3
-    attempt
-        if count == 1
+while count < 3 {
+    attempt {
+        if count == 1 {
             count = count + 1
             continue
-        end
-    failed error
+        }
+    } failed error {
         io.println("nope")
-    end
+    }
     count = count + 1
-end
+}
 io.println(String(count))
 "#;
     let compiled = compile_code("condition_failure.aipo", code);
@@ -1137,21 +1135,21 @@ fn test_each_over_dict_and_unwind_differential() {
     let code = r#"
 var d = {"a": 1, "b": 2}
 var out = ""
-each k, v in d
+each k, v in d {
     out = out + k + String(v)
-end
+}
 io.println(out)
-each k in d
+each k in d {
     io.println(k)
-end
-each i in 0..3
-    if i == 1
+}
+each i in 0..3 {
+    if i == 1 {
         break
-    end
-end
-each i in 0..3
+    }
+}
+each i in 0..3 {
     io.println(String(i))
-end
+}
 "#;
     let compiled = compile_code("each_dict.aipo", code);
     let vm_out = run_vm(&compiled);
@@ -1165,26 +1163,26 @@ fn test_assignment_failure_and_pipeline_order_differential() {
     // A `Failure` stored or read through an assignment propagates; `a |> f` evaluates `a`
     // before `f`, which source order makes observable.
     let code = r#"
-struct P
+struct P {
     x
-end
-fn set_bad(p)
+}
+fn set_bad(p) {
     p.x = Int("bad")
-end
-attempt
+}
+attempt {
     set_bad(P{x = 1})
-failed error
+} failed error {
     io.println("field failure caught")
-end
+}
 var log = ""
-fn left()
+fn left() {
     log = log + "L"
     return 1
-end
-fn right(x)
+}
+fn right(x) {
     log = log + "R"
     return x + 1
-end
+}
 io.println(String(left() |> right()))
 io.println(log)
 "#;
@@ -1199,18 +1197,18 @@ io.println(log)
 fn test_await_do_covers_block_statements_differential() {
     // `await do` awaits tasks produced by assignments inside `while` and by `return`.
     let code = r#"
-async fn pick(n)
+async fn pick(n) {
     return n + 1
-end
-async fn looped()
+}
+async fn looped() {
     var total = 0
-    await do
-        while total < 3
+    await do {
+        while total < 3 {
             total = pick(total)
-        end
+        }
         return pick(total)
-    end
-end
+    }
+}
 let result = await looped()
 io.println(String(result))
 "#;
@@ -1227,29 +1225,29 @@ fn test_loop_unwind_does_not_leak_handlers_or_guards_differential() {
     // `each` must release the iteration guard: a later failure is caught by the *outer*
     // handler, and the collection is mutable again.
     let code = r#"
-attempt
-    each i in 0..3
-        attempt
+attempt {
+    each i in 0..3 {
+        attempt {
             break
-        failed error
+        } failed error {
             io.println("inner handler must not run")
-        end
-    end
+        }
+    }
     let bad = Int("boom")
     io.println("not reached")
-failed error
+} failed error {
     io.println("outer: " + error.message)
-end
+}
 
 var items = [1, 2, 3]
-fn first_two()
-    each v in items
-        if v == 2
+fn first_two() {
+    each v in items {
+        if v == 2 {
             return v
-        end
-    end
+        }
+    }
     return -1
-end
+}
 io.println(String(first_two()))
 items.add(4)
 io.println(String(items.len()))
@@ -1264,14 +1262,14 @@ io.println(String(items.len()))
 #[test]
 fn test_differential_structured_failures() {
     let code = r#"
-attempt
+attempt {
     fail { "code": 404, "reason": "resource missing" }
-failed err
+} failed err {
     io.println(err.message)
     let p = err.payload
     io.println(String(p["code"]))
     io.println(String(p["reason"]))
-end
+}
 "#;
     let compiled = compile_code("structured_fail.aipo", code);
     let vm_out = run_vm(&compiled);

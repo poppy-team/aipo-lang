@@ -423,13 +423,17 @@ fn test_help_and_version_are_available() {
 }
 
 #[test]
-fn test_missing_end_fixture_reports_a_parse_diagnostic() {
+fn test_missing_brace_fixture_reports_a_parse_diagnostic() {
     // Guards the corpus itself: a fixture that stopped parsing for an unrelated reason would
     // still "fail", so the parse fixtures assert the class of the diagnostic they own.
-    let fixture = conformance_dir().join("diagnostics/01_parse_missing_end.aipo");
+    let fixture = conformance_dir().join("diagnostics/01_parse_missing_brace.aipo");
     let (code, _stdout, stderr) = run_cli(&["check", &fixture.to_string_lossy()]);
     assert_eq!(code, EXIT_LANGUAGE_FAILURE);
     assert!(stderr.contains("AIPO_PARSE_"));
+    assert!(
+        stderr.contains("'}'") || stderr.contains("'{'"),
+        "missing-brace diagnostic must name a brace, got: {stderr}"
+    );
 }
 
 // ---------------------------------------------------------------------------

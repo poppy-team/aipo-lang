@@ -6,6 +6,7 @@ use aipo_syntax::parse;
 use aipo_wasm::compile_hir;
 use wasmtime::{Engine, Instance, Module, Store};
 
+#[allow(dead_code)]
 fn instantiate_aipo(source_code: &str) -> (Store<()>, Instance) {
     let source = Source::new(SourceId::next(), "test.aipo", source_code);
     let (ast, diags) = parse(&source);
@@ -149,4 +150,36 @@ fn first_wins(v: Int) -> Int {
         .expect("exported `first_wins`");
 
     assert_eq!(f.call(&mut store, 5).unwrap(), 1);
+}
+
+#[test]
+fn test_match_variant_reports_unsupported_stmt() {
+    let code = r#"
+enum Status {
+  On,
+  Off,
+}
+fn test_enum(s: Status) -> Int {
+  match s {
+    when Status.On {
+      return 1
+    }
+    when Status.Off {
+      return 0
+    }
+  }
+}
+"#;
+    let source = Source::new(SourceId::next(), "test.aipo", code);
+    let (ast, diags) = parse(&source);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:?}");
+    let hir = lower(ast);
+    let result = compile_hir(&hir);
+    assert!(
+        matches!(
+            result,
+            Err(aipo_wasm::WasmCompileError::UnsupportedStmt { .. })
+        ),
+        "match variant pattern must return UnsupportedStmt in Wasm backend, got {result:?}"
+    );
 }

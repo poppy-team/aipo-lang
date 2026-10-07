@@ -30,9 +30,9 @@ fn lex(text: &str) -> (Vec<aipo_lexer::Token>, Vec<aipo_diagnostics::Diagnostic>
 fn test_spans_cover_source_monotonically() {
     let texts = [
         "let x = 1 + 2\nio.println(x)\n",
-        "fn f(a, b)\nreturn a\nend\n",
+        "fn f(a, b) {\nreturn a\n}\n",
         "f\"hi {name}!\" r\"raw\\n\" \"\"\"multi\nline\"\"\"\n",
-        "struct P\nfixed id\nend\n",
+        "struct P {\nfixed id\n}\n",
         "a |> f |> g(1, x = 2)\n",
         "# only a comment\n",
         "",

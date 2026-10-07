@@ -35,7 +35,7 @@ fn test_end_to_end_collections_and_control_flow() {
     let src = Source::new(
         SourceId::next(),
         "loop.aipo",
-        "let items = [10, 20, 30]\nlet count = 3\nvar idx = 0\nvar acc = 0\nwhile idx < count\n    acc = acc + items[idx]\n    idx = idx + 1\nend",
+        "let items = [10, 20, 30]\nlet count = 3\nvar idx = 0\nvar acc = 0\nwhile idx < count {\n    acc = acc + items[idx]\n    idx = idx + 1\n}",
     );
 
     let (ast, parse_diags) = parse(&src);
@@ -57,7 +57,7 @@ fn test_end_to_end_attempt_failed_recovery() {
     let src = Source::new(
         SourceId::next(),
         "attempt.aipo",
-        "var recovered = \"initial\"\nattempt\n    fail(\"network failure\")\nfailed err\n    recovered = err.message\nend",
+        "var recovered = \"initial\"\nattempt {\n    fail(\"network failure\")\n} failed err {\n    recovered = err.message\n}",
     );
 
     let (ast, parse_diags) = parse(&src);
@@ -188,10 +188,8 @@ struct User {
     var status
 }
 
-impl User {
-    fn activate(var self) {
-        self.status = "active"
-    }
+User:activate(var self) {
+    self.status = "active"
 }
 
 fn check_status(user: User) {

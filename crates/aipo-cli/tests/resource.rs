@@ -106,8 +106,8 @@ fn test_deep_nesting_terminates() {
     // Past the ADP-005 bounds these must fail with the dedicated diagnostic —
     // and, critically, terminate (they previously aborted the host process).
     for (label, source) in [
-        ("nest-if", deep_nesting("if true", "end", 300)),
-        ("nest-fn", deep_nesting("fn f()\nreturn 1", "end", 200)),
+        ("nest-if", deep_nesting("if true {", "}", 300)),
+        ("nest-fn", deep_nesting("fn f() {\nreturn 1", "}", 200)),
         (
             "nest-paren",
             format!(
@@ -273,10 +273,10 @@ fn test_nonterminating_programs_are_bounded_externally() {
     let dir = std::env::temp_dir().join("aipo-resource-hang");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("hang dir is writable");
-    std::fs::write(dir.join("loop.aipo"), "loop\nend\n").expect("writable");
+    std::fs::write(dir.join("loop.aipo"), "loop {\n}\n").expect("writable");
     std::fs::write(
         dir.join("recursion.aipo"),
-        "fn f(n)\nreturn f(n + 1)\nend\nf(0)\n",
+        "fn f(n) {\nreturn f(n + 1)\n}\nf(0)\n",
     )
     .expect("writable");
 

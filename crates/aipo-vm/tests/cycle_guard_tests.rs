@@ -68,11 +68,11 @@ fn test_storing_list_into_itself_raises_failure() {
     let code = r#"
 var caught = false
 var xs = [1, 2, 3]
-attempt
+attempt {
   xs[0] = xs
-failed err
+} failed err {
   caught = true
-end
+}
 "#;
     run_program(code).expect("the cycle failure is caught");
     let caught = run_and_read(code, "caught").expect("global `caught` exists");
@@ -88,11 +88,11 @@ fn test_cycle_failure_message_names_the_cycle() {
     let code = r#"
 var message = ""
 var xs = [1]
-attempt
+attempt {
   xs[0] = xs
-failed err
+} failed err {
   message = err.message
-end
+}
 "#;
     run_program(code).expect("the cycle failure is caught");
     let message = run_and_read(code, "message").expect("global `message` exists");
@@ -111,11 +111,11 @@ fn test_storing_dict_into_itself_raises_failure() {
     let code = r#"
 var caught = false
 var d = { 1: 10 }
-attempt
+attempt {
   d[1] = d
-failed err
+} failed err {
   caught = true
-end
+}
 "#;
     run_program(code).expect("dict self-cycle is caught");
     let caught = run_and_read(code, "caught").expect("global `caught` exists");

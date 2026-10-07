@@ -37,12 +37,10 @@ pub enum TokenKind {
     With,
     /// `struct`
     Struct,
-    /// `impl`
-    Impl,
+    /// `enum`
+    Enum,
     /// `interface`
     Interface,
-    /// `satisfy`
-    Satisfy,
     /// `init`
     Init,
     /// `invariant`
@@ -53,10 +51,8 @@ pub enum TokenKind {
     Elif,
     /// `else`
     Else,
-    /// `then`
+    /// `then` (inline conditional value only, never with `{}`)
     Then,
-    /// `end`
-    End,
     /// `match`
     Match,
     /// `when`
@@ -107,8 +103,6 @@ pub enum TokenKind {
     None,
     /// `self`
     SelfVal,
-    /// `self!`
-    SelfMut,
     /// `do`
     Do,
 
@@ -140,8 +134,6 @@ pub enum TokenKind {
     Star,
     /// `/`
     Slash,
-    /// `div`
-    Div,
     /// `//`
     SlashSlash,
     /// `%`
@@ -154,8 +146,6 @@ pub enum TokenKind {
     StarEq,
     /// `/=`
     SlashEq,
-    /// `div=`
-    DivEq,
     /// `//=`
     SlashSlashEq,
     /// `%=`
@@ -190,6 +180,8 @@ pub enum TokenKind {
     Question,
     /// `:`
     Colon,
+    /// `::` (associação em lote de métodos a um tipo: `Retangulo::[f1, f2]`)
+    ColonColon,
     /// `,`
     Comma,
     /// `(`
@@ -208,6 +200,8 @@ pub enum TokenKind {
     // --- Trivia / Control ---
     /// Significant newline terminating statements
     Newline,
+    /// Compiler directive `#!name ...` — text after `#!`, trimmed by the parser
+    Directive(String),
     /// Comment `# ...`
     Comment(String),
     /// End of file
