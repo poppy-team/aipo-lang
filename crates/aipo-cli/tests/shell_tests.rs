@@ -73,6 +73,67 @@ fn test_eval_source_syntax_error_reports_failure() {
 }
 
 #[test]
+fn test_eval_source_reg_simple_expression() {
+    let _guard = test_lock();
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    aipo_cli::set_output_sink(Some(Box::new(TestSink(Arc::clone(&captured)))));
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let code = "io.println(10 + 20)";
+    let exit_code = aipo_cli::eval_source_reg(code, &mut out, &mut err);
+    aipo_cli::set_output_sink(None);
+
+    assert_eq!(exit_code, 0);
+    let output = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    assert_eq!(output, "30\n");
+    assert!(err.is_empty());
+}
+
+#[test]
+fn test_eval_source_reg_user_function_call() {
+    let _guard = test_lock();
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    aipo_cli::set_output_sink(Some(Box::new(TestSink(Arc::clone(&captured)))));
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let code = r#"
+fn double(x: Int) -> Int {
+    return x * 2
+}
+io.println(21 |> double())
+"#;
+    let exit_code = aipo_cli::eval_source_reg(code, &mut out, &mut err);
+    aipo_cli::set_output_sink(None);
+
+    assert_eq!(exit_code, 0);
+    let output = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    assert_eq!(output, "42\n");
+}
+
+#[test]
+fn test_run_with_engine_reg_flag() {
+    let _guard = test_lock();
+    let path = std::env::temp_dir().join(format!("aipo-reg-test-{}.aipo", std::process::id()));
+    std::fs::write(&path, "io.println(6 * 7)\n").expect("write temp file");
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    aipo_cli::set_output_sink(Some(Box::new(TestSink(Arc::clone(&captured)))));
+    let args = vec![
+        "run".to_string(),
+        path.to_string_lossy().into_owned(),
+        "--engine=reg".to_string(),
+    ];
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let exit_code = aipo_cli::run_with(&args, &mut out, &mut err);
+    aipo_cli::set_output_sink(None);
+    let _ = std::fs::remove_file(&path);
+
+    assert_eq!(exit_code, 0, "stderr: {}", String::from_utf8_lossy(&err));
+    let output = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    assert_eq!(output, "42\n");
+}
+
+#[test]
 fn test_sh_module_automation() {
     let _guard = test_lock();
     let captured = Arc::new(Mutex::new(Vec::new()));

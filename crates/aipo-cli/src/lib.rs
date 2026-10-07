@@ -2,7 +2,7 @@
 //! `docs/reference/cli.md`:
 //!
 //! ```text
-//! aipo run <path> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test] [--message-format=<human|jsonl>]
+//! aipo run <path> [--wasm] [--engine=<vm|reg>] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test] [--message-format=<human|jsonl>]
 //! aipo test [path] [--filter <pattern>] [--package-cache <dir>] [--message-format=<human|jsonl>]
 //! aipo check <path> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test] [--message-format=<human|jsonl>]
 //! aipo build <path> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
@@ -31,6 +31,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+use aipo_bytecode::{RegCompiledModule, RegEmitter};
 use aipo_diagnostics::{Diagnostic, DiagnosticCode, DiagnosticEmitter, MessageFormat, Severity};
 use aipo_package::{
     CacheOnlyGitHubFetcher, CachedGraphError, GitHubCache, LOCK_FILE_NAME, LocalPackageResolver,
@@ -45,7 +46,7 @@ use aipo_package::{
 use aipo_runtime::NativeRegistry;
 use aipo_sema::PreludeSurface;
 use aipo_source::{Source, SourceId, SourceMap};
-use aipo_vm::{Vm, VmError};
+use aipo_vm::{RegVm, Vm, VmError};
 use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
@@ -80,7 +81,7 @@ pub const USAGE: &str = "\
 aipo — Aipo language toolchain
 
 USAGE:
-    aipo run <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>] [--ahs=<file>] [--host=headless-test]
+    aipo run <path> [--wasm] [--engine=<vm|reg>] [--package-cache <dir>] [--message-format=<human|jsonl>] [--ahs=<file>] [--host=headless-test]
     aipo test [path] [--filter <pattern>] [--package-cache <dir>] [--message-format=<human|jsonl>]
     aipo check <path> [--wasm] [--package-cache <dir>] [--message-format=<human|jsonl>] [--ahs=<file>] [--host=headless-test]
     aipo build <path> [--target <js|wasm>] [--out <dir>] [--package-cache <dir>] [--message-format=<human|jsonl>]
@@ -105,6 +106,7 @@ COMMANDS:
 FLAGS:
     --ahs=<file>   Host surface description (AHS) the run may reach, as data
     --host=headless-test   Opt-in VM conformance host (no capabilities granted)
+    --engine=<vm|reg>   Execution engine for `run`: stack VM (default) or register VM
 
 EXIT CODES:
     0  success
@@ -163,6 +165,7 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
             format,
             package_cache,
             wasm,
+            reg,
             ahs,
             host,
         } => {
@@ -182,6 +185,7 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
                 ExecutionOptions {
                     action: Action::Run,
                     wasm,
+                    reg,
                     surface: surface.as_ref(),
                     host,
                 },
@@ -224,6 +228,7 @@ pub fn run_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8
                 ExecutionOptions {
                     action: Action::Check,
                     wasm,
+                    reg: false,
                     surface: surface.as_ref(),
                     host,
                 },
@@ -334,6 +339,46 @@ pub fn eval_source(source_text: &str, out: &mut dyn Write, err: &mut dyn Write) 
     }
 }
 
+/// Evaluates an in-memory Aipo source string on the register VM.
+///
+/// Mirrors [`eval_source`] (same frontend diagnostics and stdlib surface) but
+/// lowers to 32-bit register bytecode and executes with [`RegVm`].
+/// Used by `aipo-sh -c` and the REPL under `--engine=reg`.
+///
+/// Returns exit code `0` on success, `1` on error.
+pub fn eval_source_reg(source_text: &str, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let source = Source::new(SourceId::next(), "<eval>", source_text);
+    let (reg_module, diagnostics) = analyze_to_reg_module(&source, Path::new("<eval>"), None, None);
+    let has_errors = diagnostics
+        .iter()
+        .any(|diag| diag.severity == Severity::Error);
+
+    emit_diagnostics(MessageFormat::Human, &source, &diagnostics, out, err);
+
+    if has_errors {
+        return EXIT_LANGUAGE_FAILURE;
+    }
+
+    let Some(reg_module) = reg_module else {
+        return EXIT_LANGUAGE_FAILURE;
+    };
+
+    match execute_reg_module_with_host(&reg_module, None) {
+        Ok(_) => EXIT_SUCCESS,
+        Err(error) => {
+            let diagnostic = runtime_diagnostic(&source, &error);
+            emit_diagnostics(
+                MessageFormat::Human,
+                &source,
+                std::slice::from_ref(&diagnostic),
+                out,
+                err,
+            );
+            EXIT_LANGUAGE_FAILURE
+        }
+    }
+}
+
 /// Target output format for `aipo build`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildTarget {
@@ -353,6 +398,8 @@ enum Command {
         format: MessageFormat,
         package_cache: Option<PathBuf>,
         wasm: bool,
+        /// `true` when `--engine=reg` selects the register VM.
+        reg: bool,
         /// Host surface described as data (`--ahs=<file>`), when one was given.
         ahs: Option<PathBuf>,
         host: Option<HostProfile>,
@@ -446,6 +493,8 @@ impl Command {
                 let mut format = MessageFormat::Human;
                 let mut package_cache = None;
                 let mut wasm = false;
+                let mut reg = false;
+                let mut engine_seen = false;
                 let mut ahs = None;
                 let mut host = None;
                 let rest = &args[1..];
@@ -462,6 +511,53 @@ impl Command {
                         format = parse_format(value)?;
                     } else if arg == "--wasm" {
                         wasm = true;
+                    } else if arg == "--reg" {
+                        if first != "run" {
+                            return Err("--engine is only supported by run".to_string());
+                        }
+                        if engine_seen {
+                            return Err("'--engine' was provided more than once".to_string());
+                        }
+                        engine_seen = true;
+                        reg = true;
+                    } else if let Some(value) = arg.strip_prefix("--engine=") {
+                        if first != "run" {
+                            return Err("--engine is only supported by run".to_string());
+                        }
+                        if engine_seen {
+                            return Err("'--engine' was provided more than once".to_string());
+                        }
+                        engine_seen = true;
+                        match value {
+                            "reg" => reg = true,
+                            "vm" | "bytecode" | "stack" => reg = false,
+                            _ => {
+                                return Err(format!(
+                                    "unrecognized --engine '{value}': expected 'vm' or 'reg'"
+                                ));
+                            }
+                        }
+                    } else if arg == "--engine" {
+                        if first != "run" {
+                            return Err("--engine is only supported by run".to_string());
+                        }
+                        if engine_seen {
+                            return Err("'--engine' was provided more than once".to_string());
+                        }
+                        engine_seen = true;
+                        index += 1;
+                        let value = rest
+                            .get(index)
+                            .ok_or_else(|| "--engine requires a value".to_string())?;
+                        match value.as_str() {
+                            "reg" => reg = true,
+                            "vm" | "bytecode" | "stack" => reg = false,
+                            _ => {
+                                return Err(format!(
+                                    "unrecognized --engine '{value}': expected 'vm' or 'reg'"
+                                ));
+                            }
+                        }
                     } else if let Some(target) = arg.strip_prefix("--target=") {
                         match target {
                             "wasm" => wasm = true,
@@ -561,6 +657,14 @@ impl Command {
                 }
 
                 let path = path.ok_or_else(|| format!("'{first}' requires a path argument"))?;
+                if reg {
+                    if wasm {
+                        return Err("--engine=reg cannot be combined with --wasm".to_string());
+                    }
+                    if path.extension().and_then(|ext| ext.to_str()) != Some("aipo") {
+                        return Err("--engine=reg requires a .aipo source file".to_string());
+                    }
+                }
                 if host.is_some() {
                     if wasm || path.extension().and_then(|ext| ext.to_str()) != Some("aipo") {
                         return Err(
@@ -580,6 +684,7 @@ impl Command {
                         format,
                         package_cache,
                         wasm,
+                        reg,
                         ahs,
                         host,
                     })
@@ -1105,6 +1210,7 @@ enum HostProfile {
 struct ExecutionOptions<'a> {
     action: Action,
     wasm: bool,
+    reg: bool,
     surface: Option<&'a PreludeSurface>,
     host: Option<HostProfile>,
 }
@@ -1229,6 +1335,61 @@ pub fn analyze_full(
 /// private module execution step.
 pub fn analyze(source: &Source, path: &Path, package_paths: Option<&PackagePathMap>) -> Compiled {
     analyze_with_surface(source, path, package_paths, None)
+}
+
+/// Runs the frontend pipeline and lowers to a register-VM module.
+///
+/// Shares the parse/HIR/resolve/sema stages with [`analyze_full`], then emits
+/// 32-bit register bytecode via [`RegEmitter::compile_module`] instead of the
+/// stack bytecode. Returns `(None, diagnostics)` when the frontend reports errors.
+pub fn analyze_to_reg_module(
+    source: &Source,
+    path: &Path,
+    package_paths: Option<&PackagePathMap>,
+    extra_surface: Option<&PreludeSurface>,
+) -> (Option<RegCompiledModule>, Vec<Diagnostic>) {
+    let (program, mut diagnostics) = aipo_syntax::parse(source);
+    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        return (None, diagnostics);
+    }
+
+    let hir = aipo_hir::lower(program);
+    let resolved = modules::resolve(path, hir, package_paths);
+    diagnostics.extend(resolved.diagnostics);
+    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        return (None, diagnostics);
+    }
+    let hir = resolved.program;
+
+    let mut surface = prelude_surface();
+    if let Some(extra) = extra_surface {
+        for (name, kind) in extra.iter() {
+            match kind {
+                aipo_sema::SymbolKind::Function { min_args, max_args } => {
+                    surface.add_function(name, *min_args, *max_args);
+                }
+                _ => {
+                    surface.add_variable(name);
+                }
+            }
+        }
+        for (module, functions) in extra.host_modules() {
+            surface.add_host_module(module, functions.clone());
+        }
+    }
+    for name in &resolved.imported_names {
+        surface.add_variable(name);
+    }
+    let (_, sema_diagnostics) = aipo_sema::check_with_prelude(source, &hir, &surface);
+    diagnostics.extend(sema_diagnostics);
+    if diagnostics.iter().any(|d| d.severity == Severity::Error) {
+        return (None, diagnostics);
+    }
+
+    let ir = aipo_ir::lower_to_ir(&hir);
+    let ir = aipo_ir::optimize(&ir);
+    let reg_module = RegEmitter::new().compile_module(&ir);
+    (Some(reg_module), diagnostics)
 }
 
 fn verification_diagnostic(reason: &str) -> Diagnostic {
@@ -1966,6 +2127,7 @@ fn execute(
     let ExecutionOptions {
         action,
         wasm,
+        reg,
         surface,
         host,
     } = options;
@@ -2077,6 +2239,29 @@ fn execute(
         }
         if action == Action::Check {
             return EXIT_SUCCESS;
+        }
+
+        if reg {
+            let (reg_module, reg_diagnostics) =
+                analyze_to_reg_module(&source, path, package_paths.as_ref(), surface);
+            let reg_has_errors = reg_diagnostics
+                .iter()
+                .any(|diag| diag.severity == Severity::Error);
+            emit_diagnostics(format, &source, &reg_diagnostics, out, err);
+            if reg_has_errors {
+                return EXIT_LANGUAGE_FAILURE;
+            }
+            let Some(reg_module) = reg_module else {
+                return EXIT_LANGUAGE_FAILURE;
+            };
+            return match execute_reg_module_with_host(&reg_module, host) {
+                Ok(_) => EXIT_SUCCESS,
+                Err(error) => {
+                    let diagnostic = runtime_diagnostic(&source, &error);
+                    emit_diagnostics(format, &source, std::slice::from_ref(&diagnostic), out, err);
+                    EXIT_LANGUAGE_FAILURE
+                }
+            };
         }
 
         match execute_module_with_host(&compiled.module, host) {
@@ -2494,6 +2679,26 @@ fn execute_module_with_host(
     }
     register_module_symbols(&mut vm, module);
     vm.run(module).map(|_| ())
+}
+
+/// Registers the standard library and runs a register-VM module.
+///
+/// Globals (including stdlib natives) are bridged from a stack-VM standard
+/// environment so both engines observe the same `io`, `sh`, `math`, … surface.
+///
+/// # Errors
+/// Returns the runtime error raised by the program.
+fn execute_reg_module_with_host(
+    module: &RegCompiledModule,
+    host: Option<HostProfile>,
+) -> Result<aipo_vm::Value, VmError> {
+    let (mut stack_vm, _) = standard_environment();
+    if let Some(HostProfile::HeadlessTest) = host {
+        headless::install(&mut stack_vm);
+    }
+    let mut reg_vm = RegVm::new();
+    reg_vm.globals = stack_vm.globals.clone();
+    reg_vm.run_module(module).map_err(VmError::Fault)
 }
 
 fn collect_test_files(target: Option<&Path>) -> Result<Vec<PathBuf>, String> {

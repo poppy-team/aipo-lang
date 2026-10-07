@@ -445,13 +445,26 @@ impl RegEmitter {
         }
 
         // Third pass: compile top-level script with function indices available.
+        // Mirrors the stack emitter prologue: each declared function is
+        // instantiated and bound as a global before the script body runs.
+        let mut top_ir = module.top_level.clone();
+        let mut prologue = Vec::with_capacity(module.functions.len() * 2);
+        for func in &module.functions {
+            prologue.push(aipo_ir::CoreInst::MakeFunction(
+                func.name.clone(),
+                module.span,
+            ));
+            prologue.push(aipo_ir::CoreInst::Store(func.name.clone(), module.span));
+        }
+        prologue.extend(top_ir.instructions);
+        top_ir.instructions = prologue;
         let top_emitter = RegEmitter {
             constants: Vec::new(),
             instructions: Vec::new(),
             function_index: shared_index,
             max_reg: 0,
         };
-        let top_level = top_emitter.compile_function(&module.top_level);
+        let top_level = top_emitter.compile_function(&top_ir);
 
         RegCompiledModule {
             top_level,

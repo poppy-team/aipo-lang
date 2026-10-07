@@ -12,10 +12,11 @@ use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    let (args, reg) = split_engine_flag(raw_args);
 
     if args.is_empty() {
-        return run_repl();
+        return run_repl(reg);
     }
 
     match args[0].as_str() {
@@ -25,9 +26,12 @@ fn main() -> ExitCode {
             println!("USAGE:");
             println!("    aipo-sh <script.aipo> [args...]");
             println!("    aipo-sh -c <code>");
-            println!("    aipo-sh");
+            println!("    aipo-sh [--engine=<vm|reg>]");
             println!("    aipo-sh --version");
             println!("    aipo-sh --help");
+            println!();
+            println!("FLAGS:");
+            println!("    --engine=<vm|reg>   Execution engine: stack VM (default) or register VM");
             ExitCode::SUCCESS
         }
         "-v" | "--version" => {
@@ -40,11 +44,18 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
             let code = &args[1];
-            let code_u8 = aipo_cli::eval_source(code, &mut io::stdout(), &mut io::stderr());
+            let code_u8 = if reg {
+                aipo_cli::eval_source_reg(code, &mut io::stdout(), &mut io::stderr())
+            } else {
+                aipo_cli::eval_source(code, &mut io::stdout(), &mut io::stderr())
+            };
             ExitCode::from(code_u8)
         }
         _ => {
             let mut run_args = vec!["run".to_string()];
+            if reg {
+                run_args.push("--engine=reg".to_string());
+            }
             run_args.extend(args);
             let code_u8 = aipo_cli::run_with(&run_args, &mut io::stdout(), &mut io::stderr());
             ExitCode::from(code_u8)
@@ -52,8 +63,53 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_repl() -> ExitCode {
-    println!("Aipo Shell (aipo-sh) v{}", env!("CARGO_PKG_VERSION"));
+/// Extracts `--engine=<vm|reg>` / `--engine <vm|reg>` / `--reg` from shell args.
+///
+/// Returns the remaining args and `true` when the register VM was selected.
+fn split_engine_flag(args: Vec<String>) -> (Vec<String>, bool) {
+    let mut kept = Vec::with_capacity(args.len());
+    let mut reg = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        if arg == "--reg" {
+            reg = true;
+        } else if let Some(value) = arg.strip_prefix("--engine=") {
+            match value {
+                "reg" => reg = true,
+                "vm" | "bytecode" | "stack" => reg = false,
+                _ => {
+                    eprintln!("error: unrecognized --engine '{value}': expected 'vm' or 'reg'");
+                    std::process::exit(2);
+                }
+            }
+        } else if arg == "--engine" {
+            index += 1;
+            match args.get(index).map(String::as_str) {
+                Some("reg") => reg = true,
+                Some("vm" | "bytecode" | "stack") => reg = false,
+                _ => {
+                    eprintln!("error: --engine requires 'vm' or 'reg'");
+                    std::process::exit(2);
+                }
+            }
+        } else {
+            kept.push(arg.clone());
+        }
+        index += 1;
+    }
+    (kept, reg)
+}
+
+fn run_repl(reg: bool) -> ExitCode {
+    if reg {
+        println!(
+            "Aipo Shell (aipo-sh) v{} [engine=reg]",
+            env!("CARGO_PKG_VERSION")
+        );
+    } else {
+        println!("Aipo Shell (aipo-sh) v{}", env!("CARGO_PKG_VERSION"));
+    }
     println!("Type 'exit' to quit.");
 
     let stdin = io::stdin();
@@ -75,7 +131,11 @@ fn run_repl() -> ExitCode {
                 if trimmed == "exit" || trimmed == "quit" {
                     break;
                 }
-                aipo_cli::eval_source(trimmed, &mut stdout, &mut stderr);
+                if reg {
+                    aipo_cli::eval_source_reg(trimmed, &mut stdout, &mut stderr);
+                } else {
+                    aipo_cli::eval_source(trimmed, &mut stdout, &mut stderr);
+                }
             }
             Err(e) => {
                 eprintln!("error reading input: {e}");
