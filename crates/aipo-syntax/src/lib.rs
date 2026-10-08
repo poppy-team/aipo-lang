@@ -561,4 +561,17 @@ mod tests {
             "expected zero diagnostics, got: {diags:?}"
         );
     }
+
+    #[test]
+    fn test_parse_batch_bind_invalid_syntax() {
+        use aipo_diagnostics::DiagnosticCode;
+        let src = Source::new(
+            SourceId::next(),
+            "test.aipo",
+            "struct P { x }\nP::desenhar()",
+        );
+        let (_prog, diags) = parse(&src);
+        assert_eq!(diags.len(), 1, "diags: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_PARSE_LOTE_INVALIDO);
+    }
 }

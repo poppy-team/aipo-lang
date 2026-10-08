@@ -134,6 +134,31 @@ fn test_run_with_engine_reg_flag() {
 }
 
 #[test]
+fn test_eval_source_reg_attempt_failed() {
+    let _guard = test_lock();
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    aipo_cli::set_output_sink(Some(Box::new(TestSink(Arc::clone(&captured)))));
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let code = r#"
+var msg = "ok"
+attempt {
+    fail "falha capturada com sucesso"
+    msg = "nao deve rodar"
+} failed err {
+    msg = err.message
+}
+io.println(msg)
+"#;
+    let exit_code = aipo_cli::eval_source_reg(code, &mut out, &mut err);
+    aipo_cli::set_output_sink(None);
+
+    assert_eq!(exit_code, 0, "stderr: {}", String::from_utf8_lossy(&err));
+    let output = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    assert_eq!(output, "falha capturada com sucesso\n");
+}
+
+#[test]
 fn test_sh_module_automation() {
     let _guard = test_lock();
     let captured = Arc::new(Mutex::new(Vec::new()));
@@ -152,4 +177,81 @@ io.println(pwd.len() > 0)
     assert_eq!(exit_code, 0);
     let output = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
     assert_eq!(output, "automation-test\ntrue\n");
+}
+
+#[test]
+fn test_eval_source_reg_collections_and_structs() {
+    let _guard = test_lock();
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    aipo_cli::set_output_sink(Some(Box::new(TestSink(Arc::clone(&captured)))));
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let code = r#"
+struct Point {
+    x
+    y
+}
+let p = Point{ x: 10, y: 20 }
+let list = [p.x, p.y, 30]
+let dict = { "total": list[0] + list[1] + list[2] }
+io.println(dict["total"])
+"#;
+    let exit_code = aipo_cli::eval_source_reg(code, &mut out, &mut err);
+    aipo_cli::set_output_sink(None);
+
+    assert_eq!(exit_code, 0, "stderr: {}", String::from_utf8_lossy(&err));
+    let output = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    assert_eq!(output, "60\n");
+}
+
+#[test]
+fn test_eval_source_reg_each_and_defaults_and_is() {
+    let _guard = test_lock();
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    aipo_cli::set_output_sink(Some(Box::new(TestSink(Arc::clone(&captured)))));
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let code = r#"
+fn add_with_default(a, b = 10) {
+    return a + b
+}
+let sum1 = add_with_default(5)
+let sum2 = add_with_default(5, 20)
+
+var total = 0
+each item in [sum1, sum2] {
+    if item is Int {
+        total = total + item
+    }
+}
+io.println(total)
+"#;
+    let exit_code = aipo_cli::eval_source_reg(code, &mut out, &mut err);
+    aipo_cli::set_output_sink(None);
+
+    assert_eq!(exit_code, 0, "stderr: {}", String::from_utf8_lossy(&err));
+    let output = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    assert_eq!(output, "40\n");
+}
+
+#[test]
+fn test_eval_source_reg_each_loop() {
+    let _guard = test_lock();
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    aipo_cli::set_output_sink(Some(Box::new(TestSink(Arc::clone(&captured)))));
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let code = r#"
+var total = 0
+each item in [10, 20, 30] {
+    total = total + item
+}
+io.println(total)
+"#;
+    let exit_code = aipo_cli::eval_source_reg(code, &mut out, &mut err);
+    aipo_cli::set_output_sink(None);
+
+    assert_eq!(exit_code, 0, "stderr: {}", String::from_utf8_lossy(&err));
+    let output = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    assert_eq!(output, "60\n");
 }

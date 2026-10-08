@@ -574,4 +574,145 @@ mod tests {
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
     }
+
+    #[test]
+    fn test_hook_name_warning() {
+        let code = "struct Point { var x }\nPoint:constructor(var self, x) { self.x = x }\nPoint:validar() -> Bool { return self.x > 0 }";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 2, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_NOME_DE_HOOK);
+        assert_eq!(diags[1].code, DiagnosticCode::AIPO_SEM_NOME_DE_HOOK);
+    }
+
+    #[test]
+    fn test_empty_invariant_warning() {
+        let code = "struct Point { x }\nPoint:invariant { }";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_HOOK_VAZIO);
+    }
+
+    #[test]
+    fn test_duplicate_hooks_error() {
+        let code = "struct Point { x }\nPoint:init(x) { self.x = x }\nPoint:init(x, y) { self.x = x }\nPoint:invariant { self.x > 0 }\nPoint:invariant { self.x < 100 }";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 2, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_HOOK_DUPLICADO);
+        assert_eq!(diags[1].code, DiagnosticCode::AIPO_SEM_HOOK_DUPLICADO);
+    }
+
+    #[test]
+    fn test_flow_narrowing_is_struct() {
+        let code = r#"
+struct Point {
+    x
+    y
+}
+fn process(val) {
+    if val is Point {
+        let a = val.x
+        let b = val.bad_field
+    }
+}
+"#;
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+        assert!(
+            diags[0]
+                .message
+                .contains("struct 'Point' has no member 'bad_field'")
+        );
+    }
+
+    #[test]
+    fn test_flow_narrowing_is_list() {
+        let code = r#"
+fn f(l) {
+    if l is List {
+        l.add(1)
+        l.pop()
+    }
+}
+"#;
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+        assert!(diags[0].message.contains("type 'List' has no member 'pop'"));
+    }
+
+    #[test]
+    fn test_flow_narrowing_negative_in_else() {
+        let code = r#"
+struct Point {
+    x
+    y
+}
+fn f(val) {
+    if not (val is Point) {
+        return 0
+    } else {
+        let b = val.bad_field
+        return 1
+    }
+}
+"#;
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+        assert!(
+            diags[0]
+                .message
+                .contains("struct 'Point' has no member 'bad_field'")
+        );
+    }
+
+    #[test]
+    fn test_flow_narrowing_nullable_parameter() {
+        let code = r#"
+struct Point {
+    x
+    y
+}
+fn f(p: Point?) {
+    if p != none {
+        let b = p.bad_field
+    }
+}
+"#;
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+        assert!(
+            diags[0]
+                .message
+                .contains("struct 'Point' has no member 'bad_field'")
+        );
+    }
+
+    #[test]
+    fn test_flow_narrowing_match_variant() {
+        let code = r#"
+enum State {
+    Loading,
+    Ready { count: Int },
+}
+fn check(s: State) {
+    match s {
+        when State.Ready { count } {
+            s.bad_field
+        }
+        else { }
+    }
+}
+"#;
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+        assert!(
+            diags[0]
+                .message
+                .contains("struct 'State.Ready' has no member 'bad_field'")
+        );
+    }
 }

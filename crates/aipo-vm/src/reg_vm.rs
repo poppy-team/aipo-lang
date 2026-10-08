@@ -2,9 +2,10 @@
 
 use crate::arena::ArenaAllocator;
 use crate::fault::VmFault;
-use crate::value::{Value, check_safe_int};
+use crate::value::{DictMap, StructInstance, Value, check_safe_int};
 use aipo_bytecode::{Constant, RegCompiledFunction, RegCompiledModule, RegInstruction, RegOpCode};
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 /// Maximum nested user-function call depth (bounds Rust stack + RAM).
@@ -30,8 +31,12 @@ pub struct RegVm {
     pub globals: HashMap<String, Value>,
     /// Compiled user-function table for `MakeFunction`/`Call`.
     pub functions: Vec<RegCompiledFunction>,
+    /// Declared struct definitions: name -> fields.
+    pub struct_defs: HashMap<String, Vec<(String, bool)>>,
     /// Active nested-call frames (depth guard).
     pub frames: Vec<RegCallFrame>,
+    /// Active exception/failure handler stack: `(handler_pc, err_reg)`.
+    pub handler_stack: Vec<(usize, u8)>,
     /// Maximum nested-call depth.
     pub max_call_depth: usize,
     /// Linear bump arena for string/buffer allocations.
@@ -55,7 +60,9 @@ impl RegVm {
             constants: Vec::new(),
             globals: HashMap::new(),
             functions: Vec::new(),
+            struct_defs: HashMap::new(),
             frames: Vec::new(),
+            handler_stack: Vec::new(),
             max_call_depth: REG_MAX_CALL_DEPTH,
             arena: ArenaAllocator::with_default_capacity(),
             pc: 0,
@@ -76,6 +83,7 @@ impl RegVm {
     /// Loads a compiled register module (function table for `MakeFunction`).
     pub fn load_module(&mut self, module: &RegCompiledModule) {
         self.functions = module.functions.clone();
+        self.struct_defs = module.struct_defs.clone();
     }
 
     /// Executes a compiled register module's top-level script.
@@ -84,6 +92,7 @@ impl RegVm {
     /// Returns [`VmFault`] if a runtime error occurs.
     pub fn run_module(&mut self, module: &RegCompiledModule) -> Result<Value, VmFault> {
         self.functions = module.functions.clone();
+        self.struct_defs = module.struct_defs.clone();
         self.frames.clear();
         self.run_function(&module.top_level)
     }
@@ -116,6 +125,9 @@ impl RegVm {
         let saved_pc = self.pc;
         for (i, arg) in args.iter().enumerate().take(256) {
             self.registers[i] = arg.clone();
+        }
+        for i in args.len()..func.arity.min(256) {
+            self.registers[i] = Value::Unset;
         }
         self.constants = func.constants.iter().map(Self::convert_constant).collect();
         let outcome = self.run(&func.instructions);
@@ -175,6 +187,9 @@ impl RegVm {
                 }
                 RegOpCode::LoadNil => {
                     self.registers[a] = Value::None;
+                }
+                RegOpCode::LoadUnset => {
+                    self.registers[a] = Value::Unset;
                 }
                 RegOpCode::LoadBool => {
                     self.registers[a] = Value::Bool(b != 0);
@@ -340,6 +355,19 @@ impl RegVm {
                         self.pc = target as usize;
                     }
                 }
+                RegOpCode::JumpIfSetLocal => {
+                    if !matches!(self.registers[a], Value::Unset) {
+                        let offset = inst.sbx();
+                        let target = (self.pc as i32) + offset;
+                        if target < 0 {
+                            return Err(VmFault::CorruptedBytecode {
+                                offset: self.pc - 1,
+                                reason: format!("jump target {target} out of range"),
+                            });
+                        }
+                        self.pc = target as usize;
+                    }
+                }
                 RegOpCode::GetGlobal => {
                     let bx = inst.bx() as usize;
                     if let Some(Value::String(name)) = self.constants.get(bx) {
@@ -370,6 +398,16 @@ impl RegVm {
                         }
                     };
                     let target = self.registers[a].clone();
+                    if let Value::Failure(err) = &target {
+                        if field_name == "message" {
+                            self.registers[a] = Value::String(Rc::new(err.message.clone()));
+                            continue;
+                        }
+                        if field_name == "payload" {
+                            self.registers[a] = err.payload.clone();
+                            continue;
+                        }
+                    }
                     match target {
                         Value::Struct(inst) => {
                             let val =
@@ -639,6 +677,353 @@ impl RegVm {
                         });
                     }
                 }
+                RegOpCode::NewList => {
+                    let start = b;
+                    let count = c;
+                    if start + count > 256 {
+                        return Err(VmFault::StackUnderflow);
+                    }
+                    let items = self.registers[start..start + count].to_vec();
+                    self.registers[a] = Value::List(Rc::new(RefCell::new(items)));
+                }
+                RegOpCode::NewDict => {
+                    let start = b;
+                    let count = c;
+                    if start + count * 2 > 256 {
+                        return Err(VmFault::StackUnderflow);
+                    }
+                    let mut entries = Vec::with_capacity(count);
+                    for i in 0..count {
+                        let k = self.registers[start + i * 2].clone();
+                        let v = self.registers[start + i * 2 + 1].clone();
+                        entries.push((k, v));
+                    }
+                    self.registers[a] =
+                        Value::Dict(Rc::new(RefCell::new(DictMap::from_entries(entries))));
+                }
+                RegOpCode::NewStruct => {
+                    let type_c_idx = b;
+                    let field_count = c;
+                    let type_name = match self.constants.get(type_c_idx) {
+                        Some(Value::String(s)) => s.clone(),
+                        _ => {
+                            return Err(VmFault::CorruptedBytecode {
+                                offset: self.pc - 1,
+                                reason: "invalid struct type name constant".to_string(),
+                            });
+                        }
+                    };
+                    if a + field_count > 256 {
+                        return Err(VmFault::StackUnderflow);
+                    }
+                    let values = self.registers[a..a + field_count].to_vec();
+                    let instance = if let Some(defs) = self.struct_defs.get(type_name.as_str()) {
+                        let mut fields = Vec::with_capacity(defs.len());
+                        let mut fixed_fields = HashSet::new();
+                        for ((f_name, is_fixed), val) in defs.iter().cloned().zip(values) {
+                            if is_fixed {
+                                fixed_fields.insert(f_name.clone());
+                            }
+                            fields.push((f_name, val));
+                        }
+                        StructInstance {
+                            type_name: (*type_name).clone(),
+                            fields,
+                            fixed_fields,
+                            under_construction: false,
+                        }
+                    } else {
+                        let fields = values
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, v)| (format!("field_{i}"), v))
+                            .collect();
+                        StructInstance {
+                            type_name: (*type_name).clone(),
+                            fields,
+                            fixed_fields: HashSet::new(),
+                            under_construction: false,
+                        }
+                    };
+                    self.registers[a] = Value::Struct(Rc::new(RefCell::new(instance)));
+                }
+                RegOpCode::Range => {
+                    let start = match self.registers[b] {
+                        Value::Int(n) => n,
+                        ref other => {
+                            return Err(VmFault::TypeMismatch {
+                                expected: "Int".to_string(),
+                                actual: other.type_name().to_string(),
+                            });
+                        }
+                    };
+                    let end = match self.registers[c] {
+                        Value::Int(n) => n,
+                        ref other => {
+                            return Err(VmFault::TypeMismatch {
+                                expected: "Int".to_string(),
+                                actual: other.type_name().to_string(),
+                            });
+                        }
+                    };
+                    self.registers[a] = Value::range(start, end);
+                }
+                RegOpCode::CloneStruct => {
+                    let val = self.registers[b].clone();
+                    match val {
+                        Value::Struct(inst) => {
+                            let cloned = inst.borrow().clone();
+                            self.registers[a] = Value::Struct(Rc::new(RefCell::new(cloned)));
+                        }
+                        other => {
+                            return Err(VmFault::TypeMismatch {
+                                expected: "struct".to_string(),
+                                actual: other.type_name().to_string(),
+                            });
+                        }
+                    }
+                }
+                RegOpCode::IsVariant => {
+                    let bx = inst.bx() as usize;
+                    let expected = match self.constants.get(bx) {
+                        Some(Value::String(s)) => s.as_str(),
+                        _ => {
+                            return Err(VmFault::CorruptedBytecode {
+                                offset: self.pc - 1,
+                                reason: "invalid variant name constant".to_string(),
+                            });
+                        }
+                    };
+                    let val = &self.registers[a];
+                    let matches = match val {
+                        Value::Struct(inst) => {
+                            let t = &inst.borrow().type_name;
+                            t == expected || t.ends_with(&format!(".{expected}"))
+                        }
+                        _ => false,
+                    };
+                    self.registers[a] = Value::Bool(matches);
+                }
+                RegOpCode::Len => {
+                    let val = &self.registers[b];
+                    let len = match val {
+                        Value::String(s) => s.chars().count() as i64,
+                        Value::List(l) => l.borrow().len() as i64,
+                        Value::Dict(d) => d.borrow().len() as i64,
+                        Value::Set(s) => s.borrow().len() as i64,
+                        Value::Bytes(b) => b.borrow().len() as i64,
+                        Value::Range(r) => (r.end - r.start).max(0),
+                        other => {
+                            return Err(VmFault::TypeMismatch {
+                                expected: "collection, string or range".to_string(),
+                                actual: other.type_name().to_string(),
+                            });
+                        }
+                    };
+                    self.registers[a] = Value::Int(len);
+                }
+                RegOpCode::IterAt => {
+                    let coll = &self.registers[b];
+                    let idx_reg = c >> 2;
+                    let mode = (c & 3) as u8;
+                    let idx_val = &self.registers[idx_reg];
+                    let ordinal = match idx_val {
+                        Value::Int(n) => *n,
+                        other => {
+                            return Err(VmFault::TypeMismatch {
+                                expected: "Int iteration index".to_string(),
+                                actual: other.type_name().to_string(),
+                            });
+                        }
+                    };
+                    let projected = match coll {
+                        Value::List(l) => {
+                            let list = l.borrow();
+                            let len = list.len();
+                            #[allow(clippy::cast_possible_wrap)]
+                            let actual = if ordinal < 0 {
+                                (len as i64) + ordinal
+                            } else {
+                                ordinal
+                            };
+                            let pos = usize::try_from(actual).ok().filter(|&p| p < len).ok_or(
+                                VmFault::IndexOutOfRange {
+                                    index: ordinal,
+                                    len,
+                                },
+                            )?;
+                            if mode == 1 {
+                                Value::Int(actual)
+                            } else {
+                                list[pos].clone()
+                            }
+                        }
+                        Value::Dict(d) => {
+                            let dict = d.borrow();
+                            let len = dict.len();
+                            #[allow(clippy::cast_possible_wrap)]
+                            let actual = if ordinal < 0 {
+                                (len as i64) + ordinal
+                            } else {
+                                ordinal
+                            };
+                            let pos = usize::try_from(actual).ok().filter(|&p| p < len).ok_or(
+                                VmFault::IndexOutOfRange {
+                                    index: ordinal,
+                                    len,
+                                },
+                            )?;
+                            let (k, v) = &dict.entries()[pos];
+                            if mode == 1 { k.clone() } else { v.clone() }
+                        }
+                        Value::Range(r) => {
+                            let len = (r.end - r.start).max(0) as usize;
+                            #[allow(clippy::cast_possible_wrap)]
+                            let actual = if ordinal < 0 {
+                                (len as i64) + ordinal
+                            } else {
+                                ordinal
+                            };
+                            let pos = usize::try_from(actual).ok().filter(|&p| p < len).ok_or(
+                                VmFault::IndexOutOfRange {
+                                    index: ordinal,
+                                    len,
+                                },
+                            )?;
+                            Value::Int(r.start + (pos as i64))
+                        }
+                        Value::String(s) => {
+                            let chars: Vec<char> = s.chars().collect();
+                            let len = chars.len();
+                            #[allow(clippy::cast_possible_wrap)]
+                            let actual = if ordinal < 0 {
+                                (len as i64) + ordinal
+                            } else {
+                                ordinal
+                            };
+                            let pos = usize::try_from(actual).ok().filter(|&p| p < len).ok_or(
+                                VmFault::IndexOutOfRange {
+                                    index: ordinal,
+                                    len,
+                                },
+                            )?;
+                            if mode == 1 {
+                                Value::Int(actual)
+                            } else {
+                                Value::String(Rc::new(chars[pos].to_string()))
+                            }
+                        }
+                        other => {
+                            return Err(VmFault::TypeMismatch {
+                                expected: "iterable collection".to_string(),
+                                actual: other.type_name().to_string(),
+                            });
+                        }
+                    };
+                    self.registers[a] = projected;
+                }
+                RegOpCode::TypeIs => {
+                    let val = &self.registers[b];
+                    let tag = &self.registers[c];
+                    let matches = match tag {
+                        Value::Type(tag) => tag.matches(val),
+                        Value::UserType(target_name) => match val {
+                            Value::Struct(inst) => {
+                                let name = &inst.borrow().type_name;
+                                name == target_name.as_str()
+                                    || name
+                                        .split_once('.')
+                                        .is_some_and(|(parent, _)| parent == target_name.as_str())
+                            }
+                            _ => false,
+                        },
+                        Value::Struct(target_inst) => match val {
+                            Value::Struct(inst) => {
+                                inst.borrow().type_name == target_inst.borrow().type_name
+                            }
+                            _ => false,
+                        },
+                        Value::String(s) => match val {
+                            Value::Struct(inst) => inst.borrow().type_name == **s,
+                            _ => false,
+                        },
+                        _ => false,
+                    };
+                    self.registers[a] = Value::Bool(matches);
+                }
+                RegOpCode::TypeIsNullable => {
+                    let val = &self.registers[b];
+                    let tag = &self.registers[c];
+                    let matches = if matches!(val, Value::None) {
+                        true
+                    } else {
+                        match tag {
+                            Value::Type(tag) => tag.matches(val),
+                            Value::UserType(target_name) => match val {
+                                Value::Struct(inst) => {
+                                    let name = &inst.borrow().type_name;
+                                    name == target_name.as_str()
+                                        || name.split_once('.').is_some_and(|(parent, _)| {
+                                            parent == target_name.as_str()
+                                        })
+                                }
+                                _ => false,
+                            },
+                            Value::Struct(target_inst) => match val {
+                                Value::Struct(inst) => {
+                                    inst.borrow().type_name == target_inst.borrow().type_name
+                                }
+                                _ => false,
+                            },
+                            Value::String(s) => match val {
+                                Value::Struct(inst) => inst.borrow().type_name == **s,
+                                _ => false,
+                            },
+                            _ => false,
+                        }
+                    };
+                    self.registers[a] = Value::Bool(matches);
+                }
+                RegOpCode::PushHandler => {
+                    let offset = inst.sbx();
+                    let target = (self.pc as i32) + offset;
+                    if target < 0 {
+                        return Err(VmFault::CorruptedBytecode {
+                            offset: self.pc - 1,
+                            reason: format!("handler target {target} out of range"),
+                        });
+                    }
+                    self.handler_stack.push((target as usize, a as u8));
+                }
+                RegOpCode::PopHandler => {
+                    self.handler_stack.pop();
+                }
+                RegOpCode::Fail => {
+                    let val = &self.registers[a];
+                    let (msg, payload) = match val {
+                        Value::String(s) => ((**s).clone(), Value::None),
+                        Value::Failure(f) => (f.message.clone(), f.payload.clone()),
+                        other => (other.to_string(), other.clone()),
+                    };
+                    let failure = Value::failure_with_payload(msg, payload);
+                    if let Some((handler_pc, err_reg)) = self.handler_stack.pop() {
+                        self.registers[err_reg as usize] = failure;
+                        self.pc = handler_pc;
+                    } else {
+                        self.registers[a] = failure;
+                    }
+                }
+                RegOpCode::PropagateFailure => {
+                    if self.registers[a].is_failure() {
+                        let failure = self.registers[a].clone();
+                        if let Some((handler_pc, err_reg)) = self.handler_stack.pop() {
+                            self.registers[err_reg as usize] = failure;
+                            self.pc = handler_pc;
+                        } else {
+                            return Ok(failure);
+                        }
+                    }
+                }
             }
         }
         Ok(Value::None)
@@ -866,5 +1251,99 @@ mod tests {
 
         let err = vm.run(&code).unwrap_err();
         assert!(matches!(err, VmFault::CorruptedBytecode { .. }));
+    }
+
+    #[test]
+    fn test_register_vm_new_list_and_len() {
+        let mut vm = RegVm::new();
+        let code = vec![
+            RegInstruction::encode_asbx(RegOpCode::LoadInt, 1, 10),
+            RegInstruction::encode_asbx(RegOpCode::LoadInt, 2, 20),
+            RegInstruction::encode_asbx(RegOpCode::LoadInt, 3, 30),
+            // R[0] = [R[1], R[2], R[3]]
+            RegInstruction::encode_abc(RegOpCode::NewList, 0, 1, 3),
+            // R[4] = len(R[0])
+            RegInstruction::encode_abc(RegOpCode::Len, 4, 0, 0),
+            RegInstruction::encode_abc(RegOpCode::Return, 4, 0, 0),
+        ];
+        let result = vm.run(&code).unwrap();
+        assert_eq!(result, Value::Int(3));
+    }
+
+    #[test]
+    fn test_register_vm_new_dict() {
+        let mut vm = RegVm::new();
+        vm.constants = vec![
+            Value::String(Rc::new("alpha".to_string())),
+            Value::String(Rc::new("beta".to_string())),
+        ];
+        let code = vec![
+            RegInstruction::encode_abx(RegOpCode::LoadConst, 1, 0),
+            RegInstruction::encode_asbx(RegOpCode::LoadInt, 2, 100),
+            RegInstruction::encode_abx(RegOpCode::LoadConst, 3, 1),
+            RegInstruction::encode_asbx(RegOpCode::LoadInt, 4, 200),
+            // R[0] = { R[1]: R[2], R[3]: R[4] }
+            RegInstruction::encode_abc(RegOpCode::NewDict, 0, 1, 2),
+            // GetIndex: R[5] = R[0][R[1]]
+            RegInstruction::encode_abc(RegOpCode::GetIndex, 5, 0, 1),
+            RegInstruction::encode_abc(RegOpCode::Return, 5, 0, 0),
+        ];
+        let result = vm.run(&code).unwrap();
+        assert_eq!(result, Value::Int(100));
+    }
+
+    #[test]
+    fn test_register_vm_new_struct_and_clone() {
+        let mut vm = RegVm::new();
+        vm.constants = vec![
+            Value::String(Rc::new("Point".to_string())),
+            Value::String(Rc::new("x".to_string())),
+            Value::String(Rc::new("y".to_string())),
+        ];
+        vm.struct_defs.insert(
+            "Point".to_string(),
+            vec![("x".to_string(), true), ("y".to_string(), false)],
+        );
+
+        let code = vec![
+            RegInstruction::encode_asbx(RegOpCode::LoadInt, 0, 10),
+            RegInstruction::encode_asbx(RegOpCode::LoadInt, 1, 20),
+            // R[0] = Point{ x: R[0], y: R[1] }
+            RegInstruction::encode_abc(RegOpCode::NewStruct, 0, 0, 2),
+            // Clone R[0] into R[1]
+            RegInstruction::encode_abc(RegOpCode::CloneStruct, 1, 0, 0),
+            // GetField 'x' from R[1] into R[2]
+            RegInstruction::encode_abx(RegOpCode::GetField, 1, 1),
+            RegInstruction::encode_abc(RegOpCode::Return, 1, 0, 0),
+        ];
+        let result = vm.run(&code).unwrap();
+        assert_eq!(result, Value::Int(10));
+    }
+
+    #[test]
+    fn test_register_vm_range_and_variant() {
+        let mut vm = RegVm::new();
+        vm.constants = vec![
+            Value::String(Rc::new("Option.Some".to_string())),
+            Value::String(Rc::new("val".to_string())),
+        ];
+        vm.struct_defs
+            .insert("Option.Some".to_string(), vec![("val".to_string(), true)]);
+
+        let code = vec![
+            RegInstruction::encode_asbx(RegOpCode::LoadInt, 1, 5),
+            RegInstruction::encode_asbx(RegOpCode::LoadInt, 2, 10),
+            // R[0] = 5..10
+            RegInstruction::encode_abc(RegOpCode::Range, 0, 1, 2),
+            // R[3] = len(R[0])
+            RegInstruction::encode_abc(RegOpCode::Len, 3, 0, 0),
+            // Construct Option.Some
+            RegInstruction::encode_abc(RegOpCode::NewStruct, 1, 0, 1),
+            // IsVariant check
+            RegInstruction::encode_abx(RegOpCode::IsVariant, 1, 0),
+            RegInstruction::encode_abc(RegOpCode::Return, 1, 0, 0),
+        ];
+        let result = vm.run(&code).unwrap();
+        assert_eq!(result, Value::Bool(true));
     }
 }

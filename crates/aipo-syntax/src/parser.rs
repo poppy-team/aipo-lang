@@ -886,10 +886,25 @@ impl<'a> Parser<'a> {
 
     /// Parses `Tipo::[fn1, fn2]`, the batch association form.
     fn parse_batch_bind(&mut self, start: SourceSpan, target: Ident) -> Option<BatchBind> {
-        self.expect(
-            &TokenKind::LBracket,
-            "expected '[' after '::' in batch association",
-        )?;
+        if !self.check(&TokenKind::LBracket) {
+            let span = self
+                .peek_token()
+                .map(|t| t.span)
+                .unwrap_or_else(|| SourceSpan::empty(self.source.len()));
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::AIPO_PARSE_LOTE_INVALIDO,
+                    "'::' espera uma lista entre colchetes; use ':' para declarar um método individual",
+                )
+                .with_primary_span(self.source, span)
+                .with_note(format!(
+                    "`{}:...()` declara um método; `{}::[f1, f2]` agrupa funções",
+                    target.name, target.name
+                )),
+            );
+            return None;
+        }
+        self.advance(); // '['
         self.skip_newlines();
 
         let mut functions = Vec::new();

@@ -135,6 +135,12 @@ impl DiagnosticCode {
             (Locale::PtBr, Self::AIPO_PARSE_NESTING_TOO_DEEP) => {
                 "profundidade de aninhamento excede o limite do compilador"
             }
+            (Locale::En, Self::AIPO_PARSE_LOTE_INVALIDO) => {
+                "invalid batch association syntax; expected bracketed list"
+            }
+            (Locale::PtBr, Self::AIPO_PARSE_LOTE_INVALIDO) => {
+                "sintaxe de lote inválida; esperado lista entre colchetes"
+            }
 
             // Semantic
             (Locale::En, Self::AIPO_SEM_UNKNOWN_NAME) => "unknown identifier or unresolved name",
@@ -237,6 +243,22 @@ impl DiagnosticCode {
             (Locale::PtBr, Self::AIPO_SEM_DEPRECATED) => "uso de item depreciado",
             (Locale::En, Self::AIPO_SEM_TODO) => "pending todo item",
             (Locale::PtBr, Self::AIPO_SEM_TODO) => "item de desenvolvimento pendente",
+            (Locale::En, Self::AIPO_SEM_NOME_DE_HOOK) => "method name resembles a lifecycle hook",
+            (Locale::PtBr, Self::AIPO_SEM_NOME_DE_HOOK) => {
+                "nome de método se assemelha a um hook de ciclo de vida"
+            }
+            (Locale::En, Self::AIPO_SEM_HOOK_VAZIO) => {
+                "invariant hook has an empty body without conditions"
+            }
+            (Locale::PtBr, Self::AIPO_SEM_HOOK_VAZIO) => {
+                "hook de invariante com corpo vazio sem condições"
+            }
+            (Locale::En, Self::AIPO_SEM_HOOK_DUPLICADO) => {
+                "lifecycle hook is declared more than once on type"
+            }
+            (Locale::PtBr, Self::AIPO_SEM_HOOK_DUPLICADO) => {
+                "hook de ciclo de vida declarado mais de uma vez no tipo"
+            }
 
             // Package
             (Locale::En, Self::AIPO_PKG_RESOLUTION) => {
