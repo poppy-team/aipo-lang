@@ -272,6 +272,18 @@ export default defineConfig({
               ]
             }
           ],
+          '/studies/': [
+            {
+              text: 'Estudos de Referência',
+              items: [
+                { text: 'Visão Geral & Índice', link: '/studies/' },
+                { text: 'VMs de Referência (Tier A)', link: '/studies/reference-vms' },
+                { text: 'Runtimes de Referência (Tier B + C)', link: '/studies/reference-runtimes' },
+                { text: 'Lições para a Aipo', link: '/studies/lessons-for-aipo' },
+                { text: 'Guia Master p/ LLMs', link: '/studies/llm-study-guide' }
+              ]
+            }
+          ],
           '/decisions/': [
             {
               text: 'Decisões Arquiteturais (ADPs)',
