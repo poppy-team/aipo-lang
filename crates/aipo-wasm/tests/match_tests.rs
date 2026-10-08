@@ -153,13 +153,14 @@ fn first_wins(v: Int) -> Int {
 }
 
 #[test]
-fn test_match_variant_reports_unsupported_stmt() {
+fn test_match_variant_execution() {
     let code = r#"
 enum Status {
   On,
   Off,
 }
-fn test_enum(s: Status) -> Int {
+fn test_on() -> Int {
+  let s = Status.On
   match s {
     when Status.On {
       return 1
@@ -167,21 +168,84 @@ fn test_enum(s: Status) -> Int {
     when Status.Off {
       return 0
     }
+    else {
+      return -1
+    }
+  }
+}
+fn test_off() -> Int {
+  let s = Status.Off
+  match s {
+    when Status.On {
+      return 1
+    }
+    when Status.Off {
+      return 0
+    }
+    else {
+      return -1
+    }
   }
 }
 "#;
-    let source = Source::new(SourceId::next(), "test.aipo", code);
-    let (ast, diags) = parse(&source);
-    assert!(diags.is_empty(), "parse diagnostics: {diags:?}");
-    let hir = lower(ast);
-    let result = compile_hir(&hir);
-    assert!(
-        matches!(
-            result,
-            Err(aipo_wasm::WasmCompileError::UnsupportedStmt { .. })
-        ),
-        "match variant pattern must return UnsupportedStmt in Wasm backend, got {result:?}"
-    );
+    let (mut store, instance) = instantiate_aipo(code);
+    let f_on = instance
+        .get_typed_func::<(), i64>(&mut store, "test_on")
+        .expect("exported `test_on`");
+    assert_eq!(f_on.call(&mut store, ()).unwrap(), 1);
+    let f_off = instance
+        .get_typed_func::<(), i64>(&mut store, "test_off")
+        .expect("exported `test_off`");
+    assert_eq!(f_off.call(&mut store, ()).unwrap(), 0);
+}
+
+#[test]
+fn test_match_variant_payload_execution() {
+    let code = r#"
+enum Message {
+  Quit,
+  Move(x: Int, y: Int),
+}
+fn get_coords() -> Int {
+  let m = Message.Move(15, 27)
+  match m {
+    when Message.Move(x, y) {
+      return x + y
+    }
+    else {
+      return 0
+    }
+  }
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "get_coords")
+        .expect("exported `get_coords`");
+    assert_eq!(f.call(&mut store, ()).unwrap(), 42);
+}
+
+#[test]
+fn test_empty_collections_execution() {
+    let code = r#"
+fn check_empty_list() -> Int {
+  let l = []
+  return l.len()
+}
+fn check_empty_dict() -> Int {
+  let d = {}
+  return d.len()
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f_list = instance
+        .get_typed_func::<(), i64>(&mut store, "check_empty_list")
+        .expect("exported `check_empty_list`");
+    assert_eq!(f_list.call(&mut store, ()).unwrap(), 0);
+    let f_dict = instance
+        .get_typed_func::<(), i64>(&mut store, "check_empty_dict")
+        .expect("exported `check_empty_dict`");
+    assert_eq!(f_dict.call(&mut store, ()).unwrap(), 0);
 }
 
 #[test]

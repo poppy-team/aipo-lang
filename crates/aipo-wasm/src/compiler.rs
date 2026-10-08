@@ -111,10 +111,41 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     let mut functions = HashMap::new();
     let mut structs = HashMap::new();
 
-    // Pass 0: Collect Struct definitions and compute layouts
+    // Pass 0: Collect Struct and Enum definitions and compute layouts
     for item in &program.items {
-        if let HirItem::Struct(decl) = item {
-            register_struct_layout(decl, &mut structs);
+        match item {
+            HirItem::Struct(decl) => {
+                register_struct_layout(decl, &mut structs);
+            }
+            HirItem::Enum(decl) => {
+                for v in &decl.variants {
+                    let full_name = format!("{}.{}", decl.name, v.name);
+                    let mut fields = HashMap::new();
+                    match &v.payload {
+                        aipo_hir::HirEnumVariantPayload::Unit => {
+                            structs.insert(full_name, StructLayout { size: 8, fields });
+                        }
+                        aipo_hir::HirEnumVariantPayload::Tuple(t_fields) => {
+                            for (idx, f) in t_fields.iter().enumerate() {
+                                let f_name = f.name.clone().unwrap_or_else(|| idx.to_string());
+                                let offset = 8 + (idx as u32) * 8;
+                                fields.insert(f_name, (offset, WasmType::I64));
+                            }
+                            let size = 8 + (t_fields.len() as u32) * 8;
+                            structs.insert(full_name, StructLayout { size, fields });
+                        }
+                        aipo_hir::HirEnumVariantPayload::Struct(s_fields) => {
+                            for (idx, f) in s_fields.iter().enumerate() {
+                                let offset = 8 + (idx as u32) * 8;
+                                fields.insert(f.name.clone(), (offset, WasmType::I64));
+                            }
+                            let size = 8 + (s_fields.len() as u32) * 8;
+                            structs.insert(full_name, StructLayout { size, fields });
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
     refine_struct_layouts(program, &mut structs);
@@ -2001,6 +2032,14 @@ fn collect_program_strings(
     data_segments: &mut Vec<(i32, Vec<u8>)>,
     next_offset: &mut i32,
 ) {
+    for item in &program.items {
+        if let HirItem::Enum(e) = item {
+            for v in &e.variants {
+                let full = format!("{}.{}", e.name, v.name);
+                add_static_string(&full, static_strings, data_segments, next_offset);
+            }
+        }
+    }
     for func in func_decls {
         collect_stmts_strings(&func.body, static_strings, data_segments, next_offset);
     }
@@ -2072,8 +2111,32 @@ fn collect_stmts_strings(
                 );
                 for arm in &match_stmt.when_arms {
                     for p in &arm.patterns {
-                        if let aipo_hir::HirMatchPattern::Value(expr) = p {
-                            collect_expr_strings(expr, static_strings, data_segments, next_offset);
+                        match p {
+                            aipo_hir::HirMatchPattern::Value(expr) => {
+                                collect_expr_strings(
+                                    expr,
+                                    static_strings,
+                                    data_segments,
+                                    next_offset,
+                                );
+                            }
+                            aipo_hir::HirMatchPattern::Variant {
+                                enum_name,
+                                variant_name,
+                                ..
+                            } => {
+                                let full = match enum_name {
+                                    Some(e) => format!("{e}.{variant_name}"),
+                                    None => variant_name.clone(),
+                                };
+                                add_static_string(
+                                    &full,
+                                    static_strings,
+                                    data_segments,
+                                    next_offset,
+                                );
+                            }
+                            _ => {}
                         }
                     }
                     if let Some(guard) = &arm.guard {
@@ -2093,6 +2156,26 @@ fn collect_stmts_strings(
     }
 }
 
+fn add_static_string(
+    text: &str,
+    static_strings: &mut HashMap<String, i32>,
+    data_segments: &mut Vec<(i32, Vec<u8>)>,
+    next_offset: &mut i32,
+) {
+    if !static_strings.contains_key(text) {
+        let offset = *next_offset;
+        let len = text.len() as i32;
+        let mut bytes = Vec::with_capacity(4 + text.len());
+        bytes.extend_from_slice(&len.to_le_bytes());
+        bytes.extend_from_slice(text.as_bytes());
+
+        data_segments.push((offset, bytes));
+        static_strings.insert(text.to_string(), offset);
+
+        *next_offset += (4 + text.len() as i32 + 7) & !7;
+    }
+}
+
 fn collect_expr_strings(
     expr: &HirExpr,
     static_strings: &mut HashMap<String, i32>,
@@ -2104,18 +2187,7 @@ fn collect_expr_strings(
             collect_expr_strings(inner, static_strings, data_segments, next_offset);
         }
         HirExpr::Literal(Literal::String(text, _), _) => {
-            if !static_strings.contains_key(text) {
-                let offset = *next_offset;
-                let len = text.len() as i32;
-                let mut bytes = Vec::with_capacity(4 + text.len());
-                bytes.extend_from_slice(&len.to_le_bytes());
-                bytes.extend_from_slice(text.as_bytes());
-
-                data_segments.push((offset, bytes));
-                static_strings.insert(text.clone(), offset);
-
-                *next_offset += (4 + text.len() as i32 + 7) & !7;
-            }
+            add_static_string(text, static_strings, data_segments, next_offset);
         }
         HirExpr::Binary(_, left, right, _) => {
             collect_expr_strings(left, static_strings, data_segments, next_offset);
@@ -2448,14 +2520,41 @@ fn pre_scan_stmts(
                 );
                 for arm in &match_stmt.when_arms {
                     for pat in &arm.patterns {
-                        if let aipo_hir::HirMatchPattern::Destructure(fields) = pat {
-                            for f in fields {
-                                if !locals.contains_key(f) {
-                                    let slot = (params_count + declared_locals.len()) as u32;
-                                    declared_locals.push(WasmType::I64);
-                                    locals.insert(f.clone(), (slot, WasmType::I64, LocalKind::Int));
+                        match pat {
+                            aipo_hir::HirMatchPattern::Destructure(fields) => {
+                                for f in fields {
+                                    if !locals.contains_key(f) {
+                                        let slot = (params_count + declared_locals.len()) as u32;
+                                        declared_locals.push(WasmType::I64);
+                                        locals.insert(
+                                            f.clone(),
+                                            (slot, WasmType::I64, LocalKind::Int),
+                                        );
+                                    }
                                 }
                             }
+                            aipo_hir::HirMatchPattern::Variant { payload, .. } => {
+                                let fields: &[String] = match payload {
+                                    aipo_hir::HirVariantPatternPayload::Unit => &[][..],
+                                    aipo_hir::HirVariantPatternPayload::Tuple(ids) => {
+                                        ids.as_slice()
+                                    }
+                                    aipo_hir::HirVariantPatternPayload::Struct(ids) => {
+                                        ids.as_slice()
+                                    }
+                                };
+                                for f in fields {
+                                    if !locals.contains_key(f) {
+                                        let slot = (params_count + declared_locals.len()) as u32;
+                                        declared_locals.push(WasmType::I64);
+                                        locals.insert(
+                                            f.clone(),
+                                            (slot, WasmType::I64, LocalKind::Int),
+                                        );
+                                    }
+                                }
+                            }
+                            _ => {}
                         }
                     }
                     let arm_body = &arm.body;
@@ -4235,18 +4334,6 @@ fn compile_match_stmt(
     func.instruction(&Instruction::Block(BlockType::Empty));
 
     for arm in &match_stmt.when_arms {
-        if arm
-            .patterns
-            .iter()
-            .any(|p| matches!(p, aipo_hir::HirMatchPattern::Variant { .. }))
-        {
-            return Err(WasmCompileError::UnsupportedStmt {
-                message: "match variant patterns are not supported by the Wasm backend yet"
-                    .to_string(),
-                span: match_stmt.span,
-            });
-        }
-
         // Each arm may list several patterns. Build a nested
         // `if a then 1 else (if b then 1 else ... 0)` chain so exactly one boolean
         // is left on the stack, then use it to guard the arm body.
@@ -4280,7 +4367,31 @@ fn compile_match_stmt(
                         func.instruction(&Instruction::I64Const(0));
                         func.instruction(&Instruction::I64Ne);
                     }
-                    aipo_hir::HirMatchPattern::Variant { .. } => unreachable!(),
+                    aipo_hir::HirMatchPattern::Variant {
+                        enum_name,
+                        variant_name,
+                        ..
+                    } => {
+                        let full_name = match enum_name {
+                            Some(e) => format!("{e}.{variant_name}"),
+                            None => variant_name.clone(),
+                        };
+                        let expected_ptr = static_strings.get(&full_name).copied().unwrap_or(0);
+                        func.instruction(&Instruction::LocalGet(target_slot));
+                        func.instruction(&Instruction::I64Const(0));
+                        func.instruction(&Instruction::I64Ne);
+
+                        func.instruction(&Instruction::LocalGet(target_slot));
+                        func.instruction(&Instruction::I32WrapI64);
+                        func.instruction(&Instruction::I32Load(MemArg {
+                            offset: 0,
+                            align: 2,
+                            memory_index: 0,
+                        }));
+                        func.instruction(&Instruction::I32Const(expected_ptr));
+                        func.instruction(&Instruction::I32Eq);
+                        func.instruction(&Instruction::I32And);
+                    }
                 }
                 func.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
                 func.instruction(&Instruction::I32Const(1));
@@ -4296,42 +4407,95 @@ fn compile_match_stmt(
 
         func.instruction(&Instruction::If(BlockType::Empty));
         for pattern in &arm.patterns {
-            if let aipo_hir::HirMatchPattern::Destructure(fields) = pattern {
-                for f_name in fields {
-                    let f_slot = locals[f_name].0;
-                    let (f_offset, f_ty) = structs
-                        .values()
-                        .find_map(|s| s.fields.get(f_name).copied())
-                        .unwrap_or((0, WasmType::I64));
-                    func.instruction(&Instruction::LocalGet(target_slot));
-                    func.instruction(&Instruction::I32WrapI64);
-                    match f_ty {
-                        WasmType::I32 => {
-                            func.instruction(&Instruction::I32Load(MemArg {
-                                offset: f_offset as u64,
-                                align: 2,
-                                memory_index: 0,
-                            }));
-                            func.instruction(&Instruction::I64ExtendI32U);
+            match pattern {
+                aipo_hir::HirMatchPattern::Destructure(fields) => {
+                    for f_name in fields {
+                        let f_slot = locals[f_name].0;
+                        let (f_offset, f_ty) = structs
+                            .values()
+                            .find_map(|s| s.fields.get(f_name).copied())
+                            .unwrap_or((0, WasmType::I64));
+                        func.instruction(&Instruction::LocalGet(target_slot));
+                        func.instruction(&Instruction::I32WrapI64);
+                        match f_ty {
+                            WasmType::I32 => {
+                                func.instruction(&Instruction::I32Load(MemArg {
+                                    offset: f_offset as u64,
+                                    align: 2,
+                                    memory_index: 0,
+                                }));
+                                func.instruction(&Instruction::I64ExtendI32U);
+                            }
+                            WasmType::F64 => {
+                                func.instruction(&Instruction::F64Load(MemArg {
+                                    offset: f_offset as u64,
+                                    align: 3,
+                                    memory_index: 0,
+                                }));
+                                func.instruction(&Instruction::I64ReinterpretF64);
+                            }
+                            _ => {
+                                func.instruction(&Instruction::I64Load(MemArg {
+                                    offset: f_offset as u64,
+                                    align: 3,
+                                    memory_index: 0,
+                                }));
+                            }
                         }
-                        WasmType::F64 => {
-                            func.instruction(&Instruction::F64Load(MemArg {
-                                offset: f_offset as u64,
-                                align: 3,
-                                memory_index: 0,
-                            }));
-                            func.instruction(&Instruction::I64ReinterpretF64);
+                        func.instruction(&Instruction::LocalSet(f_slot));
+                    }
+                }
+                aipo_hir::HirMatchPattern::Variant {
+                    enum_name,
+                    variant_name,
+                    payload,
+                    ..
+                } => {
+                    let full_name = match enum_name {
+                        Some(e) => format!("{e}.{variant_name}"),
+                        None => variant_name.clone(),
+                    };
+                    match payload {
+                        aipo_hir::HirVariantPatternPayload::Unit => {}
+                        aipo_hir::HirVariantPatternPayload::Tuple(ids) => {
+                            for (idx, id) in ids.iter().enumerate() {
+                                let f_slot = locals[id].0;
+                                let f_offset = (8 + idx * 8) as u64;
+                                func.instruction(&Instruction::LocalGet(target_slot));
+                                func.instruction(&Instruction::I32WrapI64);
+                                func.instruction(&Instruction::I64Load(MemArg {
+                                    offset: f_offset,
+                                    align: 3,
+                                    memory_index: 0,
+                                }));
+                                func.instruction(&Instruction::LocalSet(f_slot));
+                            }
                         }
-                        _ => {
-                            func.instruction(&Instruction::I64Load(MemArg {
-                                offset: f_offset as u64,
-                                align: 3,
-                                memory_index: 0,
-                            }));
+                        aipo_hir::HirVariantPatternPayload::Struct(ids) => {
+                            for (idx, id) in ids.iter().enumerate() {
+                                let f_slot = locals[id].0;
+                                let f_offset = if let Some(layout) = structs.get(&full_name) {
+                                    layout
+                                        .fields
+                                        .get(id)
+                                        .map(|(off, _)| *off as u64)
+                                        .unwrap_or((8 + idx * 8) as u64)
+                                } else {
+                                    (8 + idx * 8) as u64
+                                };
+                                func.instruction(&Instruction::LocalGet(target_slot));
+                                func.instruction(&Instruction::I32WrapI64);
+                                func.instruction(&Instruction::I64Load(MemArg {
+                                    offset: f_offset,
+                                    align: 3,
+                                    memory_index: 0,
+                                }));
+                                func.instruction(&Instruction::LocalSet(f_slot));
+                            }
                         }
                     }
-                    func.instruction(&Instruction::LocalSet(f_slot));
                 }
+                _ => {}
             }
         }
 
@@ -5426,6 +5590,94 @@ fn compile_expr(
                 }
             }
 
+            // Case 0.5: Enum tuple variant constructor call: `Enum.Variant(...)`
+            if let HirExpr::Dot(receiver, variant_name, _) = &**callee {
+                if let HirExpr::Identifier(enum_name, _) = &**receiver {
+                    let candidate_variant = format!("{enum_name}.{variant_name}");
+                    if let Some(layout) = structs.get(&candidate_variant) {
+                        if let Some(&str_ptr) = static_strings.get(&candidate_variant) {
+                            let temp_name = format!("__struct_temp_{}", struct_depth.min(7));
+                            let struct_temp = locals[&temp_name].0;
+
+                            func.instruction(&Instruction::I32Const(layout.size as i32));
+                            func.instruction(&Instruction::Call(alloc_func_idx));
+                            func.instruction(&Instruction::LocalSet(struct_temp));
+
+                            func.instruction(&Instruction::LocalGet(struct_temp));
+                            func.instruction(&Instruction::I32Const(str_ptr));
+                            func.instruction(&Instruction::I32Store(MemArg {
+                                offset: 0,
+                                align: 2,
+                                memory_index: 0,
+                            }));
+
+                            for (i, arg) in args.iter().enumerate() {
+                                func.instruction(&Instruction::LocalGet(struct_temp));
+                                let arg_ty = compile_expr(
+                                    &arg.value,
+                                    func,
+                                    locals,
+                                    functions,
+                                    control_stack,
+                                    structs,
+                                    static_strings,
+                                    table_indices,
+                                    anon_map,
+                                    indirect_sigs,
+                                    alloc_func_idx,
+                                    async_helpers,
+                                    struct_depth + 1,
+                                    call_depth,
+                                )?;
+                                coerce_type(func, arg_ty, WasmType::I64);
+                                func.instruction(&Instruction::I64Store(MemArg {
+                                    offset: (8 + i * 8) as u64,
+                                    align: 3,
+                                    memory_index: 0,
+                                }));
+                            }
+
+                            func.instruction(&Instruction::LocalGet(struct_temp));
+                            return Ok(WasmType::I32);
+                        }
+                    }
+                }
+            }
+
+            // Case 0.7: Zero-arg `.len()` method call on a collection or string.
+            // In Aipo `l.len()` binds the same `len` member the property path
+            // resolves, so compiling the callee as a property and then emitting
+            // `call_indirect` on the length would invoke garbage (or recurse
+            // into table entry 0 for an empty list). Compile it as the property.
+            if let HirExpr::Dot(receiver, method_name, dot_span) = &**callee {
+                if method_name == "len" && args.is_empty() {
+                    let receiver_kind =
+                        infer_expr_kind(receiver, locals, functions, table_indices, anon_map);
+                    if matches!(
+                        receiver_kind,
+                        LocalKind::List | LocalKind::Dict | LocalKind::Range | LocalKind::String
+                    ) {
+                        let prop = HirExpr::Dot(receiver.clone(), "len".to_string(), *dot_span);
+                        return compile_expr(
+                            &prop,
+                            func,
+                            locals,
+                            functions,
+                            control_stack,
+                            structs,
+                            static_strings,
+                            table_indices,
+                            anon_map,
+                            indirect_sigs,
+                            alloc_func_idx,
+                            async_helpers,
+                            struct_depth,
+                            call_depth,
+                        );
+                    }
+                }
+            }
+
             // Case 1: Direct function call
             if let HirExpr::Identifier(func_name, _) = &**callee {
                 if !locals.contains_key(func_name) && functions.contains_key(func_name) {
@@ -5557,22 +5809,21 @@ fn compile_expr(
             });
             Ok(ret_ty.unwrap_or(WasmType::I64))
         }
-        HirExpr::Dict(entries, span) => {
-            if entries.is_empty() {
-                return Err(WasmCompileError::UnsupportedExpr {
-                    message: "empty dict literals require an element type annotation, \
-                              which the Wasm backend does not infer yet"
-                        .into(),
-                    span: *span,
-                });
-            }
-
+        HirExpr::Dict(entries, _span) => {
             let (dict_new_idx, _, _) = functions["__aipo_dict_new"];
             let (dict_set_idx, _, _) = functions["__aipo_dict_set"];
             let (string_hash_idx, _, _) = functions["__aipo_string_hash"];
 
             let dict_temp_name = format!("__dict_temp_{}", struct_depth.min(7));
             let dict_temp = locals[&dict_temp_name].0;
+
+            if entries.is_empty() {
+                func.instruction(&Instruction::I32Const(4));
+                func.instruction(&Instruction::Call(dict_new_idx));
+                func.instruction(&Instruction::LocalSet(dict_temp));
+                func.instruction(&Instruction::LocalGet(dict_temp));
+                return Ok(WasmType::I32);
+            }
 
             // Reserve one slot per entry; over-allocating is safe since the
             // entry count tracks actual use.
@@ -5686,6 +5937,17 @@ fn compile_expr(
                 func.instruction(&Instruction::Call(alloc_func_idx));
                 func.instruction(&Instruction::LocalSet(struct_temp));
 
+                // If type_name is an enum variant, record the variant name string pointer at offset 0
+                if let Some(&str_ptr) = static_strings.get(type_name) {
+                    func.instruction(&Instruction::LocalGet(struct_temp));
+                    func.instruction(&Instruction::I32Const(str_ptr));
+                    func.instruction(&Instruction::I32Store(MemArg {
+                        offset: 0,
+                        align: 2,
+                        memory_index: 0,
+                    }));
+                }
+
                 // Initialize fields
                 for (i, (maybe_name, field_expr)) in fields.iter().enumerate() {
                     let (field_offset, field_ty) = if let Some(name) = maybe_name {
@@ -5753,6 +6015,31 @@ fn compile_expr(
             }
         }
         HirExpr::Dot(receiver, field_name, span) => {
+            if let HirExpr::Identifier(rec_name, _) = &**receiver {
+                let candidate_variant = format!("{rec_name}.{field_name}");
+                if let Some(variant_layout) = structs.get(&candidate_variant) {
+                    if let Some(&str_ptr) = static_strings.get(&candidate_variant) {
+                        let temp_name = format!("__struct_temp_{}", struct_depth.min(7));
+                        let struct_temp = locals[&temp_name].0;
+
+                        func.instruction(&Instruction::I32Const(variant_layout.size as i32));
+                        func.instruction(&Instruction::Call(alloc_func_idx));
+                        func.instruction(&Instruction::LocalSet(struct_temp));
+
+                        func.instruction(&Instruction::LocalGet(struct_temp));
+                        func.instruction(&Instruction::I32Const(str_ptr));
+                        func.instruction(&Instruction::I32Store(MemArg {
+                            offset: 0,
+                            align: 2,
+                            memory_index: 0,
+                        }));
+
+                        func.instruction(&Instruction::LocalGet(struct_temp));
+                        return Ok(WasmType::I32);
+                    }
+                }
+            }
+
             let receiver_struct_name = match &**receiver {
                 HirExpr::Identifier(name, _) => {
                     locals.get(name).and_then(|(_, _, kind)| match kind {
@@ -6002,14 +6289,19 @@ fn compile_expr(
             coerce_type(func, WasmType::I64, result_ty);
             Ok(result_ty)
         }
-        HirExpr::List(elements, span) => {
+        HirExpr::List(elements, _span) => {
+            let (list_new_idx, _, _) = functions["__aipo_list_new"];
+            let (list_set_idx, _, _) = functions["__aipo_list_set"];
+
+            let list_temp_name = format!("__list_temp_{}", struct_depth.min(7));
+            let list_temp = locals[&list_temp_name].0;
+
             if elements.is_empty() {
-                return Err(WasmCompileError::UnsupportedExpr {
-                    message: "empty list literals require an element type annotation, \
-                              which the Wasm backend does not infer yet"
-                        .into(),
-                    span: *span,
-                });
+                func.instruction(&Instruction::I32Const(0));
+                func.instruction(&Instruction::Call(list_new_idx));
+                func.instruction(&Instruction::LocalSet(list_temp));
+                func.instruction(&Instruction::LocalGet(list_temp));
+                return Ok(WasmType::I32);
             }
 
             // Determine the element type so every slot can be coerced uniformly.
@@ -6026,12 +6318,6 @@ fn compile_expr(
                     }
                 })
                 .unwrap_or(WasmType::I64);
-
-            let (list_new_idx, _, _) = functions["__aipo_list_new"];
-            let (list_set_idx, _, _) = functions["__aipo_list_set"];
-
-            let list_temp_name = format!("__list_temp_{}", struct_depth.min(7));
-            let list_temp = locals[&list_temp_name].0;
 
             func.instruction(&Instruction::I32Const(elements.len() as i32));
             func.instruction(&Instruction::Call(list_new_idx));
