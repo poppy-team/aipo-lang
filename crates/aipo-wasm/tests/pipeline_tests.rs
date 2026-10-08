@@ -559,10 +559,10 @@ fn test_error_continue_outside_loop() {
 #[test]
 fn test_struct_instantiation_and_field_access() {
     let code = r#"
-struct Point
+struct Point {
   x
   y
-end
+}
 
 fn test_point() -> Int {
   let p = Point{ x: 15, y: 27 }
@@ -580,10 +580,10 @@ fn test_point() -> Int {
 #[test]
 fn test_struct_field_mutation_and_compound_assign() {
     let code = r#"
-struct Point
+struct Point {
   x
   y
-end
+}
 
 fn test_mutate() -> Int {
   let p = Point{ x: 10, y: 20 }
@@ -604,9 +604,9 @@ fn test_mutate() -> Int {
 #[test]
 fn test_multiple_struct_instances_isolation() {
     let code = r#"
-struct Counter
+struct Counter {
   val
-end
+}
 
 fn test_isolation() -> Int {
   let c1 = Counter{ val: 10 }
@@ -628,14 +628,14 @@ fn test_isolation() -> Int {
 #[test]
 fn test_nested_struct_instantiation() {
     let code = r#"
-struct Inner
+struct Inner {
   val
-end
+}
 
-struct Outer
+struct Outer {
   inner
   extra
-end
+}
 
 fn test_nested() -> Int {
   let o = Outer{ inner: Inner{ val: 99 }, extra: 1 }
@@ -678,10 +678,10 @@ fn test_empty_len() -> Int {
 #[test]
 fn test_struct_passed_as_parameter() {
     let code = r#"
-struct Point
+struct Point {
   x
   y
-end
+}
 
 fn sum_coords(p: Point) -> Int {
   return p.x + p.y
@@ -1110,4 +1110,60 @@ io.println(f"checksum:{total}")
     let _ = execute_wasm(&wasm_bytes, &mut stdout).expect("execution succeeds");
     let output = String::from_utf8(stdout).expect("valid utf8");
     assert_eq!(output, "checksum:42\n");
+}
+
+#[test]
+fn test_with_expression() {
+    let code = r#"
+struct Point {
+  x: Int,
+  y: Int,
+}
+fn move_point() -> Int {
+  let p = Point{ x: 10, y: 20 }
+  let p2 = p with { x: 30 }
+  return p2.x + p2.y
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "move_point")
+        .expect("exported function");
+    assert_eq!(f.call(&mut store, ()).unwrap(), 50);
+}
+
+#[test]
+fn test_is_expression() {
+    let code = r#"
+fn test_types() -> Int {
+  let x = 42
+  let y = 3.14
+  if x is Int and y is Float {
+    return 1
+  }
+  return 0
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "test_types")
+        .expect("exported function");
+    assert_eq!(f.call(&mut store, ()).unwrap(), 1);
+}
+
+#[test]
+fn test_local_fn_decl() {
+    let code = r#"
+fn run() -> Int {
+  fn add(a: Int, b: Int) -> Int {
+    return a + b
+  }
+  return add(20, 22)
+}
+"#;
+    let (mut store, instance) = instantiate_aipo(code);
+    let f = instance
+        .get_typed_func::<(), i64>(&mut store, "run")
+        .expect("exported function");
+    assert_eq!(f.call(&mut store, ()).unwrap(), 42);
 }

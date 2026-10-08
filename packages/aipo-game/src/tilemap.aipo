@@ -119,7 +119,7 @@ fn resolve_box_collision(map: Tilemap, x: Float, y: Float, w: Float, h: Float, v
             let right_edge = next_x + w
             let tile_col = Int(right_edge / map.tile_size)
             cur_x = Float(tile_col) * map.tile_size - w - 0.01
-        } else if vx < 0.0 {
+        } elif vx < 0.0 {
             let tile_col = Int(next_x / map.tile_size)
             cur_x = Float(tile_col + 1) * map.tile_size + 0.01
         }
@@ -137,7 +137,7 @@ fn resolve_box_collision(map: Tilemap, x: Float, y: Float, w: Float, h: Float, v
             let bottom_edge = next_y + h
             let tile_row = Int(bottom_edge / map.tile_size)
             cur_y = Float(tile_row) * map.tile_size - h - 0.01
-        } else if vy < 0.0 {
+        } elif vy < 0.0 {
             let tile_row = Int(next_y / map.tile_size)
             cur_y = Float(tile_row + 1) * map.tile_size + 0.01
         }
@@ -193,7 +193,7 @@ fn draw_tilemap(map: Tilemap, cam_x: Float, cam_y: Float, zoom: Float, screen_w:
                     dest_x, dest_y, ts, ts,
                     false
                 )
-            } else if is_solid {
+            } elif is_solid {
                 # Fallback rendering: solid block
                 host_draw_rect(dest_x, dest_y, ts, ts, 0.22, 0.26, 0.38, 1.0)
                 host_draw_rect_lines(dest_x, dest_y, ts, ts, 1.0, 0.35, 0.42, 0.60, 0.85)

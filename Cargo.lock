@@ -110,6 +110,7 @@ dependencies = [
 name = "aipo-cli"
 version = "0.1.0"
 dependencies = [
+ "aipo-ast",
  "aipo-bytecode",
  "aipo-diagnostics",
  "aipo-formatter",

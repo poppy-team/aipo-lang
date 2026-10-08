@@ -39,6 +39,8 @@ pub enum DiagnosticCode {
     AIPO_PARSE_INVALID_TARGET,
     /// Nesting exceeds the parser recursion bound (robustness limit, not syntax).
     AIPO_PARSE_NESTING_TOO_DEEP,
+    /// Invalid batch association syntax with `::`.
+    AIPO_PARSE_LOTE_INVALIDO,
 
     // --- Semantic (AIPO_SEM_*) ---
     /// Identifier could not be resolved in the current lexical scope.
@@ -61,6 +63,8 @@ pub enum DiagnosticCode {
     AIPO_SEM_PATH_MISSING_RETURN_VALUE,
     /// Condition in `if`, `while`, `and`, `or`, or `not` is not a Bool.
     AIPO_SEM_NON_BOOL_CONDITION,
+    /// Match over an enum has uncovered variants without a fallback `else` arm.
+    AIPO_SEM_NON_EXHAUSTIVE_MATCH,
     /// Circular dependency detected in module imports.
     AIPO_SEM_IMPORT_CYCLE,
     /// Module import path could not be resolved.
@@ -77,6 +81,16 @@ pub enum DiagnosticCode {
     AIPO_SEM_NESTED_AWAIT_DO,
     /// Parametric `Name[Args]` contract before parametric contracts exist.
     AIPO_SEM_PARAMETRIC_CONTRACT,
+    /// Item is deprecated and its use emits a warning.
+    AIPO_SEM_DEPRECATED,
+    /// Item is marked with #!todo as pending work.
+    AIPO_SEM_TODO,
+    /// Method name resembles a hook (`constructor`, `validar`, etc.).
+    AIPO_SEM_NOME_DE_HOOK,
+    /// Invariant hook declared with an empty body.
+    AIPO_SEM_HOOK_VAZIO,
+    /// Hook (`init` or `invariant`) declared more than once on the same type.
+    AIPO_SEM_HOOK_DUPLICADO,
 
     // --- Package (AIPO_PKG_*) ---
     /// Package manifest, dependency graph, or capability resolution failed.
@@ -142,6 +156,7 @@ impl DiagnosticCode {
             Self::AIPO_PARSE_MISSING_END => "AIPO_PARSE_MISSING_END",
             Self::AIPO_PARSE_INVALID_TARGET => "AIPO_PARSE_INVALID_TARGET",
             Self::AIPO_PARSE_NESTING_TOO_DEEP => "AIPO_PARSE_NESTING_TOO_DEEP",
+            Self::AIPO_PARSE_LOTE_INVALIDO => "AIPO_PARSE_LOTE_INVALIDO",
             Self::AIPO_SEM_UNKNOWN_NAME => "AIPO_SEM_UNKNOWN_NAME",
             Self::AIPO_SEM_REDECLARED_IN_SCOPE => "AIPO_SEM_REDECLARED_IN_SCOPE",
             Self::AIPO_SEM_READONLY_MUTATION => "AIPO_SEM_READONLY_MUTATION",
@@ -152,6 +167,7 @@ impl DiagnosticCode {
             Self::AIPO_SEM_RETURN_VALUE_MISMATCH => "AIPO_SEM_RETURN_VALUE_MISMATCH",
             Self::AIPO_SEM_PATH_MISSING_RETURN_VALUE => "AIPO_SEM_PATH_MISSING_RETURN_VALUE",
             Self::AIPO_SEM_NON_BOOL_CONDITION => "AIPO_SEM_NON_BOOL_CONDITION",
+            Self::AIPO_SEM_NON_EXHAUSTIVE_MATCH => "AIPO_SEM_NON_EXHAUSTIVE_MATCH",
             Self::AIPO_SEM_IMPORT_CYCLE => "AIPO_SEM_IMPORT_CYCLE",
             Self::AIPO_SEM_UNKNOWN_MODULE => "AIPO_SEM_UNKNOWN_MODULE",
             Self::AIPO_SEM_EXPORT_UNKNOWN => "AIPO_SEM_EXPORT_UNKNOWN",
@@ -160,6 +176,11 @@ impl DiagnosticCode {
             Self::AIPO_SEM_FORGOTTEN_TASK => "AIPO_SEM_FORGOTTEN_TASK",
             Self::AIPO_SEM_NESTED_AWAIT_DO => "AIPO_SEM_NESTED_AWAIT_DO",
             Self::AIPO_SEM_PARAMETRIC_CONTRACT => "AIPO_SEM_PARAMETRIC_CONTRACT",
+            Self::AIPO_SEM_DEPRECATED => "AIPO_SEM_DEPRECATED",
+            Self::AIPO_SEM_TODO => "AIPO_SEM_TODO",
+            Self::AIPO_SEM_NOME_DE_HOOK => "AIPO_SEM_NOME_DE_HOOK",
+            Self::AIPO_SEM_HOOK_VAZIO => "AIPO_SEM_HOOK_VAZIO",
+            Self::AIPO_SEM_HOOK_DUPLICADO => "AIPO_SEM_HOOK_DUPLICADO",
             Self::AIPO_PKG_RESOLUTION => "AIPO_PKG_RESOLUTION",
             Self::AIPO_PKG_LOCK_STALE => "AIPO_PKG_LOCK_STALE",
             Self::AIPO_PKG_FETCH => "AIPO_PKG_FETCH",
@@ -198,6 +219,7 @@ impl DiagnosticCode {
             | Self::AIPO_PARSE_MISSING_END
             | Self::AIPO_PARSE_INVALID_TARGET
             | Self::AIPO_PARSE_NESTING_TOO_DEEP
+            | Self::AIPO_PARSE_LOTE_INVALIDO
             | Self::AIPO_SEM_UNKNOWN_NAME
             | Self::AIPO_SEM_REDECLARED_IN_SCOPE
             | Self::AIPO_SEM_READONLY_MUTATION
@@ -208,6 +230,7 @@ impl DiagnosticCode {
             | Self::AIPO_SEM_RETURN_VALUE_MISMATCH
             | Self::AIPO_SEM_PATH_MISSING_RETURN_VALUE
             | Self::AIPO_SEM_NON_BOOL_CONDITION
+            | Self::AIPO_SEM_NON_EXHAUSTIVE_MATCH
             | Self::AIPO_SEM_IMPORT_CYCLE
             | Self::AIPO_SEM_UNKNOWN_MODULE
             | Self::AIPO_SEM_EXPORT_UNKNOWN
@@ -216,10 +239,16 @@ impl DiagnosticCode {
             | Self::AIPO_SEM_FORGOTTEN_TASK
             | Self::AIPO_SEM_NESTED_AWAIT_DO
             | Self::AIPO_SEM_PARAMETRIC_CONTRACT
+            | Self::AIPO_SEM_HOOK_DUPLICADO
             | Self::AIPO_PKG_RESOLUTION
             | Self::AIPO_PKG_LOCK_STALE
             | Self::AIPO_PKG_FETCH
             | Self::AIPO_RT_FAILURE_UNCAUGHT => Severity::Error,
+
+            Self::AIPO_SEM_DEPRECATED
+            | Self::AIPO_SEM_TODO
+            | Self::AIPO_SEM_NOME_DE_HOOK
+            | Self::AIPO_SEM_HOOK_VAZIO => Severity::Warning,
 
             Self::AIPO_RT_OVERFLOW
             | Self::AIPO_RT_NON_FINITE_FLOAT

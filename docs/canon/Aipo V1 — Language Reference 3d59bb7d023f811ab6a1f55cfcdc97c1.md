@@ -1,5 +1,16 @@
 # Aipo V1 — Language Reference
 
+
+> **Nota de supersedência (2026-10-06).** Este documento é um registro
+> histórico datado e preserva a decisão como estava na época. As formas de
+> superfície citadas aqui que foram **substituídas** por
+> [`docs/decisions/adr-001-canonical-syntax.md`](../../decisions/adr-001-canonical-syntax.md)
+> não são mais canônicas: `end` (blocos usam só `{}`), `div`/`div=` (usar `//`/`//=`),
+> `self!` (usar `var self`), `impl Tipo { }` (usar `Tipo:nome`), `satisfy`
+> (usar a diretiva `#!satisfies`) e `fn` dentro de `impl` (usar só `fn` livre).
+> Onde este texto contradizer ADR-001, **ADR-001 prevalece**. Ver também
+> [`SYNTAX.md`](../../SYNTAX.md) §12 e `docs/language/authority-map.md`.
+
 <aside>
 📘
 

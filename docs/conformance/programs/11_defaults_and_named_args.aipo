@@ -1,27 +1,27 @@
-fn greet(name, greeting = "hello")
+fn greet(name, greeting = "hello") {
     return greeting + ", " + name
-end
+}
 
-fn scale(x, factor = 2)
+fn scale(x, factor = 2) {
     return x * factor
-end
+}
 
-fn chain(start, step = 1, count = 3)
+fn chain(start, step = 1, count = 3) {
     var total = start
-    repeat count as i
+    repeat count as i {
         total += step
-    end
+    }
     return total
-end
+}
 
-fn remember(value, into = [])
+fn remember(value, into = []) {
     into.add(value)
     return len(into)
-end
+}
 
-fn label(name = "anon", tag = name)
+fn label(name = "anon", tag = name) {
     return name + "/" + tag
-end
+}
 
 io.println(greet("ana"))
 io.println(greet("ana", "oi"))

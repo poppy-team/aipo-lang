@@ -30,7 +30,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "items.each() do item\n  print(item)\nend",
+            "items.each() do item {\n  print(item)\n}",
         );
         let (ast, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_lower_invariant_hook_merged_span() {
-        let code = "struct Pos\n  x\n  y\nend\n\nimpl Pos\n  invariant()\n    x >= 0\n    y <= 100\n  end\nend";
+        let code = "struct Pos {\n  x\n  y\n}\n\nPos:invariant {\n    x >= 0\n    y <= 100\n}";
         let src = Source::new(SourceId::next(), "test.aipo", code);
         let (ast, diags) = parse(&src);
         assert!(diags.is_empty(), "diags: {:?}", diags);

@@ -458,10 +458,10 @@ fn test_guarded_mutation_rolls_back_at_boundary() {
     code.push(OpCode::GetField as u8);
     code.extend_from_slice(&2u16.to_be_bytes());
 
-    let end = code.len();
+    let success_end = code.len();
     BigEndian::write_i16(
         &mut code[success_jump..success_jump + 2],
-        (end as i32 - (success_jump + 2) as i32) as i16,
+        (success_end as i32 - (success_jump + 2) as i32) as i16,
     );
 
     let module = make_test_module(

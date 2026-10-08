@@ -1,0 +1,30 @@
+enum Forma {
+    Ponto,
+    Circulo { raio: Int },
+    Retangulo(largura: Int, altura: Int),
+}
+
+let f1 = Forma.Ponto
+let f2 = Forma.Circulo{ raio: 10 }
+let f3 = Forma.Retangulo(4, 5)
+
+fn descrever(f) {
+    match f {
+        when Forma.Ponto {
+            io.println("ponto")
+        }
+        when Forma.Circulo { raio } if raio > 5 {
+            io.println("circulo grande " + String(raio))
+        }
+        when Forma.Circulo { raio } {
+            io.println("circulo pequeno " + String(raio))
+        }
+        when Forma.Retangulo(largura, altura) {
+            io.println("retangulo " + String(largura * altura))
+        }
+    }
+}
+
+descrever(f1)
+descrever(f2)
+descrever(f3)

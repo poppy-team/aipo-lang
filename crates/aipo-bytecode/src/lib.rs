@@ -73,7 +73,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "contracts.aipo",
-            "struct Bounds\n    lo\n    hi\nend\n\nimpl Bounds\n    init(lo, hi)\n        self.lo = lo\n        self.hi = hi\n    end\n\n    invariant()\n        self.lo < self.hi\n    end\nend\n\nfn widen(b!: Bounds, by: Int) -> Int\n    b.hi = b.hi + by\n    return b.hi\nend\n\nlet r = Bounds{lo = 1, hi = 5}\nwiden(r, 2)\n",
+            "struct Bounds {\n    lo\n    hi\n}\n\nBounds:init(lo, hi) {\n        self.lo = lo\n        self.hi = hi\n    }\n\nBounds:invariant {\n        self.lo < self.hi\n    }\n\nfn widen(var b: Bounds, by: Int) -> Int {\n    b.hi = b.hi + by\n    return b.hi\n}\n\nlet r = Bounds{lo = 1, hi = 5}\nwiden(r, 2)\n",
         );
         let (ast, diags) = parse(&src);
         assert!(diags.is_empty(), "fixture must parse cleanly: {diags:?}");
@@ -178,7 +178,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "struct Point\n    x\n    y\nend\n\nfn add(a: Int, b: Int) -> Int\n    return a + b\nend\n\nlet p = Point{x = 1, y = 2}\nadd(p.x, p.y)\n",
+            "struct Point {\n    x\n    y\n}\n\nfn add(a: Int, b: Int) -> Int {\n    return a + b\n}\n\nlet p = Point{x = 1, y = 2}\nadd(p.x, p.y)\n",
         );
         let (ast, diags) = parse(&src);
         assert!(diags.is_empty(), "fixture must parse cleanly: {diags:?}");

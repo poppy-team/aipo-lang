@@ -281,7 +281,7 @@ fn test_invalid_named_host_arguments_are_reported() {
 fn test_host_schema_does_not_override_local_shadowing() {
     let (code, _, stderr) = run_source(
         "shadowed",
-        "struct Local {}\nimpl Local { fn ping(self) {} }\nfn use_local(demo) { demo.nonexistent() }\nfn main() { let demo = Local{}\ndemo.ping() }",
+        "struct Local {}\nLocal:ping(self) {}\nfn use_local(demo) { demo.nonexistent() }\nfn main() { let demo = Local{}\ndemo.ping() }",
         &[],
     );
     assert_eq!(code, EXIT_SUCCESS, "{stderr}");
@@ -292,12 +292,12 @@ fn test_struct_method_checks_remain_enabled() {
     for (name, program, expected) in [
         (
             "method-arity",
-            "struct Local {}\nimpl Local { fn ping(self, n: Int) {} }\nlet item = Local{}\nitem.ping()",
+            "struct Local {}\nLocal:ping(self, n: Int) {}\nlet item = Local{}\nitem.ping()",
             "AIPO_SEM_ARITY_MISMATCH",
         ),
         (
             "method-contract",
-            "struct Local {}\nimpl Local { fn ping(self, n: Int) {} }\nlet item = Local{}\nitem.ping(\"wrong\")",
+            "struct Local {}\nLocal:ping(self, n: Int) {}\nlet item = Local{}\nitem.ping(\"wrong\")",
             "AIPO_SEM_CONTRACT_VIOLATION_STATIC",
         ),
     ] {

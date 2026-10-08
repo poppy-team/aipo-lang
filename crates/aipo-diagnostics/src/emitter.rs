@@ -19,13 +19,25 @@ pub enum MessageFormat {
 pub struct DiagnosticEmitter<'a> {
     source_map: Option<&'a SourceMap>,
     format: MessageFormat,
+    locale: crate::locale::Locale,
 }
 
 impl<'a> DiagnosticEmitter<'a> {
     /// Creates a new emitter with the specified format and optional source map.
     #[must_use]
     pub fn new(format: MessageFormat, source_map: Option<&'a SourceMap>) -> Self {
-        Self { source_map, format }
+        Self {
+            source_map,
+            format,
+            locale: crate::locale::Locale::detect(),
+        }
+    }
+
+    /// Sets an explicit locale for diagnostic rendering.
+    #[must_use]
+    pub fn with_locale(mut self, locale: crate::locale::Locale) -> Self {
+        self.locale = locale;
+        self
     }
 
     /// Emits a single diagnostic to the provided writer.
@@ -39,7 +51,7 @@ impl<'a> DiagnosticEmitter<'a> {
     ) -> io::Result<()> {
         match self.format {
             MessageFormat::Human => {
-                let rendered = diagnostic.render_human(self.source_map);
+                let rendered = diagnostic.render_human_with_locale(self.source_map, self.locale);
                 writer.write_all(rendered.as_bytes())
             }
             MessageFormat::Jsonl => {

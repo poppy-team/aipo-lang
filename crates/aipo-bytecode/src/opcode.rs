@@ -187,6 +187,10 @@ pub enum OpCode {
     /// `Dup` would leave both names pointing at one instance. A non-struct on top of the
     /// stack is a `TypeMismatch` fault, matching what the frontend can prove statically.
     CloneStruct = 73,
+    /// Test whether the struct on top of the stack matches the named variant: `u16` name index.
+    ///
+    /// Replaces the value with `Bool(true)` if it is an instance of the variant, `Bool(false)` otherwise.
+    IsVariant = 74,
 }
 
 impl TryFrom<u8> for OpCode {
@@ -267,6 +271,7 @@ impl TryFrom<u8> for OpCode {
             71 => Ok(OpCode::Call3),
             72 => Ok(OpCode::Call4),
             73 => Ok(OpCode::CloneStruct),
+            74 => Ok(OpCode::IsVariant),
             other => Err(other),
         }
     }

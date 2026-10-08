@@ -72,6 +72,8 @@ pub enum RegOpCode {
     JumpIfTrue = 31,
     /// Jump if false: `if !R[A] { pc += sBx }`.
     JumpIfFalse = 32,
+    /// Jump if local parameter is set (not `Unset`): `if R[A] != Unset { pc += sBx }`.
+    JumpIfSetLocal = 33,
 
     // --- Functions & Calls ---
     /// Call function: `R[A]` with `B` arguments, producing `C` results.
@@ -96,6 +98,38 @@ pub enum RegOpCode {
     GetIndex = 54,
     /// Indexed write: `R[A][R[B]] = R[C]`.
     SetIndex = 55,
+    /// Read element during iteration: `R[A] = iter_at(R[B], R[C >> 1], mode: C & 1)`.
+    IterAt = 56,
+
+    // --- Data Structures & Composite Types ---
+    /// Build list: `R[A] = [R[B] .. R[B+C-1]]`.
+    NewList = 60,
+    /// Build dictionary: `R[A] = {R[B]: R[B+1] ..}` (C pairs starting at B).
+    NewDict = 61,
+    /// Build struct: `R[A] = Struct[B](R[A] .. R[A+C-1])`.
+    NewStruct = 62,
+    /// Half-open range: `R[A] = R[B]..R[C]`.
+    Range = 63,
+    /// Test variant: `R[A] = (R[A] is Variant[Bx])`.
+    IsVariant = 64,
+    /// Length of collection or string: `R[A] = len(R[B])`.
+    Len = 65,
+    /// Clone struct: `R[A] = clone(R[B])`.
+    CloneStruct = 66,
+    /// Fail with error value: `R[A] = fail(R[A])`.
+    Fail = 67,
+    /// Propagate unhandled recoverable failure: returns if `R[A]` is failure.
+    PropagateFailure = 68,
+    /// Type check: `R[A] = (R[B] is R[C])`.
+    TypeIs = 69,
+    /// Nullable type check: `R[A] = (R[B] is R[C]?)`.
+    TypeIsNullable = 70,
+    /// Load `Unset` marker: `R[A] = Unset`.
+    LoadUnset = 71,
+    /// Push exception/failure handler: pushes handler target `pc += sBx` to handler stack.
+    PushHandler = 72,
+    /// Pop exception/failure handler from handler stack.
+    PopHandler = 73,
 }
 
 impl RegOpCode {
@@ -126,6 +160,7 @@ impl RegOpCode {
             30 => Some(Self::Jump),
             31 => Some(Self::JumpIfTrue),
             32 => Some(Self::JumpIfFalse),
+            33 => Some(Self::JumpIfSetLocal),
             40 => Some(Self::Call),
             41 => Some(Self::CallPipe),
             42 => Some(Self::Return),
@@ -136,6 +171,21 @@ impl RegOpCode {
             53 => Some(Self::SetField),
             54 => Some(Self::GetIndex),
             55 => Some(Self::SetIndex),
+            56 => Some(Self::IterAt),
+            60 => Some(Self::NewList),
+            61 => Some(Self::NewDict),
+            62 => Some(Self::NewStruct),
+            63 => Some(Self::Range),
+            64 => Some(Self::IsVariant),
+            65 => Some(Self::Len),
+            66 => Some(Self::CloneStruct),
+            67 => Some(Self::Fail),
+            68 => Some(Self::PropagateFailure),
+            69 => Some(Self::TypeIs),
+            70 => Some(Self::TypeIsNullable),
+            71 => Some(Self::LoadUnset),
+            72 => Some(Self::PushHandler),
+            73 => Some(Self::PopHandler),
             _ => None,
         }
     }

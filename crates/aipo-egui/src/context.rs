@@ -157,11 +157,12 @@ impl EguiSession {
         self.ui_stack.clear();
         let mut full_output = self.ctx.end_pass();
         self.is_frame_active = false;
+        // Headless adapter: no GPU uploader consumes texture deltas, so acknowledge
+        // and drop them explicitly (epaint panics on an unhandled drop).
+        full_output.textures_delta.clear();
 
         let shapes_list: Vec<Value> = full_output.shapes.iter().map(shape_to_value).collect();
         let cursor_name = format!("{:?}", full_output.platform_output.cursor_icon);
-
-        full_output.textures_delta.clear();
 
         let entries = vec![
             (
@@ -222,7 +223,7 @@ impl EguiSession {
         let mut window_ui = Ui::new(self.ctx.clone(), window_id, builder);
 
         // Window styling & header
-        let frame = egui::Frame::window(&egui::Style::default());
+        let frame = egui::Frame::window(&self.ctx.style_of(self.ctx.theme()));
         window_ui.painter().add(frame.paint(rect));
         window_ui.heading(title);
         window_ui.separator();

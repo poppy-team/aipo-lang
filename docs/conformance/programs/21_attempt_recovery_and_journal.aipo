@@ -1,48 +1,46 @@
 # Canon: a returned Failure propagates to the caller's statement boundary (Model B),
 # and recovery releases every provisional mutation journaled by frames that did not
 # survive — including entries the surviving frame journaled before the handler.
-struct R
-    lo
+struct R {
+    var lo
     hi
-end
+}
 
-impl R
-    init(self!, lo, hi)
-        self.lo = lo
-        self.hi = hi
-    end
+R:init(var self, lo, hi) {
+    self.lo = lo
+    self.hi = hi
+}
 
-    invariant()
-        self.lo < self.hi
-    end
-end
+R:invariant {
+    self.lo < self.hi
+}
 
-fn risky()
+fn risky() {
     return fail("boom")
-end
+}
 
-attempt
+attempt {
     io.println(risky())
-failed err
+} failed err {
     io.println(f"caught: {err.message}")
-end
+}
 
-fn bump(r)
+fn bump(r) {
     r.lo = 2
-    attempt
+    attempt {
         let x = fail("boom")
         io.println(x)
-    failed err
+    } failed err {
         io.println("caught")
-    end
+    }
     r.lo = 99
     return r.lo
-end
+}
 
 let r = R{lo = 1, hi = 5}
-attempt
+attempt {
     io.println(bump(r))
-failed err
+} failed err {
     io.println(f"outer caught: {err.message}")
-end
+}
 io.println(r.lo)

@@ -807,7 +807,7 @@ fn make_scroll_view(arg1, arg2 = none) {
             let span = viewport_h - thumb_h
             let pos = if max_scroll > 0.0 then (clamped_scroll / max_scroll) else 0.0
             thumb_y = span * pos
-        } else if viewport_h > 0.0 {
+        } elif viewport_h > 0.0 {
             thumb_h = viewport_h
         }
 

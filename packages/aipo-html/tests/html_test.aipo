@@ -2,22 +2,21 @@
 
 import aipo.html as h
 
-test("html5 container tags and nested children tree") do
-    let tree = h.div({ "class": "container", "id": "main" }) do
-        h.header do
+test("html5 container tags and nested children tree") do {
+    let tree = h.div({ "class": "container", "id": "main" }) do {
+        h.header do {
             h.h1("Portal Aipo")
-        end
-        h.main do
-            h.section({ "class": "hero" }) do
+        }
+        h.main do {
+            h.section({ "class": "hero" }) do {
                 h.p("Bem-vindo ao framework web declarativo.")
                 h.button("Explorar", { "class": "btn-primary" })
-            end
-        end
-        h.footer do
+            }
+        }
+        h.footer do {
             h.span("© 2026 Aipo Lang")
-        end
-    end
-
+        }
+    }
     expect.equal(tree.tag, "div")
     expect.equal(tree.attrs["class"], "container")
     expect.equal(tree.children.len(), 3)
@@ -33,9 +32,8 @@ test("html5 container tags and nested children tree") do
     let section_node = main_node.children[0]
     expect.equal(section_node.tag, "section")
     expect.equal(section_node.children.len(), 2)
-end
-
-test("leaf tags and void elements") do
+}
+test("leaf tags and void elements") do {
     let btn = h.button("Salvar", { "type": "submit", "disabled": true })
     expect.equal(btn.tag, "button")
     expect.equal(btn.text_content, "Salvar")
@@ -50,16 +48,14 @@ test("leaf tags and void elements") do
     let inp = h.input({ "type": "email", "placeholder": "contato@aipo.dev" })
     expect.equal(inp.tag, "input")
     expect.equal(inp.attrs["type"], "email")
-end
-
-test("ssr render_to_string serialization with escaping") do
-    let doc = h.div({ "class": "card" }) do
+}
+test("ssr render_to_string serialization with escaping") do {
+    let doc = h.div({ "class": "card" }) do {
         h.h2("Escaping <script> & \"quotes\"")
         h.p("Texto seguro & auditado.")
         h.img("test.png", "A & B")
         h.input({ "disabled": true, "type": "text" })
-    end
-
+    }
     let html = h.render_to_string(doc)
 
     expect.true(html.contains("<div class=\"card\">"))
@@ -68,20 +64,17 @@ test("ssr render_to_string serialization with escaping") do
     expect.true(html.contains("<img src=\"test.png\" alt=\"A &amp; B\" />"))
     expect.true(html.contains("<input disabled type=\"text\" />"))
     expect.true(html.contains("</div>"))
-end
-
-test("fragment rendering without container wrapper") do
-    let frag = h.fragment do
+}
+test("fragment rendering without container wrapper") do {
+    let frag = h.fragment do {
         h.li("Item 1")
         h.li("Item 2")
         h.li("Item 3")
-    end
-
+    }
     let html = h.render_to_string(frag)
     expect.equal(html, "<li>Item 1</li><li>Item 2</li><li>Item 3</li>")
-end
-
-test("css-in-aipo scoped styles and media queries") do
+}
+test("css-in-aipo scoped styles and media queries") do {
     h.clear_css_registry()
 
     let btn_style = h.css({
@@ -107,14 +100,12 @@ test("css-in-aipo scoped styles and media queries") do
     expect.true(injected.contains(f".{btn_style}:hover {{"))
     expect.true(injected.contains("background: #4f46e5;"))
     expect.true(injected.contains("@media (min-width: 768px) {"))
-end
-
+}
 struct Model {
     count
 }
 
-test("mvu state updates and commands") do
-
+test("mvu state updates and commands") do {
     let update = fn (m, msg) {
         if msg == "inc" {
             return Model{ count: m.count + 1 }
@@ -128,9 +119,9 @@ test("mvu state updates and commands") do
     }
 
     let view = fn (m, dispatch) {
-        return h.div do
+        return h.div do {
             h.span(f"Valor: {m.count}")
-        end
+        }
     }
 
     let app = h.mount("#app", Model{ count: 0 }, update, view)
@@ -148,4 +139,4 @@ test("mvu state updates and commands") do
     h.dispatch("reset_and_double")
     expect.equal(app.current_model.count, 11)
     expect.equal(app.root_node.children[0].text_content, "Valor: 11")
-end
+}

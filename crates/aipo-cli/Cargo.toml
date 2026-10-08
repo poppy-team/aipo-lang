@@ -18,6 +18,7 @@ name = "aipo-sh"
 path = "src/sh_main.rs"
 
 [dependencies]
+aipo-ast = { path = "../aipo-ast" }
 aipo-bytecode = { path = "../aipo-bytecode" }
 aipo-diagnostics = { path = "../aipo-diagnostics" }
 aipo-formatter = { path = "../aipo-formatter", optional = true }

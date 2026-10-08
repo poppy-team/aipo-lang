@@ -173,7 +173,7 @@ export function display(v) {
     case 'task': return `<task #${v.id}>`;
     case 'group': return `<group #${v.id}>`;
     case 'duration': return Number.isInteger(v.v) ? (Object.is(v.v, -0) ? '-0s' : `${v.v}s`) : `${v.v}s`;
-    case 'struct': return `${v.type}{${v.fields.map(([k, val]) => `${k} = ${display(val)}`).join(', ')}}`;
+    case 'struct': return `${v.type}{${v.fields.map(([k, val]) => `${k}: ${display(val)}`).join(', ')}}`;
     case 'bytes': return '<bytes>';
     case 'type': return v.name;
     case 'range': return `${v.start}..${v.end}`;
@@ -949,6 +949,15 @@ export function valGetIndex(target, index, activeIterations) {
     if (found === null) fault('AIPO_RT_KEY_NOT_FOUND', `key ${display(index)} not found`);
     return found;
   }
+  if (target.t === 'sequence') {
+    if (!target._cached) target._cached = evaluateSequence(null, target);
+    const len = target._cached.length;
+    const xi = widen(index);
+    if (xi.t !== 'int') return typeMismatch('Int index', typeName(index));
+    const i = resolveIndex(len, xi.v);
+    if (i < 0 || i >= len) fault('AIPO_RT_INDEX_OUT_OF_RANGE', `index ${xi.v} out of range (len ${len})`);
+    return target._cached[i];
+  }
   return typeMismatch('indexable collection or string', typeName(target));
 }
 /**
@@ -958,6 +967,13 @@ export function valGetIndex(target, index, activeIterations) {
  * its element for modes 0 and 2 and the positional Int for mode 1.
  */
 export function iterAt(m, coll, ordinal, mode) {
+  if (coll.t === 'sequence') {
+    if (!coll._cached) coll._cached = evaluateSequence(m, coll);
+    const len = coll._cached.length;
+    const i = resolveIndex(len, ordinal);
+    if (i < 0 || i >= len) fault('AIPO_RT_INDEX_OUT_OF_RANGE', `index ${ordinal} out of range (len ${len})`);
+    return mode === 1 ? vInt(i) : coll._cached[i];
+  }
   if (coll.t === 'dict') {
     const len = coll.entries.length;
     const i = resolveIndex(len, ordinal);
@@ -1012,6 +1028,10 @@ export function valLen(v) {
   if (v.t === 'bytes') return vInt(v.data.length);
   if (v.t === 'range') return vInt(rangeLen(v));
   if (v.t === 'set') return vInt(v.items.length);
+  if (v.t === 'sequence') {
+    if (!v._cached) v._cached = evaluateSequence(null, v);
+    return vInt(v._cached.length);
+  }
   return typeMismatch('String, List, Dict, Bytes, Range, or Set', typeName(v));
 }
 
@@ -1184,7 +1204,7 @@ export const bytesNatives = {
     const { view, idx } = bytesView(r, a[0], 8);
     const bi = view.getBigInt64(idx, true);
     if (bi < BigInt(MIN_SAFE_INT) || bi > BigInt(MAX_SAFE_INT)) {
-      fault('AIPO_RT_OVERFLOW', `${bi} exceeds integer range ±(2^53 - 1)`);
+      return vFail(`integer ${bi} outside safe range`);
     }
     return vInt(Number(bi));
   },
@@ -1192,7 +1212,7 @@ export const bytesNatives = {
     const { view, idx } = bytesView(r, a[0], 8);
     const bu = view.getBigUint64(idx, true);
     if (bu > BigInt(MAX_SAFE_INT)) {
-      fault('AIPO_RT_OVERFLOW', `${bu} exceeds integer range ±(2^53 - 1)`);
+      return vFail(`unsigned integer ${bu} outside safe range`);
     }
     return vInt(Number(bu));
   },
@@ -3200,6 +3220,41 @@ function bindMethod(m, recv, name) {
       (recv.t === 'list' || recv.t === 'dict' || recv.t === 'set' || recv.t === 'str' || recv.t === 'range')) {
     return { t: 'bound', name, arity: 2, recv, kind: 'higher' };
   }
+  if (recv.t === 'sequence') {
+    if (name === 'map' || name === 'transform') {
+      return { t: 'bound', name, arity: 1, recv, kind: 'native', fn: ([, fn]) => vSequence({ source: recv.source, ops: [...recv.ops, { op: 'map', fn }] }) };
+    }
+    if (name === 'filter') {
+      return { t: 'bound', name, arity: 1, recv, kind: 'native', fn: ([, fn]) => vSequence({ source: recv.source, ops: [...recv.ops, { op: 'filter', fn }] }) };
+    }
+    if (name === 'flat_map') {
+      return { t: 'bound', name, arity: 1, recv, kind: 'native', fn: ([, fn]) => vSequence({ source: recv.source, ops: [...recv.ops, { op: 'flat_map', fn }] }) };
+    }
+    if (name === 'take') {
+      return { t: 'bound', name, arity: 1, recv, kind: 'native', fn: ([, n]) => vSequence({ source: recv.source, ops: [...recv.ops, { op: 'take', n }] }) };
+    }
+    if (name === 'skip') {
+      return { t: 'bound', name, arity: 1, recv, kind: 'native', fn: ([, n]) => vSequence({ source: recv.source, ops: [...recv.ops, { op: 'skip', n }] }) };
+    }
+    if (name === 'distinct') {
+      return { t: 'bound', name, arity: 0, recv, kind: 'native', fn: () => vSequence({ source: recv.source, ops: [...recv.ops, { op: 'distinct' }] }) };
+    }
+    if (name === 'enumerate') {
+      return { t: 'bound', name, arity: 0, recv, kind: 'native', fn: () => vSequence({ source: recv.source, ops: [...recv.ops, { op: 'enumerate' }] }) };
+    }
+    if (name === 'collect') {
+      return { t: 'bound', name, arity: 0, recv, kind: 'native', fn: ([r]) => vList(evaluateSequence(m, r)) };
+    }
+    if (name === 'count') {
+      return { t: 'bound', name, arity: 0, recv, kind: 'native', fn: ([r]) => vInt(evaluateSequence(m, r).length) };
+    }
+    if (name === 'find' || name === 'any' || name === 'all') {
+      return { t: 'bound', name, arity: 1, recv, kind: 'higher' };
+    }
+    if (name === 'reduce') {
+      return { t: 'bound', name, arity: 2, recv, kind: 'higher' };
+    }
+  }
   return null;
 }
 
@@ -3346,7 +3401,77 @@ function beginCall(m, argc) {
   }
 }
 
+function evaluateSequence(m, seq) {
+  let items = [...seq.source.items];
+  for (const op of seq.ops) {
+    if (op.op === 'map') {
+      const out = [];
+      for (const it of items) {
+        if (m) {
+          try { out.push(invokeSame(m, op.fn, [it])); }
+          catch (e) { if (e instanceof AipoFault) throw e; out.push(vFail(e && e.uncaught ? e.uncaught : String(e))); }
+        } else {
+          out.push(it);
+        }
+      }
+      items = out;
+    } else if (op.op === 'filter') {
+      const out = [];
+      for (const it of items) {
+        if (m) {
+          let r;
+          try { r = invokeSame(m, op.fn, [it]); }
+          catch (e) { if (e instanceof AipoFault) throw e; throw new AipoFault('AIPO_RT_TYPE_MISMATCH', `type mismatch: ${e && e.uncaught ? e.uncaught : 'failure in predicate'}`); }
+          if (r.t !== 'bool') fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected Bool predicate result, got ${typeName(r)}`);
+          if (r.v) out.push(it);
+        } else {
+          out.push(it);
+        }
+      }
+      items = out;
+    } else if (op.op === 'flat_map') {
+      const out = [];
+      for (const it of items) {
+        if (m) {
+          let r;
+          try { r = invokeSame(m, op.fn, [it]); }
+          catch (e) { if (e instanceof AipoFault) throw e; out.push(vFail(e && e.uncaught ? e.uncaught : String(e))); continue; }
+          if (r.t === 'list') {
+            for (const sub of r.items) out.push(sub);
+          } else {
+            out.push(r);
+          }
+        } else {
+          out.push(it);
+        }
+      }
+      items = out;
+    } else if (op.op === 'take') {
+      const n = op.n.t === 'int' ? Math.max(0, Number(op.n.v)) : 0;
+      items = items.slice(0, n);
+    } else if (op.op === 'skip') {
+      const n = op.n.t === 'int' ? Math.max(0, Number(op.n.v)) : 0;
+      items = items.slice(n);
+    } else if (op.op === 'distinct') {
+      const seen = new Set();
+      const out = [];
+      for (const it of items) {
+        const k = display(it);
+        if (!seen.has(k)) {
+          seen.add(k);
+          out.push(it);
+        }
+      }
+      items = out;
+    } else if (op.op === 'enumerate') {
+      items = items.map((it, i) => vList([vInt(i), it]));
+    }
+  }
+  return items;
+}
+
 function iterableItems(m, recv) {
+  if (recv.t === 'sequence') return evaluateSequence(m, recv);
   if (recv.t === 'list') return [...recv.items];
   if (recv.t === 'dict') return recv.entries.map(([, v]) => v);
   if (recv.t === 'set') return [...recv.items];
@@ -3408,6 +3533,17 @@ function higherOrder(m, name, recv, args) {
   const guardId = (recv.t === 'list' || recv.t === 'dict' || recv.t === 'set') ? recv.id : null;
   if (guardId !== null) m.active.push(guardId);
   try {
+    if (name === 'find') {
+      const callable = args[0] !== undefined ? args[0] : vNone();
+      for (const it of items) {
+        let r;
+        try { r = invokeSame(m, callable, [it]); }
+        catch (e) { if (e instanceof AipoFault) throw e; throw new AipoFault('AIPO_RT_TYPE_MISMATCH', `type mismatch: ${e && e.uncaught ? e.uncaught : 'failure in predicate'}`); }
+        if (r.t !== 'bool') fault('AIPO_RT_TYPE_MISMATCH', `type mismatch: expected Bool predicate result, got ${typeName(r)}`);
+        if (r.v) return it;
+      }
+      return vNone();
+    }
     if (name === 'filter') {
       const callable = args[0] !== undefined ? args[0] : vNone();
       const kept = [];
@@ -3528,7 +3664,11 @@ function tagMatches(tag, v) {
     case 'Sequence': return v.t === 'sequence';
     case 'Task': return v.t === 'task';
     case 'Group': return v.t === 'group';
-    default: return false;
+    default:
+      if (v.t === 'struct') {
+        return v.type === tag || v.type.startsWith(tag + '.');
+      }
+      return false;
   }
 }
 
@@ -4616,6 +4756,12 @@ function stepFn(m) {
       m.stack[i] = vStruct(v.type, v.fields.map((f) => [f[0], f[1]]), new Set(v.fixed), false);
       break;
     }
+    case 'IsVariant': {
+      const v = mPop(m);
+      const matches = v && v.t === 'struct' && (v.type === inst.variant || v.type.endsWith('.' + inst.variant));
+      mPush(m, vBool(Boolean(matches)));
+      break;
+    }
     case 'GetField': {
       const t = mPop(m);
       mPush(m, doGetField(m, t, inst.f));
@@ -4783,6 +4929,10 @@ function stepFn(m) {
       const tag = mPop(m);
       const v = mPop(m);
       if (isFailure(v)) { mPush(m, v); break; }
+      if (tag.t === 'struct') {
+        mPush(m, vBool(v.t === 'struct' && v.type === tag.type));
+        break;
+      }
       if (tag.t !== 'type') return typeMismatch('type value on the right of is', typeName(tag));
       mPush(m, vBool(tagMatches(tag.name, v)));
       break;
@@ -4793,6 +4943,10 @@ function stepFn(m) {
       if (isFailure(v)) { mPush(m, v); break; }
       if (v.t === 'none') {
         mPush(m, vBool(true));
+        break;
+      }
+      if (tag.t === 'struct') {
+        mPush(m, vBool(v.t === 'struct' && v.type === tag.type));
         break;
       }
       if (tag.t !== 'type') return typeMismatch('type value on the right of is', typeName(tag));
@@ -4855,8 +5009,18 @@ function doReturn(m, v) {
 export function runModule(module) {
   const m = makeMachine(module);
   for (const f of module.functions) {
-    if (!f.name.includes('.')) {
-      m.globals.set(f.name, { t: 'func', idx: m.funcIndex.get(f.name), arity: f.params.length });
+    m.globals.set(f.name, { t: 'func', idx: m.funcIndex.get(f.name), arity: f.params.length });
+  }
+  if (module.structs) {
+    for (const s of module.structs) {
+      if (s.name.includes('.')) {
+        const [enumName] = s.name.split('.');
+        if (!m.globals.has(enumName)) {
+          m.globals.set(enumName, { t: 'type', name: enumName });
+        }
+      } else if (!m.globals.has(s.name)) {
+        m.globals.set(s.name, { t: 'type', name: s.name });
+      }
     }
   }
   const top = module.top;

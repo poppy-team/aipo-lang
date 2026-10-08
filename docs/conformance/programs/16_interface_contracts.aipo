@@ -4,48 +4,45 @@
 # non-conforming value is a contract fault instead of being accepted blindly. The receiver
 # is not an argument at a call site, so the declared arity is the caller-visible one.
 
-interface Drawable
+interface Drawable {
     fn draw(self) -> String
-end
+}
 
-interface Damageable
-    fn damage(self!, amount: Int) -> String
-end
+interface Damageable {
+    fn damage(var self, amount: Int) -> String
+}
 
-struct Player
+#!satisfies Drawable, Damageable
+struct Player {
     name
-    hp
-end
+    var hp
+}
 
-impl Player
-    fn draw(self) -> String
-        return "player " + self.name
-    end
+Player:draw() -> String {
+    return "player " + self.name
+}
 
-    fn damage(self!, amount: Int) -> String
-        self.hp = self.hp - amount
-        return self.name + " hp " + String(self.hp)
-    end
-end
+Player:damage(var self, amount: Int) -> String {
+    self.hp = self.hp - amount
+    return self.name + " hp " + String(self.hp)
+}
 
-satisfy Player: Drawable, Damageable
-
-fn render(item: Drawable) -> String
+fn render(item: Drawable) -> String {
     return item.draw()
-end
+}
 
-fn hit(target: Damageable, amount: Int) -> String
+fn hit(target: Damageable, amount: Int) -> String {
     return target.damage(amount)
-end
+}
 
 # `T?` accepts `none` in addition to a conforming value, which is exactly what `T?` means; the
 # structural check runs only when a value is present.
-fn maybe_render(item: Drawable?) -> String
-    if item == none
+fn maybe_render(item: Drawable?) -> String {
+    if item == none {
         return "nothing to draw"
-    end
+    }
     return render(item)
-end
+}
 
 let player = Player{name = "ana", hp = 10}
 io.println(render(player))

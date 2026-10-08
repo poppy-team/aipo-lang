@@ -6,10 +6,8 @@ struct Order {
     total
 }
 
-impl Order {
-    fn summary(self) - > String{
-        return f"#{self.id} {self.customer} {self.total}"
-    }
+Order:summary(self) -> String {
+    return f"#{self.id} {self.customer} {self.total}"
 }
 
 var orders = []

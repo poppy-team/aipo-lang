@@ -3,7 +3,7 @@
 
 import aipo.game as g
 
-test("animation clip creation and defaults") do
+test("animation clip creation and defaults") do {
     let clip = g.animation.create_clip(
         "walk",
         [0, 1, 2, 3],
@@ -21,9 +21,8 @@ test("animation clip creation and defaults") do
     expect.equal(clip.tile_w, 32.0)
     expect.equal(clip.tile_h, 32.0)
     expect.equal(clip.tileset_cols, 4)
-end
-
-test("animator clips registration and playback") do
+}
+test("animator clips registration and playback") do {
     let anim = g.animation.create_animator(1)
     let clip_idle = g.animation.create_clip("idle", [0, 1], 5.0, true, 32.0, 32.0, 2)
     let clip_jump = g.animation.create_clip("jump", [2, 3], 10.0, false, 32.0, 32.0, 2)
@@ -38,9 +37,8 @@ test("animator clips registration and playback") do
     g.animation.play(anim, "jump", false)
     expect.equal(g.animation.current_clip(anim), "jump")
     expect.equal(g.animation.get_current_frame(anim), 0)
-end
-
-test("animator frame advance and non-looping finish") do
+}
+test("animator frame advance and non-looping finish") do {
     let anim = g.animation.create_animator(1)
     let clip_attack = g.animation.create_clip("attack", [0, 1], 10.0, false, 32.0, 32.0, 2)
     g.animation.add_clip(anim, clip_attack)
@@ -60,9 +58,8 @@ test("animator frame advance and non-looping finish") do
     g.animation.update(anim, 0.10)
     expect.equal(g.animation.get_current_frame(anim), 1)
     expect.true(g.animation.is_finished(anim))
-end
-
-test("particle emitter creation, capacity, and clear") do
+}
+test("particle emitter creation, capacity, and clear") do {
     let emitter = g.particles.create_emitter(100.0, 150.0, 64)
     expect.equal(emitter.x, 100.0)
     expect.equal(emitter.y, 150.0)
@@ -78,9 +75,8 @@ test("particle emitter creation, capacity, and clear") do
 
     g.particles.clear(emitter)
     expect.equal(g.particles.count(emitter), 0)
-end
-
-test("particle physics, lifetime decay, and culling") do
+}
+test("particle physics, lifetime decay, and culling") do {
     let emitter = g.particles.create_emitter(0.0, 0.0, 32)
     let cfg = {
         "x": 0.0,
@@ -112,9 +108,8 @@ test("particle physics, lifetime decay, and culling") do
     # Step simulation past lifetime (0.06s additional => total 0.11s > 0.10s)
     g.particles.update(emitter, 0.06)
     expect.equal(g.particles.count(emitter), 0)
-end
-
-test("particle preset emitters dispatching") do
+}
+test("particle preset emitters dispatching") do {
     let emitter = g.particles.create_emitter(50.0, 50.0, 100)
 
     g.particles.emit_preset(emitter, "sparks", 50.0, 50.0, 5)
@@ -134,4 +129,4 @@ test("particle preset emitters dispatching") do
 
     g.particles.clear(emitter)
     expect.equal(g.particles.count(emitter), 0)
-end
+}

@@ -68,6 +68,12 @@ struct Gen<'a> {
     fns: Vec<(String, usize)>,
     out: String,
     indent: usize,
+    /// Whether the last emitted statement was an `if` without `else`.
+    ///
+    /// A brace-`if` without `else` captures a following `else` (dangling-else
+    /// binds nearest). Match arms are not brace-delimited, so `gen_match`
+    /// consults this before emitting its `else` and closes the `if` first.
+    dangling_if: bool,
 }
 
 impl Gen<'_> {
@@ -97,6 +103,7 @@ pub fn generate(seed: u64, config: &Config) -> Generated {
         fns: Vec::new(),
         out: String::new(),
         indent: 0,
+        dangling_if: false,
     };
     let mut env: Vec<Binding> = Vec::new();
     let target = 6 + gx.rng.below(config.max_stmts.saturating_sub(5).max(1));
@@ -113,6 +120,8 @@ pub fn generate(seed: u64, config: &Config) -> Generated {
 }
 
 fn gen_stmt(gx: &mut Gen, env: &mut Vec<Binding>, depth: usize) {
+    // Cleared by default; `gen_if` sets it when it emits an `else`-less `if`.
+    gx.dangling_if = false;
     // Blocks nest at most two deep: deeper nesting would explode program size
     // exponentially and never terminates the generator's own recursion budget.
     if depth >= 2 {
@@ -210,7 +219,7 @@ fn gen_assign(gx: &mut Gen, env: &mut Vec<Binding>) {
 
 fn gen_if(gx: &mut Gen, env: &[Binding], depth: usize) {
     let cond = gen_expr(gx, env, Ty::Bool, 0);
-    let header = format!("if {cond}");
+    let header = format!("if {cond} {{");
     gx.emit(&header);
     gx.indent += 1;
     let mut inner = env.to_vec();
@@ -219,15 +228,22 @@ fn gen_if(gx: &mut Gen, env: &[Binding], depth: usize) {
     }
     if gx.rng.one_in(2) {
         gx.indent -= 1;
-        gx.emit("else");
+        gx.emit("} else {");
         gx.indent += 1;
         let mut inner_else = env.to_vec();
         for _ in 0..1 + gx.rng.below(2) {
             gen_stmt(gx, &mut inner_else, depth + 1);
         }
+    } else {
+        gx.indent -= 1;
+        gx.emit("}");
+        // No `else`: a following `else` would bind here (dangling-else).
+        gx.dangling_if = true;
+        return;
     }
     gx.indent -= 1;
-    gx.emit("end");
+    gx.emit("}");
+    gx.dangling_if = false;
     // Bindings created inside branches stay inside: `env` unchanged.
 }
 
@@ -235,9 +251,9 @@ fn gen_repeat(gx: &mut Gen, env: &[Binding], depth: usize) {
     let count = 1 + gx.rng.below(4);
     let header = if gx.rng.one_in(2) {
         let index = gx.fresh("i");
-        format!("repeat {count} as {index}")
+        format!("repeat {count} as {index} {{")
     } else {
-        format!("repeat {count}")
+        format!("repeat {count} {{")
     };
     gx.emit(&header);
     gx.indent += 1;
@@ -246,7 +262,7 @@ fn gen_repeat(gx: &mut Gen, env: &[Binding], depth: usize) {
         gen_stmt(gx, &mut inner, depth + 1);
     }
     gx.indent -= 1;
-    gx.emit("end");
+    gx.emit("}");
 }
 
 fn gen_each(gx: &mut Gen, env: &[Binding], depth: usize) {
@@ -264,9 +280,9 @@ fn gen_each(gx: &mut Gen, env: &[Binding], depth: usize) {
     let item = gx.fresh("e");
     let header = if gx.rng.one_in(3) {
         let index = gx.fresh("k");
-        format!("each {index}, {item} in {target}")
+        format!("each {index}, {item} in {target} {{")
     } else {
-        format!("each {item} in {target}")
+        format!("each {item} in {target} {{")
     };
     gx.emit(&header);
     gx.indent += 1;
@@ -282,7 +298,7 @@ fn gen_each(gx: &mut Gen, env: &[Binding], depth: usize) {
         gen_stmt(gx, &mut inner, depth + 1);
     }
     gx.indent -= 1;
-    gx.emit("end");
+    gx.emit("}");
 }
 
 fn gen_match(gx: &mut Gen, env: &[Binding], depth: usize) {
@@ -292,13 +308,20 @@ fn gen_match(gx: &mut Gen, env: &[Binding], depth: usize) {
         // this scope cannot register.
         None => "0".to_string(),
     };
-    gx.emit(&format!("match {subject}"));
+    gx.emit(&format!("match {subject} {{"));
     gx.indent += 1;
     for arm in [0, 1] {
         gx.emit(&format!("when {arm}"));
         gx.indent += 1;
         let mut inner = env.to_vec();
         gen_stmt(gx, &mut inner, depth + 1);
+        if gx.dangling_if {
+            // An `else`-less `if` ends the arm: close it with an empty `else`
+            // so the match's own `else` below cannot bind to it.
+            gx.emit("else {");
+            gx.emit("}");
+            gx.dangling_if = false;
+        }
         gx.indent -= 1;
     }
     gx.emit("else");
@@ -307,7 +330,7 @@ fn gen_match(gx: &mut Gen, env: &[Binding], depth: usize) {
     gen_stmt(gx, &mut inner, depth + 1);
     gx.indent -= 1;
     gx.indent -= 1;
-    gx.emit("end");
+    gx.emit("}");
 }
 
 fn gen_fn_decl(gx: &mut Gen, env: &[Binding]) {
@@ -317,7 +340,7 @@ fn gen_fn_decl(gx: &mut Gen, env: &[Binding]) {
     for _ in 0..arity {
         params.push(gx.fresh("p"));
     }
-    gx.emit(&format!("fn {name}({})", params.join(", ")));
+    gx.emit(&format!("fn {name}({}) {{", params.join(", ")));
     gx.indent += 1;
     let mut inner: Vec<Binding> = params
         .iter()
@@ -334,7 +357,7 @@ fn gen_fn_decl(gx: &mut Gen, env: &[Binding]) {
     let result = gen_expr(gx, &inner, Ty::Int, 0);
     gx.emit(&format!("return {result}"));
     gx.indent -= 1;
-    gx.emit("end");
+    gx.emit("}");
     gx.fns.push((name.clone(), arity));
     // Exercise the function immediately with a visible result.
     let args: Vec<String> = (0..arity).map(|_| gx.rng.below(20).to_string()).collect();
@@ -402,7 +425,7 @@ fn gen_expr(gx: &mut Gen, env: &[Binding], ty: Ty, depth: usize) -> String {
             if roll < 68 {
                 let left = gen_expr(gx, env, Ty::Int, depth + 1);
                 let divisor = 1 + gx.rng.below(9);
-                let op = gx.rng.choose(&["/", "div", "%"]);
+                let op = gx.rng.choose(&["/", "//", "%"]);
                 return format!("{left} {op} {divisor}");
             }
             if roll < 76 {
@@ -480,9 +503,9 @@ fn gen_expr(gx: &mut Gen, env: &[Binding], ty: Ty, depth: usize) -> String {
             // Higher-order call over a literal: always valid, always terminates.
             let (literal, _) = gen_list_literal(gx, env);
             if gx.rng.one_in(2) {
-                format!("{literal}.transform(fn (x) return x * 2 end)")
+                format!("{literal}.transform(fn (x) {{ return x * 2 }})")
             } else {
-                format!("{literal}.filter(fn (x) return x > 1 end)")
+                format!("{literal}.filter(fn (x) {{ return x > 1 }})")
             }
         }
     }

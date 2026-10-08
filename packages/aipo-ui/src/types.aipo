@@ -12,11 +12,11 @@ struct Align {
     var value = "start"
 }
 
-fn make_align_start() - > Align{ return Align{ value: "start" } }
-fn make_align_center() - > Align{ return Align{ value: "center" } }
-fn make_align_end() - > Align{ return Align{ value: "end" } }
-fn make_align_stretch() - > Align{ return Align{ value: "stretch" } }
-fn make_align_baseline() - > Align{ return Align{ value: "baseline" } }
+fn make_align_start() -> Align { return Align { value: "start" } }
+fn make_align_center() -> Align { return Align { value: "center" } }
+fn make_align_end() -> Align { return Align { value: "end" } }
+fn make_align_stretch() -> Align { return Align { value: "stretch" } }
+fn make_align_baseline() -> Align { return Align { value: "baseline" } }
 
 # --- Justify ---
 
@@ -24,12 +24,12 @@ struct Justify {
     var value = "start"
 }
 
-fn make_justify_start() - > Justify{ return Justify{ value: "start" } }
-fn make_justify_center() - > Justify{ return Justify{ value: "center" } }
-fn make_justify_end() - > Justify{ return Justify{ value: "end" } }
-fn make_justify_space_between() - > Justify{ return Justify{ value: "space-between" } }
-fn make_justify_space_around() - > Justify{ return Justify{ value: "space-around" } }
-fn make_justify_space_evenly() - > Justify{ return Justify{ value: "space-evenly" } }
+fn make_justify_start() -> Justify { return Justify { value: "start" } }
+fn make_justify_center() -> Justify { return Justify { value: "center" } }
+fn make_justify_end() -> Justify { return Justify { value: "end" } }
+fn make_justify_space_between() -> Justify { return Justify { value: "space-between" } }
+fn make_justify_space_around() -> Justify { return Justify { value: "space-around" } }
+fn make_justify_space_evenly() -> Justify { return Justify { value: "space-evenly" } }
 
 # --- Direction ---
 
@@ -37,10 +37,10 @@ struct Direction {
     var value = "row"
 }
 
-fn make_direction_row() - > Direction{ return Direction{ value: "row" } }
-fn make_direction_column() - > Direction{ return Direction{ value: "column" } }
-fn make_direction_row_reverse() - > Direction{ return Direction{ value: "row-reverse" } }
-fn make_direction_column_reverse() - > Direction{ return Direction{ value: "column-reverse" } }
+fn make_direction_row() -> Direction { return Direction { value: "row" } }
+fn make_direction_column() -> Direction { return Direction { value: "column" } }
+fn make_direction_row_reverse() -> Direction { return Direction { value: "row-reverse" } }
+fn make_direction_column_reverse() -> Direction { return Direction { value: "column-reverse" } }
 
 # --- Overflow ---
 
@@ -48,9 +48,9 @@ struct Overflow {
     var value = "visible"
 }
 
-fn make_overflow_visible() - > Overflow{ return Overflow{ value: "visible" } }
-fn make_overflow_hidden() - > Overflow{ return Overflow{ value: "hidden" } }
-fn make_overflow_scroll() - > Overflow{ return Overflow{ value: "scroll" } }
+fn make_overflow_visible() -> Overflow { return Overflow { value: "visible" } }
+fn make_overflow_hidden() -> Overflow { return Overflow { value: "hidden" } }
+fn make_overflow_scroll() -> Overflow { return Overflow { value: "scroll" } }
 
 # --- Geometry & Data Structures ---
 #

@@ -1,11 +1,9 @@
-struct Point
+struct Point {
 fixed id
 x
 y
-end
+}
 
-impl Point
-fn total(self)
+Point:total() {
 return self.x+self.y
-end
-end
+}

@@ -191,6 +191,8 @@ pub struct IrBuilder {
     /// one produces a `Task`. Collected before any body is lowered so forward
     /// references resolve, backing the known-Task analysis.
     async_fns: HashSet<String>,
+    enum_unit_variants: HashMap<String, HashSet<String>>,
+    enum_variant_fields: HashMap<String, Vec<String>>,
 }
 
 /// Parameter layout of a declared function.
@@ -320,6 +322,93 @@ impl IrBuilder {
                         fields,
                     });
                 }
+                HirItem::Enum(e) => {
+                    for v in &e.variants {
+                        let full_name = format!("{}.{}", e.name, v.name);
+                        match &v.payload {
+                            aipo_hir::HirEnumVariantPayload::Unit => {
+                                self.enum_unit_variants
+                                    .entry(e.name.clone())
+                                    .or_default()
+                                    .insert(v.name.clone());
+                                self.structs.push(CoreStruct {
+                                    name: full_name.clone(),
+                                    fields: Vec::new(),
+                                });
+                                self.struct_fields.insert(full_name, Vec::new());
+                            }
+                            aipo_hir::HirEnumVariantPayload::Tuple(fields) => {
+                                let field_names: Vec<String> = fields
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(idx, f)| {
+                                        f.name.clone().unwrap_or_else(|| idx.to_string())
+                                    })
+                                    .collect();
+                                let struct_f: Vec<(String, bool)> =
+                                    field_names.iter().map(|n| (n.clone(), true)).collect();
+                                let declared: Vec<(String, bool, Option<HirExpr>)> = field_names
+                                    .iter()
+                                    .map(|n| (n.clone(), true, None))
+                                    .collect();
+                                self.enum_variant_fields
+                                    .insert(full_name.clone(), field_names.clone());
+                                self.struct_fields.insert(full_name.clone(), declared);
+                                self.structs.push(CoreStruct {
+                                    name: full_name.clone(),
+                                    fields: struct_f,
+                                });
+
+                                // Constructor function `Estado.Desligado(...)`
+                                self.fn_stack.push(FnCtx::new(field_names.clone()));
+                                let mut instrs = Vec::new();
+                                for name in &field_names {
+                                    instrs.push(CoreInst::Load(name.clone(), v.span));
+                                }
+                                instrs.push(CoreInst::BuildStruct {
+                                    type_name: full_name.clone(),
+                                    field_count: field_names.len(),
+                                    defer_fixed: false,
+                                    span: v.span,
+                                });
+                                if self.invariant_hooks.contains(&e.name) {
+                                    self.build_invariant_check(&e.name, v.span, &mut instrs);
+                                }
+                                instrs.push(CoreInst::Return {
+                                    has_value: true,
+                                    span: v.span,
+                                });
+                                let ctx = self.fn_stack.pop().expect("fn context present");
+                                self.functions.push(CoreFunction {
+                                    name: full_name,
+                                    is_async: false,
+                                    params: ctx.params,
+                                    locals: ctx.locals,
+                                    upvalues: ctx.upvalues,
+                                    instructions: instrs,
+                                    span: v.span,
+                                });
+                            }
+                            aipo_hir::HirEnumVariantPayload::Struct(fields) => {
+                                let field_names: Vec<String> =
+                                    fields.iter().map(|f| f.name.clone()).collect();
+                                let struct_f: Vec<(String, bool)> =
+                                    field_names.iter().map(|n| (n.clone(), true)).collect();
+                                let declared: Vec<(String, bool, Option<HirExpr>)> = field_names
+                                    .iter()
+                                    .map(|n| (n.clone(), true, None))
+                                    .collect();
+                                self.enum_variant_fields
+                                    .insert(full_name.clone(), field_names);
+                                self.struct_fields.insert(full_name.clone(), declared);
+                                self.structs.push(CoreStruct {
+                                    name: full_name,
+                                    fields: struct_f,
+                                });
+                            }
+                        }
+                    }
+                }
                 HirItem::Impl(imp) => {
                     if let Some(init) = &imp.init {
                         let name = format!("{}.init", imp.target);
@@ -337,7 +426,38 @@ impl IrBuilder {
                         self.functions.push(func);
                     }
                 }
-                _ => {}
+                HirItem::Batch(binding) => {
+                    // Batch association promotes free functions to methods: each listed function
+                    // is copied as `Tipo.fn`. Semáfora guarantees the source declares `self` as
+                    // its first parameter (SYNTAX.md §5.3), so no receiver is ever injected here
+                    // and the mutability the author wrote (`self` vs `var self`) is exactly what
+                    // the promoted method gets. The original stays callable on its own; only the
+                    // binding is new.
+                    for function_name in &binding.functions {
+                        let Some((_, source)) = program.items.iter().find_map(|item| match item {
+                            HirItem::Fn(f) if &f.name == function_name => Some(((), f)),
+                            _ => None,
+                        }) else {
+                            continue;
+                        };
+                        if !source.params.first().is_some_and(|p| p.is_self) {
+                            continue;
+                        }
+                        let promoted = aipo_hir::HirFunctionDecl {
+                            directives: source.directives.clone(),
+                            name: format!("{}.{}", binding.target, function_name),
+                            is_async: source.is_async,
+                            params: source.params.clone(),
+                            return_type: source.return_type.clone(),
+                            body: source.body.clone(),
+                            span: source.span,
+                        };
+                        let name = promoted.name.clone();
+                        let built = self.build_function(name, &promoted);
+                        self.functions.push(built);
+                    }
+                }
+                HirItem::Interface(_) | HirItem::Import(_) | HirItem::Export(_) => {}
             }
         }
 
@@ -692,6 +812,29 @@ impl IrBuilder {
             return None;
         }
 
+        // Detect a trailing unnamed argument (from a trailing block `call(...) do { ... }`)
+        // after named arguments.
+        let has_trailing_block =
+            positional < args.len() && args.last().is_some_and(|arg| arg.name.is_none());
+        let trailing_arg = if has_trailing_block {
+            Some(&args[args.len() - 1])
+        } else {
+            None
+        };
+        let named_args_end = if has_trailing_block {
+            args.len() - 1
+        } else {
+            args.len()
+        };
+        let named_args = &args[positional..named_args_end];
+
+        // The trailing block targets the last parameter if not already provided positionally.
+        let trailing_param_idx = if has_trailing_block && signature.params.len() > positional {
+            Some(signature.params.len() - 1)
+        } else {
+            None
+        };
+
         let mut resolved: Vec<ResolvedArgument<'a>> = Vec::with_capacity(signature.params.len());
         let mut consumed = 0usize;
         for (index, param) in signature.params.iter().enumerate() {
@@ -700,9 +843,22 @@ impl IrBuilder {
                 consumed += 1;
                 continue;
             }
-            match args
+            if Some(index) == trailing_param_idx {
+                if let Some(tb) = trailing_arg {
+                    // Reject if a named argument also targeted this parameter.
+                    if named_args
+                        .iter()
+                        .any(|arg| arg.name.as_deref() == Some(param.name.as_str()))
+                    {
+                        return None;
+                    }
+                    resolved.push(ResolvedArgument::Provided(&tb.value));
+                    consumed += 1;
+                    continue;
+                }
+            }
+            match named_args
                 .iter()
-                .skip(positional)
                 .find(|arg| arg.name.as_deref() == Some(param.name.as_str()))
             {
                 Some(named) => {
@@ -1078,7 +1234,7 @@ impl IrBuilder {
                     // A destructuring pattern is a shape match: it cannot fail, so it emits no
                     // test. Its bindings are established once the arm is selected, together
                     // with the other destructuring names of the same arm.
-                    let mut bound_fields: Vec<String> = Vec::new();
+                    let mut bound_fields: Vec<(String, String)> = Vec::new();
                     for pattern in &arm.patterns {
                         test_starts.push(out.len());
                         match pattern {
@@ -1093,13 +1249,58 @@ impl IrBuilder {
                                 out.push(CoreInst::Jump(0, s.span));
                             }
                             HirMatchPattern::Destructure(fields) => {
-                                bound_fields.extend(fields.iter().cloned());
+                                for f in fields {
+                                    bound_fields.push((f.clone(), f.clone()));
+                                }
                                 test_jumps.push(None);
                                 // It cannot fail, so it jumps straight to the body where
                                 // its bindings are established. Without this the arm is
                                 // unreachable and the `else` branch always runs.
                                 matched_jumps.push(out.len());
                                 out.push(CoreInst::Jump(0, s.span));
+                            }
+                            HirMatchPattern::Variant {
+                                enum_name,
+                                variant_name,
+                                payload,
+                                span,
+                            } => {
+                                let full_variant = if let Some(e) = enum_name {
+                                    format!("{e}.{variant_name}")
+                                } else {
+                                    variant_name.clone()
+                                };
+                                out.push(CoreInst::Load(target_name.clone(), *span));
+                                out.push(CoreInst::IsVariant(full_variant.clone(), *span));
+                                let jump = out.len();
+                                out.push(CoreInst::JumpIfFalse(0, *span));
+                                test_jumps.push(Some(jump));
+                                matched_jumps.push(out.len());
+                                out.push(CoreInst::Jump(0, *span));
+
+                                match payload {
+                                    HirVariantPatternPayload::Unit => {}
+                                    HirVariantPatternPayload::Tuple(ids) => {
+                                        let field_names = self
+                                            .enum_variant_fields
+                                            .get(&full_variant)
+                                            .cloned()
+                                            .unwrap_or_default();
+                                        for (idx, bound_name) in ids.iter().enumerate() {
+                                            let field_key = field_names
+                                                .get(idx)
+                                                .cloned()
+                                                .unwrap_or_else(|| idx.to_string());
+                                            bound_fields.push((bound_name.clone(), field_key));
+                                        }
+                                    }
+                                    HirVariantPatternPayload::Struct(ids) => {
+                                        for bound_name in ids {
+                                            bound_fields
+                                                .push((bound_name.clone(), bound_name.clone()));
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1123,14 +1324,14 @@ impl IrBuilder {
                     // The selected arm binds its destructured fields before the guard runs, so
                     // the guard can test them. `GetField` on a missing field is the same
                     // runtime fault as `value.field`, which is what makes this a shape match.
-                    for field in &bound_fields {
+                    for (local_name, field_name) in &bound_fields {
                         self.fn_stack
                             .last_mut()
                             .expect("a function context is always active")
-                            .declare_binding(field);
+                            .declare_binding(local_name);
                         out.push(CoreInst::Load(target_name.clone(), s.span));
-                        out.push(CoreInst::GetField(field.clone(), s.span));
-                        out.push(CoreInst::Store(field.clone(), s.span));
+                        out.push(CoreInst::GetField(field_name.clone(), s.span));
+                        out.push(CoreInst::Store(local_name.clone(), s.span));
                     }
 
                     // A `false` guard rejects the arm and continues with the next one.
@@ -1849,6 +2050,22 @@ impl IrBuilder {
                     self.build_question_dot(base, member, *member_span, Some((args, *span)), out);
                     return;
                 }
+                if let HirExpr::Dot(base, member, dot_span) = &**callee {
+                    if let HirExpr::Identifier(namespace, _) = &**base {
+                        let qualified = format!("{namespace}.{member}");
+                        if self.functions.iter().any(|f| f.name == qualified) {
+                            out.push(CoreInst::Load(qualified, *dot_span));
+                            for arg in args {
+                                self.build_expr(&arg.value, out);
+                            }
+                            out.push(CoreInst::Call {
+                                arg_count: args.len(),
+                                span: *span,
+                            });
+                            return;
+                        }
+                    }
+                }
                 // Canonical evaluation order: callee first, then arguments left to right, once.
                 self.build_expr(callee, out);
                 match self.resolve_arguments(callee, args) {
@@ -1878,6 +2095,24 @@ impl IrBuilder {
                 }
             }
             HirExpr::Dot(base, member, span) => {
+                if let HirExpr::Identifier(name, _) = &**base {
+                    if self
+                        .enum_unit_variants
+                        .get(name)
+                        .is_some_and(|set| set.contains(member))
+                    {
+                        out.push(CoreInst::BuildStruct {
+                            type_name: format!("{name}.{member}"),
+                            field_count: 0,
+                            defer_fixed: false,
+                            span: *span,
+                        });
+                        if self.invariant_hooks.contains(name) {
+                            self.build_invariant_check(name, *span, out);
+                        }
+                        return;
+                    }
+                }
                 self.build_expr(base, out);
                 out.push(CoreInst::GetField(member.clone(), *span));
             }
@@ -1951,8 +2186,15 @@ impl IrBuilder {
                 }
                 // canon: `invariant()` is verified at the end of construction, so it observes
                 // exactly what `init` assigned (the field assignments above have already run).
-                if self.invariant_hooks.contains(type_name) {
-                    self.build_invariant_check(type_name, *span, out);
+                let inv_target = if self.invariant_hooks.contains(type_name) {
+                    Some(type_name.as_str())
+                } else {
+                    type_name.split_once('.').and_then(|(parent, _)| {
+                        self.invariant_hooks.contains(parent).then_some(parent)
+                    })
+                };
+                if let Some(target) = inv_target {
+                    self.build_invariant_check(target, *span, out);
                 }
                 if has_init {
                     out.push(CoreInst::SealStruct(*span));
@@ -2127,12 +2369,22 @@ fn collect_free_stmt(stmt: &HirStmt, seen: &mut HashSet<String>, out: &mut Vec<S
             }
         }
         HirStmt::FnDecl(f) => {
-            // A nested local function declares its own name; its body is collected when the
-            // closure itself is built, not as free references of the enclosing frame.
-            // Still, the declared name binds in the enclosing block, so record it in
-            // `seen` to avoid a later sibling use being misclassified as free
-            // (auditoria IR-4).
             seen.insert(f.name.clone());
+            let mut inner_seen = HashSet::new();
+            inner_seen.insert(f.name.clone());
+            for p in &f.params {
+                inner_seen.insert(p.name.clone());
+            }
+            let mut inner_free = Vec::new();
+            for stmt in &f.body {
+                collect_free_stmt(stmt, &mut inner_seen, &mut inner_free);
+            }
+            for name in inner_free {
+                if !seen.contains(&name) {
+                    seen.insert(name.clone());
+                    out.push(name);
+                }
+            }
         }
         HirStmt::Attempt(s) => {
             for stmt in &s.body {
@@ -2203,12 +2455,21 @@ fn collect_free_expr(expr: &HirExpr, seen: &mut HashSet<String>, out: &mut Vec<S
             collect_free_expr(then_b, seen, out);
             collect_free_expr(else_b, seen, out);
         }
-        HirExpr::Fn(_) => {
-            // A nested closure declares its own parameters and locals and resolves its
-            // captures transitively in `build_closure`/`ensure_capture` when it is built.
-            // Walking the body here would leak the closure's internal bindings into the
-            // enclosing collection and misclassify sibling references (auditoria IR-14),
-            // so this mirrors the `HirStmt::FnDecl` arm.
+        HirExpr::Fn(f) => {
+            let mut inner_seen = HashSet::new();
+            for p in &f.params {
+                inner_seen.insert(p.name.clone());
+            }
+            let mut inner_free = Vec::new();
+            for stmt in &f.body {
+                collect_free_stmt(stmt, &mut inner_seen, &mut inner_free);
+            }
+            for name in inner_free {
+                if !seen.contains(&name) {
+                    seen.insert(name.clone());
+                    out.push(name);
+                }
+            }
         }
         HirExpr::Literal(_, _) => {}
     }

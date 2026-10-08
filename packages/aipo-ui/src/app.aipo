@@ -48,7 +48,7 @@ fn render_frame(app: UIApp) {
 }
 
 fn install_app(backend: String, title: String, width: Int, height: Int, model, update: Fn, view: Fn) {
-    _current_app = UIApp{
+    _current_app = UIApp {
         backend: backend,
         title: title,
         width: width,

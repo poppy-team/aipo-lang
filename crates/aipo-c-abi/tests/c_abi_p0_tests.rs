@@ -70,13 +70,13 @@ fn c1_bytes_returned_from_call_survive_owner_death() {
         rt,
         "bytes_mod",
         r#"
-fn make_bytes()
+fn make_bytes() {
     let data = Bytes(8)
     data.write_u8(0, 65)
     data.write_u8(1, 66)
     data.write_u8(2, 67)
     return data
-end
+}
 "#,
     );
     assert_eq!(status, aipo_status_t::AIPO_OK, "load: {}", last_error(rt));
@@ -185,13 +185,13 @@ fn c2_callback_identity_wins_over_arity() {
         rt,
         "c2_mod",
         r#"
-fn run(data)
+fn run(data) {
     return remove_entry(data)
-end
+}
 
-fn run_wipe(data)
+fn run_wipe(data) {
     return wipe_everything(data)
-end
+}
 "#,
     );
     assert_eq!(status, aipo_status_t::AIPO_OK, "load: {}", last_error(rt));
@@ -238,7 +238,7 @@ fn c3_rejects_out_of_contract_values() {
     let rt = aipo_runtime_create();
     assert!(!rt.is_null());
 
-    let status = load(rt, "c3_mod", "fn echo(v)\n    return v\nend\n");
+    let status = load(rt, "c3_mod", "fn echo(v) {\n    return v\n}\n");
     assert_eq!(status, aipo_status_t::AIPO_OK, "load: {}", last_error(rt));
 
     // Integer past the canonical safe range.
@@ -397,7 +397,7 @@ extern "C" fn c5_reentrant_callback(
     };
     C5_REENTRANT_REG_STATUS.store(reg_status as i64, std::sync::atomic::Ordering::SeqCst);
 
-    let load_src = CString::new("fn extra() return 42 end").unwrap();
+    let load_src = CString::new("fn extra() { return 42 }").unwrap();
     let load_status = unsafe { aipo_runtime_load_module(rt, mod_name.as_ptr(), load_src.as_ptr()) };
     C5_REENTRANT_LOAD_STATUS.store(load_status as i64, std::sync::atomic::Ordering::SeqCst);
 
@@ -443,13 +443,13 @@ fn c5_runtime_rejects_reentrant_calls() {
         rt,
         "c5_mod",
         r#"
-fn inner()
+fn inner() {
     return 1
-end
+}
 
-fn outer()
+fn outer() {
     return outer_host_fn()
-end
+}
 "#,
     );
     assert_eq!(status, aipo_status_t::AIPO_OK, "load: {}", last_error(rt));
@@ -504,7 +504,7 @@ fn c6_null_args_with_positive_argc_is_rejected() {
     let rt = aipo_runtime_create();
     assert!(!rt.is_null());
 
-    let status = load(rt, "c6_mod", "fn noop()\n    return 1\nend\n");
+    let status = load(rt, "c6_mod", "fn noop() {\n    return 1\n}\n");
     assert_eq!(status, aipo_status_t::AIPO_OK, "load: {}", last_error(rt));
 
     let mod_name = CString::new("c6_mod").unwrap();
@@ -563,11 +563,11 @@ fn c7_string_with_nul_reports_consistent_length() {
         rt,
         "c7_mod",
         r#"
-fn make_nul_string()
+fn make_nul_string() {
     let b = "abc".encode()
     b.write_u8(1, 0)
     return b.decode()
-end
+}
 "#,
     );
     assert_eq!(status, aipo_status_t::AIPO_OK, "load: {}", last_error(rt));

@@ -84,7 +84,23 @@ impl<'a> Lexer<'a> {
             return Token::new(TokenKind::Newline, SourceSpan::new(start, end));
         }
 
-        // 2. Comments `# ...`
+        // 2. Directives `#!name ...` — a compiler annotation on the next item.
+        // The `!` is what separates an annotation from a comment; `#` alone stays a comment.
+        if ch == '#' && self.peek() == Some('!') {
+            self.advance(); // consume '!'
+            let mut directive = String::new();
+            while let Some(next_ch) = self.peek() {
+                if next_ch == '\n' {
+                    break;
+                }
+                directive.push(next_ch);
+                self.advance();
+            }
+            let end = self.current_offset();
+            return Token::new(TokenKind::Directive(directive), SourceSpan::new(start, end));
+        }
+
+        // 3. Comments `# ...`
         if ch == '#' {
             let mut comment_text = String::new();
             while let Some(next_ch) = self.peek() {
@@ -254,7 +270,16 @@ impl<'a> Lexer<'a> {
                     TokenKind::Question
                 }
             }
-            ':' => TokenKind::Colon,
+            ':' => {
+                // `::` é o token de associação em lote (`Retangulo::[f1, f2]`); um
+                // `:` sozinho continua anotação de tipo, construção ou `satisfy`.
+                if self.peek() == Some(':') {
+                    self.advance();
+                    TokenKind::ColonColon
+                } else {
+                    TokenKind::Colon
+                }
+            }
             ',' => TokenKind::Comma,
             '(' => TokenKind::LParen,
             ')' => TokenKind::RParen,
@@ -293,20 +318,6 @@ impl<'a> Lexer<'a> {
 
         let raw = &self.source.text()[start..self.current_offset()];
 
-        // Check for self!
-        if raw == "self" && self.peek() == Some('!') {
-            self.advance();
-            let end = self.current_offset();
-            return Token::new(TokenKind::SelfMut, SourceSpan::new(start, end));
-        }
-
-        // Check for div=
-        if raw == "div" && self.peek() == Some('=') {
-            self.advance();
-            let end = self.current_offset();
-            return Token::new(TokenKind::DivEq, SourceSpan::new(start, end));
-        }
-
         let end = self.current_offset();
         let span = SourceSpan::new(start, end);
 
@@ -323,16 +334,14 @@ impl<'a> Lexer<'a> {
             "await" => TokenKind::Await,
             "with" => TokenKind::With,
             "struct" => TokenKind::Struct,
-            "impl" => TokenKind::Impl,
+            "enum" => TokenKind::Enum,
             "interface" => TokenKind::Interface,
-            "satisfy" => TokenKind::Satisfy,
             "init" => TokenKind::Init,
             "invariant" => TokenKind::Invariant,
             "if" => TokenKind::If,
             "elif" => TokenKind::Elif,
             "else" => TokenKind::Else,
             "then" => TokenKind::Then,
-            "end" => TokenKind::End,
             "match" => TokenKind::Match,
             "when" => TokenKind::When,
             "loop" => TokenKind::Loop,
@@ -359,7 +368,6 @@ impl<'a> Lexer<'a> {
             "none" => TokenKind::None,
             "self" => TokenKind::SelfVal,
             "do" => TokenKind::Do,
-            "div" => TokenKind::Div,
             _ => TokenKind::Identifier(raw.to_string()),
         };
 
@@ -477,12 +485,26 @@ impl<'a> Lexer<'a> {
         };
 
         let is_raw = matches!(prefix, StringPrefix::Raw | StringPrefix::FormatRaw);
+        let is_format = matches!(prefix, StringPrefix::Format | StringPrefix::FormatRaw);
         let mut content = String::new();
+        let mut brace_depth = 0usize;
 
         loop {
             match self.advance() {
                 Some('"') => {
-                    if is_multiline {
+                    if brace_depth > 0 {
+                        content.push('"');
+                        while let Some(ch) = self.advance() {
+                            content.push(ch);
+                            if ch == '\\' {
+                                if let Some(esc) = self.advance() {
+                                    content.push(esc);
+                                }
+                            } else if ch == '"' {
+                                break;
+                            }
+                        }
+                    } else if is_multiline {
                         if self.peek() == Some('"') && self.peek_ahead(1) == Some('"') {
                             self.advance();
                             self.advance();
@@ -492,6 +514,26 @@ impl<'a> Lexer<'a> {
                         }
                     } else {
                         break;
+                    }
+                }
+                Some('{') if is_format => {
+                    if self.peek() == Some('{') {
+                        self.advance();
+                        content.push('{');
+                        content.push('{');
+                    } else {
+                        brace_depth += 1;
+                        content.push('{');
+                    }
+                }
+                Some('}') if is_format => {
+                    if self.peek() == Some('}') {
+                        self.advance();
+                        content.push('}');
+                        content.push('}');
+                    } else {
+                        brace_depth = brace_depth.saturating_sub(1);
+                        content.push('}');
                     }
                 }
                 Some('\\') if !is_raw => {

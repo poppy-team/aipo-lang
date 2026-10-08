@@ -68,19 +68,19 @@ var a2 = poppy.spawn("asteroid", -5.0, 15.0)
 var digests = []
 
 var i = 0
-while i < 10
+while i < 10 {
     # Step game world physics and deferred command buffer
     var d = poppy.step()
     digests.add(d)
 
     # Simple behavior: if player is past x = 5.0, despawn asteroid 1
     var pos = poppy.get_position(player)
-    if pos["x"] >= 5.0
+    if pos["x"] >= 5.0 {
         poppy.despawn(a1)
-    end
+    }
 
     i = i + 1
-end
+}
 
 var remaining = poppy.query("asteroid")
 "#;

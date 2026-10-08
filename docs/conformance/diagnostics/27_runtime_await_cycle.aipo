@@ -4,15 +4,15 @@
 var first_holder = 0
 var second_holder = 0
 
-async fn first()
+async fn first() {
     let other = await second_holder
     return other
-end
+}
 
-async fn second()
+async fn second() {
     let other = await first_holder
     return other
-end
+}
 
 first_holder = first()
 second_holder = second()

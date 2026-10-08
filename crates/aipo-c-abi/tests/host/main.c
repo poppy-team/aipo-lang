@@ -35,17 +35,17 @@ static void test_c1_bytes_survive_and_release(void) {
     assert(rt != NULL);
 
     const char *source =
-        "fn make_bytes()\n"
+        "fn make_bytes() {\n"
         "    let data = Bytes(8)\n"
         "    data.write_u8(0, 65)\n"
         "    data.write_u8(1, 66)\n"
         "    data.write_u8(2, 67)\n"
         "    return data\n"
-        "end\n"
-        "fn churn()\n"
+        "}\n"
+        "fn churn() {\n"
         "    let x = \"allocating something else\"\n"
         "    return x\n"
-        "end\n";
+        "}\n";
 
     aipo_status_t status = aipo_runtime_load_module(rt, "c1_mod", source);
     assert(status == AIPO_OK);
@@ -117,12 +117,12 @@ static void test_c2_callback_identity_wins_over_arity(void) {
     assert(s2 == AIPO_OK);
 
     const char *source =
-        "fn call_save(x)\n"
+        "fn call_save(x) {\n"
         "    return save(x)\n"
-        "end\n"
-        "fn call_delete(x)\n"
+        "}\n"
+        "fn call_delete(x) {\n"
         "    return delete(x)\n"
-        "end\n";
+        "}\n";
 
     aipo_status_t s3 = aipo_runtime_load_module(rt, "c2_mod", source);
     assert(s3 == AIPO_OK);
@@ -252,12 +252,12 @@ static void test_c5_reentrancy_guards(void) {
     assert(s_reg == AIPO_OK);
 
     const char *source =
-        "fn inner()\n"
+        "fn inner() {\n"
         "    return 42\n"
-        "end\n"
-        "fn outer()\n"
+        "}\n"
+        "fn outer() {\n"
         "    return probe()\n"
-        "end\n";
+        "}\n";
 
     aipo_status_t s_load = aipo_runtime_load_module(rt, "c5_mod", source);
     assert(s_load == AIPO_OK);
@@ -287,9 +287,9 @@ static void test_c6_null_args_positive_argc(void) {
     assert(rt != NULL);
 
     const char *source =
-        "fn noop()\n"
+        "fn noop() {\n"
         "    return 1\n"
-        "end\n";
+        "}\n";
     aipo_status_t s_load = aipo_runtime_load_module(rt, "c6_mod", source);
     assert(s_load == AIPO_OK);
 
@@ -315,11 +315,11 @@ static void test_c7_nul_string_length(void) {
     assert(rt != NULL);
 
     const char *source =
-        "fn make_nul_string()\n"
+        "fn make_nul_string() {\n"
         "    let b = \"abc\".encode()\n"
         "    b.write_u8(1, 0)\n"
         "    return b.decode()\n"
-        "end\n";
+        "}\n";
     aipo_status_t s_load = aipo_runtime_load_module(rt, "c7_mod", source);
     assert(s_load == AIPO_OK);
 
@@ -344,14 +344,14 @@ static void test_m1_module_scope_isolation(void) {
     assert(rt != NULL);
 
     const char *src_a =
-        "fn compute()\n"
+        "fn compute() {\n"
         "    return 111\n"
-        "end\n";
+        "}\n";
 
     const char *src_b =
-        "fn compute()\n"
+        "fn compute() {\n"
         "    return 222\n"
-        "end\n";
+        "}\n";
 
     aipo_status_t s1 = aipo_runtime_load_module(rt, "mod_a", src_a);
     assert(s1 == AIPO_OK);
@@ -390,22 +390,22 @@ static void test_m2_atomic_module_load_rollback(void) {
     assert(rt != NULL);
 
     const char *src_good =
-        "struct GoodPoint\n"
+        "struct GoodPoint {\n"
         "    x\n"
         "    y\n"
-        "end\n"
-        "fn get_answer()\n"
+        "}\n"
+        "fn get_answer() {\n"
         "    return 42\n"
-        "end\n";
+        "}\n";
 
     aipo_status_t s_good = aipo_runtime_load_module(rt, "good_mod", src_good);
     assert(s_good == AIPO_OK);
 
     /* Top-level fault (divide by zero) */
     const char *src_bad =
-        "struct BadStruct\n"
+        "struct BadStruct {\n"
         "    leak\n"
-        "end\n"
+        "}\n"
         "let crash = 1 / 0\n";
 
     aipo_status_t s_bad = aipo_runtime_load_module(rt, "bad_mod", src_bad);
@@ -433,16 +433,16 @@ static void test_s1_instruction_budget_halts_infinite_loop(void) {
     assert(rt != NULL);
 
     const char *src_loop =
-        "fn spin_loop()\n"
+        "fn spin_loop() {\n"
         "    var counter = 0\n"
-        "    while true\n"
+        "    while true {\n"
         "        counter = counter + 1\n"
-        "    end\n"
+        "    }\n"
         "    return counter\n"
-        "end\n"
-        "fn quick_fn()\n"
+        "}\n"
+        "fn quick_fn() {\n"
         "    return 77\n"
-        "end\n";
+        "}\n";
 
     aipo_status_t s_load = aipo_runtime_load_module(rt, "loop_mod", src_loop);
     assert(s_load == AIPO_OK);

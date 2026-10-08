@@ -57,9 +57,9 @@ fn test_m1_multi_module_function_isolation() {
         rt,
         "mod_a",
         r#"
-fn compute()
+fn compute() {
     return 111
-end
+}
 "#,
     );
     assert_eq!(status, aipo_status_t::AIPO_OK, "{}", last_error(rt));
@@ -69,9 +69,9 @@ end
         rt,
         "mod_b",
         r#"
-fn compute()
+fn compute() {
     return 222
-end
+}
 "#,
     );
     assert_eq!(status, aipo_status_t::AIPO_OK, "{}", last_error(rt));
@@ -121,14 +121,14 @@ fn test_m2_atomic_two_stage_module_loading_rollback() {
         rt,
         "good_mod",
         r#"
-struct GoodPoint
+struct GoodPoint {
     x
     y
-end
+}
 
-fn get_answer()
+fn get_answer() {
     return 42
-end
+}
 "#,
     );
     assert_eq!(status, aipo_status_t::AIPO_OK, "{}", last_error(rt));
@@ -138,9 +138,9 @@ end
         rt,
         "faulty_mod",
         r#"
-struct BadStruct
+struct BadStruct {
     leak
-end
+}
 
 # Division by zero at top level
 let crash = 1 / 0
@@ -180,17 +180,17 @@ fn test_s1_instruction_budget_and_counters() {
         rt,
         "loop_mod",
         r#"
-fn spin_loop()
+fn spin_loop() {
     var counter = 0
-    while true
+    while true {
         counter = counter + 1
-    end
+    }
     return counter
-end
+}
 
-fn quick_fn()
+fn quick_fn() {
     return 77
-end
+}
 "#,
     );
     assert_eq!(status, aipo_status_t::AIPO_OK, "{}", last_error(rt));

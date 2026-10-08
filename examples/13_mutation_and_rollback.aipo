@@ -6,19 +6,17 @@ struct Span {
     var hi
 }
 
-impl Span {
-    init (var self, lo, hi) {
-        self.lo = lo
-        self.hi = hi
-    }
+Span:init(var self, lo, hi) {
+    self.lo = lo
+    self.hi = hi
+}
 
-    invariant () {
-        self.lo < self.hi
-    }
+Span:invariant {
+    self.lo < self.hi
+}
 
-    fn widen(var self, amount) {
-        self.lo = self.lo - amount
-    }
+Span:widen(var self, amount) {
+    self.lo = self.lo - amount
 }
 
 let r = Span{ lo: 2, hi: 8 }

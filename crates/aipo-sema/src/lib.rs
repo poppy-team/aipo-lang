@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn test_shadowing_in_nested_scope() {
-        let diags = analyze_source("let x = 1\nif true then\n  let x = 2\nend");
+        let diags = analyze_source("let x = 1\nif true {\n  let x = 2\n}");
         assert!(
             diags.is_empty(),
             "expected shadowing to succeed, found: {:?}",
@@ -95,14 +95,14 @@ mod tests {
 
     #[test]
     fn test_arity_mismatch() {
-        let diags = analyze_source("fn add(a, b)\n  return a + b\nend\nadd(1)");
+        let diags = analyze_source("fn add(a, b) {\n  return a + b\n}\nadd(1)");
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_ARITY_MISMATCH);
     }
 
     #[test]
     fn test_satisfy_interface_success() {
-        let code = "interface Greeter\n  fn greet(name)\nend\n\nstruct Bot\nend\n\nimpl Bot\n  fn greet(name)\n    return name\n  end\nend\n\nsatisfy Bot: Greeter";
+        let code = "interface Greeter {\n  fn greet(name)\n}\n\n#!satisfies Greeter\nstruct Bot {\n}\n\nBot:greet(name) {\n    return name\n}";
         let diags = analyze_source(code);
         assert!(
             diags.is_empty(),
@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn test_satisfy_missing_method() {
         let code =
-            "interface Greeter\n  fn greet(name)\nend\n\nstruct Bot\nend\n\nsatisfy Bot: Greeter";
+            "interface Greeter {\n  fn greet(name)\n}\n\n#!satisfies Greeter\nstruct Bot {\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
@@ -124,7 +124,7 @@ mod tests {
     /// one cannot suspend the enclosing path, so it is reported instead of guessed.
     #[test]
     fn test_await_in_subexpression_is_reported() {
-        let code = "async fn worker()\n  return 21\nend\n\nfn consume(value)\n  return value\nend\n\nfn caller()\n  let t = worker()\n  return consume(await t)\nend";
+        let code = "async fn worker() {\n  return 21\n}\n\nfn consume(value) {\n  return value\n}\n\nfn caller() {\n  let t = worker()\n  return consume(await t)\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(
@@ -137,7 +137,7 @@ mod tests {
     /// canon's forgotten-task diagnostic (never silent).
     #[test]
     fn test_forgotten_task_is_reported() {
-        let code = "async fn worker()\n  return 1\nend\n\nfn caller()\n  worker()\nend";
+        let code = "async fn worker() {\n  return 1\n}\n\nfn caller() {\n  worker()\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_FORGOTTEN_TASK);
@@ -147,7 +147,7 @@ mod tests {
     /// observable, so it must stay silent.
     #[test]
     fn test_bound_task_is_not_reported() {
-        let code = "async fn worker()\n  return 1\nend\n\nfn caller()\n  let t = worker()\n  return t\nend";
+        let code = "async fn worker() {\n  return 1\n}\n\nfn caller() {\n  let t = worker()\n  return t\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -156,7 +156,7 @@ mod tests {
     /// point, so canon asks for a diagnostic.
     #[test]
     fn test_nested_await_do_is_reported() {
-        let code = "async fn one()\n  return 1\nend\n\nasync fn outer()\n  await do\n    await do\n      let value = await one()\n    end\n  end\nend";
+        let code = "async fn one() {\n  return 1\n}\n\nasync fn outer() {\n  await do {\n    await do {\n      let value = await one()\n    }\n  }\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_NESTED_AWAIT_DO);
@@ -165,7 +165,7 @@ mod tests {
     /// The single-block form is the sugar canon sanctions, so it must analyze cleanly.
     #[test]
     fn test_await_do_accepts_sequential_awaits() {
-        let code = "async fn one()\n  return 1\nend\n\nasync fn outer()\n  await do\n    let value = await one()\n    return value\n  end\nend";
+        let code = "async fn one() {\n  return 1\n}\n\nasync fn outer() {\n  await do {\n    let value = await one()\n    return value\n  }\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -186,21 +186,22 @@ mod tests {
     #[test]
     fn test_await_of_a_call_is_not_reported() {
         let code =
-            "async fn worker()\n  return 1\nend\n\nfn caller()\n  return await worker()\nend";
+            "async fn worker() {\n  return 1\n}\n\nfn caller() {\n  return await worker()\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
 
     #[test]
     fn test_assignment_await_not_reported() {
-        let code = "async fn worker()\n  return 1\nend\n\nfn caller()\n  var x = 0\n  x = await worker()\nend";
+        let code = "async fn worker() {\n  return 1\n}\n\nfn caller() {\n  var x = 0\n  x = await worker()\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
 
     #[test]
     fn test_immutable_receiver_mutation() {
-        let code = "struct Point\n  x\n  y\nend\n\nimpl Point\n  fn set_x(self, val)\n    self.x = val\n  end\nend";
+        let code =
+            "struct Point {\n  var x\n  var y\n}\n\nPoint:set_x(self, val) {\n    self.x = val\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_READONLY_MUTATION);
@@ -215,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_fixed_field_reassignment_reported() {
-        let code = "struct User {\n  fixed id\n  name\n}\n\nimpl User {\n  fn change_id(var self, new_id) {\n    self.id = new_id\n  }\n}";
+        let code = "struct User {\n  fixed id\n  var name\n}\n\nUser:change_id(var self, new_id) {\n    self.id = new_id\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_FIXED_REASSIGN);
@@ -223,7 +224,7 @@ mod tests {
 
     #[test]
     fn test_async_method_forgotten_task_reported() {
-        let code = "struct Service\nend\n\nimpl Service\n  async fn fetch(self)\n    return 42\n  end\nend\n\nlet s = Service{}\ns.fetch()";
+        let code = "struct Service {\n}\n\nasync Service:fetch(self) {\n    return 42\n}\n\nlet s = Service{}\ns.fetch()";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_FORGOTTEN_TASK);
@@ -231,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_immutable_binding_field_mutation_allowed() {
-        let code = "struct Point\n  x\n  y\nend\n\nlet p = Point{x = 1, y = 2}\np.x = 10";
+        let code = "struct Point {\n  var x\n  var y\n}\n\nlet p = Point{x: 1, y: 2}\np.x = 10";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -245,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_fixed_field_instance_mutation_reported() {
-        let code = "struct User\n  fixed id\n  name\nend\n\nvar u = User{id = 1, name = \"Alice\"}\nu.id = 2";
+        let code = "struct User {\n  fixed id\n  name\n}\n\nvar u = User{id = 1, name = \"Alice\"}\nu.id = 2";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_FIXED_REASSIGN);
@@ -253,7 +254,7 @@ mod tests {
 
     #[test]
     fn test_satisfy_return_type_mismatch() {
-        let code = "interface Getter\n  fn get() -> Int\nend\n\nstruct Boxed\nend\n\nimpl Boxed\n  fn get() -> String\n    return \"hi\"\n  end\nend\n\nsatisfy Boxed: Getter";
+        let code = "interface Getter {\n  fn get() -> Int\n}\n\n#!satisfies Getter\nstruct Boxed {\n}\n\nBoxed:get() -> String {\n    return \"hi\"\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(
@@ -264,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_satisfy_receiver_mutability_mismatch() {
-        let code = "interface Mutator {\n  fn mutate(var self)\n}\n\nstruct State {}\n\nimpl State {\n  fn mutate(self) {}\n}\n\nsatisfy State: Mutator";
+        let code = "interface Mutator {\n  fn mutate(var self)\n}\n\n#!satisfies Mutator\nstruct State {}\n\nState:mutate(self) {}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(
@@ -275,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_satisfy_async_mismatch() {
-        let code = "interface Fetcher\n  async fn fetch()\nend\n\nstruct Service\nend\n\nimpl Service\n  fn fetch()\n    return 1\n  end\nend\n\nsatisfy Service: Fetcher";
+        let code = "interface Fetcher {\n  async fn fetch()\n}\n\n#!satisfies Fetcher\nstruct Service {\n}\n\nService:fetch() {\n    return 1\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(
@@ -301,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_modern_interface_and_var_self() {
-        let code = "interface Counter {\n  fn increment(var self)\n}\n\nstruct Ticker {\n  var count\n}\n\nimpl Ticker {\n  fn increment(var self) {\n    self.count += 1\n  }\n}\n\nsatisfy Ticker: Counter";
+        let code = "interface Counter {\n  fn increment(var self)\n}\n\n#!satisfies Counter\nstruct Ticker {\n  var count\n}\n\nTicker:increment(var self) {\n    self.count += 1\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -312,7 +313,7 @@ mod tests {
     /// which shape it received, so it is reported instead of left to runtime.
     #[test]
     fn test_mixed_return_shapes_are_reported() {
-        let code = "fn pick(flag: Bool) -> Int\n  if flag\n    return 1\n  end\n  return\nend";
+        let code = "fn pick(flag: Bool) -> Int {\n  if flag {\n    return 1\n  }\n  return\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(
@@ -324,7 +325,7 @@ mod tests {
     /// Every `return` carrying a value is the ordinary shape and must stay silent.
     #[test]
     fn test_uniform_value_returns_are_accepted() {
-        let code = "fn pick(flag: Bool) -> Int\n  if flag\n    return 1\n  end\n  return 2\nend";
+        let code = "fn pick(flag: Bool) -> Int {\n  if flag {\n    return 1\n  }\n  return 2\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -332,7 +333,7 @@ mod tests {
     /// Every bare `return` is consistent for a function with no value contract.
     #[test]
     fn test_uniform_void_returns_are_accepted() {
-        let code = "fn stop(flag: Bool)\n  if flag\n    return\n  end\n  return\nend";
+        let code = "fn stop(flag: Bool) {\n  if flag {\n    return\n  }\n  return\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -341,7 +342,7 @@ mod tests {
     /// one would hand the caller `none`, so the path is reported.
     #[test]
     fn test_declared_contract_with_falling_path_is_reported() {
-        let code = "fn maybe(flag: Bool) -> Int\n  if flag\n    return 1\n  end\nend";
+        let code = "fn maybe(flag: Bool) -> Int {\n  if flag {\n    return 1\n  }\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(
@@ -354,7 +355,7 @@ mod tests {
     /// must stay silent.
     #[test]
     fn test_total_returns_are_not_reported_as_missing() {
-        let code = "fn total(flag: Bool) -> Int\n  if flag\n    return 1\n  else\n    return 2\n  end\nend";
+        let code = "fn total(flag: Bool) -> Int {\n  if flag {\n    return 1\n  } else {\n    return 2\n  }\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -362,7 +363,7 @@ mod tests {
     /// `match` with an `else` that returns on every arm is total.
     #[test]
     fn test_match_with_total_arms_is_accepted() {
-        let code = "fn classify(v: Int) -> Int\n  match v\n    when 1\n      return 10\n    else\n      return 0\n  end\nend";
+        let code = "fn classify(v: Int) -> Int {\n  match v {\n    when 1\n      return 10\n    else\n      return 0\n  }\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -371,7 +372,7 @@ mod tests {
     /// contract is not honoured on that path.
     #[test]
     fn test_match_without_else_can_fall_through() {
-        let code = "fn classify(v: Int) -> Int\n  match v\n    when 1\n      return 10\n  end\nend";
+        let code = "fn classify(v: Int) -> Int {\n  match v {\n    when 1\n      return 10\n  }\n}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(
@@ -384,7 +385,7 @@ mod tests {
     /// the end and the missing-value path must not be reported.
     #[test]
     fn test_infinite_loop_is_not_a_missing_value_path() {
-        let code = "fn forever() -> Int\n  loop\n    return 1\n  end\nend";
+        let code = "fn forever() -> Int {\n  loop {\n    return 1\n  }\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -392,7 +393,7 @@ mod tests {
     /// `fail` ends the path like `return`, so it satisfies a value contract.
     #[test]
     fn test_fail_ends_the_path() {
-        let code = "fn checked(v: Int) -> Int\n  if v < 0\n    fail (\"negative\")\n  end\n  return v\nend";
+        let code = "fn checked(v: Int) -> Int {\n  if v < 0 {\n    fail (\"negative\")\n  }\n  return v\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -400,7 +401,7 @@ mod tests {
     /// `break` exits only the loop, so the function can still fall off the end.
     #[test]
     fn test_break_does_not_end_the_function_path() {
-        let code = "fn first(limit: Int) -> Int\n  var total = 0\n  var i = 0\n  loop\n    if i >= limit\n      break\n    end\n    total = total + i\n    i = i + 1\n  end\n  return total\nend";
+        let code = "fn first(limit: Int) -> Int {\n  var total = 0\n  var i = 0\n  loop {\n    if i >= limit {\n      break\n    }\n    total = total + i\n    i = i + 1\n  }\n  return total\n}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
     }
@@ -411,7 +412,7 @@ mod tests {
     /// before execution rather than faulting at runtime.
     #[test]
     fn test_integer_literal_condition_is_reported() {
-        let diags = analyze_source("if 42\n  let x = 1\nend");
+        let diags = analyze_source("if 42 {\n  let x = 1\n}");
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_NON_BOOL_CONDITION);
     }
@@ -419,7 +420,7 @@ mod tests {
     /// A `while` with a literal condition has the same problem.
     #[test]
     fn test_while_literal_condition_is_reported() {
-        let diags = analyze_source("while 0\n  break\nend");
+        let diags = analyze_source("while 0 {\n  break\n}");
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_NON_BOOL_CONDITION);
     }
@@ -447,7 +448,7 @@ mod tests {
     /// A `Bool` literal is the canonical condition and must stay silent.
     #[test]
     fn test_bool_literal_condition_is_accepted() {
-        let diags = analyze_source("if true\n  let x = 1\nend");
+        let diags = analyze_source("if true {\n  let x = 1\n}");
         assert!(diags.is_empty(), "found: {diags:?}");
     }
 
@@ -455,14 +456,14 @@ mod tests {
     /// so a dynamic program keeps working.
     #[test]
     fn test_dynamic_condition_is_accepted() {
-        let diags = analyze_source("var ready = 1\nif ready\n  let x = 1\nend");
+        let diags = analyze_source("var ready = 1\nif ready {\n  let x = 1\n}");
         assert!(diags.is_empty(), "found: {diags:?}");
     }
 
     /// The diagnostic carries a replacement, so an editor can offer a quick fix.
     #[test]
     fn test_non_bool_condition_carries_a_suggestion() {
-        let diags = analyze_source("if 42\n  let x = 1\nend");
+        let diags = analyze_source("if 42 {\n  let x = 1\n}");
         assert_eq!(diags[0].suggestions.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].suggestions[0].replacement, "42 != 0");
     }
@@ -472,7 +473,7 @@ mod tests {
     /// A field the struct does not declare is a typo, caught at the call site.
     #[test]
     fn test_unknown_struct_field_is_reported() {
-        let code = "struct Point\n  x\n  y\nend\n\nlet p = Point{x: 1, z: 3}";
+        let code = "struct Point {\n  x\n  y\n}\n\nlet p = Point{x: 1, z: 3}";
         let diags = analyze_source(code);
         assert_eq!(diags.len(), 1, "found: {diags:?}");
         assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
@@ -481,8 +482,237 @@ mod tests {
     /// A declared field supplied exactly once is the ordinary shape.
     #[test]
     fn test_struct_with_all_fields_is_accepted() {
-        let code = "struct Point\n  x\n  y\nend\n\nlet p = Point{x: 1, y: 2}";
+        let code = "struct Point {\n  x\n  y\n}\n\nlet p = Point{x: 1, y: 2}";
         let diags = analyze_source(code);
         assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    /// A literal that provably breaks a declared field contract is reported
+    /// before execution, exactly like a parameter contract.
+    #[test]
+    fn test_struct_field_contract_literal_violation_is_reported() {
+        let code = "struct User {\n  id: Int\n}\n\nlet u = User{id: \"x\"}";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(
+            diags[0].code,
+            DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC
+        );
+    }
+
+    /// A literal satisfying the field contract stays silent; non-literals are
+    /// left to the runtime, mirroring parameter contracts.
+    #[test]
+    fn test_struct_field_contract_match_is_accepted() {
+        let code = "struct User {\n  id: Int\n}\n\nlet u = User{id: 1}";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    // --- enum declaration and construction ---
+
+    /// Declaring the same variant twice is a redeclaration, not a merge.
+    #[test]
+    fn test_enum_duplicate_variant_is_reported() {
+        let code = "enum Estado {\n  Ativo,\n  Ativo,\n}";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_REDECLARED_IN_SCOPE);
+    }
+
+    /// A match arm naming a variant the enum does not declare is a typo,
+    /// reported even when `else` would otherwise silence exhaustiveness.
+    #[test]
+    fn test_enum_unknown_variant_in_match_is_reported() {
+        let code = "enum Estado {\n  Ativo,\n  Inativo,\n}\n\nfn f(s) {\n  match s {\n    when Estado.Ativo {\n      return 1\n    }\n    when Estado.Inexistente {\n      return 2\n    }\n    else {\n      return 0\n    }\n  }\n}";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+    }
+
+    /// Calling a variant the enum does not declare is reported at the call site.
+    #[test]
+    fn test_enum_unknown_variant_call_is_reported() {
+        let code = "enum Resultado {\n  Sucesso(valor: Int),\n}\n\nlet r = Resultado.Falha(1)";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+    }
+
+    /// A tuple variant called with the wrong payload count is an arity error
+    /// before execution, not a runtime fault.
+    #[test]
+    fn test_enum_tuple_variant_arity_mismatch_is_reported() {
+        let code = "enum Resultado {\n  Sucesso(valor: Int),\n}\n\nlet r = Resultado.Sucesso(1, 2)";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_ARITY_MISMATCH);
+    }
+
+    /// Only tuple variants are callable: a unit variant takes no call.
+    #[test]
+    fn test_enum_unit_variant_call_is_reported() {
+        let code = "enum Estado {\n  Ativo,\n  Inativo,\n}\n\nlet s = Estado.Ativo()";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_ARITY_MISMATCH);
+    }
+
+    /// The exact-arity tuple construction stays silent.
+    #[test]
+    fn test_enum_tuple_variant_exact_arity_is_accepted() {
+        let code = "enum Resultado {\n  Sucesso(valor: Int),\n}\n\nlet r = Resultado.Sucesso(1)";
+        let diags = analyze_source(code);
+        assert!(diags.is_empty(), "found: {diags:?}");
+    }
+
+    /// Accessing a non-existent member on a known collection type is caught statically (D3).
+    #[test]
+    fn test_unknown_collection_member_d3() {
+        let code = "var l = [1, 2, 3]\nl.pop()";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+    }
+
+    #[test]
+    fn test_hook_name_warning() {
+        let code = "struct Point { var x }\nPoint:constructor(var self, x) { self.x = x }\nPoint:validar() -> Bool { return self.x > 0 }";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 2, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_NOME_DE_HOOK);
+        assert_eq!(diags[1].code, DiagnosticCode::AIPO_SEM_NOME_DE_HOOK);
+    }
+
+    #[test]
+    fn test_empty_invariant_warning() {
+        let code = "struct Point { x }\nPoint:invariant { }";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_HOOK_VAZIO);
+    }
+
+    #[test]
+    fn test_duplicate_hooks_error() {
+        let code = "struct Point { x }\nPoint:init(x) { self.x = x }\nPoint:init(x, y) { self.x = x }\nPoint:invariant { self.x > 0 }\nPoint:invariant { self.x < 100 }";
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 2, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_HOOK_DUPLICADO);
+        assert_eq!(diags[1].code, DiagnosticCode::AIPO_SEM_HOOK_DUPLICADO);
+    }
+
+    #[test]
+    fn test_flow_narrowing_is_struct() {
+        let code = r#"
+struct Point {
+    x
+    y
+}
+fn process(val) {
+    if val is Point {
+        let a = val.x
+        let b = val.bad_field
+    }
+}
+"#;
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+        assert!(
+            diags[0]
+                .message
+                .contains("struct 'Point' has no member 'bad_field'")
+        );
+    }
+
+    #[test]
+    fn test_flow_narrowing_is_list() {
+        let code = r#"
+fn f(l) {
+    if l is List {
+        l.add(1)
+        l.pop()
+    }
+}
+"#;
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+        assert!(diags[0].message.contains("type 'List' has no member 'pop'"));
+    }
+
+    #[test]
+    fn test_flow_narrowing_negative_in_else() {
+        let code = r#"
+struct Point {
+    x
+    y
+}
+fn f(val) {
+    if not (val is Point) {
+        return 0
+    } else {
+        let b = val.bad_field
+        return 1
+    }
+}
+"#;
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+        assert!(
+            diags[0]
+                .message
+                .contains("struct 'Point' has no member 'bad_field'")
+        );
+    }
+
+    #[test]
+    fn test_flow_narrowing_nullable_parameter() {
+        let code = r#"
+struct Point {
+    x
+    y
+}
+fn f(p: Point?) {
+    if p != none {
+        let b = p.bad_field
+    }
+}
+"#;
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+        assert!(
+            diags[0]
+                .message
+                .contains("struct 'Point' has no member 'bad_field'")
+        );
+    }
+
+    #[test]
+    fn test_flow_narrowing_match_variant() {
+        let code = r#"
+enum State {
+    Loading,
+    Ready { count: Int },
+}
+fn check(s: State) {
+    match s {
+        when State.Ready { count } {
+            s.bad_field
+        }
+        else { }
+    }
+}
+"#;
+        let diags = analyze_source(code);
+        assert_eq!(diags.len(), 1, "found: {diags:?}");
+        assert_eq!(diags[0].code, DiagnosticCode::AIPO_SEM_UNKNOWN_NAME);
+        assert!(
+            diags[0]
+                .message
+                .contains("struct 'State.Ready' has no member 'bad_field'")
+        );
     }
 }

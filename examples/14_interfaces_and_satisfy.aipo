@@ -1,20 +1,17 @@
 # Interfaces are structural: a value satisfies one by exposing the declared
-# operations, and `satisfy` states the promise explicitly.
+# operations, and `#!satisfies` states the promise explicitly.
 interface Greeter {
     fn greet(self)
     }
 
+    #!satisfies Greeter
     struct Robot {
         name
     }
 
-    impl Robot {
-        fn greet(self) {
-            return "beep " + self.name
-        }
+    Robot:greet(self) {
+        return "beep " + self.name
     }
-
-    satisfy Robot: Greeter
 
         fn welcome(item: Greeter) {
             return item.greet()

@@ -236,6 +236,29 @@ fn shift_stmt(stmt: &Stmt, delta: usize) -> Stmt {
                             MatchPattern::Destructure(fields) => MatchPattern::Destructure(
                                 fields.iter().map(|f| shift_ident(f, delta)).collect(),
                             ),
+                            MatchPattern::Variant {
+                                enum_name,
+                                variant_name,
+                                payload,
+                                span,
+                            } => MatchPattern::Variant {
+                                enum_name: enum_name.as_ref().map(|e| shift_ident(e, delta)),
+                                variant_name: shift_ident(variant_name, delta),
+                                payload: match payload {
+                                    VariantPatternPayload::Unit => VariantPatternPayload::Unit,
+                                    VariantPatternPayload::Tuple(ids) => {
+                                        VariantPatternPayload::Tuple(
+                                            ids.iter().map(|f| shift_ident(f, delta)).collect(),
+                                        )
+                                    }
+                                    VariantPatternPayload::Struct(ids) => {
+                                        VariantPatternPayload::Struct(
+                                            ids.iter().map(|f| shift_ident(f, delta)).collect(),
+                                        )
+                                    }
+                                },
+                                span: shifted(*span, delta),
+                            },
                         })
                         .collect(),
                     guard: arm.guard.as_ref().map(|expr| shift_expr(expr, delta)),
@@ -284,6 +307,7 @@ fn shift_stmt(stmt: &Stmt, delta: usize) -> Stmt {
             span: shifted(attempt.span, delta),
         }),
         Stmt::Fn(decl) => Stmt::Fn(FunctionDecl {
+            directives: decl.directives.clone(),
             name: shift_ident(&decl.name, delta),
             is_async: decl.is_async,
             params: decl.params.iter().map(|p| shift_param(p, delta)).collect(),
@@ -388,7 +412,7 @@ mod exotic_tests {
     #[test]
     fn test_exotic_placeholder_spans_stay_inside_source() {
         let padding = "# filler line\n".repeat(30);
-        let text = format!("{padding}io.println(f\"{{[1, 2].transform(fn (x) return x end)}}\")\n");
+        let text = padding.clone() + "io.println(f\"{[1, 2].transform(fn (x) { return x })}\")\n";
         let source = Source::new(SourceId::next(), "exotic.aipo", &text);
         let (program, diagnostics) = crate::parse(&source);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");

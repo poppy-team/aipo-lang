@@ -347,7 +347,7 @@ covariante:
 | `alvo = expr` | atribuição simples |
 | `alvo op= expr` | `+=` `-=` `*=` `/=` `//=` `%=` |
 | `alvo with { campo: valor }` | atualização funcional; devolve novo valor, base intacto |
-| `if c { } elif c { } else { }` | sem parênteses na condição |
+| `if c { } elif c { } else { }` | sem parênteses na condição; usa `elif` (`else if` é rejeitado) |
 | `if c then a else b` | **inline, com valor** |
 | `match alvo { when p1, p2 { } else { } }` | `when`, nunca `case` |
 | `loop { }` | laço infinito canônico |
@@ -538,7 +538,7 @@ Açúcar multi-sujeito em `is`: `a, b, c is Int` → os três `is Int`.
 
 ---
 
-## 12. Keywords (42)
+## 12. Keywords (43)
 
 | Grupo | Keywords |
 |---|---|
@@ -553,6 +553,8 @@ Açúcar multi-sujeito em `is`: `a, b, c is Int` → os três `is Int`.
 | Literal | `true` `false` `none` |
 | Receptor | `self` |
 | Bloco | `do` |
+| Atualização funcional | `with` |
+| Legado (imutabilidade explícita antiga) | `fixed` |
 | Descarte | `_` |
 
 Removidas neste ciclo: `end` · `div` · `self!` · `impl` · `satisfy`.
@@ -614,19 +616,21 @@ falhar pelo motivo errado também falha.
 O compilador ainda aceita as formas antigas. Cada item abaixo é trabalho
 pendente, e o par **precisa** ser feito junto para não haver conflito.
 
-| Forma antiga | Ainda aceita? | Alvo |trabalho |
-|---|---|---|---|
-| `end` como terminador | sim | remover | lexer, parser, formatter, fixtures, exemplos |
-| `div` / `div=` | sim | remover; `div` volta a ser identificador | lexer, parser, formatter, docs |
-| `self!` | sim | remover; resta `self` e `var self` | lexer (`SelfMut`), `parse_params` |
-| `impl Tipo { }` | sim | remover; métodos viram `Tipo:nome` | AST (`ImplBlock`), HIR, IR, sema, VM, Wasm, JS |
-| `satisfy T: I` | sim | remover; satisfaction já é estrutural | AST (`SatisfyDecl`), parser, sema |
-| `fn` dentro de `impl` | sim | `fn` só para função livre | parser, formatter |
-| Campos sem anotação de tipo | sim | anotação **opcional** (back-compat) | parser, AST, sema |
-| `#!` diretiva | **não** | implementar | lexer (`Directive`), parser, CLI test discovery |
-| `:` e `::` tokens | **não** | implementar | lexer, parser, AST, HIR, IR, formatter |
-| `mod.Tipo{...}` qualificada | **não** | implementar | parser, sema |
-| Diagnóstico "// é divisão" | **não** | implementar | parser |
+| Forma antiga / Item | Status atual | Alvo / Realizado |
+|---|---|---|
+| `end` como terminador | **removido** | blocos exigem `{ ... }` exclusivamente |
+| `div` / `div=` | **removido** | `div` é identificador comum; `//` e `//=` são os únicos operadores de divisão inteira |
+| `self!` / `nome!` | **removido** | `var self` e `var nome` exclusivos |
+| `impl Tipo { }` | legado aceito | `Tipo:nome` implementado e canônico |
+| `satisfy T: I` | legado aceito | `#!satisfies` implementado e verificado estaticamente |
+| `fn` dentro de `interface` | **opcional** | interface aceita assinaturas com ou sem `fn` |
+| Campos com anotação de tipo | **implementado** | `campo: Tipo` opcional em structs |
+| `#!` diretivas (`test`, `todo`, `deprecated`, `satisfies`) | **implementado** | lexer, parser, AST, HIR, sema |
+| `:` e `::` tokens | **implementado** | `:` método/hook individual, `::` binding em lote |
+| Binding em lote `Tipo::[...]` | **implementado** | restrito a funções com `self` como 1º param; mutabilidade via `var self` |
+| Construção qualificada `mod.Tipo{...}` | **implementado** | parser, IR, VM |
+| Diagnóstico "// é divisão" | **implementado** | emite aviso amigável sugerindo `#` em statement/prefix |
+| `enum` (tipos de soma fechados) | **implementado V1** | unit, struct e tuple variants, matching e verificação de exaustividade |
 
 ### 16.1 Ordem sugerida de implementação
 

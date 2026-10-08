@@ -411,6 +411,18 @@ impl Vm {
             .enumerate()
             .map(|(index, name)| (name.clone(), index))
             .collect();
+        for s in &module.structs {
+            if let Some((parent_enum, _)) = s.name.split_once('.') {
+                let enum_str = parent_enum.to_string();
+                self.globals
+                    .entry(enum_str.clone())
+                    .or_insert_with(|| Value::UserType(Rc::new(enum_str)));
+            } else {
+                self.globals
+                    .entry(s.name.clone())
+                    .or_insert_with(|| Value::UserType(Rc::new(s.name.clone())));
+            }
+        }
         for (index, name) in module.names.iter().enumerate() {
             self.global_slots[index] = self.globals.get(name).cloned();
         }

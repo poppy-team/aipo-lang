@@ -38,21 +38,16 @@ pub fn over_limit_span(program: &Program) -> Option<SourceSpan> {
                     stack.push(Work::Stmt(stmt, 1));
                 }
             }
-            Item::Impl(block) => {
-                if let Some(init) = &block.init {
-                    for stmt in &init.body {
-                        stack.push(Work::Stmt(stmt, 1));
-                    }
-                }
-                for method in &block.methods {
-                    for stmt in &method.body {
-                        stack.push(Work::Stmt(stmt, 1));
-                    }
+            Item::Method(method) => {
+                for stmt in &method.function.body {
+                    stack.push(Work::Stmt(stmt, 1));
                 }
             }
-            Item::Struct(_)
+            Item::Invariant(_)
+            | Item::Batch(_)
+            | Item::Struct(_)
+            | Item::Enum(_)
             | Item::Interface(_)
-            | Item::Satisfy(_)
             | Item::Import(_)
             | Item::Export(_) => {}
         }

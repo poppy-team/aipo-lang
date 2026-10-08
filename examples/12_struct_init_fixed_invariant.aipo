@@ -6,18 +6,16 @@ struct Player {
     health
 }
 
-impl Player {
-    init (id, name, health = 100) {
-        self.id = id
-        self.name = name
-        self.health = health
-    }
+Player:init(id, name, health = 100) {
+    self.id = id
+    self.name = name
+    self.health = health
+}
 
-    invariant () {
-        self.name != ""
-        self.health >= 0
-        self.health <= 100
-    }
+Player:invariant {
+    self.name != ""
+    self.health >= 0
+    self.health <= 100
 }
 
 let ana = Player{ id: 1, name: "ana" }

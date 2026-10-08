@@ -40,3 +40,24 @@ let wasm_bytes = compile_hir(&hir).expect("compilation succeeds");
 ```bash
 cargo test -p aipo-wasm
 ```
+
+## Current Wasm surface
+
+Supported in the current compiler:
+
+- integers, floats, bools, strings, lists, dicts, structs and fields;
+- arithmetic, comparison, logical operators and short-circuiting;
+- `let`, `var`, assignment and compound assignment;
+- functions, calls, lowerings of trailing blocks and local `fn` bindings;
+- loops (`while`, `loop`, `each`, `range`) with bounded execution;
+- inline `if` expressions and block `if`;
+- runtime checks for division and modulo by zero mapped to canonical faults.
+
+Explicitly unsupported/flagged:
+
+- `match` with variant patterns (is reported as `UnsupportedStmt`);
+- full `HirStmt::FnDecl` in every nested/async context has not been made total yet;
+- `Variant` payloads in match, some `OrElse`/`assignment targets`/capture shapes are covered only by VM/JS and are not a stable Wasm surface;
+- async `await do` and direct async task semantics still follow the VM/JS substrate more closely than a standalone Wasm semantic model.
+
+Any unsupported AST is reported via `UnsupportedItem`, `UnsupportedStmt`, or `UnsupportedExpr` with source span.

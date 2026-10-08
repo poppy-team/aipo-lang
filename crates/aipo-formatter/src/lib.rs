@@ -18,9 +18,9 @@
 //! ```
 //! use aipo_formatter::format_text;
 //!
-//! let formatted = format_text("main.aipo", "let x=1\nif x>0\nio.println(\"positive\")\nend")
+//! let formatted = format_text("main.aipo", "let x=1\nif x>0 {\nio.println(\"positive\")\n}")
 //!     .expect("valid source formats");
-//! assert_eq!(formatted, "let x = 1\nif x > 0\n    io.println(\"positive\")\nend\n");
+//! assert_eq!(formatted, "let x = 1\nif x > 0 {\n    io.println(\"positive\")\n}\n");
 //! ```
 
 #![forbid(unsafe_code)]
@@ -196,7 +196,7 @@ fn render(source: &Source, lines: &[Line<'_>]) -> String {
             if matches!(token.kind, TokenKind::LBrace) {
                 block_level += 1;
             }
-            if matches!(token.kind, TokenKind::RBrace | TokenKind::End) {
+            if matches!(token.kind, TokenKind::RBrace) {
                 block_level -= 1;
             }
             if opens_block_here(&token.kind, position, &line.tokens) {
@@ -310,14 +310,43 @@ fn needs_space(
         return false;
     }
 
+    // `Tipo::[fn1, fn2]` batch binding is tight around `::`.
+    if matches!(next_kind, TokenKind::ColonColon) {
+        if let Some(TokenKind::Identifier(name)) = previous_kind {
+            if name.chars().next().is_some_and(|c| c.is_uppercase()) {
+                return false;
+            }
+        }
+    }
+    if matches!(previous_kind, Some(TokenKind::ColonColon))
+        && matches!(next_kind, TokenKind::LBracket)
+    {
+        return false;
+    }
+
+    // `Tipo:nome(...)` method/hook declaration is tight after `:`.
+    if matches!(previous_kind, Some(TokenKind::Colon))
+        && tokens.len() >= 2
+        && matches!(&tokens[0].kind, TokenKind::Identifier(name) if name.chars().next().is_some_and(|c| c.is_uppercase()))
+        && matches!(&tokens[1].kind, TokenKind::Colon)
+    {
+        return false;
+    }
+
+    // `->` return type arrow is tight between `-` and `>`.
+    if matches!(previous_kind, Some(TokenKind::Minus)) && matches!(next_kind, TokenKind::Greater) {
+        return false;
+    }
+
     if matches!(next, Class::Open) {
         let binds_to_previous = match next_kind {
             TokenKind::LParen => matches!(
                 previous_kind,
                 Some(
                     TokenKind::Identifier(_)
+                        | TokenKind::Init
+                        | TokenKind::Invariant
                         | TokenKind::SelfVal
-                        | TokenKind::SelfMut
                         | TokenKind::RParen
                         | TokenKind::RBracket
                 )
@@ -328,22 +357,41 @@ fn needs_space(
                     TokenKind::Identifier(_)
                         | TokenKind::StringLiteral { .. }
                         | TokenKind::SelfVal
-                        | TokenKind::SelfMut
                         | TokenKind::RParen
                         | TokenKind::RBracket
                 )
             ),
             TokenKind::LBrace => {
+                // A brace closing the physical line opens a body (`if v is Int {`),
+                // never a construction: it always takes a space. Only a brace with
+                // more tokens after it on the same line can be `Type{...}`.
+                let brace_is_last = tokens
+                    .iter()
+                    .rposition(|t| matches!(t.kind, TokenKind::LBrace))
+                    .is_some_and(|idx| {
+                        tokens[idx + 1..]
+                            .iter()
+                            .all(|t| matches!(t.kind, TokenKind::Newline))
+                    });
+                if brace_is_last {
+                    return true;
+                }
                 let is_decl = tokens
                     .first()
                     .map(|t| {
                         matches!(
                             t.kind,
-                            TokenKind::Struct | TokenKind::Impl | TokenKind::Interface
+                            TokenKind::Struct | TokenKind::Enum | TokenKind::Interface
                         )
                     })
                     .unwrap_or(false);
-                if !is_decl {
+                let has_arrow = tokens.windows(2).any(|w| {
+                    matches!(
+                        (&w[0].kind, &w[1].kind),
+                        (TokenKind::Minus, TokenKind::Greater)
+                    )
+                });
+                if !is_decl && !has_arrow {
                     if let Some(TokenKind::Identifier(name)) = previous_kind {
                         name.chars().next().is_some_and(|c| c.is_uppercase())
                     } else {
@@ -380,8 +428,8 @@ mod tests {
 
     #[test]
     fn test_reindents_block_with_four_spaces() {
-        let out = format("if x > 0\nio.println(\"yes\")\nend");
-        assert_eq!(out, "if x > 0\n    io.println(\"yes\")\nend\n");
+        let out = format("if x > 0 {\nio.println(\"yes\")\n}");
+        assert_eq!(out, "if x > 0 {\n    io.println(\"yes\")\n}\n");
     }
 
     #[test]
@@ -398,7 +446,7 @@ mod tests {
 
     #[test]
     fn test_is_idempotent() {
-        let once = format("fn add(a,b)\nreturn a+b\nend\nif true\nlet x = [1,2,3]\nend");
+        let once = format("fn add(a,b) {\nreturn a+b\n}\nif true {\nlet x = [1,2,3]\n}");
         let twice = format(&once);
         assert_eq!(once, twice);
     }
@@ -406,11 +454,11 @@ mod tests {
     #[test]
     fn test_match_branches_align_with_match() {
         let out = format(
-            "match status\nwhen \"a\"\nio.print(1)\nwhen \"b\"\nio.print(2)\nelse\nio.print(3)\nend",
+            "match status {\nwhen \"a\"\nio.print(1)\nwhen \"b\"\nio.print(2)\nelse\nio.print(3)\n}",
         );
         assert_eq!(
             out,
-            "match status\nwhen \"a\"\n    io.print(1)\nwhen \"b\"\n    io.print(2)\nelse\n    io.print(3)\nend\n"
+            "match status {\nwhen \"a\"\n    io.print(1)\nwhen \"b\"\n    io.print(2)\nelse\n    io.print(3)\n}\n"
         );
     }
 
@@ -444,12 +492,20 @@ mod tests {
 
     #[test]
     fn test_modern_method_with_var_self() {
-        let out = format(
-            "impl User {\nfn update(var self, new_status) {\nself.status = new_status\n}\n}",
-        );
+        let out = format("User:update(var self, new_status) {\nself.status = new_status\n}");
         assert_eq!(
             out,
-            "impl User {\n    fn update(var self, new_status) {\n        self.status = new_status\n    }\n}\n"
+            "User:update(var self, new_status) {\n    self.status = new_status\n}\n"
+        );
+    }
+
+    #[test]
+    fn test_format_type_association_and_batch_and_enum() {
+        let code = "Point:dist() -> Float {\nreturn 0.0\n}\n\nPoint:init(x, y) {\nself.x = x\n}\n\nPonto::[area, perimetro]\n\nenum Status {\nAtivo,\nInativo,\n}\n";
+        let out = format(code);
+        assert_eq!(
+            out,
+            "Point:dist() -> Float {\n    return 0.0\n}\n\nPoint:init(x, y) {\n    self.x = x\n}\n\nPonto::[area, perimetro]\n\nenum Status {\n    Ativo,\n    Inativo,\n}\n"
         );
     }
 }

@@ -21,7 +21,7 @@ fn button(x: Float, y: Float, w: Float, h: Float, text: String) -> Bool {
         # Active/Pressed
         host_draw_rect(x, y + 1.0, w, h, 0.20, 0.35, 0.65, 1.0)
         host_draw_rect_lines(x, y + 1.0, w, h, 1.5, 0.50, 0.70, 1.0, 1.0)
-    } else if hover {
+    } elif hover {
         # Hovered
         host_draw_rect(x, y, w, h, 0.25, 0.40, 0.70, 0.95)
         host_draw_rect_lines(x, y, w, h, 2.0, 0.60, 0.85, 1.0, 1.0)
@@ -41,7 +41,7 @@ fn button(x: Float, y: Float, w: Float, h: Float, text: String) -> Bool {
 
     if hover and down {
         host_draw_text(text, tx, ty + 1.0, font_size, 1.0, 1.0, 1.0)
-    } else if hover {
+    } elif hover {
         host_draw_text(text, tx, ty, font_size, 1.0, 1.0, 1.0)
     } else {
         host_draw_text(text, tx, ty, font_size, 0.85, 0.90, 0.98)
@@ -84,7 +84,7 @@ fn health_bar(x: Float, y: Float, w: Float, h: Float, current_hp: Float, max_hp:
         r = 0.95
         g = 0.22
         b = 0.25
-    } else if pct < 0.50 {
+    } elif pct < 0.50 {
         r = 0.95
         g = 0.82
         b = 0.20

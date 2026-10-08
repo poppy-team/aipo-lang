@@ -506,6 +506,8 @@ pub enum Value {
     /// Fundamental type value usable as a runtime `is` target and, for the
     /// convertible core types, as a callable conversion.
     Type(TypeTag),
+    /// User-declared struct or enum type value usable as a runtime `is` target.
+    UserType(Rc<String>),
     /// Half-open integer range produced by `a..b`.
     Range(Rc<RangeData>),
     /// Method already bound to its receiver, produced by field access on a
@@ -713,7 +715,7 @@ impl Value {
             | Self::StructMethod(_) => "Function",
             Self::Byte(_) => "Byte",
             Self::Bytes(_) => "Bytes",
-            Self::Type(_) => "Type",
+            Self::Type(_) | Self::UserType(_) => "Type",
             Self::Range(_) => "Range",
             Self::Failure(_) => "Failure",
             Self::Set(_) => "Set",
@@ -1234,6 +1236,7 @@ impl PartialEq for Value {
             (Self::Float(a), Self::Byte(b)) => *a == f64::from(*b),
             (Self::Bytes(a), Self::Bytes(b)) => *a.borrow() == *b.borrow(),
             (Self::Type(a), Self::Type(b)) => a == b,
+            (Self::UserType(a), Self::UserType(b)) => a == b,
             (Self::Range(a), Self::Range(b)) => a == b,
             (Self::Set(a), Self::Set(b)) => *a.borrow() == *b.borrow(),
             (Self::Sequence(a), Self::Sequence(b)) => Rc::ptr_eq(a, b),
@@ -1295,6 +1298,7 @@ impl fmt::Debug for Value {
             Self::Byte(b) => write!(f, "{b}"),
             Self::Bytes(b) => write!(f, "Bytes({} bytes)", b.borrow().len()),
             Self::Type(tag) => write!(f, "<type {}>", tag.name()),
+            Self::UserType(name) => write!(f, "<type {name}>"),
             Self::Range(r) => write!(f, "{}..{}", r.start, r.end),
             Self::BoundMethod(b) => {
                 write!(f, "<method {} arity={}>", b.name, b.arity)
@@ -1368,6 +1372,7 @@ impl fmt::Display for Value {
             Self::Byte(b) => write!(f, "{b}"),
             Self::Bytes(_) => write!(f, "<bytes>"),
             Self::Type(tag) => write!(f, "{}", tag.name()),
+            Self::UserType(name) => write!(f, "{name}"),
             Self::Range(r) => write!(f, "{}..{}", r.start, r.end),
             Self::Set(items) => {
                 let items = items.borrow();

@@ -19,8 +19,7 @@ struct SnakeGame {
     var step_count = 0
 }
 
-impl SnakeGame {
-    fn is_snake_body(self, x, y) {
+SnakeGame:is_snake_body(self, x, y) {
         var idx = 0
         each segment in self.body {
             if segment.x == x and segment.y == y {
@@ -31,7 +30,7 @@ impl SnakeGame {
         return false
     }
 
-    fn change_direction(var self, dx, dy) {
+    SnakeGame:change_direction(var self, dx, dy) {
         # Prevent 180-degree immediate reversal into own neck
         if (dx != 0 and self.dir_x == -dx) or (dy != 0 and self.dir_y == -dy) {
             return false
@@ -41,7 +40,7 @@ impl SnakeGame {
         return true
     }
 
-    fn step(var self) {
+    SnakeGame:step(var self) {
         if self.is_game_over {
             return false
         }
@@ -72,7 +71,7 @@ impl SnakeGame {
             # Relocate apple to fixed next spot for deterministic testing
             if self.apple.x == 5 and self.apple.y == 3 {
                 self.apple = Point{ x: 8, y: 3 }
-            } else if self.apple.x == 8 and self.apple.y == 3 {
+            } elif self.apple.x == 8 and self.apple.y == 3 {
                 self.apple = Point{ x: 8, y: 6 }
             } else {
                 self.apple = Point{ x: 2, y: 2 }
@@ -85,7 +84,7 @@ impl SnakeGame {
         return true
     }
 
-    fn render(self) {
+    SnakeGame:render(self) {
         io.println(f"=== Snake Step: {self.step_count} | Score: {self.score} | Length: {len(self.body)} ===")
 
         # Top border
@@ -130,7 +129,6 @@ impl SnakeGame {
         }
         io.println("")
     }
-}
 
 # --- Inicialização da Partida ---
 var game = SnakeGame{

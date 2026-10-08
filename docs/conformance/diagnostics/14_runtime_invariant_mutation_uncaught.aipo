@@ -1,20 +1,18 @@
 # Canon: the invariant failure of a guarded mutation is a recoverable `Failure`, so
 # when nothing handles it the program ends the way any uncaught failure does.
-struct Bounds
-    lo
-    hi
-end
+struct Bounds {
+    var lo
+    var hi
+}
 
-impl Bounds
-    init(lo, hi)
-        self.lo = lo
-        self.hi = hi
-    end
+Bounds:init(lo, hi) {
+    self.lo = lo
+    self.hi = hi
+}
 
-    invariant()
-        self.lo < self.hi
-    end
-end
+Bounds:invariant {
+    self.lo < self.hi
+}
 
 let r = Bounds{lo = 1, hi = 5}
 r.hi = 0

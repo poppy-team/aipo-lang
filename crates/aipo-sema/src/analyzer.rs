@@ -2,7 +2,7 @@
 
 use crate::prelude::{HostFunction, PreludeSurface};
 use crate::symbol::{MethodSignature, Mutability, ScopeTree, Symbol, SymbolKind};
-use aipo_ast::{Literal, TypeAnnotation};
+use aipo_ast::{BinaryOp, Literal, TypeAnnotation, UnaryOp};
 use aipo_diagnostics::{Diagnostic, DiagnosticCode};
 use aipo_hir::*;
 use aipo_source::{Source, SourceSpan};
@@ -17,6 +17,84 @@ const CORE_CONTRACT_CATEGORIES: [&str; 13] = [
     "Bool", "Int", "Float", "Byte", "String", "List", "Dict", "Bytes", "Range", "Set", "Duration",
     "Sequence", "Task",
 ];
+
+const LIST_MEMBERS: &[&str] = &[
+    "add",
+    "insert",
+    "remove",
+    "remove_at",
+    "remove_last",
+    "clear",
+    "contains",
+    "find",
+    "find_index",
+    "count",
+    "first",
+    "first_or",
+    "last",
+    "last_or",
+    "is_empty",
+    "reverse",
+    "sort",
+    "len",
+    "take",
+    "skip",
+    "distinct",
+    "zip",
+    "chain",
+    "chunk",
+    "window",
+    "enumerate",
+    "lazy",
+    "map",
+    "transform",
+    "filter",
+    "sort_by",
+    "any",
+    "all",
+    "flat_map",
+    "reduce",
+    "each",
+    "clone",
+];
+
+const STRING_MEMBERS: &[&str] = &[
+    "len",
+    "byte_len",
+    "contains",
+    "starts_with",
+    "ends_with",
+    "find",
+    "lower",
+    "upper",
+    "capitalize",
+    "reverse",
+    "trim",
+    "split",
+    "join",
+    "replace",
+    "slice",
+    "format",
+    "graphemes",
+    "words",
+    "lines",
+    "casefold",
+    "encode",
+    "encode_utf8",
+    "chars",
+    "to_lowercase",
+    "to_uppercase",
+    "is_empty",
+];
+
+fn extract_inferred_type(expr: &HirExpr) -> Option<String> {
+    match expr {
+        HirExpr::Construct(target, _, _) => Some(target.clone()),
+        HirExpr::List(..) => Some("List".to_string()),
+        HirExpr::Literal(Literal::String(..), _) => Some("String".to_string()),
+        _ => None,
+    }
+}
 
 /// Canonical category of a literal, when the category is provable from the literal itself.
 fn literal_category(literal: &Literal) -> Option<&'static str> {
@@ -127,6 +205,9 @@ fn path_root(expr: &HirExpr) -> Option<(&str, aipo_source::SourceSpan)> {
 pub struct SemanticAnalyzer<'a> {
     source: &'a Source,
     facts: SemanticFacts,
+    /// Free-function name -> whether its first parameter is `self`.
+    /// Used to validate batch bindings: batch requires `self` as the first parameter.
+    free_fn_has_self: HashMap<String, bool>,
     current_scope: usize,
     diagnostics: Vec<Diagnostic>,
     impl_methods: HashMap<String, HashMap<String, MethodSignature>>, // struct -> (method -> signature)
@@ -161,8 +242,18 @@ pub struct SemanticAnalyzer<'a> {
     async_methods: HashSet<String>,
     /// Declared struct fixed fields: struct_name -> set of fixed field names.
     struct_fixed_fields: HashMap<String, HashSet<String>>,
+    /// Declared field type contracts: struct (or `Enum.Variant`) name -> field -> contract.
+    struct_field_contracts: HashMap<String, HashMap<String, TypeAnnotation>>,
+    /// Declared enum variants: enum_name -> list of variant names.
+    enum_variants: HashMap<String, Vec<String>>,
+    /// Tuple-variant constructor arity: `Enum.Variant` -> payload field count.
+    enum_tuple_arity: HashMap<String, usize>,
+    /// Items marked with `#!deprecated`: name -> optional message.
+    deprecated_items: HashMap<String, Option<String>>,
     /// Maps variable name to known struct type name (e.g. `var p = Point{...}` -> "Point").
     var_struct_types: HashMap<String, String>,
+    /// Maps variable name to known underlying type when declared nullable (e.g. `p: Point?` -> "Point").
+    var_nullable_types: HashMap<String, String>,
     /// `true` inside an `await do` body (reset on function boundaries: the
     /// block form never enters lambdas defined inside it).
     in_await_do: bool,
@@ -187,6 +278,7 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut analyzer = Self {
             source,
             facts,
+            free_fn_has_self: HashMap::new(),
             current_scope: root,
             diagnostics: Vec::new(),
             impl_methods: HashMap::new(),
@@ -204,7 +296,12 @@ impl<'a> SemanticAnalyzer<'a> {
             in_init: false,
             async_methods: HashSet::new(),
             struct_fixed_fields: HashMap::new(),
+            struct_field_contracts: HashMap::new(),
+            enum_variants: HashMap::new(),
+            enum_tuple_arity: HashMap::new(),
+            deprecated_items: HashMap::new(),
             var_struct_types: HashMap::new(),
+            var_nullable_types: HashMap::new(),
         };
 
         analyzer.register_surface(surface);
@@ -246,13 +343,87 @@ impl<'a> SemanticAnalyzer<'a> {
         self.declare_module_bindings(program);
 
         // Pass 3: Collect impl methods and verify satisfy declarations
+        let mut seen_inits: HashSet<String> = HashSet::new();
+        let mut seen_invariants: HashSet<String> = HashSet::new();
         for item in &program.items {
             if let HirItem::Impl(impl_block) = item {
+                if let Some(inv) = &impl_block.invariant {
+                    if !seen_invariants.insert(impl_block.target.clone()) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::AIPO_SEM_HOOK_DUPLICADO,
+                                format!("'{}' já declara 'invariant'", impl_block.target),
+                            )
+                            .with_primary_span(self.source, inv.span)
+                            .with_note("reúna as condições em um único `invariant`"),
+                        );
+                    }
+                    let is_empty = matches!(
+                        inv.body.first(),
+                        Some(HirStmt::Return(
+                            Some(HirExpr::Literal(Literal::Bool(true), _)),
+                            _
+                        ))
+                    );
+                    if is_empty {
+                        self.diagnostics.push(
+                            Diagnostic::warning(
+                                DiagnosticCode::AIPO_SEM_HOOK_VAZIO,
+                                format!(
+                                    "'invariant' no tipo '{}' sem condição não verifica nada",
+                                    impl_block.target
+                                ),
+                            )
+                            .with_primary_span(self.source, inv.span)
+                            .with_note("escreva ao menos uma condição, ou remova o hook"),
+                        );
+                    }
+                }
+                if let Some(init) = &impl_block.init {
+                    if !seen_inits.insert(impl_block.target.clone()) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::AIPO_SEM_HOOK_DUPLICADO,
+                                format!("'{}' já declara 'init'", impl_block.target),
+                            )
+                            .with_primary_span(self.source, init.span)
+                            .with_note("reúna as inicializações em um único `init`"),
+                        );
+                    }
+                }
                 let methods = self
                     .impl_methods
                     .entry(impl_block.target.clone())
                     .or_default();
                 for m in &impl_block.methods {
+                    if matches!(
+                        m.name.as_str(),
+                        "constructor" | "initialize" | "inicializar"
+                    ) {
+                        self.diagnostics.push(
+                            Diagnostic::warning(
+                                DiagnosticCode::AIPO_SEM_NOME_DE_HOOK,
+                                format!("'{}' parece um hook de construção, não um método", m.name),
+                            )
+                            .with_primary_span(self.source, m.span)
+                            .with_note(format!(
+                                "use `{}:init(...) {{ ... }}` para o hook de construção",
+                                impl_block.target
+                            )),
+                        );
+                    } else if matches!(m.name.as_str(), "validar" | "validate") {
+                        self.diagnostics.push(
+                            Diagnostic::warning(
+                                DiagnosticCode::AIPO_SEM_NOME_DE_HOOK,
+                                format!("'{}' parece um hook, não um método", m.name),
+                            )
+                            .with_primary_span(self.source, m.span)
+                            .with_note(format!(
+                                "renomeie para `{}:invariant {{ ... }}` se a intenção é validar",
+                                impl_block.target
+                            )),
+                        );
+                    }
                     let min_args = m
                         .params
                         .iter()
@@ -285,12 +456,71 @@ impl<'a> SemanticAnalyzer<'a> {
                         DeclaredContract::of(m),
                     );
                 }
+            } else if let HirItem::Batch(binding) = item {
+                for function_name in &binding.functions {
+                    if let Some(source) = program.items.iter().find_map(|it| match it {
+                        HirItem::Fn(f) if &f.name == function_name => Some(f),
+                        _ => None,
+                    }) {
+                        if source.params.first().is_some_and(|p| p.is_self) {
+                            let min_args = source
+                                .params
+                                .iter()
+                                .filter(|p| !p.is_self && p.default.is_none())
+                                .count();
+                            let max_args = source.params.iter().filter(|p| !p.is_self).count();
+                            let is_mut_self = source.params.iter().any(|p| p.is_self && p.is_mut);
+                            let param_types = source
+                                .params
+                                .iter()
+                                .filter(|p| !p.is_self)
+                                .map(|p| (p.name.clone(), p.type_annotation.clone()))
+                                .collect();
+                            let methods =
+                                self.impl_methods.entry(binding.target.clone()).or_default();
+                            methods.insert(
+                                function_name.clone(),
+                                MethodSignature {
+                                    min_args,
+                                    max_args,
+                                    is_mut_self,
+                                    is_async: source.is_async,
+                                    param_types,
+                                    return_type: source.return_type.clone(),
+                                },
+                            );
+                            if source.is_async {
+                                self.async_methods.insert(function_name.clone());
+                            }
+                            self.fn_contracts.insert(
+                                format!("{}.{}", binding.target, function_name),
+                                DeclaredContract::of(source),
+                            );
+                        }
+                    }
+                }
             }
         }
 
         for item in &program.items {
-            if let HirItem::Satisfy(sat) = item {
-                self.verify_satisfy(sat);
+            if let HirItem::Struct(s) = item {
+                for dir in &s.directives {
+                    if dir.name.name == "satisfies" {
+                        if let Some(arg) = &dir.argument {
+                            let interfaces: Vec<String> = arg
+                                .split(',')
+                                .map(|part| part.trim().to_string())
+                                .filter(|part| !part.is_empty())
+                                .collect();
+                            let sat = aipo_hir::HirSatisfyDecl {
+                                target: s.name.clone(),
+                                interfaces,
+                                span: dir.span,
+                            };
+                            self.verify_satisfy(&sat);
+                        }
+                    }
+                }
             }
         }
 
@@ -333,23 +563,73 @@ impl<'a> SemanticAnalyzer<'a> {
                 // written annotations are collected here for the call and return checks.
                 self.fn_contracts
                     .insert(f.name.clone(), DeclaredContract::of(f));
+                // Batch bindings require `self` as the first parameter; recording whether the
+                // function declares it lets the batch check run without re-walking signatures.
+                self.free_fn_has_self
+                    .insert(f.name.clone(), f.params.first().is_some_and(|p| p.is_self));
                 // Calling an `async fn` produces a `Task`: the name table backs
                 // the known-Task analysis (await-do desugar, forgotten tasks).
                 if f.is_async {
                     self.async_fns.insert(f.name.clone());
                 }
+                for dir in &f.directives {
+                    if dir.name.name == "deprecated" {
+                        let msg = dir.argument.as_deref().map(|s| {
+                            let trimmed = s.trim();
+                            trimmed
+                                .trim_matches(|c| c == '(' || c == ')' || c == '"')
+                                .to_string()
+                        });
+                        self.deprecated_items.insert(f.name.clone(), msg);
+                    } else if dir.name.name == "todo" {
+                        self.diagnostics.push(
+                            Diagnostic::warning(
+                                DiagnosticCode::AIPO_SEM_TODO,
+                                format!("item '{}' is marked with #!todo", f.name),
+                            )
+                            .with_primary_span(self.source, dir.span),
+                        );
+                    }
+                }
             }
             HirItem::Struct(s) => {
+                for dir in &s.directives {
+                    if dir.name.name == "deprecated" {
+                        let msg = dir.argument.as_deref().map(|s| {
+                            let trimmed = s.trim();
+                            trimmed
+                                .trim_matches(|c| c == '(' || c == ')' || c == '"')
+                                .to_string()
+                        });
+                        self.deprecated_items.insert(s.name.clone(), msg);
+                    } else if dir.name.name == "todo" {
+                        self.diagnostics.push(
+                            Diagnostic::warning(
+                                DiagnosticCode::AIPO_SEM_TODO,
+                                format!("struct '{}' is marked with #!todo", s.name),
+                            )
+                            .with_primary_span(self.source, dir.span),
+                        );
+                    }
+                }
                 let mut fields = HashMap::new();
                 let mut fixed_fields = HashSet::new();
+                let mut contracts = HashMap::new();
                 for f in &s.fields {
                     fields.insert(f.name.clone(), f.is_fixed);
                     if f.is_fixed {
                         fixed_fields.insert(f.name.clone());
                     }
+                    if let Some(contract) = &f.type_annotation {
+                        contracts.insert(f.name.clone(), contract.clone());
+                    }
                 }
                 self.struct_fixed_fields
                     .insert(s.name.clone(), fixed_fields);
+                if !contracts.is_empty() {
+                    self.struct_field_contracts
+                        .insert(s.name.clone(), contracts);
+                }
                 let sym = Symbol {
                     name: s.name.clone(),
                     kind: SymbolKind::Struct { fields },
@@ -363,6 +643,85 @@ impl<'a> SemanticAnalyzer<'a> {
                             format!("struct '{}' is already declared in this scope", s.name),
                         )
                         .with_primary_span(self.source, s.span),
+                    );
+                }
+            }
+            HirItem::Enum(e) => {
+                let mut variant_names = Vec::new();
+                let mut seen_variants = HashSet::new();
+                for v in &e.variants {
+                    if !seen_variants.insert(v.name.clone()) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::AIPO_SEM_REDECLARED_IN_SCOPE,
+                                format!(
+                                    "enum '{}' declares variant '{}' more than once",
+                                    e.name, v.name
+                                ),
+                            )
+                            .with_primary_span(self.source, v.span),
+                        );
+                        continue;
+                    }
+                    variant_names.push(v.name.clone());
+                    let variant_full_name = format!("{}.{}", e.name, v.name);
+                    let mut fields = HashMap::new();
+                    match &v.payload {
+                        aipo_hir::HirEnumVariantPayload::Unit => {}
+                        aipo_hir::HirEnumVariantPayload::Tuple(t_fields) => {
+                            for (idx, field) in t_fields.iter().enumerate() {
+                                let f_name = field.name.clone().unwrap_or_else(|| idx.to_string());
+                                fields.insert(f_name, true);
+                            }
+                            self.enum_tuple_arity
+                                .insert(variant_full_name.clone(), t_fields.len());
+                            let sym = Symbol {
+                                name: variant_full_name.clone(),
+                                kind: SymbolKind::Function {
+                                    min_args: t_fields.len(),
+                                    max_args: t_fields.len(),
+                                },
+                                mutability: Mutability::Immutable,
+                                span: v.span,
+                            };
+                            self.facts.scopes.insert(self.current_scope, sym);
+                        }
+                        aipo_hir::HirEnumVariantPayload::Struct(s_fields) => {
+                            let mut contracts = HashMap::new();
+                            for field in s_fields {
+                                fields.insert(field.name.clone(), true);
+                                if let Some(contract) = &field.type_annotation {
+                                    contracts.insert(field.name.clone(), contract.clone());
+                                }
+                            }
+                            if !contracts.is_empty() {
+                                self.struct_field_contracts
+                                    .insert(variant_full_name.clone(), contracts);
+                            }
+                        }
+                    }
+                    let sym = Symbol {
+                        name: variant_full_name.clone(),
+                        kind: SymbolKind::Struct { fields },
+                        mutability: Mutability::Immutable,
+                        span: v.span,
+                    };
+                    self.facts.scopes.insert(self.current_scope, sym);
+                }
+                self.enum_variants.insert(e.name.clone(), variant_names);
+                let sym = Symbol {
+                    name: e.name.clone(),
+                    kind: SymbolKind::Variable,
+                    mutability: Mutability::Immutable,
+                    span: e.span,
+                };
+                if self.facts.scopes.insert(self.current_scope, sym).is_some() {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::AIPO_SEM_REDECLARED_IN_SCOPE,
+                            format!("enum '{}' is already declared in this scope", e.name),
+                        )
+                        .with_primary_span(self.source, e.span),
                     );
                 }
             }
@@ -430,7 +789,39 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.facts.scopes.insert(self.current_scope, sym);
                 }
             }
-            HirItem::Impl(_) | HirItem::Satisfy(_) | HirItem::Export(_) => {}
+            HirItem::Batch(binding) => {
+                // A batch association promotes free functions to methods, so every listed
+                // name must resolve to a declared function in this scope.
+                for name in &binding.functions {
+                    if self.facts.scopes.lookup(self.current_scope, name).is_none() {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                format!("unknown function '{name}' in batch association"),
+                            )
+                            .with_primary_span(self.source, binding.span),
+                        );
+                        continue;
+                    }
+                    // Canon (SYNTAX.md §5.3): batch promotes *type behavior*, so the source
+                    // function must declare `self` as its first parameter. Without it the
+                    // promoted method would carry a receiver the body never uses — namespacing
+                    // dressed as a method, which is worse than rejecting it.
+                    if self.free_fn_has_self.get(name.as_str()) == Some(&false) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                format!(
+                                    "function '{name}' has no 'self' as first parameter; \
+                                     batch associations require it"
+                                ),
+                            )
+                            .with_primary_span(self.source, binding.span),
+                        );
+                    }
+                }
+            }
+            HirItem::Impl(_) | HirItem::Export(_) => {}
         }
     }
 
@@ -630,12 +1021,23 @@ impl<'a> SemanticAnalyzer<'a> {
         let fn_scope = self.facts.scopes.new_scope(Some(parent));
         self.current_scope = fn_scope;
 
+        let prev_var_types = self.var_struct_types.clone();
+        let prev_nullable_types = self.var_nullable_types.clone();
         let prev_fn_is_mut = self.current_fn_is_mut;
         self.current_fn_is_mut = f.params.iter().any(|p| p.is_self && p.is_mut);
         let prev_return_contract = self.current_return_contract.clone();
         self.current_return_contract = f.return_type.clone();
 
         for p in &f.params {
+            if let Some(ann) = &p.type_annotation {
+                if ann.is_nullable {
+                    self.var_nullable_types
+                        .insert(p.name.clone(), ann.name.clone());
+                } else {
+                    self.var_struct_types
+                        .insert(p.name.clone(), ann.name.clone());
+                }
+            }
             let mutability = if p.is_mut {
                 Mutability::Mutable
             } else {
@@ -666,6 +1068,8 @@ impl<'a> SemanticAnalyzer<'a> {
 
         self.current_fn_is_mut = prev_fn_is_mut;
         self.current_return_contract = prev_return_contract;
+        self.var_struct_types = prev_var_types;
+        self.var_nullable_types = prev_nullable_types;
         self.current_scope = parent;
     }
 
@@ -696,10 +1100,10 @@ impl<'a> SemanticAnalyzer<'a> {
         let promises_value =
             f.return_type.is_some() || report.returns == crate::flow::ReturnShape::AllValues;
         if promises_value && report.missing_value_path {
-            let message = if let Some(ret_ty) = &f.return_type {
+            let message = if let Some(return_type) = &f.return_type {
                 format!(
                     "function declares `-> {}` but a path reaches the end without returning a value",
-                    contract_label(ret_ty)
+                    contract_label(return_type)
                 )
             } else {
                 "a path reaches the end of the function without returning a value".to_string()
@@ -718,24 +1122,24 @@ impl<'a> SemanticAnalyzer<'a> {
                 // before the name becomes visible to the executable flow.
                 self.analyze_expr_top(expr);
                 self.declare_binding(name, Mutability::Immutable, *span);
-                if let HirExpr::Construct(target, _, _) = expr {
-                    self.var_struct_types.insert(name.clone(), target.clone());
+                if let Some(target) = extract_inferred_type(expr) {
+                    self.var_struct_types.insert(name.clone(), target);
                 }
             }
             HirStmt::Var(name, expr, span) => {
                 self.analyze_expr_top(expr);
                 self.declare_binding(name, Mutability::Mutable, *span);
-                if let HirExpr::Construct(target, _, _) = expr {
-                    self.var_struct_types.insert(name.clone(), target.clone());
+                if let Some(target) = extract_inferred_type(expr) {
+                    self.var_struct_types.insert(name.clone(), target);
                 }
             }
             HirStmt::Assign(target, value, span) => {
                 self.analyze_expr_top(value);
                 self.check_assignment_target(target, *span);
-                if let (HirExpr::Identifier(name, _), HirExpr::Construct(st, _, _)) =
-                    (target, value)
-                {
-                    self.var_struct_types.insert(name.clone(), st.clone());
+                if let HirExpr::Identifier(name, _) = target {
+                    if let Some(st) = extract_inferred_type(value) {
+                        self.var_struct_types.insert(name.clone(), st);
+                    }
                 }
             }
             HirStmt::CompoundAssign(_, target, value, span) => {
@@ -745,7 +1149,12 @@ impl<'a> SemanticAnalyzer<'a> {
             HirStmt::If(s) => {
                 self.check_condition_bool(&s.condition);
                 self.analyze_expr(&s.condition);
+                let mut then_narrowings = Vec::new();
+                self.collect_type_narrowings(&s.condition, true, &mut then_narrowings);
                 self.with_block_scope(|this| {
+                    for (var_name, narrowed_type) in then_narrowings {
+                        this.var_struct_types.insert(var_name, narrowed_type);
+                    }
                     for st in &s.then_branch {
                         this.analyze_stmt(st);
                     }
@@ -753,14 +1162,26 @@ impl<'a> SemanticAnalyzer<'a> {
                 for (cond, body) in &s.elif_branches {
                     self.check_condition_bool(cond);
                     self.analyze_expr(cond);
+                    let mut elif_narrowings = Vec::new();
+                    self.collect_type_narrowings(cond, true, &mut elif_narrowings);
                     self.with_block_scope(|this| {
+                        for (var_name, narrowed_type) in elif_narrowings {
+                            this.var_struct_types.insert(var_name, narrowed_type);
+                        }
                         for st in body {
                             this.analyze_stmt(st);
                         }
                     });
                 }
                 if let Some(else_branch) = &s.else_branch {
+                    let mut else_narrowings = Vec::new();
+                    if s.elif_branches.is_empty() {
+                        self.collect_type_narrowings(&s.condition, false, &mut else_narrowings);
+                    }
                     self.with_block_scope(|this| {
+                        for (var_name, narrowed_type) in else_narrowings {
+                            this.var_struct_types.insert(var_name, narrowed_type);
+                        }
                         for st in else_branch {
                             this.analyze_stmt(st);
                         }
@@ -769,26 +1190,149 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             HirStmt::Match(s) => {
                 self.analyze_expr(&s.target);
+                let mut matched_enum_variants: HashMap<String, HashSet<String>> = HashMap::new();
                 for arm in &s.when_arms {
                     for p in &arm.patterns {
-                        if let aipo_hir::HirMatchPattern::Value(expr) = p {
-                            self.analyze_expr(expr);
+                        match p {
+                            aipo_hir::HirMatchPattern::Value(expr) => {
+                                self.analyze_expr(expr);
+                            }
+                            aipo_hir::HirMatchPattern::Variant {
+                                enum_name: Some(e_name),
+                                variant_name,
+                                ..
+                            } => {
+                                match self.enum_variants.get(e_name) {
+                                    None => {
+                                        self.diagnostics.push(
+                                            Diagnostic::error(
+                                                DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                                format!("unknown enum '{e_name}' in match pattern"),
+                                            )
+                                            .with_primary_span(self.source, s.span),
+                                        );
+                                    }
+                                    Some(variants)
+                                        if !variants.iter().any(|v| v == variant_name) =>
+                                    {
+                                        self.diagnostics.push(
+                                            Diagnostic::error(
+                                                DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                                format!(
+                                                    "unknown variant '{variant_name}' of enum '{e_name}' in match pattern"
+                                                ),
+                                            )
+                                            .with_primary_span(self.source, s.span),
+                                        );
+                                    }
+                                    _ => {}
+                                }
+                                matched_enum_variants
+                                    .entry(e_name.clone())
+                                    .or_default()
+                                    .insert(variant_name.clone());
+                            }
+                            _ => {}
                         }
                     }
                     self.with_block_scope(|this| {
+                        let target_var = match &s.target {
+                            HirExpr::Identifier(name, _) => Some(name.clone()),
+                            _ => None,
+                        };
                         // The arm's destructured fields exist inside its scope and guard.
                         for p in &arm.patterns {
-                            if let aipo_hir::HirMatchPattern::Destructure(fields) = p {
-                                for field in fields {
-                                    this.declare_binding(
-                                        field,
-                                        Mutability::Immutable,
-                                        aipo_source::SourceSpan::empty(0),
-                                    );
+                            match p {
+                                aipo_hir::HirMatchPattern::Destructure(fields) => {
+                                    for field in fields {
+                                        this.declare_binding(
+                                            field,
+                                            Mutability::Immutable,
+                                            aipo_source::SourceSpan::empty(0),
+                                        );
+                                        if let Some(tv) = &target_var {
+                                            if let Some(st_name) = this.var_struct_types.get(tv) {
+                                                if let Some(contracts) =
+                                                    this.struct_field_contracts.get(st_name)
+                                                {
+                                                    if let Some(ann) = contracts.get(field) {
+                                                        if ann.is_nullable {
+                                                            this.var_nullable_types.insert(
+                                                                field.clone(),
+                                                                ann.name.clone(),
+                                                            );
+                                                        } else {
+                                                            this.var_struct_types.insert(
+                                                                field.clone(),
+                                                                ann.name.clone(),
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                aipo_hir::HirMatchPattern::Variant {
+                                    enum_name,
+                                    variant_name,
+                                    payload,
+                                    ..
+                                } => {
+                                    let full_name = match enum_name {
+                                        Some(e) => format!("{e}.{variant_name}"),
+                                        None => variant_name.clone(),
+                                    };
+                                    if let Some(tv) = &target_var {
+                                        this.var_struct_types.insert(tv.clone(), full_name.clone());
+                                    }
+                                    match payload {
+                                        aipo_hir::HirVariantPatternPayload::Unit => {}
+                                        aipo_hir::HirVariantPatternPayload::Tuple(ids)
+                                        | aipo_hir::HirVariantPatternPayload::Struct(ids) => {
+                                            for field in ids {
+                                                this.declare_binding(
+                                                    field,
+                                                    Mutability::Immutable,
+                                                    aipo_source::SourceSpan::empty(0),
+                                                );
+                                                if let Some(contracts) =
+                                                    this.struct_field_contracts.get(&full_name)
+                                                {
+                                                    if let Some(ann) = contracts.get(field) {
+                                                        if ann.is_nullable {
+                                                            this.var_nullable_types.insert(
+                                                                field.clone(),
+                                                                ann.name.clone(),
+                                                            );
+                                                        } else {
+                                                            this.var_struct_types.insert(
+                                                                field.clone(),
+                                                                ann.name.clone(),
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                aipo_hir::HirMatchPattern::Value(expr) => {
+                                    if let HirExpr::Identifier(type_name, _) = expr {
+                                        if let Some(tv) = &target_var {
+                                            this.var_struct_types
+                                                .insert(tv.clone(), type_name.clone());
+                                        }
+                                    }
                                 }
                             }
                         }
                         if let Some(guard) = &arm.guard {
+                            let mut guard_narrowings = Vec::new();
+                            this.collect_type_narrowings(guard, true, &mut guard_narrowings);
+                            for (var_name, narrowed_type) in guard_narrowings {
+                                this.var_struct_types.insert(var_name, narrowed_type);
+                            }
                             this.check_condition_bool(guard);
                             this.analyze_expr(guard);
                         }
@@ -796,6 +1340,33 @@ impl<'a> SemanticAnalyzer<'a> {
                             this.analyze_stmt(st);
                         }
                     });
+                }
+                // Canon (SYNTAX.md §17.4): match over enum without else must cover all variants.
+                if s.else_arm.is_none() {
+                    for (enum_name, covered) in &matched_enum_variants {
+                        if let Some(all_variants) = self.enum_variants.get(enum_name) {
+                            let missing: Vec<&String> = all_variants
+                                .iter()
+                                .filter(|v| !covered.contains(*v))
+                                .collect();
+                            if !missing.is_empty() {
+                                let missing_names = missing
+                                    .iter()
+                                    .map(|s| s.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        DiagnosticCode::AIPO_SEM_NON_EXHAUSTIVE_MATCH,
+                                        format!(
+                                            "non-exhaustive match on enum '{enum_name}': missing variants {missing_names}"
+                                        ),
+                                    )
+                                    .with_primary_span(self.source, s.span),
+                                );
+                            }
+                        }
+                    }
                 }
                 if let Some(else_arm) = &s.else_arm {
                     self.with_block_scope(|this| {
@@ -1571,7 +2142,17 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.analyze_expr(&arg.value);
                 }
 
-                if let HirExpr::Identifier(name, _) = &**callee {
+                if let HirExpr::Identifier(name, callee_span) = &**callee {
+                    if let Some(msg_opt) = self.deprecated_items.get(name) {
+                        let detail = match msg_opt {
+                            Some(msg) => format!("call to deprecated function '{name}': {msg}"),
+                            None => format!("call to deprecated function '{name}'"),
+                        };
+                        self.diagnostics.push(
+                            Diagnostic::warning(DiagnosticCode::AIPO_SEM_DEPRECATED, detail)
+                                .with_primary_span(self.source, *callee_span),
+                        );
+                    }
                     if let Some(Symbol {
                         kind: SymbolKind::Function { min_args, max_args },
                         ..
@@ -1597,6 +2178,44 @@ impl<'a> SemanticAnalyzer<'a> {
                     if let HirExpr::Identifier(module_name, _) = &**target {
                         if self.is_host_module_reference(module_name) {
                             self.check_host_call(module_name, member, args, *dot_span);
+                        }
+                        if let Some(known) = self.enum_variants.get(module_name).cloned() {
+                            let full = format!("{module_name}.{member}");
+                            if !known.iter().any(|v| v == member) {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                        format!(
+                                            "unknown variant '{member}' of enum '{module_name}'"
+                                        ),
+                                    )
+                                    .with_primary_span(self.source, *span),
+                                );
+                            } else if let Some(expected) = self.enum_tuple_arity.get(&full).copied()
+                            {
+                                if args.len() != expected {
+                                    self.diagnostics.push(
+                                        Diagnostic::error(
+                                            DiagnosticCode::AIPO_SEM_ARITY_MISMATCH,
+                                            format!(
+                                                "variant '{member}' of enum '{module_name}' expected {expected} arguments, found {}",
+                                                args.len()
+                                            ),
+                                        )
+                                        .with_primary_span(self.source, *span),
+                                    );
+                                }
+                            } else {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        DiagnosticCode::AIPO_SEM_ARITY_MISMATCH,
+                                        format!(
+                                            "variant '{member}' of enum '{module_name}' is not a tuple variant and cannot be called; use `{full}` or `{full}{{ ... }}`"
+                                        ),
+                                    )
+                                    .with_primary_span(self.source, *span),
+                                );
+                            }
                         }
                     }
                     let target_struct = match &**target {
@@ -1630,7 +2249,8 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                 }
             }
-            HirExpr::Dot(target, _, _) | HirExpr::QuestionDot(target, _, _) => {
+            HirExpr::Dot(target, member, span) | HirExpr::QuestionDot(target, member, span) => {
+                self.check_member_access(target, member, *span);
                 self.analyze_expr(target);
             }
             HirExpr::Index(target, idx, _) => {
@@ -1649,6 +2269,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
             }
             HirExpr::Construct(target, fields, span) => {
+                if let Some(msg_opt) = self.deprecated_items.get(target) {
+                    let detail = match msg_opt {
+                        Some(msg) => format!("construction of deprecated struct '{target}': {msg}"),
+                        None => format!("construction of deprecated struct '{target}'"),
+                    };
+                    self.diagnostics.push(
+                        Diagnostic::warning(DiagnosticCode::AIPO_SEM_DEPRECATED, detail)
+                            .with_primary_span(self.source, *span),
+                    );
+                }
                 let declared_fields = self
                     .facts
                     .scopes
@@ -1669,6 +2299,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
 
                 if let Some(known) = declared_fields {
+                    let contracts = self
+                        .struct_field_contracts
+                        .get(target)
+                        .cloned()
+                        .unwrap_or_default();
                     for (maybe_name, f_expr) in fields {
                         // Positional fields cannot be validated against a name.
                         let Some(name) = maybe_name else {
@@ -1683,6 +2318,20 @@ impl<'a> SemanticAnalyzer<'a> {
                                 )
                                 .with_primary_span(self.source, *span),
                             );
+                        }
+                        if let Some(contract) = contracts.get(name) {
+                            if literal_violates_contract(f_expr, contract) {
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        DiagnosticCode::AIPO_SEM_CONTRACT_VIOLATION_STATIC,
+                                        format!(
+                                            "field '{name}' of '{target}' cannot satisfy contract '{}'",
+                                            contract_label(contract)
+                                        ),
+                                    )
+                                    .with_primary_span(self.source, f_expr.span()),
+                                );
+                            }
                         }
                         self.analyze_expr(f_expr);
                     }
@@ -1739,6 +2388,173 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
+    fn check_member_access(&mut self, target: &HirExpr, member: &str, span: SourceSpan) {
+        if let HirExpr::Identifier(name, _) = target {
+            if self.is_host_module_reference(name) || self.enum_variants.contains_key(name) {
+                return;
+            }
+        }
+        let target_type = match target {
+            HirExpr::Identifier(name, _) if name == "self" => self.current_struct.clone(),
+            HirExpr::Identifier(name, _) => self.var_struct_types.get(name).cloned(),
+            HirExpr::List(..) => Some("List".to_string()),
+            HirExpr::Literal(Literal::String(..), _) => Some("String".to_string()),
+            _ => None,
+        };
+
+        if let Some(ty) = target_type {
+            match ty.as_str() {
+                "List" => {
+                    if !LIST_MEMBERS.contains(&member) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                format!("type 'List' has no member '{member}'"),
+                            )
+                            .with_primary_span(self.source, span),
+                        );
+                    }
+                }
+                "String" => {
+                    if !STRING_MEMBERS.contains(&member) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                format!("type 'String' has no member '{member}'"),
+                            )
+                            .with_primary_span(self.source, span),
+                        );
+                    }
+                }
+                st => {
+                    let has_struct_def = self.struct_fixed_fields.contains_key(st)
+                        || self
+                            .facts
+                            .scopes
+                            .lookup(self.current_scope, st)
+                            .is_some_and(|sym| matches!(sym.kind, SymbolKind::Struct { .. }));
+                    if has_struct_def {
+                        let has_field = self
+                            .struct_fixed_fields
+                            .get(st)
+                            .is_some_and(|f| f.contains(member))
+                            || self
+                                .facts
+                                .scopes
+                                .lookup(self.current_scope, st)
+                                .is_some_and(|sym| match &sym.kind {
+                                    SymbolKind::Struct { fields } => fields.contains_key(member),
+                                    _ => false,
+                                });
+                        let has_method = self
+                            .impl_methods
+                            .get(st)
+                            .is_some_and(|methods| methods.contains_key(member));
+                        if !has_field && !has_method {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    DiagnosticCode::AIPO_SEM_UNKNOWN_NAME,
+                                    format!("struct '{st}' has no member '{member}'"),
+                                )
+                                .with_primary_span(self.source, span),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn collect_type_narrowings(
+        &self,
+        cond: &HirExpr,
+        is_positive: bool,
+        out: &mut Vec<(String, String)>,
+    ) {
+        match cond {
+            HirExpr::Binary(BinaryOp::Is, left, right, _) if is_positive => {
+                if let HirExpr::Identifier(var_name, _) = &**left {
+                    match &**right {
+                        HirExpr::Identifier(type_name, _) => {
+                            out.push((var_name.clone(), type_name.clone()));
+                        }
+                        HirExpr::Dot(base, member, _) => {
+                            if let HirExpr::Identifier(enum_name, _) = &**base {
+                                out.push((var_name.clone(), format!("{enum_name}.{member}")));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            HirExpr::Unary(UnaryOp::Not, inner, _) => {
+                self.collect_type_narrowings(inner, !is_positive, out);
+            }
+            HirExpr::Binary(BinaryOp::And, left, right, _) if is_positive => {
+                self.collect_type_narrowings(left, true, out);
+                self.collect_type_narrowings(right, true, out);
+            }
+            HirExpr::Binary(BinaryOp::Or, left, right, _) if !is_positive => {
+                self.collect_type_narrowings(left, false, out);
+                self.collect_type_narrowings(right, false, out);
+            }
+            HirExpr::Binary(BinaryOp::NotEqual, left, right, _) if is_positive => {
+                if let (HirExpr::Identifier(var_name, _), HirExpr::Literal(Literal::None, _)) =
+                    (&**left, &**right)
+                {
+                    if let Some(underlying) = self.var_nullable_types.get(var_name) {
+                        out.push((var_name.clone(), underlying.clone()));
+                    }
+                } else if let (
+                    HirExpr::Literal(Literal::None, _),
+                    HirExpr::Identifier(var_name, _),
+                ) = (&**left, &**right)
+                {
+                    if let Some(underlying) = self.var_nullable_types.get(var_name) {
+                        out.push((var_name.clone(), underlying.clone()));
+                    }
+                }
+            }
+            HirExpr::Binary(BinaryOp::Equal, left, right, _) if !is_positive => {
+                if let (HirExpr::Identifier(var_name, _), HirExpr::Literal(Literal::None, _)) =
+                    (&**left, &**right)
+                {
+                    if let Some(underlying) = self.var_nullable_types.get(var_name) {
+                        out.push((var_name.clone(), underlying.clone()));
+                    }
+                } else if let (
+                    HirExpr::Literal(Literal::None, _),
+                    HirExpr::Identifier(var_name, _),
+                ) = (&**left, &**right)
+                {
+                    if let Some(underlying) = self.var_nullable_types.get(var_name) {
+                        out.push((var_name.clone(), underlying.clone()));
+                    }
+                }
+            }
+            HirExpr::Call(callee, args, _) if is_positive => {
+                if let HirExpr::Identifier(name, _) = &**callee {
+                    if name == "some" && args.len() == 1 {
+                        if let HirExpr::Identifier(var_name, _) = &args[0].value {
+                            if let Some(underlying) = self.var_nullable_types.get(var_name) {
+                                out.push((var_name.clone(), underlying.clone()));
+                            }
+                        }
+                    }
+                } else if let HirExpr::Dot(target, member, _) = &**callee {
+                    if member == "some" && args.is_empty() {
+                        if let HirExpr::Identifier(var_name, _) = &**target {
+                            if let Some(underlying) = self.var_nullable_types.get(var_name) {
+                                out.push((var_name.clone(), underlying.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn with_block_scope<F>(&mut self, f: F)
     where
         F: FnOnce(&mut Self),
@@ -1746,7 +2562,11 @@ impl<'a> SemanticAnalyzer<'a> {
         let parent = self.current_scope;
         let block_scope = self.facts.scopes.new_scope(Some(parent));
         self.current_scope = block_scope;
+        let prev_var_types = self.var_struct_types.clone();
+        let prev_nullable_types = self.var_nullable_types.clone();
         f(self);
+        self.var_struct_types = prev_var_types;
+        self.var_nullable_types = prev_nullable_types;
         self.current_scope = parent;
     }
 }

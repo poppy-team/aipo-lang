@@ -47,9 +47,20 @@ impl Vm {
         if let Some(tag) = TypeTag::from_name(type_name) {
             return tag.matches(value);
         }
-        if self.struct_defs.contains_key(type_name) {
+        if self.struct_defs.contains_key(type_name)
+            || self.struct_defs.keys().any(|k| {
+                k.split_once('.')
+                    .is_some_and(|(parent, _)| parent == type_name)
+            })
+        {
             return match value {
-                Value::Struct(instance) => instance.borrow().type_name == type_name,
+                Value::Struct(instance) => {
+                    let actual = &instance.borrow().type_name;
+                    actual == type_name
+                        || actual
+                            .split_once('.')
+                            .is_some_and(|(parent, _)| parent == type_name)
+                }
                 _ => false,
             };
         }

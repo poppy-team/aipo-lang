@@ -2,6 +2,6 @@ export left_fn
 
 import right
 
-fn left_fn()
+fn left_fn() {
     return 1
-end
+}

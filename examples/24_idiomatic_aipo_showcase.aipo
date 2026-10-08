@@ -5,10 +5,8 @@ struct Task {
     var done = false
 }
 
-impl Task {
-    fn finish(var self) {
-        self.done = true
-    }
+Task:finish(var self) {
+    self.done = true
 }
 
 var board = []

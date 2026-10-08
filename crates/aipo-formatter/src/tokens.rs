@@ -50,20 +50,18 @@ pub fn classify(kind: &TokenKind) -> Class {
         TokenKind::Dot | TokenKind::QuestionDot => Class::Dot,
         TokenKind::DotDot => Class::Range,
         TokenKind::Bang | TokenKind::Question => Class::Postfix,
-        TokenKind::Comment(_) => Class::Comment,
+        TokenKind::Comment(_) | TokenKind::Directive(_) => Class::Comment,
         TokenKind::Newline | TokenKind::Eof | TokenKind::Error(_) => Class::Other,
 
         TokenKind::Plus
         | TokenKind::Star
         | TokenKind::Slash
-        | TokenKind::Div
         | TokenKind::SlashSlash
         | TokenKind::Percent
         | TokenKind::PlusEq
         | TokenKind::MinusEq
         | TokenKind::StarEq
         | TokenKind::SlashEq
-        | TokenKind::DivEq
         | TokenKind::SlashSlashEq
         | TokenKind::PercentEq
         | TokenKind::EqualEqual
@@ -78,6 +76,7 @@ pub fn classify(kind: &TokenKind) -> Class {
         | TokenKind::And
         | TokenKind::Or
         | TokenKind::Is
+        | TokenKind::ColonColon
         | TokenKind::In => Class::Operator,
 
         // `-` is unary in prefix position and binary otherwise; the caller resolves
@@ -93,16 +92,14 @@ pub fn classify(kind: &TokenKind) -> Class {
         | TokenKind::Await
         | TokenKind::With
         | TokenKind::Struct
-        | TokenKind::Impl
+        | TokenKind::Enum
         | TokenKind::Interface
-        | TokenKind::Satisfy
         | TokenKind::Init
         | TokenKind::Invariant
         | TokenKind::If
         | TokenKind::Elif
         | TokenKind::Else
         | TokenKind::Then
-        | TokenKind::End
         | TokenKind::Match
         | TokenKind::When
         | TokenKind::Loop
@@ -123,7 +120,6 @@ pub fn classify(kind: &TokenKind) -> Class {
         | TokenKind::False
         | TokenKind::None
         | TokenKind::SelfVal
-        | TokenKind::SelfMut
         | TokenKind::Do
         | TokenKind::Identifier(_)
         | TokenKind::Discard
@@ -154,9 +150,8 @@ pub fn opens_block(kind: &TokenKind) -> bool {
         kind,
         TokenKind::Fn
             | TokenKind::Struct
-            | TokenKind::Impl
+            | TokenKind::Enum
             | TokenKind::Interface
-            | TokenKind::Satisfy
             | TokenKind::Init
             | TokenKind::Invariant
             | TokenKind::If
@@ -182,7 +177,7 @@ pub fn opens_block(kind: &TokenKind) -> bool {
 pub fn is_branch_keyword(kind: &TokenKind) -> bool {
     matches!(
         kind,
-        TokenKind::Elif | TokenKind::Else | TokenKind::When | TokenKind::Failed | TokenKind::End
+        TokenKind::Elif | TokenKind::Else | TokenKind::When | TokenKind::Failed
     )
 }
 
@@ -195,7 +190,9 @@ pub fn text_of(token: &Token, source: &Source) -> String {
     match &token.kind {
         TokenKind::Identifier(name) => name.clone(),
         TokenKind::IntLiteral(raw) | TokenKind::FloatLiteral(raw) => raw.clone(),
-        TokenKind::Comment(_) | TokenKind::Error(_) => slice(source, token),
+        TokenKind::Comment(_) | TokenKind::Directive(_) | TokenKind::Error(_) => {
+            slice(source, token)
+        }
         TokenKind::StringLiteral { .. } => slice(source, token),
         other => keyword_text(other).to_string(),
     }
@@ -217,16 +214,14 @@ pub fn keyword_text(kind: &TokenKind) -> &'static str {
         TokenKind::Await => "await",
         TokenKind::With => "with",
         TokenKind::Struct => "struct",
-        TokenKind::Impl => "impl",
+        TokenKind::Enum => "enum",
         TokenKind::Interface => "interface",
-        TokenKind::Satisfy => "satisfy",
         TokenKind::Init => "init",
         TokenKind::Invariant => "invariant",
         TokenKind::If => "if",
         TokenKind::Elif => "elif",
         TokenKind::Else => "else",
         TokenKind::Then => "then",
-        TokenKind::End => "end",
         TokenKind::Match => "match",
         TokenKind::When => "when",
         TokenKind::Loop => "loop",
@@ -252,21 +247,18 @@ pub fn keyword_text(kind: &TokenKind) -> &'static str {
         TokenKind::False => "false",
         TokenKind::None => "none",
         TokenKind::SelfVal => "self",
-        TokenKind::SelfMut => "self!",
         TokenKind::Do => "do",
         TokenKind::Discard => "_",
         TokenKind::Plus => "+",
         TokenKind::Minus => "-",
         TokenKind::Star => "*",
         TokenKind::Slash => "/",
-        TokenKind::Div => "div",
         TokenKind::SlashSlash => "//",
         TokenKind::Percent => "%",
         TokenKind::PlusEq => "+=",
         TokenKind::MinusEq => "-=",
         TokenKind::StarEq => "*=",
         TokenKind::SlashEq => "/=",
-        TokenKind::DivEq => "div=",
         TokenKind::SlashSlashEq => "//=",
         TokenKind::PercentEq => "%=",
         TokenKind::EqualEqual => "==",
@@ -284,6 +276,7 @@ pub fn keyword_text(kind: &TokenKind) -> &'static str {
         TokenKind::Bang => "!",
         TokenKind::Question => "?",
         TokenKind::Colon => ":",
+        TokenKind::ColonColon => "::",
         TokenKind::Comma => ",",
         TokenKind::LParen => "(",
         TokenKind::RParen => ")",
@@ -298,6 +291,7 @@ pub fn keyword_text(kind: &TokenKind) -> &'static str {
         | TokenKind::FloatLiteral(_)
         | TokenKind::StringLiteral { .. }
         | TokenKind::Comment(_)
+        | TokenKind::Directive(_)
         | TokenKind::Eof
         | TokenKind::Error(_) => "",
     }

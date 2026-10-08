@@ -5,8 +5,8 @@ import types as types_mod
 import layout as layout_mod
 import color as color_mod
 
-fn make_node(kind: String, props: Dict, body: Fn? = none) - > UINode{
-    let node = UINode{
+fn make_node(kind: String, props: Dict, body: Fn? = none) -> UINode {
+    let node = UINode {
         id: layout_mod.next_node_id(),
         kind: kind,
         props: props,
@@ -39,7 +39,7 @@ fn make_box(
         align = none,
         justify = none,
         body: Fn? = none
-    ) - > UINode{
+    ) -> UINode {
         let props = {
             "display": "flex",
             "flex_direction": "column",
@@ -66,7 +66,7 @@ fn make_box(
             width = none,
             height = none,
             body: Fn? = none
-        ) - > UINode{
+        ) -> UINode {
             let props = {
                 "display": "flex",
                 "flex_direction": "row",
@@ -90,7 +90,7 @@ fn make_box(
                 width = none,
                 height = none,
                 body: Fn? = none
-            ) - > UINode{
+            ) -> UINode {
                 let props = {
                     "display": "flex",
                     "flex_direction": "column",
@@ -109,7 +109,7 @@ fn make_box(
                     width = none,
                     height = none,
                     body: Fn? = none
-                ) - > UINode{
+                ) -> UINode {
                     let props = {
                         "display": "stack",
                         "width": width,
@@ -123,7 +123,7 @@ fn make_box(
                         height = none,
                         direction = "vertical",
                         body: Fn? = none
-                    ) - > UINode{
+                    ) -> UINode {
                         let props = {
                             "display": "flex",
                             "overflow": "scroll",
@@ -134,7 +134,7 @@ fn make_box(
                         return make_node("ScrollArea", props, body)
                     }
 
-                    fn make_spacer() - > UINode{
+                    fn make_spacer() -> UINode {
                         let props = {
                             "flex_grow": 1,
                             "flex_shrink": 1
@@ -150,7 +150,7 @@ fn make_box(
                             font_weight: String = "normal",
                             color = none,
                             align: String = "left"
-                        ) - > UINode{
+                        ) -> UINode {
                             let text_color = if color != none then color else color_mod.palette_white
                                     let props = {
                                         "content": content,
@@ -167,7 +167,7 @@ fn make_box(
                                         on_click: Fn? = none,
                                         variant: String = "primary",
                                         disabled: Bool = false
-                                    ) - > UINode{
+                                    ) -> UINode {
                                         let props = {
                                             "label": label,
                                             "on_click": on_click,
@@ -182,7 +182,7 @@ fn make_box(
                                             placeholder: String = "",
                                             on_change: Fn? = none,
                                             disabled: Bool = false
-                                        ) - > UINode{
+                                        ) -> UINode {
                                             let props = {
                                                 "value": value,
                                                 "placeholder": placeholder,
@@ -198,7 +198,7 @@ fn make_box(
                                                 max: Float = 100.0,
                                                 step: Float = 1.0,
                                                 on_change: Fn? = none
-                                            ) - > UINode{
+                                            ) -> UINode {
                                                 let props = {
                                                     "value": value,
                                                     "min": min,
@@ -213,7 +213,7 @@ fn make_box(
                                                     checked: Bool = false,
                                                     label: String = "",
                                                     on_toggle: Fn? = none
-                                                ) - > UINode{
+                                                ) -> UINode {
                                                     let props = {
                                                         "checked": checked,
                                                         "label": label,
@@ -226,7 +226,7 @@ fn make_box(
                                                         progress: Float = 0.0,
                                                         height: Float = 8.0,
                                                         color = none
-                                                    ) - > UINode{
+                                                    ) -> UINode {
                                                         let props = {
                                                             "progress": progress,
                                                             "height": height,

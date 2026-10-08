@@ -47,7 +47,7 @@ fn test_runner_passing_assertions() {
     fs::write(
         &test_file,
         r#"
-test("arithmetic and comparisons") do
+test("arithmetic and comparisons") do {
     expect.equal(2 + 2, 4)
     expect.not_equal(2 + 2, 5)
     expect.true(10 > 5)
@@ -55,13 +55,13 @@ test("arithmetic and comparisons") do
     expect.none(none)
     expect.some(42)
     expect.approx(3.14159, 3.1416, 0.001)
-end
+}
 
-test("collections and strings") do
+test("collections and strings") do {
     expect.contains("hello world", "world")
     let list = [10, 20, 30]
     expect.contains(list, 20)
-end
+}
 "#,
     )
     .expect("write test file");
@@ -81,13 +81,13 @@ fn test_runner_failing_assertion() {
     fs::write(
         &test_file,
         r#"
-test("passing check") do
+test("passing check") do {
     expect.equal(1, 1)
-end
+}
 
-test("failing check") do
+test("failing check") do {
     expect.equal(1, 2)
-end
+}
 "#,
     )
     .expect("write test file");
@@ -107,10 +107,10 @@ fn test_runner_runtime_fault() {
     fs::write(
         &test_file,
         r#"
-test("divide by zero fault") do
+test("divide by zero fault") do {
     let x = 1 / 0
     expect.equal(x, 0)
-end
+}
 "#,
     )
     .expect("write test file");
@@ -132,14 +132,14 @@ fn test_runner_isolation_between_tests() {
         r#"
 let shared_list = []
 
-test("test 1 mutates global") do
+test("test 1 mutates global") do {
     shared_list.add(100)
     expect.equal(shared_list.len(), 1)
-end
+}
 
-test("test 2 sees pristine global") do
+test("test 2 sees pristine global") do {
     expect.equal(shared_list.len(), 0)
-end
+}
 "#,
     )
     .expect("write test file");
@@ -158,11 +158,11 @@ fn test_runner_async_tasks() {
     fs::write(
         &test_file,
         r#"
-test("async tasks and await") do
-    let task1 = task.spawn(fn() return 10 + 20 end, [])
+test("async tasks and await") do {
+    let task1 = task.spawn(fn() { return 10 + 20 }, [])
     let res = await task1
     expect.equal(res, 30)
-end
+}
 "#,
     )
     .expect("write test file");
@@ -180,13 +180,13 @@ fn test_runner_filter_flag() {
     fs::write(
         &test_file,
         r#"
-test("apple pie") do
+test("apple pie") do {
     expect.true(true)
-end
+}
 
-test("banana split") do
+test("banana split") do {
     expect.true(true)
-end
+}
 "#,
     )
     .expect("write test file");
@@ -207,13 +207,13 @@ fn test_runner_jsonl_output() {
     fs::write(
         &test_file,
         r#"
-test("first") do
+test("first") do {
     expect.equal(1, 1)
-end
+}
 
-test("second") do
+test("second") do {
     expect.equal(1, 2)
-end
+}
 "#,
     )
     .expect("write test file");

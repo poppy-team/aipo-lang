@@ -71,16 +71,16 @@ fn check_program(path: &Path) -> (u8, String, String) {
 fn test_match_destructure_binds_fields_in_arm_body() {
     let temp = std::env::temp_dir().join("aipo_match_dest.aipo");
     let source = r#"
-struct User
+struct User {
     name
     age
-end
+}
 
 let u = User{name = "ana", age = 30}
-match u
+match u {
     when { name, age } then
         io.println(name + " " + String(age))
-end
+}
 "#;
     std::fs::write(&temp, source).unwrap();
     let (code, stdout, stderr) = run_program(&temp);
@@ -93,21 +93,21 @@ end
 fn test_match_guard_accepts_and_rejects() {
     let temp = std::env::temp_dir().join("aipo_match_guard.aipo");
     let source = r#"
-struct User
+struct User {
     name
     age
-end
+}
 
-fn describe(u)
-    match u
+fn describe(u) {
+    match u {
         when { name, age } if age >= 65 then
             return "senior " + name
         when { name, age } if age >= 18 then
             return "adult " + name
         else
             return "minor"
-    end
-end
+    }
+}
 
 let ana = User{name = "ana", age = 30}
 let kid = User{name = "bo", age = 7}
@@ -125,16 +125,16 @@ io.println(describe(kid))
 fn test_match_destructure_subset_of_fields() {
     let temp = std::env::temp_dir().join("aipo_match_subset.aipo");
     let source = r#"
-struct User
+struct User {
     name
     age
-end
+}
 
 let u = User{name = "ana", age = 30}
-match u
+match u {
     when { name } then
         io.println(name)
-end
+}
 "#;
     std::fs::write(&temp, source).unwrap();
     let (code, stdout, stderr) = run_program(&temp);
@@ -147,14 +147,14 @@ end
 fn test_match_guard_on_value_pattern() {
     let temp = std::env::temp_dir().join("aipo_match_guard_value.aipo");
     let source = r#"
-match 5
+match 5 {
     when 1, 2, 3 then
         io.println("small")
     when 4, 5, 6 if true then
         io.println("medium")
     else
         io.println("large")
-end
+}
 "#;
     std::fs::write(&temp, source).unwrap();
     let (code, stdout, stderr) = run_program(&temp);
@@ -168,16 +168,16 @@ fn test_match_destructure_is_scoped_to_its_arm() {
     // A bound name does not leak into sibling arms or past the statement.
     let temp = std::env::temp_dir().join("aipo_match_scoped.aipo");
     let source = r#"
-struct User
+struct User {
     name
     age
-end
+}
 
 let u = User{name = "ana", age = 30}
-match u
+match u {
     when { name } then
         io.println(name)
-end
+}
 io.println(name)
 "#;
     std::fs::write(&temp, source).unwrap();
@@ -196,16 +196,16 @@ fn test_match_non_bool_guard_is_rejected() {
     // diagnostic before execution — the same rule `if` applies.
     let temp = std::env::temp_dir().join("aipo_match_guard_non_bool.aipo");
     let source = r#"
-struct User
+struct User {
     name
     age
-end
+}
 
 let u = User{name = "ana", age = 30}
-match u
+match u {
     when { name, age } if 1 then
         io.println(name)
-end
+}
 "#;
     std::fs::write(&temp, source).unwrap();
     let (code, _stdout, stderr) = check_program(&temp);

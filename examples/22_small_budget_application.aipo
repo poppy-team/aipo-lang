@@ -4,15 +4,13 @@ struct Entry {
     var amount
 }
 
-impl Entry {
-    init (var self, label, amount) {
-        self.label = label
-        self.amount = amount
-    }
+Entry:init(var self, label, amount) {
+    self.label = label
+    self.amount = amount
+}
 
-    invariant () {
-        self.amount >= 0
-    }
+Entry:invariant {
+    self.amount >= 0
 }
 
 var ledger = []

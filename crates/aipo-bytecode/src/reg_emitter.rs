@@ -32,6 +32,8 @@ pub struct RegCompiledModule {
     pub functions: Vec<RegCompiledFunction>,
     /// Shared constant pool.
     pub constants: Vec<Constant>,
+    /// Declared struct definitions: name -> fields.
+    pub struct_defs: HashMap<String, Vec<(String, bool)>>,
 }
 
 /// Emitter for converting `CoreFunction` into `RegCompiledFunction`.
@@ -40,6 +42,7 @@ pub struct RegEmitter {
     constants: Vec<Constant>,
     instructions: Vec<RegInstruction>,
     function_index: HashMap<String, usize>,
+    prologue_functions: Vec<(String, usize)>,
     max_reg: usize,
 }
 
@@ -64,8 +67,26 @@ impl RegEmitter {
         let mut top = temp_base;
         self.max_reg = temp_base;
 
+        // Emit prologue function bindings (without adding to core_to_reg, so jump targets in func remain exact)
+        let prologue = std::mem::take(&mut self.prologue_functions);
+        for (func_name, func_idx) in prologue {
+            let func_reg = top;
+            self.track_reg(func_reg);
+            self.emit(RegInstruction::encode_abx(
+                RegOpCode::MakeFunction,
+                func_reg as u8,
+                func_idx as u32,
+            ));
+            let c_idx = self.add_const(Constant::String(func_name));
+            self.emit(RegInstruction::encode_abx(
+                RegOpCode::SetGlobal,
+                func_reg as u8,
+                c_idx as u32,
+            ));
+        }
+
         let mut core_to_reg: Vec<usize> = Vec::with_capacity(func.instructions.len());
-        let mut jump_patches: Vec<(usize, isize, bool, u8)> = Vec::new();
+        let mut jump_patches: Vec<(usize, isize, RegOpCode, u8)> = Vec::new();
 
         for inst in &func.instructions {
             core_to_reg.push(self.instructions.len());
@@ -221,7 +242,7 @@ impl RegEmitter {
                 CoreInst::Jump(target, _) => {
                     let patch_pos = self.instructions.len();
                     self.emit(RegInstruction::encode_asbx(RegOpCode::Jump, 0, 0));
-                    jump_patches.push((patch_pos, *target, false, 0));
+                    jump_patches.push((patch_pos, *target, RegOpCode::Jump, 0));
                 }
                 CoreInst::JumpIfFalse(target, _) => {
                     if top > temp_base {
@@ -233,7 +254,16 @@ impl RegEmitter {
                         top as u8,
                         0,
                     ));
-                    jump_patches.push((patch_pos, *target, true, top as u8));
+                    jump_patches.push((patch_pos, *target, RegOpCode::JumpIfFalse, top as u8));
+                }
+                CoreInst::JumpIfSetLocal { slot, target, .. } => {
+                    let patch_pos = self.instructions.len();
+                    self.emit(RegInstruction::encode_asbx(
+                        RegOpCode::JumpIfSetLocal,
+                        *slot as u8,
+                        0,
+                    ));
+                    jump_patches.push((patch_pos, *target, RegOpCode::JumpIfSetLocal, *slot as u8));
                 }
                 CoreInst::Return { has_value, .. } => {
                     if *has_value && top > temp_base {
@@ -353,13 +383,167 @@ impl RegEmitter {
                     ));
                     top += 1;
                 }
+                CoreInst::BuildList(count, _) if top >= *count => {
+                    let start = top - count;
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::NewList,
+                        start as u8,
+                        start as u16,
+                        *count as u8,
+                    ));
+                    top = start + 1;
+                }
+                CoreInst::BuildDict(count, _) if top >= count * 2 => {
+                    let reg_count = count * 2;
+                    let start = top - reg_count;
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::NewDict,
+                        start as u8,
+                        start as u16,
+                        *count as u8,
+                    ));
+                    top = start + 1;
+                }
+                CoreInst::BuildStruct {
+                    type_name,
+                    field_count,
+                    ..
+                } if top >= *field_count => {
+                    let start = top - field_count;
+                    let c_idx = self.add_const(Constant::String(type_name.clone()));
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::NewStruct,
+                        start as u8,
+                        c_idx as u16,
+                        *field_count as u8,
+                    ));
+                    top = start + 1;
+                }
+                CoreInst::Range(_) if top >= 2 => {
+                    let start = top - 2;
+                    let r_start = top - 2;
+                    let r_end = top - 1;
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::Range,
+                        start as u8,
+                        r_start as u16,
+                        r_end as u8,
+                    ));
+                    top = start + 1;
+                }
+                CoreInst::CloneStruct(_) if top > 0 => {
+                    let rec = top - 1;
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::CloneStruct,
+                        rec as u8,
+                        rec as u16,
+                        0,
+                    ));
+                }
+                CoreInst::IsVariant(name, _) if top > 0 => {
+                    let rec = top - 1;
+                    let c_idx = self.add_const(Constant::String(name.clone()));
+                    self.emit(RegInstruction::encode_abx(
+                        RegOpCode::IsVariant,
+                        rec as u8,
+                        c_idx as u32,
+                    ));
+                }
+                CoreInst::Len(_) if top > 0 => {
+                    let rec = top - 1;
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::Len,
+                        rec as u8,
+                        rec as u16,
+                        0,
+                    ));
+                }
+                CoreInst::PushUnset(_) => {
+                    self.track_reg(top);
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::LoadUnset,
+                        top as u8,
+                        0,
+                        0,
+                    ));
+                    top += 1;
+                }
+                CoreInst::IterGuard(_) => {
+                    if top > temp_base {
+                        top -= 1;
+                    }
+                }
+                CoreInst::IterAt(mode, _) if top >= 2 => {
+                    let coll = top - 2;
+                    let idx = top - 1;
+                    let m = match mode {
+                        aipo_ir::IterMode::Primary => 0,
+                        aipo_ir::IterMode::Key => 1,
+                        aipo_ir::IterMode::Value => 2,
+                    };
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::IterAt,
+                        coll as u8,
+                        coll as u16,
+                        ((idx as u8) << 2) | (m as u8),
+                    ));
+                    top -= 1;
+                }
+                CoreInst::TypeIs(_) if top >= 2 => {
+                    let val = top - 2;
+                    let tag = top - 1;
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::TypeIs,
+                        val as u8,
+                        val as u16,
+                        tag as u8,
+                    ));
+                    top -= 1;
+                }
+                CoreInst::TypeIsNullable(_) if top >= 2 => {
+                    let val = top - 2;
+                    let tag = top - 1;
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::TypeIsNullable,
+                        val as u8,
+                        val as u16,
+                        tag as u8,
+                    ));
+                    top -= 1;
+                }
+                CoreInst::PushHandler(target, _) => {
+                    self.track_reg(top);
+                    let patch_pos = self.instructions.len();
+                    self.emit(RegInstruction::encode_asbx(
+                        RegOpCode::PushHandler,
+                        top as u8,
+                        0,
+                    ));
+                    jump_patches.push((patch_pos, *target, RegOpCode::PushHandler, top as u8));
+                }
+                CoreInst::PopHandler(_) => {
+                    self.emit(RegInstruction::encode_abc(RegOpCode::PopHandler, 0, 0, 0));
+                }
+                CoreInst::Fail(_) if top > 0 => {
+                    let rec = top - 1;
+                    self.emit(RegInstruction::encode_abc(RegOpCode::Fail, rec as u8, 0, 0));
+                }
+                CoreInst::PropagateFailure(_) if top > 0 => {
+                    let rec = top - 1;
+                    self.emit(RegInstruction::encode_abc(
+                        RegOpCode::PropagateFailure,
+                        rec as u8,
+                        0,
+                        0,
+                    ));
+                }
                 _ => {}
             }
         }
 
         // Pass 2: Patch jump offsets
         let total_instructions = self.instructions.len();
-        for (patch_idx, core_target, is_cond, reg_a) in jump_patches {
+        for (patch_idx, core_target, op, reg_a) in jump_patches {
             let target_inst_idx = if core_target >= 0 && (core_target as usize) < core_to_reg.len()
             {
                 core_to_reg[core_target as usize]
@@ -367,11 +551,6 @@ impl RegEmitter {
                 total_instructions
             };
             let offset = (target_inst_idx as i32) - (patch_idx as i32) - 1;
-            let op = if is_cond {
-                RegOpCode::JumpIfFalse
-            } else {
-                RegOpCode::Jump
-            };
             self.instructions[patch_idx] = RegInstruction::encode_asbx(op, reg_a, offset);
         }
 
@@ -433,6 +612,7 @@ impl RegEmitter {
                 constants: Vec::new(),
                 instructions: Vec::new(),
                 function_index: shared_index.clone(),
+                prologue_functions: Vec::new(),
                 max_reg: 0,
             };
             let compiled = emitter.compile_function(func);
@@ -445,31 +625,30 @@ impl RegEmitter {
         }
 
         // Third pass: compile top-level script with function indices available.
-        // Mirrors the stack emitter prologue: each declared function is
-        // instantiated and bound as a global before the script body runs.
-        let mut top_ir = module.top_level.clone();
-        let mut prologue = Vec::with_capacity(module.functions.len() * 2);
-        for func in &module.functions {
-            prologue.push(aipo_ir::CoreInst::MakeFunction(
-                func.name.clone(),
-                module.span,
-            ));
-            prologue.push(aipo_ir::CoreInst::Store(func.name.clone(), module.span));
+        // Binds each declared function as a global before the script body runs.
+        let mut prologue_functions = Vec::with_capacity(module.functions.len());
+        for (idx, func) in module.functions.iter().enumerate() {
+            prologue_functions.push((func.name.clone(), idx));
         }
-        prologue.extend(top_ir.instructions);
-        top_ir.instructions = prologue;
         let top_emitter = RegEmitter {
             constants: Vec::new(),
             instructions: Vec::new(),
             function_index: shared_index,
+            prologue_functions,
             max_reg: 0,
         };
-        let top_level = top_emitter.compile_function(&top_ir);
+        let top_level = top_emitter.compile_function(&module.top_level);
+
+        let mut struct_defs = HashMap::new();
+        for s in &module.structs {
+            struct_defs.insert(s.name.clone(), s.fields.clone());
+        }
 
         RegCompiledModule {
             top_level,
             functions,
             constants: module_constants,
+            struct_defs,
         }
     }
 }

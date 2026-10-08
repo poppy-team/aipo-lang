@@ -70,10 +70,10 @@ fn transpile_to_aipo_code(rule_def: VisualRule) -> String {
             if act.action_type == "destroy" {
                 let who = if act.params.has("target") then act.params["target"] else "other"
                 code += f"        {who}.destroy()\n"
-            } else if act.action_type == "play_sound" {
+            } elif act.action_type == "play_sound" {
                 let snd = if act.params.has("file") then act.params["file"] else "som.wav"
                 code += f"        g.audio.play(\"{snd}\")\n"
-            } else if act.action_type == "add_score" {
+            } elif act.action_type == "add_score" {
                 let pts = if act.params.has("points") then act.params["points"] else 10
                 code += f"        actor.score += {pts}\n"
             }

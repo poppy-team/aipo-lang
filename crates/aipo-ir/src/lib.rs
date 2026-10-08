@@ -66,7 +66,7 @@ mod tests {
         let src = Source::new(
             SourceId::next(),
             "test.aipo",
-            "fn square(n)\n  return n * n\nend",
+            "fn square(n) {\n  return n * n\n}",
         );
         let (ast, diags) = parse(&src);
         assert!(diags.is_empty());
@@ -213,7 +213,7 @@ mod lowering_tests {
     fn test_or_else_lowers_to_a_lazy_handler() {
         // `a() or_else b()` must build the fallback behind a handler, so it runs only on a
         // `Failure` (auditoria IR-6), and the fallback propagates its own failure (IR-7).
-        let module = lower_text("fn a()\nreturn 1\nend\nfn b()\nreturn 2\nend\na() or_else b()\n");
+        let module = lower_text("fn a() {\nreturn 1\n}\nfn b() {\nreturn 2\n}\na() or_else b()\n");
         assert!(
             count(&module, |inst| matches!(inst, CoreInst::PushHandler(..))) >= 1,
             "or_else registers a handler: {:?}",
@@ -240,7 +240,7 @@ mod lowering_tests {
     fn test_safe_navigation_tests_the_receiver_once() {
         // `p?.name` compares the receiver against `none`, so it evaluates it into a hidden
         // local exactly once and only reads the field on the non-none path.
-        let module = lower_text("fn label(p)\nreturn p?.name\nend\n");
+        let module = lower_text("fn label(p) {\nreturn p?.name\n}\n");
         assert!(
             count(&module, |inst| matches!(
                 inst,
@@ -264,14 +264,14 @@ mod lowering_tests {
     #[test]
     fn test_each_uses_iteration_modes() {
         // One name projects the primary binding; two names project key and value.
-        let one = lower_text("each x in items\nio.println(x)\nend\n");
+        let one = lower_text("each x in items {\nio.println(x)\n}\n");
         assert!(
             count(&one, |inst| matches!(
                 inst,
                 CoreInst::IterAt(IterMode::Primary, _)
             )) == 1
         );
-        let two = lower_text("each k, v in items\nio.println(String(k) + String(v))\nend\n");
+        let two = lower_text("each k, v in items {\nio.println(String(k) + String(v))\n}\n");
         assert!(
             count(&two, |inst| matches!(
                 inst,
@@ -324,7 +324,7 @@ mod lowering_tests {
 
     #[test]
     fn test_bare_return_under_a_contract_checks_none() {
-        let module = lower_text("fn f() -> Int\nreturn\nend\n");
+        let module = lower_text("fn f() -> Int {\nreturn\n}\n");
         let function = module
             .functions
             .iter()
@@ -349,7 +349,7 @@ mod lowering_tests {
     #[test]
     fn test_return_unwinds_frame_handlers_and_guards() {
         let module = lower_text(
-            "fn f()\nattempt\neach x in items\nreturn x\nend\nfailed error\nreturn none\nend\nend\n",
+            "fn f() {\nattempt {\neach x in items {\nreturn x\n}\n} failed error {\nreturn none\n}\n}\n",
         );
         let function = module
             .functions

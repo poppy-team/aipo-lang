@@ -1,7 +1,7 @@
-fn greet(name)
+fn greet(name) {
 return "hello " + name
-end
+}
 
-if true
+if true {
 io.println(greet("aipo"))
-end
+}

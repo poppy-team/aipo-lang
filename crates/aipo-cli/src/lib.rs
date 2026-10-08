@@ -2707,7 +2707,13 @@ fn collect_test_files(target: Option<&Path>) -> Result<Vec<PathBuf>, String> {
             return false;
         }
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        file_name.ends_with("_test.aipo") || file_name.starts_with("test_")
+        if file_name.ends_with("_test.aipo") || file_name.starts_with("test_") {
+            return true;
+        }
+        if let Ok(content) = std::fs::read_to_string(path) {
+            return content.contains("#!test");
+        }
+        false
     }
 
     fn scan_dir(dir: &Path, files: &mut Vec<PathBuf>) {
@@ -2802,17 +2808,82 @@ fn test_command(
         let discovered = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         vm.set_test_mode(aipo_vm::TestMode::Discover(discovered.clone()));
         let _ = vm.run(&compiled.module);
-        let all_tests = discovered.borrow().clone();
 
-        let mut tests_to_run = Vec::new();
-        for name in all_tests {
-            if let Some(f) = filter {
-                if !name.contains(f) {
-                    suite_total_skipped += 1;
-                    continue;
+        #[derive(Clone)]
+        enum TestTarget {
+            Legacy(String),
+            Directive {
+                display_name: String,
+                fn_name: String,
+            },
+        }
+
+        let (parsed_program, _) = aipo_syntax::parse(&source);
+        let mut all_tests: Vec<TestTarget> = discovered
+            .borrow()
+            .iter()
+            .cloned()
+            .map(TestTarget::Legacy)
+            .collect();
+        for item in &parsed_program.items {
+            if let aipo_ast::Item::Fn(f) = item {
+                for dir in &f.directives {
+                    if dir.name.name == "test" {
+                        let display_name = match &dir.argument {
+                            Some(arg) => {
+                                let trimmed = arg.trim();
+                                if trimmed.starts_with('(')
+                                    && trimmed.ends_with(')')
+                                    && trimmed.len() >= 2
+                                {
+                                    let inner = trimmed[1..trimmed.len() - 1].trim();
+                                    if inner.starts_with('"')
+                                        && inner.ends_with('"')
+                                        && inner.len() >= 2
+                                    {
+                                        inner[1..inner.len() - 1].to_string()
+                                    } else {
+                                        inner.to_string()
+                                    }
+                                } else if trimmed.starts_with('"')
+                                    && trimmed.ends_with('"')
+                                    && trimmed.len() >= 2
+                                {
+                                    trimmed[1..trimmed.len() - 1].to_string()
+                                } else if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                                    format!("{}[{}]", f.name.name, &trimmed[1..trimmed.len() - 1])
+                                } else {
+                                    format!("{}[{}]", f.name.name, trimmed)
+                                }
+                            }
+                            None => f.name.name.clone(),
+                        };
+                        all_tests.push(TestTarget::Directive {
+                            display_name,
+                            fn_name: f.name.name.clone(),
+                        });
+                    }
                 }
             }
-            tests_to_run.push(name);
+        }
+
+        let mut tests_to_run = Vec::new();
+        for test in all_tests {
+            let matches_filter = match filter {
+                Some(f) => match &test {
+                    TestTarget::Legacy(name) => name.contains(f),
+                    TestTarget::Directive {
+                        display_name,
+                        fn_name,
+                    } => display_name.contains(f) || fn_name.contains(f),
+                },
+                None => true,
+            };
+            if !matches_filter {
+                suite_total_skipped += 1;
+                continue;
+            }
+            tests_to_run.push(test);
         }
 
         if format == MessageFormat::Human {
@@ -2832,7 +2903,11 @@ fn test_command(
             );
         }
 
-        for test_name in tests_to_run {
+        for test_target in tests_to_run {
+            let test_name = match &test_target {
+                TestTarget::Legacy(name) => name.clone(),
+                TestTarget::Directive { display_name, .. } => display_name.clone(),
+            };
             if format == MessageFormat::Jsonl {
                 let _ = writeln!(out, r#"{{"type":"test_start","name":"{}"}}"#, test_name);
             }
@@ -2845,17 +2920,55 @@ fn test_command(
 
             let (mut vm, _) = standard_environment();
             register_module_symbols(&mut vm, &compiled.module);
-            let ran = std::rc::Rc::new(std::cell::Cell::new(false));
-            vm.set_test_mode(aipo_vm::TestMode::Execute {
-                target: test_name.clone(),
-                ran: ran.clone(),
-            });
 
-            let run_result = vm.run(&compiled.module);
+            let (run_result, ran) = match &test_target {
+                TestTarget::Legacy(name) => {
+                    let ran_flag = std::rc::Rc::new(std::cell::Cell::new(false));
+                    vm.set_test_mode(aipo_vm::TestMode::Execute {
+                        target: name.clone(),
+                        ran: ran_flag.clone(),
+                    });
+                    let res = vm.run(&compiled.module);
+                    (res, ran_flag.get())
+                }
+                TestTarget::Directive { fn_name, .. } => {
+                    let top_res = vm.run(&compiled.module);
+                    if let Err(err) = top_res {
+                        (Err(err), true)
+                    } else if let Some(func) = compiled
+                        .module
+                        .functions
+                        .iter()
+                        .find(|f| f.name == *fn_name)
+                    {
+                        let callee = aipo_vm::Value::Function {
+                            entry_ip: func.entry_ip as u32,
+                            arity: func.params as u16,
+                            is_async: func.is_async,
+                        };
+                        match vm.invoke(&compiled.module, callee, &[]) {
+                            Ok(val) => {
+                                if let aipo_vm::Value::Failure(f) = val {
+                                    (
+                                        Err(aipo_vm::VmError::UncaughtFailure(f.message.clone())),
+                                        true,
+                                    )
+                                } else {
+                                    (Ok(aipo_vm::Value::None), true)
+                                }
+                            }
+                            Err(err) => (Err(err), true),
+                        }
+                    } else {
+                        (Ok(aipo_vm::Value::None), false)
+                    }
+                }
+            };
+
             let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
 
             match run_result {
-                Ok(_) if ran.get() => {
+                Ok(_) if ran => {
                     suite_total_passed += 1;
                     if format == MessageFormat::Human {
                         let _ = writeln!(out, "test {test_name} ... ok ({duration_ms:.2}ms)");

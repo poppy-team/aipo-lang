@@ -72,7 +72,7 @@ snapshot for a program is only ever rewritten on request (see *Regeneration*).
 
 | Diagnostic fixture | Code asserted |
 |---|---|
-| `01_parse_missing_end` | `AIPO_PARSE_UNEXPECTED_TOKEN` |
+| `01_parse_missing_brace` | `AIPO_PARSE_UNEXPECTED_TOKEN` |
 | `02_parse_unexpected_token` | `AIPO_PARSE_UNEXPECTED_TOKEN` |
 | `03_lexer_unterminated_string` | `AIPO_LEX_UNTERMINATED_STRING`, `AIPO_PARSE_UNEXPECTED_TOKEN` |
 | `04_sem_unknown_name` | `AIPO_SEM_UNKNOWN_NAME` |

@@ -106,42 +106,40 @@ fn ctx_body_json(ctx: Context) {
     return json.parse(ctx.body_raw)
 }
 
-impl Context {
-    fn status(self, code: Int) {
-        ctx_status(self, code)
-    }
+Context:status(self, code: Int) {
+    ctx_status(self, code)
+}
 
-    fn set_header(self, key: String, val: String) {
-        ctx_set_header(self, key, val)
-    }
+Context:set_header(self, key: String, val: String) {
+    ctx_set_header(self, key, val)
+}
 
-    fn header(self, key: String) {
-        return ctx_header(self, key)
-    }
+Context:header(self, key: String) {
+    return ctx_header(self, key)
+}
 
-    fn param(self, name: String) {
-        return ctx_param(self, name)
-    }
+Context:param(self, name: String) {
+    return ctx_param(self, name)
+}
 
-    fn query_param(self, name: String) {
-        return ctx_query(self, name)
-    }
+Context:query_param(self, name: String) {
+    return ctx_query(self, name)
+}
 
-    fn json(self, data) {
-        ctx_json(self, data)
-    }
+Context:json(self, data) {
+    ctx_json(self, data)
+}
 
-    fn text(self, text_str: String) {
-        ctx_text(self, text_str)
-    }
+Context:text(self, text_str: String) {
+    ctx_text(self, text_str)
+}
 
-    fn html(self, html_str: String) {
-        ctx_html(self, html_str)
-    }
+Context:html(self, html_str: String) {
+    ctx_html(self, html_str)
+}
 
-    fn body_json(self) {
-        return ctx_body_json(self)
-    }
+Context:body_json(self) {
+    return ctx_body_json(self)
 }
 
 export Context, make_context, ctx_status, ctx_set_header, ctx_header, ctx_param, ctx_query, ctx_json, ctx_text, ctx_html, ctx_body_json

@@ -44,16 +44,29 @@ fn shift_diagnostic(source: &Source, mut diagnostic: Diagnostic, delta: usize) -
 fn find_placeholder_end(bytes: &[u8], body_start: usize) -> Option<usize> {
     let mut depth = 1usize;
     let mut index = body_start;
+    let mut in_string = false;
+    let mut string_escape = false;
     while index < bytes.len() {
-        match bytes[index] {
-            b'{' => depth += 1,
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(index);
-                }
+        if in_string {
+            if string_escape {
+                string_escape = false;
+            } else if bytes[index] == b'\\' {
+                string_escape = true;
+            } else if bytes[index] == b'"' {
+                in_string = false;
             }
-            _ => {}
+        } else {
+            match bytes[index] {
+                b'"' => in_string = true,
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(index);
+                    }
+                }
+                _ => {}
+            }
         }
         index += 1;
     }
@@ -71,6 +84,12 @@ pub struct Parser<'a> {
     tokens: Vec<Token>,
     cursor: usize,
     diagnostics: Vec<Diagnostic>,
+    /// Directives `#!...` already lexed but not yet attached to an item.
+    ///
+    /// A directive applies to the item that follows it. Collecting them here keeps the
+    /// attachment at the item constructors instead of threading a parameter through every
+    /// `parse_*_decl` signature.
+    pending_directives: Vec<Directive>,
     /// Current expression nesting depth (parentheses, calls, binary chains).
     expr_depth: usize,
     /// Current block nesting depth (`if`/`fn`/loops/`match` bodies).
@@ -85,6 +104,14 @@ pub struct Parser<'a> {
     /// There, a trailing `?` is the nullable marker of `is Int?`, not the failure
     /// propagation `expr?`. The flag suspends the postfix so the caller can consume it.
     in_is_type: bool,
+    /// Whether the expression being parsed is a block header (`if` condition,
+    /// `while` condition, `repeat` count, `each` iterable, `match` target).
+    ///
+    /// There, a trailing `{` on the same line is the body opener, never struct
+    /// construction (`board {` is `board` + body, while `Board{` with no gap
+    /// stays construction). The flag lets `parse_primary` leave that brace
+    /// for the caller instead of consuming it as `Type{...}`.
+    in_block_header: bool,
 }
 
 /// Maximum expression nesting before the parser bails out with
@@ -116,11 +143,13 @@ impl<'a> Parser<'a> {
             tokens,
             cursor: 0,
             diagnostics: Vec::new(),
+            pending_directives: Vec::new(),
             expr_depth: 0,
             block_depth: 0,
             depth_aborted: false,
             allow_comma_is: true,
             in_is_type: false,
+            in_block_header: false,
         }
     }
 
@@ -354,16 +383,47 @@ impl<'a> Parser<'a> {
         self.skip_newlines();
 
         while !self.is_at_end() && !self.depth_aborted {
+            if let TokenKind::Directive(raw) = self.peek().clone() {
+                let token = self.advance();
+                let dir = self.parse_directive_payload(&raw, token.span);
+                self.pending_directives.push(dir);
+                self.skip_newlines();
+                continue;
+            }
+
             if self.is_item_start() {
                 if let Some(item) = self.parse_item() {
                     items.push(item);
                 }
             } else if let Some(stmt) = self.parse_stmt() {
+                if !self.pending_directives.is_empty() {
+                    let first = &self.pending_directives[0];
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                            "directives can only be attached to items, not statements",
+                        )
+                        .with_primary_span(self.source, first.span),
+                    );
+                    self.pending_directives.clear();
+                }
                 statements.push(stmt);
             } else {
                 self.synchronize();
             }
             self.skip_newlines();
+        }
+
+        if !self.pending_directives.is_empty() {
+            let first = &self.pending_directives[0];
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                    "trailing directive has no item to attach to",
+                )
+                .with_primary_span(self.source, first.span),
+            );
+            self.pending_directives.clear();
         }
 
         let span = if let (Some(first), Some(last)) = (self.tokens.first(), self.tokens.last()) {
@@ -499,9 +559,7 @@ impl<'a> Parser<'a> {
                     | TokenKind::Async
                     | TokenKind::Await
                     | TokenKind::Struct
-                    | TokenKind::Impl
                     | TokenKind::Interface
-                    | TokenKind::Satisfy
                     | TokenKind::Import
                     | TokenKind::Export
                     | TokenKind::If
@@ -510,7 +568,6 @@ impl<'a> Parser<'a> {
                     | TokenKind::Repeat
                     | TokenKind::Each
                     | TokenKind::Return
-                    | TokenKind::End
             ) {
                 return;
             }
@@ -521,15 +578,51 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses `#!nome ...` payload text into a [`Directive`].
+    ///
+    /// Form: bare name, `nome[tag]`, or `nome("texto")`. Anything else after the name is
+    /// kept as raw text; validation of which names and arguments are legal happens later,
+    /// when the directive is attached to an item.
+    fn parse_directive_payload(&mut self, raw: &str, span: SourceSpan) -> Directive {
+        let trimmed = raw.trim();
+        let end_of_name = trimmed
+            .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .unwrap_or(trimmed.len());
+        let name_text = &trimmed[..end_of_name];
+        let rest = trimmed[end_of_name..].trim();
+        Directive {
+            name: Ident::new(name_text.to_string(), span),
+            argument: if rest.is_empty() {
+                None
+            } else {
+                Some(rest.to_string())
+            },
+            span,
+        }
+    }
+
+    fn take_directives(&mut self) -> Vec<Directive> {
+        std::mem::take(&mut self.pending_directives)
+    }
+
     fn is_item_start(&self) -> bool {
+        // `Tipo:nome` and `Tipo::[...]` start with an identifier, so the same two-token
+        // lookahead `parse_item` uses is required here to route them to the item parser.
+        if (matches!(self.peek(), TokenKind::Identifier(_))
+            && matches!(self.peek_ahead(1), TokenKind::Colon | TokenKind::ColonColon))
+            || (matches!(self.peek(), TokenKind::Async)
+                && matches!(self.peek_ahead(1), TokenKind::Identifier(_))
+                && matches!(self.peek_ahead(2), TokenKind::Colon))
+        {
+            return true;
+        }
         matches!(
             self.peek(),
             TokenKind::Fn
                 | TokenKind::Async
                 | TokenKind::Struct
-                | TokenKind::Impl
+                | TokenKind::Enum
                 | TokenKind::Interface
-                | TokenKind::Satisfy
                 | TokenKind::Import
                 | TokenKind::Export
         )
@@ -538,13 +631,22 @@ impl<'a> Parser<'a> {
     // --- Items ---
 
     fn parse_item(&mut self) -> Option<Item> {
+        // `Tipo:nome(...)` and `Tipo::[...]` are type-associated items. The lookahead is
+        // what separates them from a bare identifier, which is never an item start.
+        if (matches!(self.peek(), TokenKind::Identifier(_))
+            && matches!(self.peek_ahead(1), TokenKind::Colon | TokenKind::ColonColon))
+            || (matches!(self.peek(), TokenKind::Async)
+                && matches!(self.peek_ahead(1), TokenKind::Identifier(_))
+                && matches!(self.peek_ahead(2), TokenKind::Colon))
+        {
+            return self.parse_associated_item();
+        }
         match self.peek() {
             TokenKind::Fn => self.parse_function_decl().map(Item::Fn),
             TokenKind::Async => self.parse_async_item(),
             TokenKind::Struct => self.parse_struct_decl().map(Item::Struct),
-            TokenKind::Impl => self.parse_impl_block().map(Item::Impl),
+            TokenKind::Enum => self.parse_enum_decl().map(Item::Enum),
             TokenKind::Interface => self.parse_interface_decl().map(Item::Interface),
-            TokenKind::Satisfy => self.parse_satisfy_decl().map(Item::Satisfy),
             TokenKind::Import => self.parse_import_decl().map(Item::Import),
             TokenKind::Export => self.parse_export_decl().map(Item::Export),
             _ => None,
@@ -556,19 +658,23 @@ impl<'a> Parser<'a> {
         let name = self.parse_ident()?;
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(
+            &TokenKind::LBrace,
+            "expected '{' to open struct declaration",
+        )?;
         self.skip_newlines();
 
         let mut fields = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             let is_var = self.match_token(&TokenKind::Var);
             let is_legacy_fixed = self.match_token(&TokenKind::Fixed);
-            let is_fixed = if has_brace {
-                !is_var || is_legacy_fixed
-            } else {
-                is_legacy_fixed
-            };
+            let is_fixed = !is_var || is_legacy_fixed;
             let field_name = self.parse_ident()?;
+            let type_annotation = if self.match_token(&TokenKind::Colon) {
+                Some(self.parse_type_annotation()?)
+            } else {
+                None
+            };
             let default = if self.match_token(&TokenKind::Equal) {
                 Some(self.parse_expr()?)
             } else {
@@ -582,6 +688,7 @@ impl<'a> Parser<'a> {
             fields.push(StructField {
                 name: field_name,
                 is_fixed,
+                type_annotation,
                 default,
                 span,
             });
@@ -590,84 +697,284 @@ impl<'a> Parser<'a> {
             self.skip_newlines();
         }
 
-        let end_span = if has_brace {
-            self.expect(
+        let end_span = self
+            .expect(
                 &TokenKind::RBrace,
                 "expected '}' to close struct declaration",
             )?
-            .span
-        } else {
-            self.expect(
-                &TokenKind::End,
-                "expected 'end' to close struct declaration",
-            )?
-            .span
-        };
+            .span;
         Some(StructDecl {
+            directives: self.take_directives(),
             name,
             fields,
             span: start.merge(end_span),
         })
     }
 
-    fn parse_impl_block(&mut self) -> Option<ImplBlock> {
-        let start = self.advance().span; // 'impl'
-        let target = self.parse_ident()?;
+    fn parse_type_annotation(&mut self) -> Option<TypeAnnotation> {
+        let type_ident = self.parse_ident()?;
+        let is_nullable = self.match_token(&TokenKind::Question);
+        self.check_no_parametric_contract();
+        let span = if is_nullable {
+            type_ident.span.merge(self.tokens[self.cursor - 1].span)
+        } else {
+            type_ident.span
+        };
+        Some(TypeAnnotation {
+            name: type_ident.name,
+            is_nullable,
+            span,
+        })
+    }
+
+    fn parse_enum_decl(&mut self) -> Option<EnumDecl> {
+        let start = self.advance().span; // 'enum'
+        let name = self.parse_ident()?;
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open enum declaration")?;
         self.skip_newlines();
 
-        let mut init = None;
-        let mut invariant = None;
-        let mut methods = Vec::new();
+        let mut variants = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            let var_start = self.tokens[self.cursor].span;
+            let var_name = self.parse_ident()?;
+            self.skip_newlines();
 
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
-            if self.check(&TokenKind::Init) {
-                init = self.parse_init_hook();
-            } else if self.check(&TokenKind::Invariant) {
-                invariant = self.parse_invariant_hook();
-            } else if self.check(&TokenKind::Fn) {
-                if let Some(method) = self.parse_function_decl() {
-                    methods.push(method);
+            let payload = if self.match_token(&TokenKind::LParen) {
+                // Tuple variant: `Desligado(motivo: String)` or `Desligado(String)`
+                self.skip_newlines();
+                let mut fields = Vec::new();
+                while !self.check(&TokenKind::RParen) && !self.is_at_end() {
+                    let field_start = self.tokens[self.cursor].span;
+                    let (param_name, type_annotation) = if self.peek_ahead(1) == &TokenKind::Colon {
+                        let id = self.parse_ident()?;
+                        self.expect(&TokenKind::Colon, "expected ':' after parameter name")?;
+                        let ty = self.parse_type_annotation()?;
+                        (Some(id), ty)
+                    } else {
+                        let ty = self.parse_type_annotation()?;
+                        (None, ty)
+                    };
+                    let span = field_start.merge(type_annotation.span);
+                    fields.push(EnumTupleField {
+                        name: param_name,
+                        type_annotation,
+                        span,
+                    });
+                    self.skip_newlines();
+                    if !self.match_token(&TokenKind::Comma) {
+                        break;
+                    }
+                    self.skip_newlines();
                 }
-            } else if self.check(&TokenKind::Async) {
-                if let Some(method) = self.parse_async_function_decl() {
-                    methods.push(method);
+                self.expect(
+                    &TokenKind::RParen,
+                    "expected ')' to close enum tuple variant",
+                )?;
+                EnumVariantPayload::Tuple(fields)
+            } else if self.match_token(&TokenKind::LBrace) {
+                // Struct variant: `Ativo { desde: Int }`
+                self.skip_newlines();
+                let mut fields = Vec::new();
+                while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+                    let field_start = self.tokens[self.cursor].span;
+                    let field_name = self.parse_ident()?;
+                    let type_annotation = if self.match_token(&TokenKind::Colon) {
+                        Some(self.parse_type_annotation()?)
+                    } else {
+                        None
+                    };
+                    let span = if let Some(ty) = &type_annotation {
+                        field_start.merge(ty.span)
+                    } else {
+                        field_name.span
+                    };
+                    fields.push(EnumStructField {
+                        name: field_name,
+                        type_annotation,
+                        span,
+                    });
+                    self.skip_newlines();
+                    if !self.match_token(&TokenKind::Comma) {
+                        break;
+                    }
+                    self.skip_newlines();
                 }
+                self.expect(
+                    &TokenKind::RBrace,
+                    "expected '}' to close enum struct variant",
+                )?;
+                EnumVariantPayload::Struct(fields)
             } else {
-                self.advance();
-            }
+                EnumVariantPayload::Unit
+            };
+
+            let var_end = self.tokens[self.cursor.saturating_sub(1)].span;
+            variants.push(EnumVariant {
+                name: var_name,
+                payload,
+                span: var_start.merge(var_end),
+            });
+
+            self.skip_newlines();
+            let _ = self.match_token(&TokenKind::Comma);
             self.skip_newlines();
         }
 
-        let end_span = if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' to close impl block")?
-                .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close impl block")?
-                .span
-        };
-        Some(ImplBlock {
-            target,
-            init,
-            invariant,
-            methods,
+        let end_span = self
+            .expect(&TokenKind::RBrace, "expected '}' to close enum declaration")?
+            .span;
+
+        Some(EnumDecl {
+            directives: self.take_directives(),
+            name,
+            variants,
             span: start.merge(end_span),
         })
     }
 
-    fn parse_init_hook(&mut self) -> Option<FunctionDecl> {
-        let start = self.advance().span; // 'init'
-        self.expect(&TokenKind::LParen, "expected '(' after init")?;
-        let mut params = self.parse_params()?;
-        self.expect(&TokenKind::RParen, "expected ')' after init params")?;
+    /// Parses the type-associated forms that replace `impl Tipo { ... }`.
+    ///
+    /// Three shapes, distinguished by the token after the type name:
+    ///
+    /// - `Tipo:nome(params) { }` — a method, or the `init` hook when `nome` is `init`
+    /// - `Tipo:invariant { }` — the structural invariant
+    /// - `Tipo::[fn1, fn2]` — batch association of free functions
+    ///
+    /// The association lives in the declaration, so no wrapper block appears and the
+    /// receiver is implicit unless the author writes `self` or `var self`.
+    fn parse_associated_item(&mut self) -> Option<Item> {
+        let is_async_prefix = self.match_token(&TokenKind::Async);
+        let start = self.tokens[self.cursor].span;
+        let target = self.parse_ident()?;
+        self.advance(); // ':' or '::'
+
+        if matches!(
+            self.tokens[self.cursor.saturating_sub(1)].kind,
+            TokenKind::ColonColon
+        ) {
+            return self.parse_batch_bind(start, target).map(Item::Batch);
+        }
+
+        let is_async = is_async_prefix || self.match_token(&TokenKind::Async);
+        let name = if self.match_token(&TokenKind::Init) {
+            let span = self.tokens[self.cursor - 1].span;
+            Ident::new("init".into(), span)
+        } else if self.match_token(&TokenKind::Invariant) {
+            let span = self.tokens[self.cursor - 1].span;
+            Ident::new("invariant".into(), span)
+        } else {
+            self.parse_ident()?
+        };
+
+        if name.name == "invariant" {
+            let hook = self.parse_invariant_hook_body(name.span)?;
+            let span = start.merge(hook.span);
+            return Some(Item::Invariant(TargetInvariant { target, hook, span }));
+        }
+
+        let is_init = name.name == "init";
+        let function = self.parse_method_body(start, name, is_init, is_async)?;
+        let span = function.span;
+        Some(Item::Method(MethodDecl {
+            target,
+            function,
+            span,
+        }))
+    }
+
+    /// Parses `Tipo::[fn1, fn2]`, the batch association form.
+    fn parse_batch_bind(&mut self, start: SourceSpan, target: Ident) -> Option<BatchBind> {
+        if !self.check(&TokenKind::LBracket) {
+            let span = self
+                .peek_token()
+                .map(|t| t.span)
+                .unwrap_or_else(|| SourceSpan::empty(self.source.len()));
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::AIPO_PARSE_LOTE_INVALIDO,
+                    "'::' espera uma lista entre colchetes; use ':' para declarar um método individual",
+                )
+                .with_primary_span(self.source, span)
+                .with_note(format!(
+                    "`{}:...()` declara um método; `{}::[f1, f2]` agrupa funções",
+                    target.name, target.name
+                )),
+            );
+            return None;
+        }
+        self.advance(); // '['
         self.skip_newlines();
 
-        // Canon declares `init` without an explicit receiver: `self` is implicitly the instance
-        // still being constructed and is mutable during the construction phase. Injecting the
-        // receiver here (only when the author did not write one) means every later stage sees
-        // exactly the same shape as for an explicitly declared `self!`.
+        let mut functions = Vec::new();
+        while !self.check(&TokenKind::RBracket) && !self.is_at_end() {
+            functions.push(self.parse_ident()?);
+            self.skip_newlines();
+            if !self.match_token(&TokenKind::Comma) {
+                break;
+            }
+            self.skip_newlines();
+        }
+        let end = self.expect(
+            &TokenKind::RBracket,
+            "expected ']' to close batch association",
+        )?;
+        Some(BatchBind {
+            target,
+            functions,
+            span: start.merge(end.span),
+        })
+    }
+
+    /// Parses the `invariant { ... }` body after `Tipo:invariant` was consumed.
+    fn parse_invariant_hook_body(&mut self, name_span: SourceSpan) -> Option<InvariantHook> {
+        if self.match_token(&TokenKind::LParen) {
+            self.expect(&TokenKind::RParen, "expected ')' after invariant")?;
+        }
+        self.skip_newlines();
+
+        self.expect(&TokenKind::LBrace, "expected '{' to open invariant")?;
+        self.skip_newlines();
+
+        let mut conditions = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            if let Some(expr) = self.parse_expr() {
+                conditions.push(expr);
+            }
+            self.skip_newlines();
+        }
+        let end_span = self
+            .expect(&TokenKind::RBrace, "expected '}' to close invariant")?
+            .span;
+
+        Some(InvariantHook {
+            conditions,
+            span: name_span.merge(end_span),
+        })
+    }
+
+    /// Parses `(params) -> T { body }` for a method already named by `Tipo:nome`.
+    ///
+    /// `fn` is absent by design: the `Tipo:` prefix already says this is a function.
+    /// The receiver is injected exactly like `init` does, so every later stage sees the
+    /// same shape whether the author wrote `self`, `var self` or nothing.
+    fn parse_method_body(
+        &mut self,
+        start: SourceSpan,
+        name: Ident,
+        is_init: bool,
+        is_async: bool,
+    ) -> Option<FunctionDecl> {
+        self.expect(&TokenKind::LParen, "expected '(' after method name")?;
+        let mut params = self.parse_params()?;
+        self.expect(&TokenKind::RParen, "expected ')' after method parameters")?;
+        let return_type = self.parse_optional_return_type();
+        self.skip_newlines();
+
+        // `init` builds the instance, so its implicit receiver is mutable; every other
+        // method keeps an immutable implicit receiver and must write `var self` to mutate.
+        let implicit_mutable = is_init;
         if !params
             .first()
             .is_some_and(|param| param.name.name == "self")
@@ -676,7 +983,7 @@ impl<'a> Parser<'a> {
                 0,
                 Param {
                     name: Ident::new("self".into(), start),
-                    is_mutable: true,
+                    is_mutable: implicit_mutable,
                     type_annotation: None,
                     default: None,
                     span: start,
@@ -684,61 +991,27 @@ impl<'a> Parser<'a> {
             );
         }
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open method body")?;
         self.skip_newlines();
 
         let mut body = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             if let Some(stmt) = self.parse_stmt() {
                 body.push(stmt);
             }
             self.skip_newlines();
         }
-        let end_span = if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' to close init hook")?
-                .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close init hook")?
-                .span
-        };
+        let end_span = self
+            .expect(&TokenKind::RBrace, "expected '}' to close method")?
+            .span;
 
         Some(FunctionDecl {
-            name: Ident::new("init".into(), start),
-            is_async: false,
+            directives: Vec::new(),
+            name,
+            is_async,
             params,
-            return_type: None,
+            return_type,
             body,
-            span: start.merge(end_span),
-        })
-    }
-
-    fn parse_invariant_hook(&mut self) -> Option<InvariantHook> {
-        let start = self.advance().span; // 'invariant'
-        if self.match_token(&TokenKind::LParen) {
-            self.expect(&TokenKind::RParen, "expected ')' after invariant")?;
-        }
-        self.skip_newlines();
-
-        let has_brace = self.match_token(&TokenKind::LBrace);
-        self.skip_newlines();
-
-        let mut conditions = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
-            if let Some(expr) = self.parse_expr() {
-                conditions.push(expr);
-            }
-            self.skip_newlines();
-        }
-        let end_span = if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' to close invariant hook")?
-                .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close invariant hook")?
-                .span
-        };
-
-        Some(InvariantHook {
-            conditions,
             span: start.merge(end_span),
         })
     }
@@ -748,58 +1021,31 @@ impl<'a> Parser<'a> {
         let name = self.parse_ident()?;
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(
+            &TokenKind::LBrace,
+            "expected '{' to open interface declaration",
+        )?;
         self.skip_newlines();
 
         let mut methods = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
-            if self.check(&TokenKind::Fn) || self.check(&TokenKind::Async) {
-                if let Some(method) = self.parse_function_signature() {
-                    methods.push(method);
-                }
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            if let Some(method) = self.parse_function_signature() {
+                methods.push(method);
             } else {
                 self.advance();
             }
             self.skip_newlines();
         }
 
-        let end_span = if has_brace {
-            self.expect(
+        let end_span = self
+            .expect(
                 &TokenKind::RBrace,
                 "expected '}' to close interface declaration",
             )?
-            .span
-        } else {
-            self.expect(
-                &TokenKind::End,
-                "expected 'end' to close interface declaration",
-            )?
-            .span
-        };
+            .span;
         Some(InterfaceDecl {
             name,
             methods,
-            span: start.merge(end_span),
-        })
-    }
-
-    fn parse_satisfy_decl(&mut self) -> Option<SatisfyDecl> {
-        let start = self.advance().span; // 'satisfy'
-        let target = self.parse_ident()?;
-        self.expect(&TokenKind::Colon, "expected ':' after satisfy target")?;
-
-        let mut interfaces = Vec::new();
-        loop {
-            interfaces.push(self.parse_ident()?);
-            if !self.match_token(&TokenKind::Comma) {
-                break;
-            }
-        }
-
-        let end_span = interfaces.last().map(|i| i.span).unwrap_or(start);
-        Some(SatisfyDecl {
-            target,
-            interfaces,
             span: start.merge(end_span),
         })
     }
@@ -922,6 +1168,20 @@ impl<'a> Parser<'a> {
                 // anonymous closure expression.
                 self.parse_function_decl().map(Stmt::Fn)
             }
+            TokenKind::SlashSlash => {
+                let span = self.advance().span;
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                        "'//' is integer division in Aipo, not a comment; use '#' for line comments",
+                    )
+                    .with_primary_span(self.source, span),
+                );
+                while !self.is_at_end() && !matches!(self.peek(), TokenKind::Newline) {
+                    self.advance();
+                }
+                None
+            }
             _ => self.parse_expr_or_assign_stmt(),
         }
     }
@@ -999,8 +1259,7 @@ impl<'a> Parser<'a> {
             Some(BinaryOp::Mul)
         } else if self.match_token(&TokenKind::SlashEq) {
             Some(BinaryOp::Div)
-        } else if self.match_token(&TokenKind::DivEq) || self.match_token(&TokenKind::SlashSlashEq)
-        {
+        } else if self.match_token(&TokenKind::SlashSlashEq) {
             Some(BinaryOp::IntDiv)
         } else if self.match_token(&TokenKind::PercentEq) {
             Some(BinaryOp::Mod)
@@ -1019,44 +1278,53 @@ impl<'a> Parser<'a> {
 
     fn parse_if_stmt(&mut self) -> Option<Stmt> {
         let start = self.advance().span; // 'if'
-        let condition = self.parse_expr()?;
+        let condition = self.parse_block_header_expr()?;
 
-        // Check for inline if: `if c then stmt [else stmt]`
+        // Inline if: `if c then stmt [else stmt]` (`then` never takes `{}`).
         if self.match_token(&TokenKind::Then) {
-            if self.check(&TokenKind::Newline) {
-                self.advance();
-            } else {
-                let then_stmt = self.parse_stmt()?;
-                let else_branch = if self.match_token(&TokenKind::Else) {
-                    Some(vec![self.parse_stmt()?])
-                } else {
-                    None
-                };
-                let end_span = else_branch
-                    .as_ref()
-                    .and_then(|b| b.last())
-                    .map(stmt_span)
-                    .unwrap_or_else(|| stmt_span(&then_stmt));
-
-                return Some(Stmt::If(IfStmt {
-                    condition,
-                    then_branch: vec![then_stmt],
-                    elif_branches: Vec::new(),
-                    else_branch,
-                    span: start.merge(end_span),
-                }));
+            if self.check(&TokenKind::Newline) || self.check(&TokenKind::LBrace) {
+                let span = self
+                    .peek_token()
+                    .map(|t| t.span)
+                    .unwrap_or_else(|| SourceSpan::empty(self.source.len()));
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                        "`then` is only for inline conditionals (`if c then a else b`); remove `then` before `{`",
+                    )
+                    .with_primary_span(self.source, span),
+                );
+                return None;
             }
+            let then_stmt = self.parse_stmt()?;
+            let else_branch = if self.match_token(&TokenKind::Else) {
+                Some(vec![self.parse_stmt()?])
+            } else {
+                None
+            };
+            let end_span = else_branch
+                .as_ref()
+                .and_then(|b| b.last())
+                .map(stmt_span)
+                .unwrap_or_else(|| stmt_span(&then_stmt));
+
+            return Some(Stmt::If(IfStmt {
+                condition,
+                then_branch: vec![then_stmt],
+                elif_branches: Vec::new(),
+                else_branch,
+                span: start.merge(end_span),
+            }));
         }
 
         self.skip_newlines();
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open if body")?;
         self.skip_newlines();
 
         let mut then_branch = Vec::new();
         while !self.check(&TokenKind::RBrace)
             && !self.check(&TokenKind::Elif)
             && !self.check(&TokenKind::Else)
-            && !self.check(&TokenKind::End)
             && !self.is_at_end()
         {
             if let Some(s) = self.parse_stmt() {
@@ -1064,31 +1332,33 @@ impl<'a> Parser<'a> {
             }
             self.skip_newlines();
         }
-        if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' after if body")?;
-            self.skip_newlines();
-        }
+        self.expect(&TokenKind::RBrace, "expected '}' after if body")?;
+        self.skip_newlines();
 
         let mut elif_branches = Vec::new();
-        while self.match_token(&TokenKind::Elif)
-            || (self.check(&TokenKind::Else)
-                && self.cursor + 1 < self.tokens.len()
-                && self.tokens[self.cursor + 1].kind == TokenKind::If)
-        {
-            if self.check(&TokenKind::Else) {
-                self.advance(); // 'else'
-                self.advance(); // 'if'
+        while self.match_token(&TokenKind::Elif) {
+            let elif_cond = self.parse_block_header_expr()?;
+            if self.match_token(&TokenKind::Then) {
+                let span = self
+                    .peek_token()
+                    .map(|t| t.span)
+                    .unwrap_or_else(|| SourceSpan::empty(self.source.len()));
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                        "`then` is only for inline conditionals (`if c then a else b`); remove `then` before `{`",
+                    )
+                    .with_primary_span(self.source, span),
+                );
+                return None;
             }
-            let elif_cond = self.parse_expr()?;
-            let _ = self.match_token(&TokenKind::Then);
             self.skip_newlines();
-            let elif_brace = self.match_token(&TokenKind::LBrace);
+            self.expect(&TokenKind::LBrace, "expected '{' to open elif body")?;
             self.skip_newlines();
             let mut elif_body = Vec::new();
             while !self.check(&TokenKind::RBrace)
                 && !self.check(&TokenKind::Elif)
                 && !self.check(&TokenKind::Else)
-                && !self.check(&TokenKind::End)
                 && !self.is_at_end()
             {
                 if let Some(s) = self.parse_stmt() {
@@ -1096,41 +1366,43 @@ impl<'a> Parser<'a> {
                 }
                 self.skip_newlines();
             }
-            if elif_brace {
-                self.expect(&TokenKind::RBrace, "expected '}' after elif body")?;
-                self.skip_newlines();
-            }
+            self.expect(&TokenKind::RBrace, "expected '}' after elif body")?;
+            self.skip_newlines();
             elif_branches.push((elif_cond, elif_body));
         }
 
         let else_branch = if self.match_token(&TokenKind::Else) {
             self.skip_newlines();
-            let else_brace = self.match_token(&TokenKind::LBrace);
+            if self.check(&TokenKind::If) {
+                let span = self
+                    .peek_token()
+                    .map(|t| t.span)
+                    .unwrap_or_else(|| SourceSpan::empty(self.source.len()));
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                        "`else if` is not supported; use `elif` instead",
+                    )
+                    .with_primary_span(self.source, span),
+                );
+                return None;
+            }
+            self.expect(&TokenKind::LBrace, "expected '{' to open else body")?;
             self.skip_newlines();
             let mut else_body = Vec::new();
-            while !self.check(&TokenKind::RBrace)
-                && !self.check(&TokenKind::End)
-                && !self.is_at_end()
-            {
+            while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
                 if let Some(s) = self.parse_stmt() {
                     else_body.push(s);
                 }
                 self.skip_newlines();
             }
-            if else_brace {
-                self.expect(&TokenKind::RBrace, "expected '}' after else body")?;
-            }
+            self.expect(&TokenKind::RBrace, "expected '}' after else body")?;
             Some(else_body)
         } else {
             None
         };
 
-        let end_span = if has_brace {
-            self.tokens[self.cursor.saturating_sub(1)].span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close if statement")?
-                .span
-        };
+        let end_span = self.tokens[self.cursor.saturating_sub(1)].span;
 
         Some(Stmt::If(IfStmt {
             condition,
@@ -1143,10 +1415,10 @@ impl<'a> Parser<'a> {
 
     fn parse_match_stmt(&mut self) -> Option<Stmt> {
         let start = self.advance().span; // 'match'
-        let target = self.parse_expr()?;
+        let target = self.parse_block_header_expr()?;
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open match arms")?;
         self.skip_newlines();
 
         let mut when_arms = Vec::new();
@@ -1172,6 +1444,8 @@ impl<'a> Parser<'a> {
                         "expected '}' to close destructuring pattern",
                     )?;
                     patterns.push(MatchPattern::Destructure(fields));
+                } else if self.is_variant_pattern_start() {
+                    patterns.push(self.parse_variant_pattern()?);
                 } else {
                     let old = self.allow_comma_is;
                     self.allow_comma_is = false;
@@ -1201,7 +1475,6 @@ impl<'a> Parser<'a> {
             while !self.check(&TokenKind::RBrace)
                 && !self.check(&TokenKind::When)
                 && !self.check(&TokenKind::Else)
-                && !self.check(&TokenKind::End)
                 && !self.is_at_end()
             {
                 if let Some(s) = self.parse_stmt() {
@@ -1227,10 +1500,7 @@ impl<'a> Parser<'a> {
             let else_brace = self.match_token(&TokenKind::LBrace);
             self.skip_newlines();
             let mut else_body = Vec::new();
-            while !self.check(&TokenKind::RBrace)
-                && !self.check(&TokenKind::End)
-                && !self.is_at_end()
-            {
+            while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
                 if let Some(s) = self.parse_stmt() {
                     else_body.push(s);
                 }
@@ -1238,19 +1508,16 @@ impl<'a> Parser<'a> {
             }
             if else_brace {
                 self.expect(&TokenKind::RBrace, "expected '}' after else arm")?;
+                self.skip_newlines();
             }
             Some(else_body)
         } else {
             None
         };
 
-        let end_span = if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' to close match statement")?
-                .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close match statement")?
-                .span
-        };
+        let end_span = self
+            .expect(&TokenKind::RBrace, "expected '}' to close match statement")?
+            .span;
 
         Some(Stmt::Match(MatchStmt {
             target,
@@ -1260,58 +1527,150 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    fn is_variant_pattern_start(&self) -> bool {
+        if let TokenKind::Identifier(first) = self.peek() {
+            if first.chars().next().is_some_and(|c| c.is_uppercase())
+                && self.peek_ahead(1) == &TokenKind::Dot
+            {
+                if let TokenKind::Identifier(second) = self.peek_ahead(2) {
+                    return second.chars().next().is_some_and(|c| c.is_uppercase());
+                }
+            }
+        }
+        false
+    }
+
+    fn is_variant_struct_payload(&self) -> bool {
+        let mut idx = self.cursor + 1;
+        while idx < self.tokens.len() {
+            match &self.tokens[idx].kind {
+                TokenKind::Newline => {
+                    idx += 1;
+                }
+                TokenKind::Identifier(_) => {
+                    idx += 1;
+                    while idx < self.tokens.len() && self.tokens[idx].kind == TokenKind::Newline {
+                        idx += 1;
+                    }
+                    if idx < self.tokens.len() && self.tokens[idx].kind == TokenKind::Comma {
+                        idx += 1;
+                    }
+                }
+                TokenKind::RBrace => {
+                    let mut after = idx + 1;
+                    while after < self.tokens.len() && self.tokens[after].kind == TokenKind::Newline
+                    {
+                        after += 1;
+                    }
+                    if after < self.tokens.len() {
+                        return matches!(
+                            self.tokens[after].kind,
+                            TokenKind::LBrace | TokenKind::If | TokenKind::Then | TokenKind::Comma
+                        );
+                    }
+                    return false;
+                }
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    fn parse_variant_pattern(&mut self) -> Option<MatchPattern> {
+        let start = self.tokens[self.cursor].span;
+        let enum_name = self.parse_ident()?;
+        self.expect(&TokenKind::Dot, "expected '.' in enum variant pattern")?;
+        let variant_name = self.parse_ident()?;
+
+        let (payload, end_span) = if self.match_token(&TokenKind::LParen) {
+            self.skip_newlines();
+            let mut ids = Vec::new();
+            while !self.check(&TokenKind::RParen) && !self.is_at_end() {
+                ids.push(self.parse_ident()?);
+                self.skip_newlines();
+                if !self.match_token(&TokenKind::Comma) {
+                    break;
+                }
+                self.skip_newlines();
+            }
+            let rparen = self.expect(
+                &TokenKind::RParen,
+                "expected ')' to close tuple variant pattern",
+            )?;
+            (VariantPatternPayload::Tuple(ids), rparen.span)
+        } else if self.check(&TokenKind::LBrace) && self.is_variant_struct_payload() {
+            self.advance(); // consume '{'
+            self.skip_newlines();
+            let mut ids = Vec::new();
+            while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+                ids.push(self.parse_ident()?);
+                self.skip_newlines();
+                if !self.match_token(&TokenKind::Comma) {
+                    break;
+                }
+                self.skip_newlines();
+            }
+            let rbrace = self.expect(
+                &TokenKind::RBrace,
+                "expected '}' to close struct variant pattern",
+            )?;
+            (VariantPatternPayload::Struct(ids), rbrace.span)
+        } else {
+            (VariantPatternPayload::Unit, variant_name.span)
+        };
+
+        Some(MatchPattern::Variant {
+            enum_name: Some(enum_name),
+            variant_name,
+            payload,
+            span: start.merge(end_span),
+        })
+    }
+
     fn parse_loop_stmt(&mut self) -> Option<Stmt> {
         let start = self.advance().span; // 'loop'
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open loop body")?;
         self.skip_newlines();
 
         let mut body = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' to close loop")?
-                .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close loop")?
-                .span
-        };
+        let end_span = self
+            .expect(&TokenKind::RBrace, "expected '}' to close loop")?
+            .span;
         Some(Stmt::Loop(body, start.merge(end_span)))
     }
 
     fn parse_while_stmt(&mut self) -> Option<Stmt> {
         let start = self.advance().span; // 'while'
-        let condition = self.parse_expr()?;
+        let condition = self.parse_block_header_expr()?;
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open while body")?;
         self.skip_newlines();
 
         let mut body = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' to close while")?
-                .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close while")?
-                .span
-        };
+        let end_span = self
+            .expect(&TokenKind::RBrace, "expected '}' to close while")?
+            .span;
         Some(Stmt::While(condition, body, start.merge(end_span)))
     }
 
     fn parse_repeat_stmt(&mut self) -> Option<Stmt> {
         let start = self.advance().span; // 'repeat'
-        let count = self.parse_expr()?;
+        let count = self.parse_block_header_expr()?;
         let index_var = if self.match_token(&TokenKind::As) {
             Some(self.parse_ident()?)
         } else {
@@ -1319,23 +1678,19 @@ impl<'a> Parser<'a> {
         };
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open repeat body")?;
         self.skip_newlines();
 
         let mut body = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' to close repeat")?
-                .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close repeat")?
-                .span
-        };
+        let end_span = self
+            .expect(&TokenKind::RBrace, "expected '}' to close repeat")?
+            .span;
         Some(Stmt::Repeat(count, index_var, body, start.merge(end_span)))
     }
 
@@ -1349,35 +1704,28 @@ impl<'a> Parser<'a> {
             }
         }
         self.expect(&TokenKind::In, "expected 'in' in each loop")?;
-        let iterable = self.parse_expr()?;
+        let iterable = self.parse_block_header_expr()?;
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open each body")?;
         self.skip_newlines();
 
         let mut body = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' to close each loop")?
-                .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close each loop")?
-                .span
-        };
+        let end_span = self
+            .expect(&TokenKind::RBrace, "expected '}' to close each loop")?
+            .span;
         Some(Stmt::Each(bindings, iterable, body, start.merge(end_span)))
     }
 
     fn parse_return_stmt(&mut self) -> Option<Stmt> {
         let start = self.advance().span; // 'return'
-        let value = if matches!(
-            self.peek(),
-            TokenKind::Newline | TokenKind::End | TokenKind::Eof
-        ) {
+        let value = if matches!(self.peek(), TokenKind::Newline | TokenKind::Eof) {
             None
         } else {
             Some(self.parse_expr()?)
@@ -1447,7 +1795,7 @@ impl<'a> Parser<'a> {
         let start = self.advance().span; // 'attempt'
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open attempt body")?;
         self.skip_newlines();
 
         let mut body = Vec::new();
@@ -1460,16 +1808,12 @@ impl<'a> Parser<'a> {
             }
             self.skip_newlines();
         }
-        if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' after attempt body")?;
-            self.skip_newlines();
-        }
+        self.expect(&TokenKind::RBrace, "expected '}' after attempt body")?;
+        self.skip_newlines();
 
         self.expect(&TokenKind::Failed, "expected 'failed' in attempt statement")?;
-        let err_binding = if matches!(
-            self.peek(),
-            TokenKind::Newline | TokenKind::End | TokenKind::LBrace
-        ) || self.match_token(&TokenKind::Discard)
+        let err_binding = if matches!(self.peek(), TokenKind::Newline | TokenKind::LBrace)
+            || self.match_token(&TokenKind::Discard)
         {
             None
         } else {
@@ -1477,26 +1821,22 @@ impl<'a> Parser<'a> {
         };
         self.skip_newlines();
 
-        let failed_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open failed body")?;
         self.skip_newlines();
 
         let mut failed_body = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 failed_body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = if failed_brace {
-            self.expect(
+        let end_span = self
+            .expect(
                 &TokenKind::RBrace,
                 "expected '}' to close attempt statement",
             )?
-            .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close attempt statement")?
-                .span
-        };
+            .span;
 
         Some(Stmt::Attempt(AttemptStmt {
             body,
@@ -1550,31 +1890,25 @@ impl<'a> Parser<'a> {
         let return_type = self.parse_optional_return_type();
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open function body")?;
         self.skip_newlines();
 
         let mut body = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = if has_brace {
-            self.expect(
+        let end_span = self
+            .expect(
                 &TokenKind::RBrace,
                 "expected '}' to close function declaration",
             )?
-            .span
-        } else {
-            self.expect(
-                &TokenKind::End,
-                "expected 'end' to close function declaration",
-            )?
-            .span
-        };
+            .span;
 
         Some(FunctionDecl {
+            directives: self.take_directives(),
             name,
             is_async,
             params,
@@ -1585,15 +1919,16 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function_signature(&mut self) -> Option<FunctionDecl> {
-        let (start, is_async) = if self.check(&TokenKind::Async) {
-            let async_span = self.advance().span;
-            self.expect(&TokenKind::Fn, "expected 'fn' in method signature")?;
+        let (start, is_async) = if self.match_token(&TokenKind::Async) {
+            let async_span = self.tokens[self.cursor - 1].span;
+            let _ = self.match_token(&TokenKind::Fn);
             (async_span, true)
-        } else {
-            let fn_span = self
-                .expect(&TokenKind::Fn, "expected 'fn' in method signature")?
-                .span;
+        } else if self.match_token(&TokenKind::Fn) {
+            let fn_span = self.tokens[self.cursor - 1].span;
             (fn_span, false)
+        } else {
+            let start = self.tokens[self.cursor].span;
+            (start, false)
         };
         let name = self.parse_ident_or_contextual()?;
         self.expect(&TokenKind::LParen, "expected '(' in method signature")?;
@@ -1603,6 +1938,7 @@ impl<'a> Parser<'a> {
         let end_span = return_type.as_ref().map(|r| r.span).unwrap_or(name.span);
 
         Some(FunctionDecl {
+            directives: Vec::new(),
             name,
             is_async,
             params,
@@ -1651,23 +1987,19 @@ impl<'a> Parser<'a> {
         self.advance(); // 'do'
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open await do block")?;
         self.skip_newlines();
 
         let mut body = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             if let Some(stmt) = self.parse_stmt() {
                 body.push(stmt);
             }
             self.skip_newlines();
         }
-        let end_span = if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' to close await do block")?
-                .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close await do block")?
-                .span
-        };
+        let end_span = self
+            .expect(&TokenKind::RBrace, "expected '}' to close await do block")?
+            .span;
         Some(Stmt::AwaitDo(body, start.merge(end_span)))
     }
 
@@ -1740,7 +2072,6 @@ impl<'a> Parser<'a> {
         self.skip_newlines();
         while !self.check(&TokenKind::RParen) && !self.is_at_end() {
             let is_var = self.match_token(&TokenKind::Var);
-            let is_self_mut = self.match_token(&TokenKind::SelfMut);
             let (param_name, is_mut) = if is_var {
                 if self.match_token(&TokenKind::SelfVal) {
                     let span = self.tokens[self.cursor - 1].span;
@@ -1749,9 +2080,6 @@ impl<'a> Parser<'a> {
                     let id = self.parse_ident()?;
                     (id, true)
                 }
-            } else if is_self_mut {
-                let span = self.tokens[self.cursor - 1].span;
-                (Ident::new("self".into(), span), true)
             } else if self.match_token(&TokenKind::SelfVal) {
                 let span = self.tokens[self.cursor - 1].span;
                 (Ident::new("self".into(), span), false)
@@ -1760,24 +2088,11 @@ impl<'a> Parser<'a> {
                 (Ident::new("_".into(), span), false)
             } else {
                 let id = self.parse_ident()?;
-                let mut_marker = self.match_token(&TokenKind::Bang);
-                (id, mut_marker)
+                (id, false)
             };
 
             let type_annotation = if self.match_token(&TokenKind::Colon) {
-                let type_ident = self.parse_ident()?;
-                let is_nullable = self.match_token(&TokenKind::Question);
-                self.check_no_parametric_contract();
-                let span = if is_nullable {
-                    type_ident.span.merge(self.tokens[self.cursor - 1].span)
-                } else {
-                    type_ident.span
-                };
-                Some(TypeAnnotation {
-                    name: type_ident.name,
-                    is_nullable,
-                    span,
-                })
+                Some(self.parse_type_annotation()?)
             } else {
                 None
             };
@@ -1809,19 +2124,7 @@ impl<'a> Parser<'a> {
     fn parse_optional_return_type(&mut self) -> Option<TypeAnnotation> {
         // Look for `-> Type[?]`
         if self.match_token(&TokenKind::Minus) && self.match_token(&TokenKind::Greater) {
-            let type_ident = self.parse_ident()?;
-            let is_nullable = self.match_token(&TokenKind::Question);
-            self.check_no_parametric_contract();
-            let span = if is_nullable {
-                type_ident.span.merge(self.tokens[self.cursor - 1].span)
-            } else {
-                type_ident.span
-            };
-            Some(TypeAnnotation {
-                name: type_ident.name,
-                is_nullable,
-                span,
-            })
+            self.parse_type_annotation()
         } else {
             None
         }
@@ -1837,6 +2140,20 @@ impl<'a> Parser<'a> {
         } else {
             Some(left)
         }
+    }
+
+    /// Parses a block header expression (`if`/`elif` condition, `while` condition,
+    /// `repeat` count, `each` iterable, `match` target).
+    ///
+    /// A trailing `{` with a gap in the source is the body opener, never struct
+    /// construction, so `parse_primary` leaves it for the caller when this flag
+    /// is set (`board {` stays `board` + body; `Board{` with no gap stays
+    /// construction for the inner case).
+    fn parse_block_header_expr(&mut self) -> Option<Expr> {
+        let prev = std::mem::replace(&mut self.in_block_header, true);
+        let res = self.parse_expr();
+        self.in_block_header = prev;
+        res
     }
 
     /// Checks whether comma-separated subjects are followed by `is` at current delimiter depth.
@@ -1875,7 +2192,6 @@ impl<'a> Parser<'a> {
                 | TokenKind::Eof
                 | TokenKind::Then
                 | TokenKind::Do
-                | TokenKind::End
                 | TokenKind::Else
                 | TokenKind::When
                 | TokenKind::Equal
@@ -2053,10 +2369,46 @@ impl<'a> Parser<'a> {
                 }
 
                 // Check for struct construction `Type{...}`
-                if self.check(&TokenKind::LBrace)
-                    && ident.name.chars().next().is_some_and(|c| c.is_uppercase())
-                {
-                    return self.parse_construct_expr(ident);
+                if self.check(&TokenKind::LBrace) {
+                    // A type operand of `is` is never construction: `if v is Int {`
+                    // opens the body even without a gap before the brace.
+                    if self.in_is_type {
+                        return Some(Expr::Identifier(ident));
+                    }
+                    // In a block header (`if flag {`, `each x in xs {`, `match x {`),
+                    // a `{` separated by whitespace is the body opener, not
+                    // construction. `Board{` (no gap) stays construction so an
+                    // inner `Point{x = 1}` in the header still parses.
+                    if self.in_block_header {
+                        if let Some(brace_tok) = self.peek_token() {
+                            let gap = self
+                                .source
+                                .text()
+                                .get(span.end..brace_tok.span.start)
+                                .unwrap_or("");
+                            if !gap.is_empty() {
+                                return Some(Expr::Identifier(ident));
+                            }
+                        }
+                    }
+                    if ident.name.chars().next().is_some_and(|c| c.is_uppercase()) {
+                        return self.parse_construct_expr(ident);
+                    }
+                    let mut chars = ident.name.chars();
+                    let suggestion: String = match chars.next() {
+                        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                        None => ident.name.clone(),
+                    };
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                            format!(
+                                "struct names start with an uppercase letter: did you mean `{suggestion}`?"
+                            ),
+                        )
+                        .with_primary_span(self.source, span),
+                    );
+                    return None;
                 }
 
                 Some(Expr::Identifier(ident))
@@ -2088,10 +2440,6 @@ impl<'a> Parser<'a> {
                 Some(Expr::Unary(UnaryOp::Not, Box::new(operand), full_span))
             }
             TokenKind::Fn => self.parse_fn_expr(),
-            TokenKind::Div => {
-                let span = self.advance().span;
-                Some(Expr::Identifier(Ident::new("div".into(), span)))
-            }
             TokenKind::Async => self.parse_async_fn_expr(),
             TokenKind::Await => self.parse_await_expr(),
             TokenKind::Fail => {
@@ -2153,6 +2501,17 @@ impl<'a> Parser<'a> {
                         "expected expression, found newline or end of input",
                     )
                     .with_primary_span(self.source, span),
+                );
+                None
+            }
+            TokenKind::SlashSlash => {
+                let tok = self.advance();
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                        "'//' is integer division in Aipo, not a comment; use '#' for line comments",
+                    )
+                    .with_primary_span(self.source, tok.span),
                 );
                 None
             }
@@ -2261,7 +2620,7 @@ impl<'a> Parser<'a> {
             TokenKind::Minus => self.binary_expr(left, BinaryOp::Sub, Precedence::Sum, op_span),
             TokenKind::Star => self.binary_expr(left, BinaryOp::Mul, Precedence::Product, op_span),
             TokenKind::Slash => self.binary_expr(left, BinaryOp::Div, Precedence::Product, op_span),
-            TokenKind::Div | TokenKind::SlashSlash => {
+            TokenKind::SlashSlash => {
                 self.binary_expr(left, BinaryOp::IntDiv, Precedence::Product, op_span)
             }
             TokenKind::Percent => {
@@ -2445,7 +2804,7 @@ impl<'a> Parser<'a> {
                     .expect(&TokenKind::RParen, "expected ')' after call arguments")?
                     .span;
 
-                // Check for trailing block `do ... end`
+                // Check for trailing block `do ... { ... }`
                 let trailing_block = if self.match_token(&TokenKind::Do) {
                     self.parse_trailing_block()
                 } else {
@@ -2470,6 +2829,50 @@ impl<'a> Parser<'a> {
             TokenKind::Dot => {
                 let field = self.parse_member_name()?;
                 let span = left.span().merge(field.span);
+                if self.check(&TokenKind::LBrace) {
+                    // Same body-brace rule as bare identifiers: `match task.done {`
+                    // leaves the gap-separated `{` for the caller.
+                    if self.in_block_header {
+                        if let Some(brace_tok) = self.peek_token() {
+                            let gap = self
+                                .source
+                                .text()
+                                .get(field.span.end..brace_tok.span.start)
+                                .unwrap_or("");
+                            if !gap.is_empty() {
+                                return Some(Expr::Dot(Box::new(left), field, span));
+                            }
+                        }
+                    }
+                    if field.name.chars().next().is_some_and(|c| c.is_uppercase()) {
+                        let (fields, end) =
+                            self.parse_braced_fields("expected '{' in construction")?;
+                        let target_name = match &left {
+                            Expr::Identifier(pkg) => format!("{}.{}", pkg.name, field.name),
+                            _ => field.name.clone(),
+                        };
+                        return Some(Expr::Construct(ConstructExpr {
+                            target: Ident::new(target_name, span),
+                            fields,
+                            span: span.merge(end),
+                        }));
+                    }
+                    let mut chars = field.name.chars();
+                    let suggestion: String = match chars.next() {
+                        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                        None => field.name.clone(),
+                    };
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::AIPO_PARSE_UNEXPECTED_TOKEN,
+                            format!(
+                                "struct names start with an uppercase letter: did you mean `{suggestion}`?"
+                            ),
+                        )
+                        .with_primary_span(self.source, field.span),
+                    );
+                    return None;
+                }
                 Some(Expr::Dot(Box::new(left), field, span))
             }
 
@@ -2580,11 +2983,9 @@ impl<'a> Parser<'a> {
             | TokenKind::LBracket
             | TokenKind::With
             | TokenKind::Do => Precedence::Call,
-            TokenKind::Star
-            | TokenKind::Slash
-            | TokenKind::Div
-            | TokenKind::SlashSlash
-            | TokenKind::Percent => Precedence::Product,
+            TokenKind::Star | TokenKind::Slash | TokenKind::SlashSlash | TokenKind::Percent => {
+                Precedence::Product
+            }
             TokenKind::Plus | TokenKind::Minus => Precedence::Sum,
             TokenKind::DotDot => Precedence::Range,
             TokenKind::EqualEqual
@@ -2681,7 +3082,6 @@ impl<'a> Parser<'a> {
         } else if !matches!(self.peek(), TokenKind::Newline | TokenKind::LBrace) {
             while !self.check(&TokenKind::Newline)
                 && !self.check(&TokenKind::LBrace)
-                && !self.check(&TokenKind::End)
                 && !self.is_at_end()
             {
                 params.push(self.parse_ident()?);
@@ -2692,23 +3092,19 @@ impl<'a> Parser<'a> {
         }
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(&TokenKind::LBrace, "expected '{' to open trailing block")?;
         self.skip_newlines();
 
         let mut body = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = if has_brace {
-            self.expect(&TokenKind::RBrace, "expected '}' to close trailing block")?
-                .span
-        } else {
-            self.expect(&TokenKind::End, "expected 'end' to close trailing block")?
-                .span
-        };
+        let end_span = self
+            .expect(&TokenKind::RBrace, "expected '}' to close trailing block")?
+            .span;
         Some(TrailingBlock {
             params,
             body,
@@ -2735,29 +3131,25 @@ impl<'a> Parser<'a> {
         let return_type = self.parse_optional_return_type();
         self.skip_newlines();
 
-        let has_brace = self.match_token(&TokenKind::LBrace);
+        self.expect(
+            &TokenKind::LBrace,
+            "expected '{' to open anonymous function body",
+        )?;
         self.skip_newlines();
 
         let mut body = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::End) && !self.is_at_end() {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             if let Some(s) = self.parse_stmt() {
                 body.push(s);
             }
             self.skip_newlines();
         }
-        let end_span = if has_brace {
-            self.expect(
+        let end_span = self
+            .expect(
                 &TokenKind::RBrace,
                 "expected '}' to close anonymous function",
             )?
-            .span
-        } else {
-            self.expect(
-                &TokenKind::End,
-                "expected 'end' to close anonymous function",
-            )?
-            .span
-        };
+            .span;
         Some(Expr::Fn(FunctionExpr {
             is_async,
             params,
@@ -2859,10 +3251,6 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_ident_or_contextual(&mut self) -> Option<Ident> {
-        if self.check(&TokenKind::Div) {
-            let span = self.advance().span;
-            return Some(Ident::new("div".into(), span));
-        }
         self.parse_ident()
     }
 }
@@ -2901,7 +3289,7 @@ enum Precedence {
     Comparison, // == != < <= > >= is
     Range,      // ..
     Sum,        // + -
-    Product,    // * / div %
+    Product,    // * / // %
     Prefix,     // - +
     Call,       // . ?. () [] do
 }
