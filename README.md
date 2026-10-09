@@ -29,6 +29,10 @@ You need a Rust toolchain compatible with the enabled features and Node 20+ for 
    cargo run -q -p aipo-cli -- test
    ```
 
+## Documentation: new website (in review)
+
+The reorganized documentation portal lives at [`website/`](website/README.md): a progressive 26-chapter learning book, guides, language reference, concepts, and per-domain compiler engineering docs. Run `cd website && npm install && npm run dev` to preview it. The historical `docs/` tree and executable conformance corpus remain in place until consumer migration and syntax/authority reconciliation are complete. [Migration ledger](website/MIGRATION.md).
+
 ## Developer Tooling & Commands
 
 | Task | Command | Description |
