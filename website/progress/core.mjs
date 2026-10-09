@@ -73,7 +73,7 @@ export function validateProgress(data, { routeExists = () => true, sourceExists 
     }
     const completed = task.checkpoints.filter((c) => c.completed).length
     if (task.status === 'TODO' && completed !== 0) error(`TODO has completed checkpoints: ${task.id}`)
-    if (task.status === 'IN PROGRESS' && (completed === 0 || completed === task.checkpoints.length)) error(`IN PROGRESS inconsistent: ${task.id}`)
+    if (task.status === 'IN PROGRESS' && completed === task.checkpoints.length) error(`IN PROGRESS inconsistent: ${task.id}`)
     if (task.status === 'DONE' && (completed !== task.checkpoints.length || task.gates.some((g) => g.status !== 'pass'))) error(`DONE lacks proven acceptance: ${task.id}`)
   }
   return data
