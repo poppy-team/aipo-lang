@@ -25,3 +25,7 @@ A sintaxe V1 desejada e a linguagem implementada não são intercambiáveis. A m
 
 ## Integridade
 `npm run check` verifica links internos, destinos de navegação, frontmatter, índices e referência dos capítulos. `npm run check:examples` exercita exemplos originais quando o CLI existe, sem declarar validação de todos os capítulos. Nunca registrar status 'verified' sem saída capturada e commit correspondente.
+
+## Status de implementação
+
+O portal disponibiliza [Progresso da implementação](content/progress/index.md), mantido em `public/progress/tasks.json`, e [protocolo de atualização](content/engineering/progress-protocol.md). `npm run check` valida documentação, integridade do inventário e testes do painel; `npm run build` gera o site.

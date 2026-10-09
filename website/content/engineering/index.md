@@ -28,3 +28,9 @@ Esta seção é para quem implementa, revisa, testa ou integra o compilador e os
 | [Estudos](/engineering/studies) | Referências técnicas, hipóteses e benchmarks |
 
 Documentos aqui descrevem o **estado encontrado e os contratos pretendidos separadamente**. Sempre declare commit, provas e limites ao afirmar que algo está pronto.
+
+## Progresso e migração
+
+- [Painel de progresso da implementação](/progress/): checkpoints, gates, limitações e evidências.
+- [Protocolo obrigatório de atualização](/engineering/progress-protocol): como registrar mudança, regressão e validação.
+- [Auditoria do legado](/engineering/legacy-audit): critérios para consolidar e excluir documentação antiga com segurança.

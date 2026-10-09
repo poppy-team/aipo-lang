@@ -27,3 +27,7 @@ O novo website substitui a **navegação editorial** antiga por Livro, Guias, Re
 6. Remover arquivos somente quando o caminho antigo deixar de ser consumido ou tiver rota de compatibilidade.
 
 Até concluir essas etapas, o legado é histórico preservado — **não autoridade automática da superfície nova**. [Conflitos identificados](/engineering/decisions/conflicts).
+
+## Auditoria atual
+
+A [auditoria de 2026-10-09](/engineering/legacy-audit) identificou 485 arquivos legados e explica por que o corpus de conformidade, a referência inglesa, as decisões e os registros de evidência ainda precisam ser preservados. Acompanhe os critérios da migração no [processo D02](/progress/#D02).

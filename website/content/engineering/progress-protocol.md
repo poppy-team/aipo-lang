@@ -68,7 +68,7 @@ Os gates são **específicos** ao escopo. Uma auditoria de documentação pode e
 ## 5. Atualização obrigatória em cada mudança
 
 1. **Antes de começar:** ler `PROJECT_STATE.md`, decisões/ADPs vigentes, `website/content/reference/status.md`, a tarefa, testes e código afetados. Confirmar conflitos entre implementação e documentação.
-2. **Ao abrir implementação:** citar IDs afetados na proposta do PR, marcar início quando houver trabalho concreto, registrar `updated` e baseline. `TODO → IN PROGRESS` sem checkpoint é permitido no contrato editorial Petunia3D; este primeiro validador simplificado exige pelo menos um checkpoint concluído para `IN PROGRESS`, portanto adicione um checkpoint de levantamento com evidência ou permaneça `TODO` até obtê-la.
+2. **Ao abrir implementação:** citar IDs afetados na proposta do PR, marcar início quando houver trabalho concreto, registrar `updated` e baseline. É permitido `IN PROGRESS (000%)` sem checkpoint concluído desde que baseline, impedimento ou próximo passo sejam registrados claramente; não inventar prova apenas para elevar o percentual.
 3. **Durante cada slice:** modificar implementação e testes; fechar apenas os checkpoints provados. Criar `evidence` com SHA e origem, e registrar no documento canônico o comando, ambiente, resultado, limites e riscos.
 4. **Ao alterar API, sintaxe, backend, ABI ou comportamento:** atualizar também livro, referência, matriz de suporte e exemplos atingidos. Revisar interoperabilidade VM, RegVM, JS, Wasm e C **somente quando aplicável**.
 5. **Quando o escopo mudar:** dividir requisitos e criar IDs novos; conservar IDs antigos no histórico. Não remover tarefas ou checkpoints concluídos apenas para subir porcentagens.

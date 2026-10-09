@@ -65,7 +65,8 @@ for (const match of config.matchAll(/link:\s*['"]([^'"]+)['"]/g)) {
 }
 const required = [
   '/learn/', '/guides/', '/reference/', '/concepts/', '/engineering/', '/archive/',
-  '/engineering/decisions/', '/engineering/agents/', '/reference/status', '/en/'
+  '/engineering/decisions/', '/engineering/agents/', '/reference/status', '/en/',
+  '/progress/', '/engineering/progress-protocol', '/engineering/legacy-audit'
 ]
 for (const route of required) if (!routePath(route)) failures.push('Required page absent: ' + route)
 
