@@ -6,7 +6,7 @@
     "route": "/learn/01-primeiro-programa",
     "previous": null,
     "next": "02-variaveis",
-    "source": "O terminal deve imprimir exatamente a nova frase.",
+    "source": "examples/01_fizzbuzz.aipo",
     "verification": "not-run"
   },
   {
@@ -16,7 +16,7 @@
     "route": "/learn/02-variaveis",
     "previous": "01-primeiro-programa",
     "next": "03-numeros",
-    "source": "Uma tentativa de reatribuição imutável deve ser identificada.",
+    "source": "examples/06_variables_and_values.aipo",
     "verification": "not-run"
   },
   {
@@ -26,7 +26,7 @@
     "route": "/learn/03-numeros",
     "previous": "02-variaveis",
     "next": "04-strings",
-    "source": "O valor passa a ser 105 e a condição é falsa.",
+    "source": "examples/20_safe_numeric_boundaries.aipo",
     "verification": "not-run"
   },
   {
@@ -36,7 +36,7 @@
     "route": "/learn/04-strings",
     "previous": "03-numeros",
     "next": "05-condicoes",
-    "source": "Os três valores aparecem sem concatenações extensas.",
+    "source": "examples/09_strings_unicode_and_formatting.aipo",
     "verification": "not-run"
   },
   {
@@ -46,7 +46,7 @@
     "route": "/learn/05-condicoes",
     "previous": "04-strings",
     "next": "06-repeticoes",
-    "source": "Apenas uma alternativa é executada em cada caso.",
+    "source": "docs/conformance/programs/03_control_flow.aipo",
     "verification": "not-run"
   },
   {
@@ -56,7 +56,7 @@
     "route": "/learn/06-repeticoes",
     "previous": "05-condicoes",
     "next": "07-listas",
-    "source": "O contador para após atingir o limite; cada nome aparece uma vez.",
+    "source": "examples/16_ranges_repeat_each.aipo",
     "verification": "not-run"
   },
   {
@@ -66,7 +66,7 @@
     "route": "/learn/07-listas",
     "previous": "06-repeticoes",
     "next": "08-dicionarios",
-    "source": "A lista passa a conter três elementos.",
+    "source": "examples/08_lists_dicts_and_slices.aipo",
     "verification": "not-run"
   },
   {
@@ -76,7 +76,7 @@
     "route": "/learn/08-dicionarios",
     "previous": "07-listas",
     "next": "09-funcoes",
-    "source": "O caso de uma chave ausente fica explícito.",
+    "source": "examples/08_lists_dicts_and_slices.aipo",
     "verification": "not-run"
   },
   {
@@ -86,7 +86,7 @@
     "route": "/learn/09-funcoes",
     "previous": "08-dicionarios",
     "next": "10-retornos",
-    "source": "Cada chamada produz o resultado de seu argumento.",
+    "source": "examples/02_local_functions.aipo",
     "verification": "not-run"
   },
   {
@@ -96,7 +96,7 @@
     "route": "/learn/10-retornos",
     "previous": "09-funcoes",
     "next": "11-escopo",
-    "source": "O dobro de 21 é 42.",
+    "source": "examples/07_functions_defaults_named_args.aipo",
     "verification": "not-run"
   },
   {
@@ -106,7 +106,7 @@
     "route": "/learn/11-escopo",
     "previous": "10-retornos",
     "next": "12-modulos",
-    "source": "A tentativa fora do escopo deve produzir diagnóstico.",
+    "source": "examples/21_closure_state.aipo",
     "verification": "not-run"
   },
   {
@@ -116,7 +116,7 @@
     "route": "/learn/12-modulos",
     "previous": "11-escopo",
     "next": "13-estruturas",
-    "source": "Os comentários indicam arquivos distintos, não um script único.",
+    "source": "examples/05_modules/main.aipo",
     "verification": "not-run"
   },
   {
@@ -126,7 +126,7 @@
     "route": "/learn/13-estruturas",
     "previous": "12-modulos",
     "next": "14-metodos",
-    "source": "A construção e a leitura usam os mesmos nomes.",
+    "source": "examples/24_idiomatic_aipo_showcase.aipo",
     "verification": "not-run"
   },
   {
@@ -136,7 +136,7 @@
     "route": "/learn/14-metodos",
     "previous": "13-estruturas",
     "next": "15-closures",
-    "source": "Mutação não deve ficar oculta na assinatura.",
+    "source": "examples/24_idiomatic_aipo_showcase.aipo",
     "verification": "not-run"
   },
   {
@@ -146,7 +146,7 @@
     "route": "/learn/15-closures",
     "previous": "14-metodos",
     "next": "16-transformacoes",
-    "source": "Descreva de onde `fator` é obtido.",
+    "source": "examples/21_closure_state.aipo",
     "verification": "not-run"
   },
   {
@@ -156,7 +156,7 @@
     "route": "/learn/16-transformacoes",
     "previous": "15-closures",
     "next": "17-falhas",
-    "source": "A condição de filtro devolve booleanos.",
+    "source": "examples/24_idiomatic_aipo_showcase.aipo",
     "verification": "not-run"
   },
   {
@@ -166,7 +166,7 @@
     "route": "/learn/17-falhas",
     "previous": "16-transformacoes",
     "next": "18-testes",
-    "source": "A recuperação não deve esconder faults fatais.",
+    "source": "examples/11_failures_or_else_attempt.aipo",
     "verification": "not-run"
   },
   {
@@ -176,7 +176,7 @@
     "route": "/learn/18-testes",
     "previous": "17-falhas",
     "next": "19-projeto",
-    "source": "Anote comando, saída e versão do CLI para reproduzir problemas.",
+    "source": "examples/18_small_statistics.aipo",
     "verification": "not-run"
   },
   {
@@ -186,7 +186,7 @@
     "route": "/learn/19-projeto",
     "previous": "18-testes",
     "next": "20-contratos",
-    "source": "Uma mudança deve poder ser testada sem reescrever o sistema.",
+    "source": "examples/24_idiomatic_aipo_showcase.aipo",
     "verification": "not-run"
   },
   {
@@ -196,7 +196,7 @@
     "route": "/learn/20-contratos",
     "previous": "19-projeto",
     "next": "21-interfaces",
-    "source": "Observe em qual fase a incompatibilidade aparece.",
+    "source": "examples/03_contracts_and_interfaces.aipo",
     "verification": "not-run"
   },
   {
@@ -206,7 +206,7 @@
     "route": "/learn/21-interfaces",
     "previous": "20-contratos",
     "next": "22-invariantes",
-    "source": "Não confunda uma diretiva-alvo com uma verificação executada.",
+    "source": "examples/14_interfaces_and_satisfy.aipo",
     "verification": "not-run"
   },
   {
@@ -216,7 +216,7 @@
     "route": "/learn/22-invariantes",
     "previous": "21-interfaces",
     "next": "23-concorrencia",
-    "source": "A validade do saldo é mais importante que esconder a falha.",
+    "source": "examples/13_mutation_and_rollback.aipo",
     "verification": "not-run"
   },
   {
@@ -226,7 +226,7 @@
     "route": "/learn/23-concorrencia",
     "previous": "22-invariantes",
     "next": "24-pacotes",
-    "source": "Consulte o corpus específico de async; alguns backends diferem.",
+    "source": "docs/conformance/README.md",
     "verification": "not-run"
   },
   {
@@ -236,7 +236,7 @@
     "route": "/learn/24-pacotes",
     "previous": "23-concorrencia",
     "next": "25-backends",
-    "source": "O bloco acima é TOML, não código Aipo.",
+    "source": "docs/manual/packages-and-modules.md",
     "verification": "not-run"
   },
   {
@@ -246,7 +246,7 @@
     "route": "/learn/25-backends",
     "previous": "24-pacotes",
     "next": "26-embedding",
-    "source": "O bloco contém comandos de terminal, não fonte Aipo.",
+    "source": "docs/reference/cli.md",
     "verification": "not-run"
   },
   {
@@ -256,7 +256,7 @@
     "route": "/learn/26-embedding",
     "previous": "25-backends",
     "next": null,
-    "source": "Perfil shell mínimo ainda depende de decisões e validações.",
+    "source": "crates/aipo-host/README.md",
     "verification": "not-run"
   }
 ]
