@@ -1,37 +1,51 @@
 ---
-title: Referência prática do CLI
+title: Referência da CLI
+description: Comandos e opções do Aipo com exemplos reproduzíveis.
 ---
-# Referência do CLI
 
-Use `cargo run -q -p aipo-cli -- <comando>` na raiz do repositório ou o binário `aipo` compilado.
+# CLI do Aipo
 
-| Tarefa | Comando | Observações |
-| --- | --- | --- |
-| Executar | `aipo run programa.aipo` | Usa a VM de referência por padrão |
-| Validar | `aipo check programa.aipo` | Analisa sem executar |
-| Testar | `aipo test` | Descobre e executa testes Aipo |
-| Formatar | `aipo fmt arquivo.aipo` | Pode modificar arquivo |
-| Conferir formato | `aipo fmt --check arquivo.aipo` | Para CI |
-| Construir JS | `aipo build programa.aipo --target js --out dist/` | Dependente da cobertura JS |
-| Construir Wasm | `aipo build programa.aipo --target wasm --out dist/` | Dependente das features Wasm |
-| Inspecionar | `aipo disasm programa.aipo` | Mostra representação emitida |
-| Fechar lockfile | `aipo package lock .` | Opera no pacote |
-| Auditar lockfile | `aipo package audit .` | Sem modificar resolução |
-| Verificar cache | `aipo package cache verify DIR` | Verifica integridade |
-| Limpar cache | `aipo package cache prune DIR --lock aipo.lock --apply` | Mutação explícita |
+A CLI executa, analisa, formata, testa e gera artefatos. Os comandos abaixo são documentados em [`docs/reference/cli.md`](https://github.com/poppyTM/aipo-lang/blob/main/docs/reference/cli.md) e mantidos em `crates/aipo-cli`.
 
-## Motores de execução
+## Primeiro uso
 
-`aipo run arquivo.aipo --engine=reg` escolhe a Register VM experimental. Não assuma equivalência com a VM padrão. `--wasm` seleciona o percurso Wasm quando presente na build.
+```bash
+cargo build -p aipo-cli
+cargo run -q -p aipo-cli -- run examples/06_variables_and_values.aipo
+```
 
-## Esquema de host
+## Comandos comuns
 
-`aipo check arquivo.aipo --ahs esquema.json` carrega descrições para a invocação; isso não dá acesso efetivo a capacidades.
+| Comando | Resultado |
+| --- | --- |
+| `run file.aipo` | Compila e executa |
+| `check file.aipo` | Analisa sem executar |
+| `test [path] --filter pattern` | Descobre e executa testes selecionados |
+| `fmt file.aipo [--check]` | Formata / verifica formatação |
+| `build file.aipo --target js --out dist/` | Gera bundle ESM |
+| `build file.aipo --target wasm --out dist/` | Gera binário WebAssembly |
+| `disasm file.aipo` | Mostra o bytecode desassemblado |
+| `disasm file.aibc` | Inspeciona bytecode compilado |
+| `package lock DIR` | Resolve e escreve lockfile |
+| `package audit DIR` | Audita o lockfile sem regravar |
+| `package cache verify DIR` | Verifica entradas de cache |
+| `package cache prune DIR --lock LOCK [--apply]` | Limpeza; simulação por padrão |
+
+## Executar destinos diferentes
+
+- `--engine=vm`: VM principal, referência para comparar resultados.
+- `--engine=reg`: RegVM experimental. Recursos podem falhar com diagnóstico explícito de falta de suporte.
+- `--wasm`: seleciona execução Wasm quando disponível.
+- `--package-cache DIR`: fornece cache de pacotes sem presumir busca na rede.
+- `--ahs FILE`: fornece schema de API de host para análise; **não concede capabilities sozinho**.
+- `--host=headless-test`: instala perfil de host de conformance explicitamente.
+
+## Dependências GitHub
+
+O sistema aceita dependências pinadas em commit e fetch explícito, sujeito à feature Rust `github-http`. A execução offline é o padrão para leitura de lock/cache. Confira as opções completas no [CLI Reference original](https://github.com/poppyTM/aipo-lang/blob/main/docs/reference/cli.md), pois há argumentos de cache, paths e credenciais que não cabem em uma linha de consulta.
 
 ## Códigos de saída
 
-- `0`: êxito.
-- `1`: falha de linguagem, teste ou runtime.
-- `2`: erro de uso do comando.
+`0` normalmente indica sucesso; `1` representa erro de linguagem/testes; `2` indica uso inválido da CLI. Para capturar a causa, preserve também a mensagem de diagnóstico emitida.
 
-A [especificação histórica detalhada da CLI](https://github.com/poppy-team/aipo-lang/blob/main/docs/reference/cli.md) tem flags adicionais e restrições. **O `--help` do binário compilado para seu commit é a autoridade do que está disponível.**
+[Guia mais simples](/manual/cli) · [Como resolver erros](/guides/troubleshooting).
