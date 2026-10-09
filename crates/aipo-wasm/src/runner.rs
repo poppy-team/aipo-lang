@@ -4,7 +4,15 @@ use std::io::Write;
 #[cfg(feature = "wasmtime")]
 use std::sync::{Arc, Mutex};
 #[cfg(feature = "wasmtime")]
-use wasmtime::{Caller, Engine, Linker, Module, Store};
+use wasmtime::{Caller, Config, Engine, Linker, Module, Store};
+
+/// Optional execution limits for a single Wasmtime invocation.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WasmExecutionOptions {
+    /// Wasmtime instruction fuel; `None` preserves unlimited execution.
+    /// Fuel does not bound native host work, memory, output or wall-clock time.
+    pub fuel: Option<u64>,
+}
 
 /// Errors encountered during WebAssembly execution.
 #[derive(Debug)]
@@ -75,7 +83,23 @@ impl HostState {
 /// Returns a [`WasmRuntimeError`] if instantiation fails or execution traps.
 #[cfg(feature = "wasmtime")]
 pub fn execute_wasm(wasm_bytes: &[u8], stdout: &mut dyn Write) -> Result<i64, WasmRuntimeError> {
-    let engine = Engine::default();
+    execute_wasm_with_options(wasm_bytes, stdout, WasmExecutionOptions::default())
+}
+
+/// Executes a module with optional instruction fuel and checked output delivery.
+///
+/// # Errors
+/// Returns an error on invalid modules, exhausted fuel, missing entrypoints or writer errors.
+#[cfg(feature = "wasmtime")]
+pub fn execute_wasm_with_options(
+    wasm_bytes: &[u8],
+    stdout: &mut dyn Write,
+    options: WasmExecutionOptions,
+) -> Result<i64, WasmRuntimeError> {
+    let mut config = Config::new();
+    config.consume_fuel(options.fuel.is_some());
+    let engine =
+        Engine::new(&config).map_err(|e| WasmRuntimeError::Instantiation(e.to_string()))?;
     let module = Module::new(&engine, wasm_bytes)
         .map_err(|e| WasmRuntimeError::Instantiation(e.to_string()))?;
 
@@ -84,6 +108,11 @@ pub fn execute_wasm(wasm_bytes: &[u8], stdout: &mut dyn Write) -> Result<i64, Wa
         output: Arc::clone(&output),
     };
     let mut store = Store::new(&engine, state);
+    if let Some(fuel) = options.fuel {
+        store
+            .set_fuel(fuel)
+            .map_err(|e| WasmRuntimeError::Instantiation(e.to_string()))?;
+    }
     let mut linker = Linker::new(&engine);
 
     // Register host I/O functions under module "aipo_host"
@@ -121,14 +150,27 @@ pub fn execute_wasm(wasm_bytes: &[u8], stdout: &mut dyn Write) -> Result<i64, Wa
                     None => return,
                 };
                 let data = mem.data(&caller);
-                let ptr = ptr as usize;
-                if ptr + 4 <= data.len() {
-                    let len = u32::from_le_bytes(data[ptr..ptr + 4].try_into().unwrap_or([0; 4]))
-                        as usize;
-                    if ptr + 4 + len <= data.len() {
-                        if let Ok(s) = std::str::from_utf8(&data[ptr + 4..ptr + 4 + len]) {
-                            caller.data().write_str(s);
-                        }
+                let Ok(ptr) = usize::try_from(ptr) else {
+                    return;
+                };
+                let Some(start) = ptr.checked_add(4) else {
+                    return;
+                };
+                let Some(header) = data.get(ptr..start) else {
+                    return;
+                };
+                let Ok(header) = <[u8; 4]>::try_from(header) else {
+                    return;
+                };
+                let Ok(len) = usize::try_from(u32::from_le_bytes(header)) else {
+                    return;
+                };
+                let Some(end) = start.checked_add(len) else {
+                    return;
+                };
+                if let Some(bytes) = data.get(start..end) {
+                    if let Ok(s) = std::str::from_utf8(bytes) {
+                        caller.data().write_str(s);
                     }
                 }
             },
@@ -153,11 +195,10 @@ pub fn execute_wasm(wasm_bytes: &[u8], stdout: &mut dyn Write) -> Result<i64, Wa
         })
         .map_err(|e| WasmRuntimeError::Instantiation(e.to_string()))?;
 
-    let instance = linker
-        .instantiate(&mut store, &module)
-        .map_err(|e| WasmRuntimeError::Instantiation(e.to_string()))?;
-
     let result = (|| -> Result<i64, WasmRuntimeError> {
+        let instance = linker
+            .instantiate(&mut store, &module)
+            .map_err(|e| WasmRuntimeError::Instantiation(e.to_string()))?;
         if let Ok(func) = instance.get_typed_func::<(), i64>(&mut store, "__top_level__") {
             return func
                 .call(&mut store, ())
@@ -188,18 +229,28 @@ pub fn execute_wasm(wasm_bytes: &[u8], stdout: &mut dyn Write) -> Result<i64, Wa
                 .map_err(|e| WasmRuntimeError::Execution(format!("{e:#}")))?;
             return Ok(0);
         }
-        Ok(0)
+        Err(WasmRuntimeError::MissingExport(
+            "__top_level__, run or main with signature () -> i64 or () -> ()".to_string(),
+        ))
     })();
 
-    // Flush any buffered output to the destination writer
-    if let Ok(buf) = output.lock() {
-        if !buf.is_empty() {
-            let _ = stdout.write_all(&buf);
-            let _ = stdout.flush();
-        }
+    // Attempt to deliver output even after a guest trap. Preserve the original
+    // execution error when execution and output delivery both fail.
+    let output_result = (|| {
+        let buf = output
+            .lock()
+            .map_err(|e| WasmRuntimeError::Execution(e.to_string()))?;
+        stdout
+            .write_all(&buf)
+            .map_err(|e| WasmRuntimeError::Execution(e.to_string()))?;
+        stdout
+            .flush()
+            .map_err(|e| WasmRuntimeError::Execution(e.to_string()))
+    })();
+    match result {
+        Err(error) => Err(error),
+        Ok(value) => output_result.map(|()| value),
     }
-
-    result
 }
 
 /// Fallback execution function when `wasmtime` is disabled.
@@ -212,4 +263,17 @@ pub fn execute_wasm(_wasm_bytes: &[u8], _stdout: &mut dyn Write) -> Result<i64, 
         "WebAssembly JIT execution is disabled in this build (wasmtime feature not enabled)"
             .to_string(),
     ))
+}
+
+/// Fallback for builds without the Wasmtime execution engine.
+///
+/// # Errors
+/// Always reports that JIT execution is disabled, regardless of the requested fuel.
+#[cfg(not(feature = "wasmtime"))]
+pub fn execute_wasm_with_options(
+    wasm_bytes: &[u8],
+    stdout: &mut dyn Write,
+    _options: WasmExecutionOptions,
+) -> Result<i64, WasmRuntimeError> {
+    execute_wasm(wasm_bytes, stdout)
 }

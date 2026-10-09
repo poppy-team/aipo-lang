@@ -1388,8 +1388,28 @@ pub fn analyze_to_reg_module(
 
     let ir = aipo_ir::lower_to_ir(&hir);
     let ir = aipo_ir::optimize(&ir);
-    let reg_module = RegEmitter::new().compile_module(&ir);
-    (Some(reg_module), diagnostics)
+    match RegEmitter::new().compile_module(&ir) {
+        Ok(reg_module) => (Some(reg_module), diagnostics),
+        Err(reason) => {
+            let code = DiagnosticCode::AIPO_COMPILE_REG_UNSUPPORTED;
+            let locale = aipo_diagnostics::Locale::detect();
+            let help = match locale {
+                aipo_diagnostics::Locale::En => "Run this program with --engine=vm.",
+                aipo_diagnostics::Locale::PtBr => "Execute este programa com --engine=vm.",
+            };
+            diagnostics.push(
+                Diagnostic::error(code, code.title(locale))
+                    .with_note(reason)
+                    .with_suggestion(aipo_diagnostics::Suggestion {
+                        message: help.into(),
+                        replacement: String::new(),
+                        start: 0,
+                        end: 0,
+                    }),
+            );
+            (None, diagnostics)
+        }
+    }
 }
 
 fn verification_diagnostic(reason: &str) -> Diagnostic {
@@ -2698,7 +2718,11 @@ fn execute_reg_module_with_host(
     }
     let mut reg_vm = RegVm::new();
     reg_vm.globals = stack_vm.globals.clone();
-    reg_vm.run_module(module).map_err(VmError::Fault)
+    let value = reg_vm.run_module(module).map_err(VmError::Fault)?;
+    if let aipo_vm::Value::Failure(failure) = &value {
+        return Err(VmError::UncaughtFailure(failure.message.clone()));
+    }
+    Ok(value)
 }
 
 fn collect_test_files(target: Option<&Path>) -> Result<Vec<PathBuf>, String> {

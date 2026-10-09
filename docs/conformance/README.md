@@ -5,6 +5,14 @@
 **Scope:** corpus layout, snapshot matrix, regeneration, gate rubric
 **Update Triggers:** new fixture kind, snapshot format change, gate criteria change
 
+## Delta de reconstrução — P07-G01
+
+As fixtures `programs/33_dict_primary_iteration` e `programs/34_conditional_values` registram, respectivamente, chaves de Dict em iteração primária e resultados condicionais em ramos que convergem. Seus `.stdout` são expectativas baseadas no canon e revisão manual; não foram regenerados nem executados nesta reconstrução.
+
+`crates/aipo-cli/tests/reg_conformance.rs` compara essas fixtures nos engines vm/reg. `crates/aipo-vm/tests/reg_vm_robustness.rs` cobre aritmética compartilhada, operandos inválidos, budget, Unicode/extremos e índice de iteração em registrador alto. `disabled_features.rs` cobre ausência de compiler/runner. As suites JIT Wasm agora respeitam features. Execução dispensada explicitamente pelo usuário nesta rodada; paridade ainda precisa ser validada.
+
+Consulte [guia e limites](../development/runtime-hardening-guide.md) e [evidência](../evidence/P07-G01-runtime-hardening.md). Este delta não reclassifica como certificados os cenários pendentes.
+
 ## Purpose
 
 The corpus is the shared, executable definition of the delivered language surface — Wave 1

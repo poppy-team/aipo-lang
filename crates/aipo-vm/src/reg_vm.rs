@@ -1,8 +1,9 @@
 //! Virtual register execution engine for 32-bit instructions (Marco 3 / ADP-014).
 
 use crate::arena::ArenaAllocator;
+use crate::convert::{TypeTag, convert_via_type};
 use crate::fault::VmFault;
-use crate::value::{DictMap, StructInstance, Value, check_safe_int};
+use crate::value::{DictMap, StructInstance, Value, check_safe_int, string_char_at};
 use aipo_bytecode::{Constant, RegCompiledFunction, RegCompiledModule, RegInstruction, RegOpCode};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -23,7 +24,7 @@ pub struct RegCallFrame {
 /// Compact virtual register machine for embedded execution and fast scripts.
 #[derive(Debug)]
 pub struct RegVm {
-    /// 256 virtual registers (fixed array of 16-byte Values = 4 KiB total).
+    /// 256 virtual registers; measure target layout before assuming a byte size.
     pub registers: [Value; 256],
     /// Constant pool.
     pub constants: Vec<Value>,
@@ -39,10 +40,13 @@ pub struct RegVm {
     pub handler_stack: Vec<(usize, u8)>,
     /// Maximum nested-call depth.
     pub max_call_depth: usize,
-    /// Linear bump arena for string/buffer allocations.
+    /// Reserved bump arena; current managed values still use Rc allocations.
     pub arena: ArenaAllocator,
     /// Program counter.
     pub pc: usize,
+    max_instructions: Option<u64>,
+    instruction_count: u64,
+    iteration_guards: Vec<(Value, usize)>,
 }
 
 impl Default for RegVm {
@@ -66,7 +70,155 @@ impl RegVm {
             max_call_depth: REG_MAX_CALL_DEPTH,
             arena: ArenaAllocator::with_default_capacity(),
             pc: 0,
+            max_instructions: None,
+            instruction_count: 0,
+            iteration_guards: Vec::new(),
         }
+    }
+
+    /// Sets a cumulative bytecode budget, resetting its consumed instruction count.
+    /// `None` disables accounting; native callbacks are outside this budget.
+    pub fn set_instruction_budget(&mut self, limit: Option<u64>) {
+        self.max_instructions = limit;
+        self.instruction_count = 0;
+    }
+
+    /// Number of bytecode instructions consumed while budgeting is enabled.
+    #[must_use]
+    pub fn instruction_count(&self) -> u64 {
+        self.instruction_count
+    }
+
+    /// Resets consumption without changing the configured limit.
+    pub fn reset_instruction_count(&mut self) {
+        self.instruction_count = 0;
+    }
+
+    fn corrupted(&self, reason: impl Into<String>) -> VmFault {
+        VmFault::CorruptedBytecode {
+            offset: self.pc.saturating_sub(1),
+            reason: reason.into(),
+        }
+    }
+
+    fn checked_jump(&self, offset: i32, length: usize) -> Result<usize, VmFault> {
+        self.pc
+            .checked_add_signed(offset as isize)
+            .filter(|target| *target < length)
+            .ok_or_else(|| self.corrupted("jump target outside instruction stream"))
+    }
+
+    fn constant_name(&self, index: usize) -> Result<String, VmFault> {
+        match self.constants.get(index) {
+            Some(Value::String(name)) => Ok(name.to_string()),
+            _ => Err(self.corrupted(format!("invalid string constant at {index}"))),
+        }
+    }
+
+    fn check_arity(expected: usize, actual: usize) -> Result<(), VmFault> {
+        if expected == usize::MAX || expected == actual {
+            Ok(())
+        } else {
+            Err(VmFault::TypeMismatch {
+                expected: format!("{expected} arguments"),
+                actual: format!("{actual} arguments"),
+            })
+        }
+    }
+
+    fn check_function(&self, func: &RegCompiledFunction) -> Result<(), VmFault> {
+        if func.is_async
+            || func.num_registers == 0
+            || func.num_registers > 256
+            || func.arity > func.num_registers
+        {
+            return Err(self.corrupted("unsupported async function or invalid register metadata"));
+        }
+        Ok(())
+    }
+
+    fn guarded_len(value: &Value) -> usize {
+        match value {
+            Value::List(items) => items.borrow().len(),
+            Value::Dict(items) => items.borrow().len(),
+            Value::Bytes(items) => items.borrow().len(),
+            Value::Set(items) => items.borrow().len(),
+            _ => 0,
+        }
+    }
+
+    fn check_iteration_guards(&self) -> Result<(), VmFault> {
+        if self
+            .iteration_guards
+            .iter()
+            .any(|(value, len)| Self::guarded_len(value) != *len)
+        {
+            Err(VmFault::MutationDuringIteration)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn check_dict_insert(&self, dict: &Rc<RefCell<DictMap>>, key: &Value) -> Result<(), VmFault> {
+        let guarded = self
+            .iteration_guards
+            .iter()
+            .any(|(value, _)| matches!(value, Value::Dict(other) if Rc::ptr_eq(dict, other)));
+        if guarded && dict.borrow().get(key).is_none() {
+            Err(VmFault::MutationDuringIteration)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn position(len: usize, index: i64) -> Result<usize, VmFault> {
+        let position = if index < 0 {
+            usize::try_from(index.unsigned_abs())
+                .ok()
+                .and_then(|distance| len.checked_sub(distance))
+        } else {
+            usize::try_from(index).ok()
+        };
+        position
+            .filter(|position| *position < len)
+            .ok_or(VmFault::IndexOutOfRange { index, len })
+    }
+
+    fn range_len(start: i64, end: i64) -> Result<i64, VmFault> {
+        end.checked_sub(start)
+            .ok_or_else(|| VmFault::Overflow {
+                details: "range length overflow".into(),
+            })
+            .and_then(|length| check_safe_int(length.max(0)))
+    }
+
+    fn contract_holds(&self, type_name: &str, nullable: bool, value: &Value) -> bool {
+        if matches!(value, Value::None) {
+            return nullable;
+        }
+        if type_name == "Function" {
+            return matches!(
+                value,
+                Value::Function { .. } | Value::Native(_) | Value::BoundMethod(_)
+            );
+        }
+        if let Some(tag) = TypeTag::from_name(type_name) {
+            return tag.matches(value);
+        }
+        if self.struct_defs.contains_key(type_name)
+            || self.struct_defs.keys().any(|name| {
+                name.split_once('.')
+                    .is_some_and(|(parent, _)| parent == type_name)
+            })
+        {
+            return matches!(value, Value::Struct(instance) if {
+                let instance = instance.borrow();
+                instance.type_name == type_name || instance.type_name.split_once('.').is_some_and(|(parent, _)| parent == type_name)
+            });
+        }
+        // An empty unresolved interface imposes no operations. Nonempty interface
+        // contracts are rejected by the register emitter until method parity exists.
+        true
     }
 
     /// Converts a bytecode constant into a runtime value.
@@ -84,6 +236,16 @@ impl RegVm {
     pub fn load_module(&mut self, module: &RegCompiledModule) {
         self.functions = module.functions.clone();
         self.struct_defs = module.struct_defs.clone();
+        for name in module.struct_defs.keys() {
+            self.globals
+                .entry(name.clone())
+                .or_insert_with(|| Value::UserType(Rc::new(name.clone())));
+            if let Some((parent, _)) = name.split_once('.') {
+                self.globals
+                    .entry(parent.to_string())
+                    .or_insert_with(|| Value::UserType(Rc::new(parent.to_string())));
+            }
+        }
     }
 
     /// Executes a compiled register module's top-level script.
@@ -91,8 +253,7 @@ impl RegVm {
     /// # Errors
     /// Returns [`VmFault`] if a runtime error occurs.
     pub fn run_module(&mut self, module: &RegCompiledModule) -> Result<Value, VmFault> {
-        self.functions = module.functions.clone();
-        self.struct_defs = module.struct_defs.clone();
+        self.load_module(module);
         self.frames.clear();
         self.run_function(&module.top_level)
     }
@@ -106,6 +267,8 @@ impl RegVm {
         func: &RegCompiledFunction,
         args: &[Value],
     ) -> Result<Value, VmFault> {
+        self.check_function(func)?;
+        Self::check_arity(func.arity, args.len())?;
         if self.frames.len() >= self.max_call_depth {
             return Err(VmFault::CorruptedBytecode {
                 offset: self.pc.saturating_sub(1),
@@ -123,11 +286,8 @@ impl RegVm {
             std::mem::replace(&mut self.registers, std::array::from_fn(|_| Value::None));
         let saved_constants = std::mem::take(&mut self.constants);
         let saved_pc = self.pc;
-        for (i, arg) in args.iter().enumerate().take(256) {
+        for (i, arg) in args.iter().enumerate() {
             self.registers[i] = arg.clone();
-        }
-        for i in args.len()..func.arity.min(256) {
-            self.registers[i] = Value::Unset;
         }
         self.constants = func.constants.iter().map(Self::convert_constant).collect();
         let outcome = self.run(&func.instructions);
@@ -146,6 +306,7 @@ impl RegVm {
         &mut self,
         func: &aipo_bytecode::RegCompiledFunction,
     ) -> Result<Value, VmFault> {
+        self.check_function(func)?;
         self.constants = func.constants.iter().map(Self::convert_constant).collect();
         self.frames.clear();
         self.run(&func.instructions)
@@ -156,8 +317,29 @@ impl RegVm {
     /// # Errors
     /// Returns [`VmFault`] if a runtime error (e.g. division by zero, overflow) occurs.
     pub fn run(&mut self, code: &[RegInstruction]) -> Result<Value, VmFault> {
+        let saved_handlers = std::mem::take(&mut self.handler_stack);
+        let guard_base = self.iteration_guards.len();
+        let outcome = self.run_inner(code, guard_base).and_then(|value| {
+            self.check_iteration_guards()?;
+            Ok(value)
+        });
+        self.handler_stack = saved_handlers;
+        self.iteration_guards.truncate(guard_base);
+        outcome
+    }
+
+    fn run_inner(&mut self, code: &[RegInstruction], guard_base: usize) -> Result<Value, VmFault> {
         self.pc = 0;
         while self.pc < code.len() {
+            self.check_iteration_guards()?;
+            if let Some(limit) = self.max_instructions {
+                if self.instruction_count >= limit {
+                    return Err(VmFault::Overflow {
+                        details: format!("register instruction budget {limit} exhausted"),
+                    });
+                }
+                self.instruction_count += 1;
+            }
             let inst = code[self.pc];
             self.pc += 1;
 
@@ -172,6 +354,45 @@ impl RegVm {
             let b = inst.b() as usize;
             let c = inst.c() as usize;
 
+            // B is 9 bits, but only 256 registers exist. Immediate/pool/count B
+            // operands deliberately bypass this register-role check.
+            if b >= self.registers.len()
+                && matches!(
+                    op,
+                    RegOpCode::Move
+                        | RegOpCode::Add
+                        | RegOpCode::Sub
+                        | RegOpCode::Mul
+                        | RegOpCode::Div
+                        | RegOpCode::IntDiv
+                        | RegOpCode::Mod
+                        | RegOpCode::Neg
+                        | RegOpCode::Not
+                        | RegOpCode::Equal
+                        | RegOpCode::NotEqual
+                        | RegOpCode::Less
+                        | RegOpCode::LessEqual
+                        | RegOpCode::Greater
+                        | RegOpCode::GreaterEqual
+                        | RegOpCode::CallPipe
+                        | RegOpCode::GetIndex
+                        | RegOpCode::SetIndex
+                        | RegOpCode::IterAt
+                        | RegOpCode::IterPrimary
+                        | RegOpCode::IterKey
+                        | RegOpCode::IterValue
+                        | RegOpCode::NewList
+                        | RegOpCode::NewDict
+                        | RegOpCode::Range
+                        | RegOpCode::Len
+                        | RegOpCode::CloneStruct
+                        | RegOpCode::TypeIs
+                        | RegOpCode::TypeIsNullable
+                )
+            {
+                return Err(self.corrupted(format!("register B={b} exceeds register file")));
+            }
+
             match op {
                 RegOpCode::Nop => {}
                 RegOpCode::Move => {
@@ -179,7 +400,10 @@ impl RegVm {
                 }
                 RegOpCode::LoadConst => {
                     let bx = inst.bx() as usize;
-                    let val = self.constants.get(bx).cloned().unwrap_or(Value::None);
+                    let val =
+                        self.constants.get(bx).cloned().ok_or_else(|| {
+                            self.corrupted(format!("invalid constant index {bx}"))
+                        })?;
                     self.registers[a] = val;
                 }
                 RegOpCode::LoadInt => {
@@ -194,117 +418,35 @@ impl RegVm {
                 RegOpCode::LoadBool => {
                     self.registers[a] = Value::Bool(b != 0);
                 }
-                RegOpCode::Add => match (&self.registers[b], &self.registers[c]) {
-                    (Value::Int(x), Value::Int(y)) => {
-                        let sum = x.checked_add(*y).ok_or(VmFault::Overflow {
-                            details: format!("{x} + {y} overflowed safe integer bounds"),
-                        })?;
-                        self.registers[a] = Value::Int(check_safe_int(sum)?);
-                    }
-                    (Value::Float(x), Value::Float(y)) => {
-                        self.registers[a] = Value::Float(x + y);
-                    }
-                    (Value::String(x), Value::String(y)) => {
-                        let mut combined = String::with_capacity(x.len() + y.len());
-                        combined.push_str(x);
-                        combined.push_str(y);
-                        self.registers[a] = Value::String(Rc::new(combined));
-                    }
-                    (v1, v2) => {
-                        return Err(VmFault::TypeMismatch {
-                            expected: "matching numeric or string types".to_string(),
-                            actual: format!("{} and {}", v1.type_name(), v2.type_name()),
-                        });
-                    }
-                },
-                RegOpCode::Sub => match (&self.registers[b], &self.registers[c]) {
-                    (Value::Int(x), Value::Int(y)) => {
-                        let diff = x.checked_sub(*y).ok_or(VmFault::Overflow {
-                            details: format!("{x} - {y} underflowed safe integer bounds"),
-                        })?;
-                        self.registers[a] = Value::Int(check_safe_int(diff)?);
-                    }
-                    (Value::Float(x), Value::Float(y)) => {
-                        self.registers[a] = Value::Float(x - y);
-                    }
-                    (v1, v2) => {
-                        return Err(VmFault::TypeMismatch {
-                            expected: "numbers".to_string(),
-                            actual: format!("{} and {}", v1.type_name(), v2.type_name()),
-                        });
-                    }
-                },
-                RegOpCode::Mul => match (&self.registers[b], &self.registers[c]) {
-                    (Value::Int(x), Value::Int(y)) => {
-                        let prod = x.checked_mul(*y).ok_or(VmFault::Overflow {
-                            details: format!("{x} * {y} overflowed safe integer bounds"),
-                        })?;
-                        self.registers[a] = Value::Int(check_safe_int(prod)?);
-                    }
-                    (Value::Float(x), Value::Float(y)) => {
-                        self.registers[a] = Value::Float(x * y);
-                    }
-                    (v1, v2) => {
-                        return Err(VmFault::TypeMismatch {
-                            expected: "numbers".to_string(),
-                            actual: format!("{} and {}", v1.type_name(), v2.type_name()),
-                        });
-                    }
-                },
-                RegOpCode::Div => match (&self.registers[b], &self.registers[c]) {
-                    (Value::Int(x), Value::Int(y)) => {
-                        if *y == 0 {
-                            return Err(VmFault::DivisionByZero);
-                        }
-                        #[allow(clippy::cast_precision_loss)]
-                        let res = (*x as f64) / (*y as f64);
-                        self.registers[a] = Value::Float(res);
-                    }
-                    (Value::Float(x), Value::Float(y)) => {
-                        if *y == 0.0 {
-                            return Err(VmFault::DivisionByZero);
-                        }
-                        self.registers[a] = Value::Float(x / y);
-                    }
-                    _ => return Err(VmFault::DivisionByZero),
-                },
-                RegOpCode::IntDiv => match (&self.registers[b], &self.registers[c]) {
-                    (Value::Int(x), Value::Int(y)) => {
-                        if *y == 0 {
-                            return Err(VmFault::DivisionByZero);
-                        }
-                        self.registers[a] = Value::Int(x / y);
-                    }
-                    _ => return Err(VmFault::DivisionByZero),
-                },
-                RegOpCode::Mod => match (&self.registers[b], &self.registers[c]) {
-                    (Value::Int(x), Value::Int(y)) => {
-                        if *y == 0 {
-                            return Err(VmFault::DivisionByZero);
-                        }
-                        self.registers[a] = Value::Int(x % y);
-                    }
-                    _ => return Err(VmFault::DivisionByZero),
-                },
-                RegOpCode::Neg => match &self.registers[b] {
-                    Value::Int(x) => self.registers[a] = Value::Int(-x),
-                    Value::Float(x) => self.registers[a] = Value::Float(-x),
-                    other => {
-                        return Err(VmFault::TypeMismatch {
-                            expected: "number".to_string(),
-                            actual: other.type_name().to_string(),
-                        });
-                    }
-                },
+                RegOpCode::Add => {
+                    self.registers[a] = self.registers[b].add(&self.registers[c])?;
+                }
+                RegOpCode::Sub => {
+                    self.registers[a] = self.registers[b].sub(&self.registers[c])?;
+                }
+                RegOpCode::Mul => {
+                    self.registers[a] = self.registers[b].mul(&self.registers[c])?;
+                }
+                RegOpCode::Div => {
+                    self.registers[a] = self.registers[b].div(&self.registers[c])?;
+                }
+                RegOpCode::IntDiv => {
+                    self.registers[a] = self.registers[b].int_div(&self.registers[c])?;
+                }
+                RegOpCode::Mod => {
+                    self.registers[a] = self.registers[b].modulo(&self.registers[c])?;
+                }
+                RegOpCode::Neg => {
+                    self.registers[a] = self.registers[b].negate()?;
+                }
                 RegOpCode::Not => {
-                    let b_val = self.registers[b].as_bool()?;
-                    self.registers[a] = Value::Bool(!b_val);
+                    self.registers[a] = self.registers[b].not()?;
                 }
                 RegOpCode::Equal => {
-                    self.registers[a] = Value::Bool(self.registers[b] == self.registers[c]);
+                    self.registers[a] = self.registers[b].equal(&self.registers[c])?;
                 }
                 RegOpCode::NotEqual => {
-                    self.registers[a] = Value::Bool(self.registers[b] != self.registers[c]);
+                    self.registers[a] = self.registers[b].not_equal(&self.registers[c])?;
                 }
                 RegOpCode::Less => {
                     self.registers[a] = self.registers[b].less(&self.registers[c])?;
@@ -319,72 +461,30 @@ impl RegVm {
                     self.registers[a] = self.registers[b].greater_equal(&self.registers[c])?;
                 }
                 RegOpCode::Jump => {
-                    let offset = inst.sbx();
-                    let target = (self.pc as i32) + offset;
-                    if target < 0 {
-                        return Err(VmFault::CorruptedBytecode {
-                            offset: self.pc - 1,
-                            reason: format!("jump target {target} out of range"),
-                        });
-                    }
-                    self.pc = target as usize;
+                    self.pc = self.checked_jump(inst.sbx(), code.len())?;
                 }
-                RegOpCode::JumpIfTrue => {
-                    if self.registers[a].as_bool()? {
-                        let offset = inst.sbx();
-                        let target = (self.pc as i32) + offset;
-                        if target < 0 {
-                            return Err(VmFault::CorruptedBytecode {
-                                offset: self.pc - 1,
-                                reason: format!("jump target {target} out of range"),
-                            });
-                        }
-                        self.pc = target as usize;
-                    }
-                }
-                RegOpCode::JumpIfFalse => {
-                    if !self.registers[a].as_bool()? {
-                        let offset = inst.sbx();
-                        let target = (self.pc as i32) + offset;
-                        if target < 0 {
-                            return Err(VmFault::CorruptedBytecode {
-                                offset: self.pc - 1,
-                                reason: format!("jump target {target} out of range"),
-                            });
-                        }
-                        self.pc = target as usize;
-                    }
-                }
-                RegOpCode::JumpIfSetLocal => {
-                    if !matches!(self.registers[a], Value::Unset) {
-                        let offset = inst.sbx();
-                        let target = (self.pc as i32) + offset;
-                        if target < 0 {
-                            return Err(VmFault::CorruptedBytecode {
-                                offset: self.pc - 1,
-                                reason: format!("jump target {target} out of range"),
-                            });
-                        }
-                        self.pc = target as usize;
+                RegOpCode::JumpIfTrue | RegOpCode::JumpIfFalse | RegOpCode::JumpIfSetLocal => {
+                    let target = self.checked_jump(inst.sbx(), code.len())?;
+                    let take = match op {
+                        RegOpCode::JumpIfTrue => self.registers[a].as_bool()?,
+                        RegOpCode::JumpIfFalse => !self.registers[a].as_bool()?,
+                        _ => !matches!(self.registers[a], Value::Unset),
+                    };
+                    if take {
+                        self.pc = target;
                     }
                 }
                 RegOpCode::GetGlobal => {
-                    let bx = inst.bx() as usize;
-                    if let Some(Value::String(name)) = self.constants.get(bx) {
-                        let val = self
-                            .globals
-                            .get(name.as_str())
-                            .cloned()
-                            .unwrap_or(Value::None);
-                        self.registers[a] = val;
-                    }
+                    let name = self.constant_name(inst.bx() as usize)?;
+                    self.registers[a] = self
+                        .globals
+                        .get(&name)
+                        .cloned()
+                        .ok_or(VmFault::UndefinedGlobal { name })?;
                 }
                 RegOpCode::SetGlobal => {
-                    let bx = inst.bx() as usize;
-                    if let Some(Value::String(name)) = self.constants.get(bx) {
-                        self.globals
-                            .insert(name.to_string(), self.registers[a].clone());
-                    }
+                    let name = self.constant_name(inst.bx() as usize)?;
+                    self.globals.insert(name, self.registers[a].clone());
                 }
                 RegOpCode::GetField => {
                     let bx = inst.bx() as usize;
@@ -422,7 +522,11 @@ impl RegVm {
                         }
                         Value::Dict(d) => {
                             let key = Value::String(Rc::new(field_name.to_string()));
-                            let val = d.borrow().get(&key).cloned().unwrap_or(Value::None);
+                            let val = d.borrow().get(&key).cloned().ok_or_else(|| {
+                                VmFault::KeyNotFound {
+                                    key: field_name.to_string(),
+                                }
+                            })?;
                             self.registers[a] = val;
                         }
                         other => {
@@ -452,6 +556,7 @@ impl RegVm {
                         }
                         Value::Dict(d) => {
                             let key = Value::String(Rc::new(field_name.to_string()));
+                            self.check_dict_insert(d, &key)?;
                             d.borrow_mut().upsert(key, new_val);
                         }
                         other => {
@@ -478,7 +583,11 @@ impl RegVm {
                             self.registers[a] = list[idx].clone();
                         }
                         (Value::Dict(d), k) => {
-                            self.registers[a] = d.borrow().get(k).cloned().unwrap_or(Value::None);
+                            self.registers[a] = d
+                                .borrow()
+                                .get(k)
+                                .cloned()
+                                .ok_or_else(|| VmFault::KeyNotFound { key: k.to_string() })?;
                         }
                         (Value::Bytes(b), Value::Int(i)) => {
                             let bytes = b.borrow();
@@ -492,15 +601,7 @@ impl RegVm {
                             self.registers[a] = Value::Byte(bytes[idx]);
                         }
                         (Value::String(s), Value::Int(i)) => {
-                            let chars: Vec<char> = s.chars().collect();
-                            let len = chars.len();
-                            #[allow(clippy::cast_possible_wrap)]
-                            let actual = if *i < 0 { (len as i64) + *i } else { *i };
-                            let idx = usize::try_from(actual)
-                                .ok()
-                                .filter(|&idx| idx < len)
-                                .ok_or(VmFault::IndexOutOfRange { index: *i, len })?;
-                            self.registers[a] = Value::String(Rc::new(chars[idx].to_string()));
+                            self.registers[a] = Value::String(Rc::new(string_char_at(s, *i)?));
                         }
                         (other, _) => {
                             return Err(VmFault::TypeMismatch {
@@ -533,20 +634,25 @@ impl RegVm {
                             }
                         }
                         Value::Dict(d) => {
+                            self.check_dict_insert(d, key)?;
                             d.borrow_mut().upsert(key.clone(), val);
                         }
                         Value::Bytes(bytes) => {
-                            if let (Value::Int(i), Value::Byte(b)) = (key, &val) {
-                                let mut b_vec = bytes.borrow_mut();
-                                let len = b_vec.len();
-                                #[allow(clippy::cast_possible_wrap)]
-                                let actual = if *i < 0 { (len as i64) + *i } else { *i };
-                                let idx = usize::try_from(actual)
-                                    .ok()
-                                    .filter(|&idx| idx < len)
-                                    .ok_or(VmFault::IndexOutOfRange { index: *i, len })?;
-                                b_vec[idx] = *b;
-                            }
+                            let Value::Int(index) = key else {
+                                return Err(VmFault::TypeMismatch {
+                                    expected: "Int index".into(),
+                                    actual: key.type_name().into(),
+                                });
+                            };
+                            let Value::Byte(byte) = val else {
+                                return Err(VmFault::TypeMismatch {
+                                    expected: "Byte".into(),
+                                    actual: val.type_name().into(),
+                                });
+                            };
+                            let mut bytes = bytes.borrow_mut();
+                            let position = Self::position(bytes.len(), *index)?;
+                            bytes[position] = byte;
                         }
                         other => {
                             return Err(VmFault::TypeMismatch {
@@ -559,14 +665,20 @@ impl RegVm {
                 RegOpCode::Call => {
                     let callee = self.registers[a].clone();
                     let arg_count = b;
-                    let args = self.registers[a + 1..a + 1 + arg_count].to_vec();
+                    let args = self
+                        .registers
+                        .get(a + 1..a + 1 + arg_count)
+                        .ok_or_else(|| self.corrupted("call arguments exceed register file"))?
+                        .to_vec();
                     match callee {
                         Value::Native(native) => {
+                            Self::check_arity(native.arity, args.len())?;
                             let result = (native.func)(&args)?;
                             self.registers[a] = result;
                         }
                         Value::BoundMethod(bm) => match bm.kind {
                             crate::value::MethodKind::Native(func) => {
+                                Self::check_arity(bm.arity, args.len())?;
                                 let result = func(&bm.receiver, &args)?;
                                 self.registers[a] = result;
                             }
@@ -576,6 +688,9 @@ impl RegVm {
                                 });
                             }
                         },
+                        Value::Type(tag) => {
+                            self.registers[a] = convert_via_type(tag, &args)?;
+                        }
                         Value::Function {
                             entry_ip, arity, ..
                         } => {
@@ -607,11 +722,13 @@ impl RegVm {
                     let stream_arg = self.registers[b].clone();
                     match callee {
                         Value::Native(native) => {
+                            Self::check_arity(native.arity, 1)?;
                             let result = (native.func)(&[stream_arg])?;
                             self.registers[a] = result;
                         }
                         Value::BoundMethod(bm) => match bm.kind {
                             crate::value::MethodKind::Native(func) => {
+                                Self::check_arity(bm.arity, 1)?;
                                 let result = func(&bm.receiver, &[stream_arg])?;
                                 self.registers[a] = result;
                             }
@@ -621,6 +738,9 @@ impl RegVm {
                                 });
                             }
                         },
+                        Value::Type(tag) => {
+                            self.registers[a] = convert_via_type(tag, &[stream_arg])?;
+                        }
                         Value::Function {
                             entry_ip, arity, ..
                         } => {
@@ -653,6 +773,7 @@ impl RegVm {
                 RegOpCode::MakeFunction => {
                     let bx = inst.bx() as usize;
                     if let Some(func) = self.functions.get(bx) {
+                        self.check_function(func)?;
                         let arity = u16::try_from(func.arity).unwrap_or(u16::MAX);
                         self.registers[a] = Value::Function {
                             entry_ip: bx as u32,
@@ -812,7 +933,7 @@ impl RegVm {
                         Value::Dict(d) => d.borrow().len() as i64,
                         Value::Set(s) => s.borrow().len() as i64,
                         Value::Bytes(b) => b.borrow().len() as i64,
-                        Value::Range(r) => (r.end - r.start).max(0),
+                        Value::Range(r) => Self::range_len(r.start, r.end)?,
                         other => {
                             return Err(VmFault::TypeMismatch {
                                 expected: "collection, string or range".to_string(),
@@ -820,107 +941,114 @@ impl RegVm {
                             });
                         }
                     };
-                    self.registers[a] = Value::Int(len);
+                    self.registers[a] = Value::Int(check_safe_int(len)?);
                 }
-                RegOpCode::IterAt => {
-                    let coll = &self.registers[b];
-                    let idx_reg = c >> 2;
-                    let mode = (c & 3) as u8;
-                    let idx_val = &self.registers[idx_reg];
-                    let ordinal = match idx_val {
-                        Value::Int(n) => *n,
-                        other => {
-                            return Err(VmFault::TypeMismatch {
-                                expected: "Int iteration index".to_string(),
-                                actual: other.type_name().to_string(),
-                            });
-                        }
+                RegOpCode::IterAt
+                | RegOpCode::IterPrimary
+                | RegOpCode::IterKey
+                | RegOpCode::IterValue => {
+                    let (index_reg, mode) = match op {
+                        RegOpCode::IterPrimary => (c, 0),
+                        RegOpCode::IterKey => (c, 1),
+                        RegOpCode::IterValue => (c, 2),
+                        _ => (c >> 2, c & 3),
                     };
-                    let projected = match coll {
-                        Value::List(l) => {
-                            let list = l.borrow();
-                            let len = list.len();
-                            #[allow(clippy::cast_possible_wrap)]
-                            let actual = if ordinal < 0 {
-                                (len as i64) + ordinal
-                            } else {
-                                ordinal
-                            };
-                            let pos = usize::try_from(actual).ok().filter(|&p| p < len).ok_or(
-                                VmFault::IndexOutOfRange {
-                                    index: ordinal,
-                                    len,
-                                },
-                            )?;
+                    if mode > 2 {
+                        return Err(self.corrupted("invalid iteration projection"));
+                    }
+                    let Value::Int(ordinal) = self.registers[index_reg] else {
+                        return Err(VmFault::TypeMismatch {
+                            expected: "Int iteration index".into(),
+                            actual: self.registers[index_reg].type_name().into(),
+                        });
+                    };
+                    let projected = match &self.registers[b] {
+                        Value::List(items) | Value::Set(items) => {
+                            let items = items.borrow();
+                            let position = Self::position(items.len(), ordinal)?;
                             if mode == 1 {
-                                Value::Int(actual)
+                                Value::Int(position as i64)
                             } else {
-                                list[pos].clone()
+                                items[position].clone()
                             }
                         }
-                        Value::Dict(d) => {
-                            let dict = d.borrow();
-                            let len = dict.len();
-                            #[allow(clippy::cast_possible_wrap)]
-                            let actual = if ordinal < 0 {
-                                (len as i64) + ordinal
+                        Value::Dict(dict) => {
+                            let dict = dict.borrow();
+                            let position = Self::position(dict.len(), ordinal)?;
+                            let (key, value) = &dict.entries()[position];
+                            if mode == 2 {
+                                value.clone()
                             } else {
-                                ordinal
-                            };
-                            let pos = usize::try_from(actual).ok().filter(|&p| p < len).ok_or(
-                                VmFault::IndexOutOfRange {
-                                    index: ordinal,
-                                    len,
-                                },
-                            )?;
-                            let (k, v) = &dict.entries()[pos];
-                            if mode == 1 { k.clone() } else { v.clone() }
+                                key.clone()
+                            }
                         }
-                        Value::Range(r) => {
-                            let len = (r.end - r.start).max(0) as usize;
-                            #[allow(clippy::cast_possible_wrap)]
-                            let actual = if ordinal < 0 {
-                                (len as i64) + ordinal
-                            } else {
-                                ordinal
-                            };
-                            let pos = usize::try_from(actual).ok().filter(|&p| p < len).ok_or(
-                                VmFault::IndexOutOfRange {
-                                    index: ordinal,
-                                    len,
-                                },
-                            )?;
-                            Value::Int(r.start + (pos as i64))
-                        }
-                        Value::String(s) => {
-                            let chars: Vec<char> = s.chars().collect();
-                            let len = chars.len();
-                            #[allow(clippy::cast_possible_wrap)]
-                            let actual = if ordinal < 0 {
-                                (len as i64) + ordinal
-                            } else {
-                                ordinal
-                            };
-                            let pos = usize::try_from(actual).ok().filter(|&p| p < len).ok_or(
-                                VmFault::IndexOutOfRange {
-                                    index: ordinal,
-                                    len,
-                                },
-                            )?;
+                        Value::Bytes(bytes) => {
+                            let bytes = bytes.borrow();
+                            let position = Self::position(bytes.len(), ordinal)?;
                             if mode == 1 {
-                                Value::Int(actual)
+                                Value::Int(position as i64)
                             } else {
-                                Value::String(Rc::new(chars[pos].to_string()))
+                                Value::Byte(bytes[position])
+                            }
+                        }
+                        Value::Range(range) => {
+                            let length = usize::try_from(Self::range_len(range.start, range.end)?)
+                                .map_err(|_| self.corrupted("range length exceeds target usize"))?;
+                            let position = Self::position(length, ordinal)?;
+                            let value = if mode == 1 {
+                                position as i64
+                            } else {
+                                range
+                                    .start
+                                    .checked_add(position as i64)
+                                    .ok_or_else(|| self.corrupted("range value overflow"))?
+                            };
+                            Value::Int(check_safe_int(value)?)
+                        }
+                        Value::String(text) => {
+                            if mode == 1 {
+                                Value::Int(Self::position(text.chars().count(), ordinal)? as i64)
+                            } else {
+                                Value::String(Rc::new(string_char_at(text, ordinal)?))
                             }
                         }
                         other => {
                             return Err(VmFault::TypeMismatch {
-                                expected: "iterable collection".to_string(),
-                                actual: other.type_name().to_string(),
+                                expected: "iterable collection".into(),
+                                actual: other.type_name().into(),
                             });
                         }
                     };
                     self.registers[a] = projected;
+                }
+                RegOpCode::IterGuard => {
+                    let value = self.registers[a].clone();
+                    let length = Self::guarded_len(&value);
+                    self.iteration_guards.push((value, length));
+                }
+                RegOpCode::IterGuardEnd => {
+                    if self.iteration_guards.len() <= guard_base {
+                        return Err(self.corrupted("iteration guard underflow"));
+                    }
+                    self.iteration_guards.pop();
+                }
+                RegOpCode::AssertContract | RegOpCode::AssertContractNullable => {
+                    let index = inst.bx() as usize;
+                    let type_name = self.constant_name(index)?;
+                    let position = self.constant_name(index + 1)?;
+                    let nullable = op == RegOpCode::AssertContractNullable;
+                    let value = &self.registers[a];
+                    if !value.is_failure() && !self.contract_holds(&type_name, nullable, value) {
+                        let actual = match value {
+                            Value::Struct(instance) => instance.borrow().type_name.clone(),
+                            other => other.type_name().into(),
+                        };
+                        return Err(VmFault::ContractViolation {
+                            position,
+                            expected: format!("{type_name}{}", if nullable { "?" } else { "" }),
+                            actual,
+                        });
+                    }
                 }
                 RegOpCode::TypeIs => {
                     let val = &self.registers[b];
@@ -985,18 +1113,13 @@ impl RegVm {
                     self.registers[a] = Value::Bool(matches);
                 }
                 RegOpCode::PushHandler => {
-                    let offset = inst.sbx();
-                    let target = (self.pc as i32) + offset;
-                    if target < 0 {
-                        return Err(VmFault::CorruptedBytecode {
-                            offset: self.pc - 1,
-                            reason: format!("handler target {target} out of range"),
-                        });
-                    }
-                    self.handler_stack.push((target as usize, a as u8));
+                    let target = self.checked_jump(inst.sbx(), code.len())?;
+                    self.handler_stack.push((target, a as u8));
                 }
                 RegOpCode::PopHandler => {
-                    self.handler_stack.pop();
+                    self.handler_stack
+                        .pop()
+                        .ok_or_else(|| self.corrupted("failure handler underflow"))?;
                 }
                 RegOpCode::Fail => {
                     let val = &self.registers[a];
@@ -1010,7 +1133,7 @@ impl RegVm {
                         self.registers[err_reg as usize] = failure;
                         self.pc = handler_pc;
                     } else {
-                        self.registers[a] = failure;
+                        return Ok(failure);
                     }
                 }
                 RegOpCode::PropagateFailure => {
@@ -1101,7 +1224,9 @@ mod tests {
             span,
         };
 
-        let compiled = RegEmitter::new().compile_function(&func);
+        let compiled = RegEmitter::new()
+            .compile_function(&func)
+            .expect("supported register IR");
         let mut vm = RegVm::new();
         // Set parameters R[0] and R[1]
         vm.registers[0] = Value::Int(6);

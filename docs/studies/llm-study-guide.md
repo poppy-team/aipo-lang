@@ -1,9 +1,12 @@
 # Aipo — Guia Master para LLMs: Estudo Profundo e Implementação
 
-**Versão:** 2.0 · **Data:** 2026-10-08 · **Status:** normativo-operacional
+**Versão:** 2.1 · **Data:** 2026-10-09 · **Status:** normativo-operacional
 **Público:** qualquer LLM que for executar estudo aprofundado e implementação neste repositório.
 **Pré-requisito:** ler este documento INTEIRO, nesta ordem, antes de qualquer ação.
-**Base:** commit `9c56ac9` (branch `feat/host-ahs-headless-conformance`).
+**Base estudada:** commit `488905ffb0b83ebbff458939542350d7280ad79b`.
+**Base de integração:** `bcbc4c991dee1d9f853c597aaed2790e8981b8b9`, após incorporar a atualização de dependência já publicada na `main`.
+
+**Rodada atual:** [guia de uso/reimplementação](runtime-hardening-guide.md) e [evidência](../evidence/P07-G01-runtime-hardening.md). Testes não executados nesta reconstrução por pedido explícito do usuário; PR autorizado em rascunho. Resultados da cópia temporária perdida não certificam estes arquivos.
 
 ---
 
@@ -46,7 +49,7 @@ perfil; trocar o Modelo B de falhas; adicionar dependências pesadas sem ADP.
 ## 2. Snapshot do projeto
 
 Pipeline: `lexer → syntax → hir → sema → ir → bytecode → {stack-VM, RegVm, JS, Wasm}`.
-Toolchain: Rust 1.85 (MSRV), cargo, Node 18+ (testes JS).
+Toolchain: Rust 1.85 é o MSRV declarado, não certificado por todos os grafos; Wasmtime 49.0.2 demanda toolchain compatível. Reconstrução com Rust 1.99.0; Node >= 20 para suítes JS.
 24 crates no workspace (`unsafe_code = "forbid"`, clippy `deny` em tudo).
 
 | Crate | Papel |
@@ -54,9 +57,9 @@ Toolchain: Rust 1.85 (MSRV), cargo, Node 18+ (testes JS).
 | `aipo-lexer/syntax/ast/hir/sema` | Frontend compartilhado (semântica única) |
 | `aipo-ir` | Core IR neutro (43 instruções) |
 | `aipo-bytecode` | Stack emitter + `RegEmitter` + `RegOpCode` u32 |
-| `aipo-vm` | Stack VM (referência) + `RegVm` + `Value` 16 B + `VmMetrics` + budget |
+| `aipo-vm` | Stack VM (referência) + `RegVm` + `Value` (layout por alvo) + `VmMetrics` + budget |
 | `aipo-js` | `emit_js` → `JsBundle` (paridade diferencial com a VM) |
-| `aipo-wasm` | `compile_hir`, `WasmEmitter`, runner `execute_wasm` (wasmtime feature-gated) |
+| `aipo-wasm` | `compile_hir`, `WasmEmitter`, `execute_wasm`/`execute_wasm_with_options` (wasmtime feature-gated) |
 | `aipo-cli` | Bins `aipo` (full) e `aipo-sh` (shell, REPL); subcomando `test` |
 | `aipo-host` | `Capability`/`CapabilitySet` (deny-by-default), `HostValue` (7 variantes), `Handle` |
 | `aipo-c-abi` | 22 exports C + `include/aipo.h` (ver §8.5) |
@@ -101,24 +104,22 @@ diagnósticos §4bis + narrowing; batch `Tipo::[...]`; RegVm (aritmética, salto
 chamadas, defaults, `each`, `TypeIs`, coleções/structs, falhas, handlers);
 Wasm (enum por tag-pointer, `[]/{}` vazios, `.len()`); `aipo-sh --engine=reg`.
 
-### 4.2 Lacunas verificadas no fonte
-1. **10 `CoreInst` sem lowering na RegVm:** `MakeClosure, GetUpvalue,
-   SetUpvalue, FillSelfCapture, Await, SealStruct, AssertInvariant,
-   AssertContract, CheckMutations, IterGuardEnd`.
-2. **`invoke_function` copia 256 registradores por chamada**
-   (`crates/aipo-vm/src/reg_vm.rs:122`).
-3. **`get_field`/`set_field` com busca LINEAR em `Vec<(String, Value)>`**
-   (`crates/aipo-vm/src/value.rs:93,109`).
-4. **`no_std`: zero ocorrências**; `arena.rs` usa `Vec<u8>`+`std::fmt`.
-5. **Sem gates `float`/`shell`/`nano`** — `aipo-sh` sai a 25 MB (não 2 MB).
-6. **RegVm sem instruction budget** (Stack VM e C ABI têm).
-7. Docs com números velhos (`Value` já é 16 B, não 48).
+### 4.2 Correções reconstruídas e lacunas
 
-### 4.3 Estudos prévios (`docs/studies/` — estender, não duplicar)
-`reference-vms.md` (Lua `TValue` 16 B + upvalues; LuaJIT NaN-tag 8 B + BC 32-bit;
-Wren ~1994 linhas + `goto` computado + fibers; QuickJS refcount+ciclos + shapes +
-átomos), `reference-runtimes.md` (Luau/Janet/wasm3/**WAMR líder**/wasmi **com WASI**),
-`lessons-for-aipo.md` (gaps + P2/P3/P4).
+- `RegEmitter` agora retorna `Result`, rejeita IR sem suporte e calcula alturas pelo CFG. RegVM continua experimental.
+- `AssertContract` (tipos fundamentais/nominais/nullable) e `IterGuardEnd` têm lowering e execução. Interfaces com operações exigem Stack VM.
+- Closures/upvalues, async/await, hooks, invariantes e journal de mutações continuam sem paridade Reg completa.
+- `invoke_function` ainda salva/troca 256 registradores; janelas não foram implementadas.
+- `Value`/frames devem ser medidos pelo `layout_probe`; tamanho em um alvo não é promessa multiplataforma.
+- RegVM possui `set_instruction_budget`; Wasm possui fuel opt-in pela API Rust. Limites de memória/output e interrupção de host continuam abertos.
+- Indexação de um escalar String compartilha helper sem `Vec<char>` temporário. Sem benchmark novo nesta reconstrução.
+- `no_std` Aipo não foi implementado; a arena segue baseada em `std` e reservada no RegVM.
+
+### 4.3 Estudos disponíveis
+
+[reference-vms.md](reference-vms.md), [reference-runtimes.md](reference-runtimes.md) e [lessons-for-aipo.md](lessons-for-aipo.md) registram leitura dirigida e ações. Não certificam auditoria integral upstream nem compilação de runtimes externos.
+
+**Correções de premissas:** WAMR não é vencedor medido nem único candidato com WASI. wasmi tem núcleo `no_std` e adaptador WASI separado, com `std`. ADR-001 e ADP-012 citados na versão anterior não estão materializados neste checkout; aplicar o canon/authority map existente, sem inventar arquivos ou decisões.
 
 ---
 
@@ -135,9 +136,9 @@ Lock: `$AIPO_REFS/refs.lock.json`. Re-pinar só conscientemente, com data.
 | `quickjs` | `quickjs-ng/quickjs` | `master` | `dad13e33cee3` | MIT | A | refcount+ciclos, shapes, átomos |
 | `luau` | `luau-lang/luau` | `master` | `74f768309c38` | MIT | B | gradual typing, diagnósticos, `buffer` |
 | `janet` | `janet-lang/janet` | `master` | `246951c8090a` | MIT | B | tagged union, fibers, núcleo C |
-| `wasm3` | `wasm3/wasm3` | `main` | `28ecb9af6d20` | MIT | C | ~64KB/10KB, deterministic profile |
-| `wamr` | `wasm-micro-runtime/wasm-micro-runtime` | `main` | `38b044a67689` | **Apache-2.0** | C | 95KB RISC-V32, **com WASI** |
-| `wasmi` | `wasmi-labs/wasmi` | `main` | `2970aa871cc1` | **Apache-2.0** | C | Rust; manutenção apenas |
+| `wasm3` | `wasm3/wasm3` | `main` | `28ecb9af6d20` | MIT | C | limites e flags; tamanho a medir |
+| `wamr` | `wasm-micro-runtime/wasm-micro-runtime` | `main` | `38b044a67689` | **Apache-2.0** | C | flags interp/AOT/JIT e WASI opcional |
+| `wasmi` | `wasmi-labs/wasmi` | `main` | `2970aa871cc1` | MIT/Apache-2.0 | C | núcleo Rust no_std; WASI separado |
 
 Layouts que desviam do óbvio: `lua/` é flat na raiz; QuickJS-ng sem
 `internals.md` (ler no fonte); Luau aninhado (`VM/src/`…); Janet em
@@ -172,7 +173,7 @@ Perguntas fechadas / Lição → Ação (com crates)*. Sem "Lição → Ação",
   (3 modos?), mark por tipo, fibers.
 - **wasm3** (`source/m3_config.h`, dispatch): tamanhos, profile determinístico.
 - **WAMR** (`core/iwasm/`, opções de build): custo WASI, menor config.
-- **wasmi** (`crates/`): `no_std` real? (Com WASI — hipótese antiga descartada.)
+- **wasmi** (`crates/`): separar núcleo `no_std` do adaptador WASI/std e medir por configuração.
 - **Tcl/PS/Nushell:** docs-only (reentrância; pipelines de valores; `pipe2`).
 
 ---
@@ -250,7 +251,7 @@ capabilities(2), budget(3), handles(4), values/errors(2), reg-int/run(3).
 
 - Gap→estudo: cada item da §8 referencia a lição que o informa.
 - **P2:** nano = Linux pequeno+boot rápido AGORA; MCU depois, com `no_std` desenhado já.
-- **P3:** wasmtime gated no `full`; spike WAMR antes de ADP (único pequeno **com WASI** ativo).
+- **P3:** wasmtime feature-gated; comparar spikes WAMR e wasmi antes de escolher engine.
 - **P4:** 1 semântica/N emissores; tiers 1/2/3 com erro amigável; conformance como
   árbitro; perfis via features+`[profile.*]`, nunca crates novas; CI `full/shell/nano`.
 
@@ -287,8 +288,8 @@ slots em `pre_scan_stmts` → teste Wasmtime real.
 3. Desvios vs este guia + fatos que contradizem a §4. 4. Pendências explícitas.
 5. Nunca commitar/pushear sem pedido.
 
-## Apêndice — atalhos verificados
-`reg_vm.rs:122` (cópia 256 regs); `value.rs:93,109` (busca linear, 26 variantes
-em `value.rs:472`); `vm/mod.rs:218,346` + `c_api.rs:498` (budget);
-`aipo-host capability.rs` (`parse/grants/parent`, `Set::none/allows/grant/revoke/narrow/require`);
-testes `cargo test -p aipo-wasm`, `-p aipo-cli --test conformance --test shell_tests`.
+## Apêndice — fontes e limites de verificação
+
+Use símbolos, não números de linha antigos: `RegEmitter::stack_heights/compile_function`, `RegVm::run/invoke_function/set_instruction_budget`, `value::string_char_at`, `execute_wasm_with_options` e `studies/refs.json`. Os links dos estudos incluem SHA upstream e regiões efetivamente lidas.
+
+A seção 11 conserva os gates de certificação futura. A publicação atual é draft, com dispensa explícita da execução de testes; não equivale à aprovação de todas as fases deste guia.

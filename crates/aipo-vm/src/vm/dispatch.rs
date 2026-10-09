@@ -728,17 +728,7 @@ impl Vm {
                         }
                     }
                     (Value::String(s), Value::Int(i)) => {
-                        let chars: Vec<char> = s.chars().collect();
-                        let len = chars.len();
-                        #[allow(clippy::cast_possible_wrap)]
-                        let actual_idx = if *i < 0 { (len as i64) + *i } else { *i };
-                        let idx_usize = usize::try_from(actual_idx)
-                            .map_err(|_| VmFault::IndexOutOfRange { index: *i, len })?;
-                        if idx_usize >= len {
-                            return Err(VmFault::IndexOutOfRange { index: *i, len }.into());
-                        }
-                        let ch = chars[idx_usize];
-                        self.push(Value::String(Rc::new(ch.to_string())))?;
+                        self.push(Value::String(Rc::new(crate::value::string_char_at(s, *i)?)))?;
                     }
                     _ => {
                         return Err(VmFault::TypeMismatch {
@@ -1394,10 +1384,10 @@ impl Vm {
                     len,
                 })?;
             let (key, value) = &entries.entries()[position];
-            return Ok(if mode == 1 {
-                key.clone()
-            } else {
+            return Ok(if mode == 2 {
                 value.clone()
+            } else {
+                key.clone()
             });
         }
 
@@ -1433,8 +1423,7 @@ impl Vm {
         self.index_value(module, collection, ordinal)
     }
 
-    /// Indexed read shared by `GetIndex` and `IterAt`: positional for indexable values,
-    /// keyed never.
+    /// Positional read for `IterAt`; strings share the `GetIndex` lookup helper.
     fn index_value(
         &mut self,
         module: &BytecodeModule,
@@ -1456,37 +1445,9 @@ impl Vm {
                     .ok_or(VmFault::IndexOutOfRange { index, len })?;
                 Ok(list.borrow()[position].clone())
             }
-            Value::String(text) => {
-                if text.is_ascii() {
-                    let len = text.len();
-                    #[allow(clippy::cast_possible_wrap)]
-                    let actual = if index < 0 {
-                        (len as i64) + index
-                    } else {
-                        index
-                    };
-                    let position = usize::try_from(actual)
-                        .ok()
-                        .filter(|position| *position < len)
-                        .ok_or(VmFault::IndexOutOfRange { index, len })?;
-                    return Ok(Value::String(Rc::new(
-                        (text.as_bytes()[position] as char).to_string(),
-                    )));
-                }
-                let chars: Vec<char> = text.chars().collect();
-                let len = chars.len();
-                #[allow(clippy::cast_possible_wrap)]
-                let actual = if index < 0 {
-                    (len as i64) + index
-                } else {
-                    index
-                };
-                let position = usize::try_from(actual)
-                    .ok()
-                    .filter(|position| *position < len)
-                    .ok_or(VmFault::IndexOutOfRange { index, len })?;
-                Ok(Value::String(Rc::new(chars[position].to_string())))
-            }
+            Value::String(text) => Ok(Value::String(Rc::new(crate::value::string_char_at(
+                text, index,
+            )?))),
             Value::Bytes(bytes) => {
                 let len = bytes.borrow().len();
                 #[allow(clippy::cast_possible_wrap)]
