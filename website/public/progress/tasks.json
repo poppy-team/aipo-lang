@@ -150,7 +150,7 @@
       "document": "/engineering/runtime",
       "summary": "VM de pilha e modelo de Value presentes.",
       "sourcePaths": [
-        "crates/aipo-vm/src/vm.rs",
+        "crates/aipo-vm/src/vm",
         "crates/aipo-vm/src/value.rs"
       ]
     },
