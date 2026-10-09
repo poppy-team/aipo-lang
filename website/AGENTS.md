@@ -18,3 +18,6 @@ Do not duplicate the whole Prumo workforce. Follow [the source catalog](https://
 ## Protocolo de progresso (obrigatório)
 
 Antes de qualquer slice, ler [progresso](content/progress/index.md), [protocolo](content/engineering/progress-protocol.md) e [auditoria legado](content/engineering/legacy-audit.md). No mesmo PR, atualizar `public/progress/tasks.json` (IDs afetados, checkpoints, gates, evidência e datas). Nunca apresentar teste antigo ou presença de crate como nova validação. Rodar `npm run check` e `npm run build` a partir de `website/`. É vedado excluir `docs/` antes de cumprir os gates de paridade e consumidores descritos na auditoria.
+
+
+**CI de sincronização:** o workflow `.github/workflows/progress-sync.yml` verifica PRs que mudam código/fixtures e exige `website/public/progress/tasks.json` no mesmo diff. Documentar IDs afetados e evidências; apenas alterar o JSON para contornar o gate não conclui o trabalho.

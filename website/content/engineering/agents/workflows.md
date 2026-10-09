@@ -40,3 +40,6 @@ Nenhuma evidência antiga valida automaticamente um HEAD novo.
 ## Sincronização obrigatória do progresso
 
 Toda implementação ou refatoração que altere funcionalidades, testes ou documentação deve localizar os processos afetados em [Progresso](/progress/) e atualizar `website/public/progress/tasks.json` no **mesmo PR**. Feche checkpoints somente com evidência rastreável, registre `not-run` explicitamente e reabra DONE em regressão. [Protocolo completo](/engineering/progress-protocol).
+
+
+O gate automático `Aipo progress sync` rejeita PR de implementação que não atualize o JSON. Esse check só verifica a presença da alteração; a revisão humana deve confrontar os IDs, critérios e evidências com o código. [Regras do CI](/engineering/progress-protocol).
