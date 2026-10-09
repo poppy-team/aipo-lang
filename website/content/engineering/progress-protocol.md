@@ -113,3 +113,16 @@ A migração do legado é um processo próprio (`D02`). **Não remover `docs/` i
 Foram preservados os princípios de três estados, checkpoints de peso igual, prova obrigatória, busca/filtros, permalink, separação entre status e impedimento, atualização junto do código e retorno de `DONE` em regressão. Foram adaptados o armazenamento para build VitePress, o controle de múltiplos backends e gates Rust/JS/Wasm/C, a evidência histórica e a política de migração documental.
 
 A página é uma **reimplementação própria**, não uma cópia do componente HTML/JS do Petunia.
+
+
+## 10. Proteção automática de sincronização em pull requests
+
+O workflow [`progress-sync.yml`](https://github.com/poppyTM/aipo-lang/blob/main/.github/workflows/progress-sync.yml) verifica automaticamente PRs que alteram **implementação** em `crates/`, `packages/`, `examples/`, `fuzz/`, fixtures em `docs/conformance/` ou o manifesto raiz `Cargo.toml`.
+
+Ao detectar alterações de código/contrato, exige no mesmo diff a atualização de `website/public/progress/tasks.json`. Sem esse arquivo, o check `Aipo progress sync` falha e apresenta os caminhos relevantes. PRs apenas de texto/documentação editorial não exigem mutação artificial do progresso. Testes de política acompanham o validador:
+
+```bash
+python3 -m unittest discover -s website/tests -p 'test_progress_delta.py' -v
+```
+
+O gate prova **sincronização de arquivo**, não que cada ID afetado foi tocado ou que a evidência seja verdadeira; revisão de escopo, consistência dos checkpoints e execução real de testes permanecem obrigatórias. Mudanças de dependência no manifesto também passam pela regra, por poderem alterar comportamento ou ABI; discutir uma exceção justificada no PR antes de relaxar a política.
