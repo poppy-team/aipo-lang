@@ -54,4 +54,4 @@ Fonte: [exemplo de init/invariant](/examples/12-struct-init-fixed-invariant).
 
 **Pratique:** acrescente um campo `var score = 0` e um método que o incremente.
 
-[Próximo: interfaces](/manual/interfaces/) · [Falhas e rollback](/manual/failures/).
+[Próximo: interfaces](/manual/interfaces) · [Falhas e rollback](/manual/failures).

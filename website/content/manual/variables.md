@@ -36,4 +36,4 @@ O exemplo vem de [`06_variables_and_values.aipo`](/examples/06-variables-and-val
 
 **Pratique:** altere `score` para começar em 0, some 2 duas vezes e imprima o resultado.
 
-[Próximo: texto](/manual/text/) · [Exemplo completo](/examples/06-variables-and-values).
+[Próximo: texto](/manual/text) · [Exemplo completo](/examples/06-variables-and-values).

@@ -34,4 +34,4 @@ O código é um recorte do programa de conformidade [`30_struct_update_with.aipo
 
 **Quando preferir:** use `with` para estados, configurações e transformações em que criar um valor novo deixa a intenção mais explícita.
 
-[Structs e métodos](/manual/structs/) · [Rollback](/manual/failures/).
+[Structs e métodos](/manual/structs) · [Rollback](/manual/failures).

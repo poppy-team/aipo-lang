@@ -41,7 +41,7 @@ Os snippets nesta tabela são **formas de referência**, não programas completo
 - Cópia funcional: `instance with { field: value }`.
 - Padrões: `enum`, `match`, `when` e guardas.
 
-[Manual de operadores](/manual/operators/) · [Enums e padrões](/manual/enums-patterns).
+[Manual de operadores](/manual/operators) · [Enums e padrões](/manual/enums-patterns).
 
 ## Sintaxe alvo e pontos de atenção
 

@@ -19,7 +19,7 @@ A biblioteca do Aipo é mais ampla do que uma lista mínima de `print` e `math`.
 | Evitar duplicatas | `Set` |
 | Avaliar quando necessário | `Sequence` |
 
-[Aprender texto](/manual/text/) · [Aprender coleções](/manual/collections/) · [Exemplos](/examples/).
+[Aprender texto](/manual/text) · [Aprender coleções](/manual/collections) · [Exemplos](/examples/).
 
 ## Matemática e dados
 

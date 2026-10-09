@@ -36,4 +36,4 @@ A normalização Unicode (NFC) também é abordada no [exemplo de normalização
 
 **Pratique:** crie uma mensagem interpolando dois valores e aplique `.upper()` a ela.
 
-[Próximo: números](/manual/numbers/) · [Biblioteca de texto](/manual/standard-library/#texto-e-colecoes).
+[Próximo: números](/manual/numbers) · [Biblioteca de texto](/manual/standard-library#texto-e-colecoes).
