@@ -1670,8 +1670,8 @@
       "documents": [
         "/learn/"
       ],
-      "baseline": "26 capítulos existem, mas constam como not-run.",
-      "next": "Todos os snippets validados contra exemplos reais e comportamento atual.",
+      "baseline": "Os 26 capítulos antigos agora apontam ao manual atualizado por assunto e a fontes reais. O novo manual possui 20 tópicos, existem 26 páginas de exemplos com código copiado do repositório e 18 páginas de APIs nativas. O checker editorial compara os exemplos com o código. Isso não certifica execução dos exemplos na linguagem nem os trechos da biblioteca por backend.",
+      "next": "Executar e registrar os exemplos Aipo na revisão corrente; criar provas por backend para cada página e ampliar assinaturas de API verificadas.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1756,8 +1756,8 @@
       "documents": [
         "/engineering/agents/"
       ],
-      "baseline": "website/AGENTS.md já contém gates editoriais, evolução requerida.",
-      "next": "Protocolos e CI propagados a todos os agentes/PRs.",
+      "baseline": "Contrato editorial ampliado para Começar → Manual → Exemplos → Referência, leitura focada, fonte atual de exemplos, menor densidade visual e preferências de leitura. Gate estático de acessibilidade adicionado, mas auditoria humana por leitor de tela/zoom e revisão cognitiva continuam pendentes.",
+      "next": "Executar auditoria de navegação teclado, Orca/NVDA/VoiceOver, zoom 200%, reflow mobile e sessões com usuários neurodivergentes; registrar falhas e resultados.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
