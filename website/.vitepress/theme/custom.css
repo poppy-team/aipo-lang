@@ -28,6 +28,15 @@
 .aipo-focus .VPDoc{padding-inline:22px!important}
 .aipo-spacious .vp-doc{font-size:18px;line-height:1.95}
 .aipo-spacious .VPDoc .content-container{max-width:900px!important}
-@media(max-width:960px){.aipo-reading-settings{display:none}}
+@media(max-width:960px){
+  .aipo-reading-settings{
+    display:flex;position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));
+    z-index:75;margin:0;padding:5px;gap:4px;
+    background:var(--vp-c-bg);border:1px solid var(--vp-c-divider);
+    border-radius:10px;box-shadow:0 4px 18px rgba(0,0,0,.13)
+  }
+  .aipo-reading-settings button{font-size:11px;padding:6px 8px}
+  .VPDoc{padding-bottom:96px!important}
+}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 @media print{.aipo-reading-settings{display:none}.VPDoc .content-container{max-width:100%!important}}
