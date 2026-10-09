@@ -12,7 +12,7 @@ O Aipo possui **mais de um caminho de execução**, mas isso não significa que 
 | Destino | Para quê | Cuidado |
 | --- | --- | --- |
 | VM de pilha (`vm`) | Referência funcional para programas Aipo | Validar com testes reais |
-| RegVM (`reg`) | Backend experimental de registradores | Subset; não presumir paridade |
+| Perfil Reg (`reg`) | Escolher Reg nativo ou VM canônica | Consultar `aipo plan`; nativo continua subconjunto |
 | JavaScript (`js`) | Gerar bundle ESM | Runtime shim e divergências a verificar |
 | WebAssembly (`wasm`) | Executar binário Wasm/WASI | Recursos do host e cobertura variam |
 
@@ -32,7 +32,7 @@ O compilador Wasm trabalha diretamente sobre HIR em partes de seu pipeline. A ex
 
 ## RegVM: cuidado com falsas promessas
 
-A auditoria [P07-G01](https://github.com/poppyTM/aipo-lang/blob/main/docs/evidence/P07-G01-runtime-hardening.md) registra limitações de closures/upvalues, async, hooks, invariantes, journal e host. O projeto fornece diagnósticos de recursos não suportados; confira antes de substituir a VM de referência.
+A auditoria [P07-G01](https://github.com/poppyTM/aipo-lang/blob/main/docs/evidence/P07-G01-runtime-hardening.md) registra limitações de closures/upvalues, async, hooks, invariantes, journal e host. A rodada P07-G02 acrescenta escolha explícita de plano e motivo: capacidades ausentes no Reg nativo usam a VM canônica. Isso preserva a superfície compartilhada sem anunciar paridade nativa. Consulte `aipo plan arquivo.aipo` e a [matriz de compatibilidade](/reference/status).
 
 **Pratique:** execute o mesmo programa simples na VM e compile para JS. Compare apenas recursos que o destino declara suportar.
 

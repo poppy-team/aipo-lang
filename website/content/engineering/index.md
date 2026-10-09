@@ -26,6 +26,7 @@ Esta seção é para quem implementa, revisa, testa ou integra o compilador e os
 | [Qualidade](/engineering/quality) | Conformance, segurança e CI |
 | [Acessibilidade](/engineering/accessibility) | Sintaxe, diagnósticos e documentação |
 | [Estudos](/engineering/studies) | Referências técnicas, hipóteses e benchmarks |
+| [Guia P07-G02](/engineering/runtime-and-tooling) | Mudanças, motivos, uso, reimplementação e limites |
 
 Documentos aqui descrevem o **estado encontrado e os contratos pretendidos separadamente**. Sempre declare commit, provas e limites ao afirmar que algo está pronto.
 

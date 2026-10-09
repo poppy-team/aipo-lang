@@ -43,7 +43,7 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     raw = args.out / 'reg-calls-paired.csv'
     with raw.open('w', newline='') as file:
-        writer = csv.DictWriter(file, fieldnames=rows[0].keys())
+        writer = csv.DictWriter(file, fieldnames=rows[0].keys(), lineterminator='\n')
         writer.writeheader()
         writer.writerows(rows)
     summaries = {}
@@ -72,7 +72,7 @@ def main():
         'compiler': subprocess.check_output([args.rustc, '-vV'], text=True),
         'platform': platform.platform(), 'cpu': args.cpu, 'cpu_count': os.cpu_count(),
         'batches': args.batches, 'pairs_per_batch': args.pairs, 'warmup_samples_per_process': 1,
-        'raw_sha256': digest(raw), 'results': summaries,
+        'raw_sha256': digest(raw), 'raw_serialization': 'CSV with LF line endings', 'results': summaries,
         'limits': 'Microbenchmark only; includes run_module verification and loading. No language-wide, startup, memory or MCU claim. Tests were not run.',
     }
     (args.out / 'performance.json').write_text(json.dumps(report, indent=2) + '\n')

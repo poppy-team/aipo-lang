@@ -3,7 +3,7 @@
   "phase": "P07",
   "title": "Runtime, embedding, shell, performance and tooling completion",
   "state": "DRAFT",
-  "revision": 1,
+  "revision": 2,
   "objective": "Implement the five follow-up stages requested by the user, with explicit capabilities and reproducible documentation.",
   "acceptance": [
     "Verify all register operands and control flow, definite initialization, function references and handler/iteration scopes.",
@@ -34,8 +34,31 @@
     "review": "required",
     "tests": "required"
   },
-  "evidence": [],
-  "history": [],
+  "evidence": [
+    {
+      "kind": "gate",
+      "path": "docs/evidence/P07-G02/checks.json",
+      "description": "Compile/static checks passed; no tests executed."
+    },
+    {
+      "kind": "benchmark",
+      "path": "docs/evidence/P07-G02/performance.json",
+      "description": "Paired Reg call microbenchmark at published source revision; raw CSV attached."
+    },
+    {
+      "kind": "doc",
+      "path": "docs/development/runtime-and-tooling-guide.md",
+      "description": "Portuguese usage/reimplementation guide and explicit remaining work."
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-10-09T23:08:26.010904+00:00",
+      "event": "implementation_and_evidence_published",
+      "state": "DRAFT",
+      "description": "Source recovered and published; Wasm early bypass removed, aliases/shadowing rejected, final MSRV/profiles/docs checks and paired benchmark recorded. Test gate remains unexecuted by user instruction."
+    }
+  ],
   "amendments": [],
   "lock": null
 }

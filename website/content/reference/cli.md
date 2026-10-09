@@ -18,7 +18,13 @@ cargo run -q -p aipo-cli -- run examples/06_variables_and_values.aipo
 
 | Comando | Resultado |
 | --- | --- |
+| `new demo` | Cria um pacote local |
 | `run file.aipo` | Compila e executa |
+| `plan file.aipo` | Mostra o plano sem executar |
+| `profile file.aipo --budget 100000 --json` | Mede execução e consumo |
+| `debug file.aipo` | Depura por instruções |
+| `watch file.aipo` | Recarrega preservando a última geração válida |
+| `lsp` | Inicia protocolo de editor via stdio |
 | `check file.aipo` | Analisa sem executar |
 | `test [path] --filter pattern` | Descobre e executa testes selecionados |
 | `fmt file.aipo [--check]` | Formata / verifica formatação |
@@ -28,13 +34,14 @@ cargo run -q -p aipo-cli -- run examples/06_variables_and_values.aipo
 | `disasm file.aibc` | Inspeciona bytecode compilado |
 | `package lock DIR` | Resolve e escreve lockfile |
 | `package audit DIR` | Audita o lockfile sem regravar |
+| `package vendor DIR --out DEST` | Exporta pacote e dependências locais offline |
 | `package cache verify DIR` | Verifica entradas de cache |
 | `package cache prune DIR --lock LOCK [--apply]` | Limpeza; simulação por padrão |
 
 ## Executar destinos diferentes
 
 - `--engine=vm`: VM principal, referência para comparar resultados.
-- `--engine=reg`: RegVM experimental. Recursos podem falhar com diagnóstico explícito de falta de suporte.
+- `--engine=reg`: plano de execução que escolhe Reg nativo verificado ou VM canônica, com motivo explícito. Consulte `plan` antes de medir.
 - `--wasm`: seleciona execução Wasm quando disponível.
 - `--package-cache DIR`: fornece cache de pacotes sem presumir busca na rede.
 - `--ahs FILE`: fornece schema de API de host para análise; **não concede capabilities sozinho**.

@@ -6,7 +6,7 @@
     "input_tokens": 0,
     "intermediate_output_tokens": 0,
     "output_tokens": 0,
-    "tasks": 11
+    "tasks": 12
   },
   "tasks": [
     {
@@ -258,8 +258,55 @@
         "Prumo transitions and approvals not fabricated"
       ],
       "files_changed": 59
+    },
+    {
+      "id": "TR-012",
+      "goal": "P07-G02",
+      "kind": "implementation",
+      "status": "draft",
+      "title": "Five-front runtime/tooling completion, persistent scheduler, semantic Wasm proofs and source recovery",
+      "tests": {
+        "executed": false,
+        "status": "skipped_by_user",
+        "passed": null,
+        "failed": null,
+        "includes": [
+          "Rust tests",
+          "Aipo conformance",
+          "differential suites",
+          "fuzz",
+          "Miri",
+          "ASan",
+          "website unit tests"
+        ]
+      },
+      "files_changed": 125,
+      "evidence": [
+        {
+          "kind": "gate",
+          "description": "Rust 1.96 strict workspace Clippy, reduced profiles, fmt, rustdoc, C11/C++17 header, Python syntax and portal static/build checks passed; exact scope in docs/evidence/P07-G02/checks.json."
+        },
+        {
+          "kind": "benchmark",
+          "description": "Final paired Reg call benchmark: 480 retained samples; compiler, source/binary/workload/raw hashes in performance.json. Not a general language speed claim."
+        },
+        {
+          "kind": "test",
+          "description": "Explicitly not executed at user request; no passed/failed counts or Prumo approvals invented."
+        },
+        {
+          "kind": "doc",
+          "description": "Portuguese usage/reimplementation guide, nine pinned source follow-ups, current completion/evidence and 16 affected progress IDs updated."
+        }
+      ],
+      "limitations": [
+        "No runtime or multi-OS certification",
+        "Reg native subset; canonical services provide explicit execution coverage",
+        "No full GC, no_std/MCU port, complete LSP/DAP or registry",
+        "No merge or public release"
+      ]
     }
   ],
-  "updated_at": "2026-10-09T04:42:18.000201+00:00",
+  "updated_at": "2026-10-09T23:08:26.010904+00:00",
   "version": 1
 }
