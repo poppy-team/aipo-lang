@@ -39,7 +39,7 @@ Teste com idades 10, 18 e 50.
 
 ## Aprofundamento
 
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/03_control_flow.aipo)
+- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/docs/conformance/programs/03_control_flow.aipo)
 - [Referência de sintaxe](/reference/syntax)
 - [Como ler mensagens de erro](/guides/troubleshooting)
 
