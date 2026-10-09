@@ -5,7 +5,12 @@ use std::process::Command;
 #[test]
 fn register_and_stack_agree_on_dictionary_and_conditional_fixtures() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/conformance/programs");
-    for name in ["33_dict_primary_iteration", "34_conditional_values"] {
+    for name in [
+        "33_dict_primary_iteration",
+        "34_conditional_values",
+        "35_register_profile_shared_services",
+        "36_semantic_type_tests",
+    ] {
         let source = root.join(format!("{name}.aipo"));
         let expected = std::fs::read(root.join(format!("{name}.stdout"))).expect("fixture output");
         for engine in ["vm", "reg"] {

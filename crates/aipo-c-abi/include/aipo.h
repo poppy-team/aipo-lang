@@ -329,6 +329,26 @@ uint64_t aipo_runtime_instruction_count(const aipo_runtime_t *rt);
  */
 aipo_status_t aipo_runtime_reset_instruction_count(aipo_runtime_t *rt);
 
+/* Cooperative execution: callback/native work is outside the quantum limit. */
+aipo_status_t aipo_runtime_begin(aipo_runtime_t *rt, const char *module, const char *function, const aipo_value_t *args, size_t argc);
+aipo_status_t aipo_runtime_pump(aipo_runtime_t *rt, size_t steps, bool *completed, aipo_value_t *out);
+/* Cancel cooperative execution; completed state changes and I/O remain. */
+aipo_status_t aipo_runtime_abort(aipo_runtime_t *rt);
+
+/* Native register execution handle (thread-confined, non-reentrant). */
+typedef struct aipo_reg_vm_t aipo_reg_vm_t;
+aipo_reg_vm_t *aipo_reg_vm_create(void);
+void aipo_reg_vm_destroy(aipo_reg_vm_t *vm);
+aipo_status_t aipo_reg_vm_set_reg_int(aipo_reg_vm_t *vm, uint8_t reg, int64_t value);
+aipo_status_t aipo_reg_vm_get_reg_int(const aipo_reg_vm_t *vm, uint8_t reg, int64_t *out);
+aipo_status_t aipo_reg_vm_run(aipo_reg_vm_t *vm, const uint32_t *instructions, size_t count, int64_t *out);
+/* Budgets are cumulative; zero disables. Native work is not metered. */
+aipo_status_t aipo_reg_vm_set_instruction_budget(aipo_reg_vm_t *vm, uint64_t limit);
+uint64_t aipo_reg_vm_instruction_count(const aipo_reg_vm_t *vm);
+aipo_status_t aipo_reg_vm_reset_instruction_count(aipo_reg_vm_t *vm);
+/* Required bytes include NUL; query with NULL, 0 before allocating. */
+size_t aipo_reg_vm_copy_last_error(const aipo_reg_vm_t *vm, char *buffer, size_t capacity);
+
 #ifdef __cplusplus
 }
 #endif

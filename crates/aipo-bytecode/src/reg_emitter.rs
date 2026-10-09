@@ -713,14 +713,13 @@ impl RegEmitter {
                 CoreInst::Jump(target, _)
                 | CoreInst::JumpIfFalse(target, _)
                 | CoreInst::PushHandler(target, _)
-                | CoreInst::JumpIfSetLocal { target, .. } => {
+                | CoreInst::JumpIfSetLocal { target, .. }
                     if usize::try_from(*target)
                         .ok()
                         .filter(|target| *target <= length)
-                        .is_none()
-                    {
-                        return Err("jump target outside Core IR".into());
-                    }
+                        .is_none() =>
+                {
+                    return Err("jump target outside Core IR".into());
                 }
                 _ => {}
             }
@@ -853,12 +852,14 @@ impl RegEmitter {
             struct_defs.insert(s.name.clone(), s.fields.clone());
         }
 
-        Ok(RegCompiledModule {
+        let compiled = RegCompiledModule {
             top_level,
             functions,
             constants: module_constants,
             struct_defs,
-        })
+        };
+        crate::RegVerifier::verify(&compiled)?;
+        Ok(compiled)
     }
 }
 

@@ -208,6 +208,7 @@ impl StructInstance {
 pub struct DictMap {
     entries: Vec<(Value, Value)>,
     str_index: HashMap<String, usize>,
+    revision: u64,
 }
 
 impl fmt::Debug for DictMap {
@@ -236,9 +237,15 @@ impl DictMap {
         let mut map = Self {
             entries,
             str_index: HashMap::new(),
+            revision: 0,
         };
         map.rebuild_index();
         map
+    }
+
+    /// Structural mutation revision.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// Number of entries.
@@ -275,11 +282,11 @@ impl DictMap {
     /// Updates the first matching entry or pushes a new one, preserving order.
     pub fn upsert(&mut self, key: Value, value: Value) {
         if let Value::String(s) = &key {
-            if let Some(&pos) = self.str_index.get(s.as_str()) {
-                if let Some((_, v)) = self.entries.get_mut(pos) {
-                    *v = value;
-                    return;
-                }
+            if let Some(&pos) = self.str_index.get(s.as_str())
+                && let Some((_, v)) = self.entries.get_mut(pos)
+            {
+                *v = value;
+                return;
             }
         } else if let Some((_, v)) = self.entries.iter_mut().find(|(k, _)| k == &key) {
             *v = value;
@@ -289,6 +296,7 @@ impl DictMap {
         if let Value::String(s) = &key {
             self.str_index.entry(s.to_string()).or_insert(pos);
         }
+        self.revision = self.revision.wrapping_add(1);
         self.entries.push((key, value));
     }
 
@@ -297,6 +305,7 @@ impl DictMap {
         let pos = self.position(key);
         match pos {
             Some(at) => {
+                self.revision = self.revision.wrapping_add(1);
                 self.entries.remove(at);
                 self.rebuild_index();
                 true
@@ -307,6 +316,9 @@ impl DictMap {
 
     /// Removes all entries.
     pub fn clear(&mut self) {
+        if !self.entries.is_empty() {
+            self.revision = self.revision.wrapping_add(1);
+        }
         self.entries.clear();
         self.str_index.clear();
     }
@@ -512,7 +524,7 @@ pub enum Value {
     /// Immutable UTF-8 string.
     String(Rc<String>),
     /// Ordered, mutable list of values.
-    List(Rc<RefCell<Vec<Value>>>),
+    List(Rc<RefCell<crate::Collection<Value>>>),
     /// Ordered dictionary preserving insertion order.
     Dict(Rc<RefCell<DictMap>>),
     /// Instantiated user struct with field immutability tracking.
@@ -533,7 +545,7 @@ pub enum Value {
     /// Compact integer in the canonical `Byte` range `0..=255`.
     Byte(u8),
     /// Managed mutable binary buffer (`Bytes`).
-    Bytes(Rc<RefCell<Vec<u8>>>),
+    Bytes(Rc<RefCell<crate::Collection<u8>>>),
     /// Fundamental type value usable as a runtime `is` target and, for the
     /// convertible core types, as a callable conversion.
     Type(TypeTag),
@@ -549,7 +561,7 @@ pub enum Value {
     /// Recoverable failure (Model B).
     Failure(Rc<FailureValue>),
     /// Insertion-ordered set of unique values (structural equality).
-    Set(Rc<RefCell<Vec<Value>>>),
+    Set(Rc<RefCell<crate::Collection<Value>>>),
     /// Lazy pipeline over a materialized source (see `SequencePipeline`).
     Sequence(Rc<SequencePipeline>),
     /// Future result produced by calling an `async fn`; driven by the scheduler.
@@ -647,6 +659,33 @@ pub enum MethodKind {
 }
 
 impl Value {
+    /// Constructs a shared string value.
+    pub fn string(text: impl Into<String>) -> Self {
+        Self::String(Rc::new(text.into()))
+    }
+    /// Constructs a list with revisioned storage.
+    pub fn list(items: impl Into<crate::Collection<Value>>) -> Self {
+        Self::List(Rc::new(RefCell::new(items.into())))
+    }
+    /// Constructs mutable bytes with revisioned storage.
+    pub fn bytes(items: impl Into<crate::Collection<u8>>) -> Self {
+        Self::Bytes(Rc::new(RefCell::new(items.into())))
+    }
+    /// Constructs an already deduplicated set with revisioned storage.
+    pub fn set(items: impl Into<crate::Collection<Value>>) -> Self {
+        Self::Set(Rc::new(RefCell::new(items.into())))
+    }
+
+    /// Revision of mutable collection structure, if this value owns one.
+    pub fn structural_revision(&self) -> Option<u64> {
+        match self {
+            Self::List(items) | Self::Set(items) => Some(items.borrow().revision()),
+            Self::Bytes(items) => Some(items.borrow().revision()),
+            Self::Dict(items) => Some(items.borrow().revision()),
+            _ => None,
+        }
+    }
+
     /// Constructs a new closure value.
     #[must_use]
     pub fn closure(
@@ -1458,7 +1497,7 @@ mod tests {
         let map = DictMap::from_entries(vec![
             (Value::Int(1), str_key("one")),
             (
-                Value::List(Rc::new(RefCell::new(vec![Value::Int(2)]))),
+                Value::List(Rc::new(RefCell::new((vec![Value::Int(2)]).into()))),
                 str_key("two"),
             ),
         ]);

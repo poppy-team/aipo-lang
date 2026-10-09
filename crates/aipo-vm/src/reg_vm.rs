@@ -5,12 +5,22 @@ use crate::convert::{TypeTag, convert_via_type};
 use crate::fault::VmFault;
 use crate::value::{DictMap, StructInstance, Value, check_safe_int, string_char_at};
 use aipo_bytecode::{Constant, RegCompiledFunction, RegCompiledModule, RegInstruction, RegOpCode};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 /// Maximum nested user-function call depth (bounds Rust stack + RAM).
 pub const REG_MAX_CALL_DEPTH: usize = 64;
+
+struct VerificationScope {
+    flag: Rc<Cell<bool>>,
+    previous: bool,
+}
+impl Drop for VerificationScope {
+    fn drop(&mut self) {
+        self.flag.set(self.previous);
+    }
+}
 
 /// A saved caller activation for nested `RegVm` calls.
 #[derive(Debug, Clone)]
@@ -31,22 +41,25 @@ pub struct RegVm {
     /// Global variables environment.
     pub globals: HashMap<String, Value>,
     /// Compiled user-function table for `MakeFunction`/`Call`.
-    pub functions: Vec<RegCompiledFunction>,
+    pub functions: Vec<Rc<RegCompiledFunction>>,
     /// Declared struct definitions: name -> fields.
     pub struct_defs: HashMap<String, Vec<(String, bool)>>,
     /// Active nested-call frames (depth guard).
     pub frames: Vec<RegCallFrame>,
     /// Active exception/failure handler stack: `(handler_pc, err_reg)`.
-    pub handler_stack: Vec<(usize, u8)>,
+    pub handler_stack: Vec<(usize, u8, usize)>,
     /// Maximum nested-call depth.
     pub max_call_depth: usize,
     /// Reserved bump arena; current managed values still use Rc allocations.
     pub arena: ArenaAllocator,
     /// Program counter.
     pub pc: usize,
+    active_registers: usize,
+    verified_module: Rc<Cell<bool>>,
+    function_constants: Vec<Vec<Value>>,
     max_instructions: Option<u64>,
     instruction_count: u64,
-    iteration_guards: Vec<(Value, usize)>,
+    iteration_guards: Vec<(Value, u64)>,
 }
 
 impl Default for RegVm {
@@ -70,6 +83,9 @@ impl RegVm {
             max_call_depth: REG_MAX_CALL_DEPTH,
             arena: ArenaAllocator::with_default_capacity(),
             pc: 0,
+            active_registers: 256,
+            verified_module: Rc::new(Cell::new(false)),
+            function_constants: Vec::new(),
             max_instructions: None,
             instruction_count: 0,
             iteration_guards: Vec::new(),
@@ -137,12 +153,12 @@ impl RegVm {
         Ok(())
     }
 
-    fn guarded_len(value: &Value) -> usize {
+    fn guarded_revision(value: &Value) -> u64 {
         match value {
-            Value::List(items) => items.borrow().len(),
-            Value::Dict(items) => items.borrow().len(),
-            Value::Bytes(items) => items.borrow().len(),
-            Value::Set(items) => items.borrow().len(),
+            Value::List(items) => items.borrow().revision(),
+            Value::Dict(items) => items.borrow().revision(),
+            Value::Bytes(items) => items.borrow().revision(),
+            Value::Set(items) => items.borrow().revision(),
             _ => 0,
         }
     }
@@ -151,7 +167,7 @@ impl RegVm {
         if self
             .iteration_guards
             .iter()
-            .any(|(value, len)| Self::guarded_len(value) != *len)
+            .any(|(value, len)| Self::guarded_revision(value) != *len)
         {
             Err(VmFault::MutationDuringIteration)
         } else {
@@ -234,7 +250,18 @@ impl RegVm {
 
     /// Loads a compiled register module (function table for `MakeFunction`).
     pub fn load_module(&mut self, module: &RegCompiledModule) {
-        self.functions = module.functions.clone();
+        self.functions = module.functions.iter().cloned().map(Rc::new).collect();
+        self.function_constants = module
+            .functions
+            .iter()
+            .map(|function| {
+                function
+                    .constants
+                    .iter()
+                    .map(Self::convert_constant)
+                    .collect()
+            })
+            .collect();
         self.struct_defs = module.struct_defs.clone();
         for name in module.struct_defs.keys() {
             self.globals
@@ -253,8 +280,13 @@ impl RegVm {
     /// # Errors
     /// Returns [`VmFault`] if a runtime error occurs.
     pub fn run_module(&mut self, module: &RegCompiledModule) -> Result<Value, VmFault> {
+        aipo_bytecode::RegVerifier::verify(module).map_err(|reason| self.corrupted(reason))?;
         self.load_module(module);
         self.frames.clear();
+        let _scope = VerificationScope {
+            flag: Rc::clone(&self.verified_module),
+            previous: self.verified_module.replace(true),
+        };
         self.run_function(&module.top_level)
     }
 
@@ -268,6 +300,37 @@ impl RegVm {
         args: &[Value],
     ) -> Result<Value, VmFault> {
         self.check_function(func)?;
+        aipo_bytecode::RegVerifier::verify_function(func, self.functions.len())
+            .map_err(|reason| self.corrupted(reason))?;
+        let constants = func.constants.iter().map(Self::convert_constant).collect();
+        self.invoke_activation(func, args, constants)
+    }
+
+    fn invoke_index(&mut self, index: usize, args: &[Value]) -> Result<Value, VmFault> {
+        let func = self
+            .functions
+            .get(index)
+            .cloned()
+            .ok_or_else(|| self.corrupted("invalid function index"))?;
+        let constants = if self.verified_module.get() {
+            self.function_constants
+                .get(index)
+                .cloned()
+                .ok_or_else(|| self.corrupted("invalid function constant pool"))?
+        } else {
+            aipo_bytecode::RegVerifier::verify_function(&func, self.functions.len())
+                .map_err(|reason| self.corrupted(reason))?;
+            func.constants.iter().map(Self::convert_constant).collect()
+        };
+        self.invoke_activation(&func, args, constants)
+    }
+
+    fn invoke_activation(
+        &mut self,
+        func: &RegCompiledFunction,
+        args: &[Value],
+        constants: Vec<Value>,
+    ) -> Result<Value, VmFault> {
         Self::check_arity(func.arity, args.len())?;
         if self.frames.len() >= self.max_call_depth {
             return Err(VmFault::CorruptedBytecode {
@@ -282,16 +345,24 @@ impl RegVm {
             return_pc: self.pc,
             return_reg: 0,
         });
-        let saved_registers =
-            std::mem::replace(&mut self.registers, std::array::from_fn(|_| Value::None));
+        let saved_active = self.active_registers;
+        let window = saved_active.max(func.num_registers);
+        let saved_registers: Vec<_> = self.registers[..window]
+            .iter_mut()
+            .map(|value| std::mem::replace(value, Value::None))
+            .collect();
+        self.active_registers = func.num_registers;
         let saved_constants = std::mem::take(&mut self.constants);
         let saved_pc = self.pc;
         for (i, arg) in args.iter().enumerate() {
             self.registers[i] = arg.clone();
         }
-        self.constants = func.constants.iter().map(Self::convert_constant).collect();
-        let outcome = self.run(&func.instructions);
-        self.registers = saved_registers;
+        self.constants = constants;
+        let outcome = self.run_verified(&func.instructions);
+        for (slot, value) in self.registers.iter_mut().zip(saved_registers) {
+            *slot = value;
+        }
+        self.active_registers = saved_active;
         self.constants = saved_constants;
         self.pc = saved_pc;
         self.frames.pop();
@@ -307,9 +378,12 @@ impl RegVm {
         func: &aipo_bytecode::RegCompiledFunction,
     ) -> Result<Value, VmFault> {
         self.check_function(func)?;
+        aipo_bytecode::RegVerifier::verify_function(func, self.functions.len())
+            .map_err(|reason| self.corrupted(reason))?;
         self.constants = func.constants.iter().map(Self::convert_constant).collect();
         self.frames.clear();
-        self.run(&func.instructions)
+        self.active_registers = func.num_registers;
+        self.run_verified(&func.instructions)
     }
 
     /// Executes instructions sequentially until `Return` or error.
@@ -317,6 +391,22 @@ impl RegVm {
     /// # Errors
     /// Returns [`VmFault`] if a runtime error (e.g. division by zero, overflow) occurs.
     pub fn run(&mut self, code: &[RegInstruction]) -> Result<Value, VmFault> {
+        self.verified_module.set(false);
+        self.active_registers = 256;
+        let constants = self
+            .constants
+            .iter()
+            .map(|value| match value {
+                Value::String(text) => Constant::String((**text).clone()),
+                _ => Constant::Nil,
+            })
+            .collect::<Vec<_>>();
+        aipo_bytecode::RegVerifier::verify_raw(code, &constants, self.functions.len())
+            .map_err(|reason| self.corrupted(reason))?;
+        self.run_verified(code)
+    }
+
+    fn run_verified(&mut self, code: &[RegInstruction]) -> Result<Value, VmFault> {
         let saved_handlers = std::mem::take(&mut self.handler_stack);
         let guard_base = self.iteration_guards.len();
         let outcome = self.run_inner(code, guard_base).and_then(|value| {
@@ -701,13 +791,7 @@ impl RegVm {
                                 });
                             }
                             let func_idx = entry_ip as usize;
-                            let func = self.functions.get(func_idx).cloned().ok_or_else(|| {
-                                VmFault::CorruptedBytecode {
-                                    offset: self.pc - 1,
-                                    reason: format!("unknown function index {func_idx}"),
-                                }
-                            })?;
-                            let result = self.invoke_function(&func, &args)?;
+                            let result = self.invoke_index(func_idx, &args)?;
                             self.registers[a] = result;
                         }
                         other => {
@@ -751,13 +835,7 @@ impl RegVm {
                                 });
                             }
                             let func_idx = entry_ip as usize;
-                            let func = self.functions.get(func_idx).cloned().ok_or_else(|| {
-                                VmFault::CorruptedBytecode {
-                                    offset: self.pc - 1,
-                                    reason: format!("unknown function index {func_idx}"),
-                                }
-                            })?;
-                            let result = self.invoke_function(&func, &[stream_arg])?;
+                            let result = self.invoke_index(func_idx, &[stream_arg])?;
                             self.registers[a] = result;
                         }
                         other => {
@@ -774,6 +852,10 @@ impl RegVm {
                     let bx = inst.bx() as usize;
                     if let Some(func) = self.functions.get(bx) {
                         self.check_function(func)?;
+                        if !self.verified_module.get() {
+                            aipo_bytecode::RegVerifier::verify_function(func, self.functions.len())
+                                .map_err(|reason| self.corrupted(reason))?;
+                        }
                         let arity = u16::try_from(func.arity).unwrap_or(u16::MAX);
                         self.registers[a] = Value::Function {
                             entry_ip: bx as u32,
@@ -805,7 +887,7 @@ impl RegVm {
                         return Err(VmFault::StackUnderflow);
                     }
                     let items = self.registers[start..start + count].to_vec();
-                    self.registers[a] = Value::List(Rc::new(RefCell::new(items)));
+                    self.registers[a] = Value::List(Rc::new(RefCell::new((items).into())));
                 }
                 RegOpCode::NewDict => {
                     let start = b;
@@ -1023,7 +1105,7 @@ impl RegVm {
                 }
                 RegOpCode::IterGuard => {
                     let value = self.registers[a].clone();
-                    let length = Self::guarded_len(&value);
+                    let length = Self::guarded_revision(&value);
                     self.iteration_guards.push((value, length));
                 }
                 RegOpCode::IterGuardEnd => {
@@ -1114,7 +1196,8 @@ impl RegVm {
                 }
                 RegOpCode::PushHandler => {
                     let target = self.checked_jump(inst.sbx(), code.len())?;
-                    self.handler_stack.push((target, a as u8));
+                    self.handler_stack
+                        .push((target, a as u8, self.iteration_guards.len()));
                 }
                 RegOpCode::PopHandler => {
                     self.handler_stack
@@ -1129,7 +1212,8 @@ impl RegVm {
                         other => (other.to_string(), other.clone()),
                     };
                     let failure = Value::failure_with_payload(msg, payload);
-                    if let Some((handler_pc, err_reg)) = self.handler_stack.pop() {
+                    if let Some((handler_pc, err_reg, guards)) = self.handler_stack.pop() {
+                        self.iteration_guards.truncate(guards);
                         self.registers[err_reg as usize] = failure;
                         self.pc = handler_pc;
                     } else {
@@ -1139,7 +1223,8 @@ impl RegVm {
                 RegOpCode::PropagateFailure => {
                     if self.registers[a].is_failure() {
                         let failure = self.registers[a].clone();
-                        if let Some((handler_pc, err_reg)) = self.handler_stack.pop() {
+                        if let Some((handler_pc, err_reg, guards)) = self.handler_stack.pop() {
+                            self.iteration_guards.truncate(guards);
                             self.registers[err_reg as usize] = failure;
                             self.pc = handler_pc;
                         } else {
@@ -1261,7 +1346,9 @@ mod tests {
     fn test_register_vm_list_get_and_set_index() {
         use std::cell::RefCell;
         let mut vm = RegVm::new();
-        let list = Value::List(Rc::new(RefCell::new(vec![Value::Int(10), Value::Int(20)])));
+        let list = Value::List(Rc::new(RefCell::new(
+            (vec![Value::Int(10), Value::Int(20)]).into(),
+        )));
         vm.registers[0] = list;
         vm.registers[1] = Value::Int(1); // index 1
         vm.registers[2] = Value::Int(99); // new value
@@ -1295,7 +1382,7 @@ mod tests {
             num_registers: 2,
         };
         let mut vm = RegVm::new();
-        vm.functions = vec![adder];
+        vm.functions = vec![Rc::new(adder)];
         vm.registers[0] = Value::Function {
             entry_ip: 0,
             arity: 2,
@@ -1329,7 +1416,7 @@ mod tests {
             num_registers: 1,
         };
         let mut vm = RegVm::new();
-        vm.functions = vec![double];
+        vm.functions = vec![Rc::new(double)];
 
         let code = vec![
             RegInstruction::encode_abx(RegOpCode::MakeFunction, 0, 0),
@@ -1361,7 +1448,7 @@ mod tests {
         };
         let mut vm = RegVm::new();
         vm.max_call_depth = 8;
-        vm.functions = vec![recurse];
+        vm.functions = vec![Rc::new(recurse)];
         vm.registers[0] = Value::Function {
             entry_ip: 0,
             arity: 1,

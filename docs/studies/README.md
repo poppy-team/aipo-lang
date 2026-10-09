@@ -10,3 +10,7 @@ Esta rodada relaciona inspeção de fontes pinadas às correções e às próxim
 - [Manifest de fontes](../../studies/refs.json): SHAs completos das nove referências.
 
 Use `./studies/fetch-refs.sh` na raiz para obter o corpus fora do repositório e `--verify` para conferir um checkout já materializado sem rede. Não copie upstreams para o workspace Aipo nem transforme tamanhos anunciados por terceiros em medidas da nossa implementação.
+
+## Continuidade P07-G02
+
+Veja [runtime-and-tooling-follow-up.md](runtime-and-tooling-follow-up.md), o [guia de uso/reimplementação](../development/runtime-and-tooling-guide.md) e [evidência](../evidence/P07-G02/README.md).

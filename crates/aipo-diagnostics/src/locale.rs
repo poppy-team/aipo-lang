@@ -43,10 +43,10 @@ impl Locale {
     /// Respects `AIPO_LANG` when set, defaulting to canonical `Locale::En`.
     #[must_use]
     pub fn detect() -> Self {
-        if let Ok(val) = std::env::var("AIPO_LANG") {
-            if !val.trim().is_empty() {
-                return Self::from_str(&val);
-            }
+        if let Ok(val) = std::env::var("AIPO_LANG")
+            && !val.trim().is_empty()
+        {
+            return Self::from_str(&val);
         }
         Self::En
     }

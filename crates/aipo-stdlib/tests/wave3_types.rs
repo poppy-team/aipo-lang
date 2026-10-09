@@ -9,13 +9,16 @@ use std::rc::Rc;
 
 #[test]
 fn test_set_creation_and_deduplication() {
-    let list = Value::List(Rc::new(RefCell::new(vec![
-        Value::Int(1),
-        Value::Int(2),
-        Value::Int(1),
-        Value::Int(3),
-        Value::Int(2),
-    ])));
+    let list = Value::List(Rc::new(RefCell::new(
+        (vec![
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(1),
+            Value::Int(3),
+            Value::Int(2),
+        ])
+        .into(),
+    )));
 
     let set_val = convert::convert_set(&[list]).expect("Set conversion should succeed");
     if let Value::Set(items) = &set_val {
@@ -32,7 +35,9 @@ fn test_set_creation_and_deduplication() {
 
 #[test]
 fn test_set_methods() {
-    let set_val = Value::Set(Rc::new(RefCell::new(vec![Value::Int(10), Value::Int(20)])));
+    let set_val = Value::Set(Rc::new(RefCell::new(
+        (vec![Value::Int(10), Value::Int(20)]).into(),
+    )));
 
     // has
     assert_eq!(
@@ -100,8 +105,12 @@ fn test_set_methods() {
 
 #[test]
 fn test_set_prelude_operations() {
-    let set_a = Value::Set(Rc::new(RefCell::new(vec![Value::Int(1), Value::Int(2)])));
-    let set_b = Value::Set(Rc::new(RefCell::new(vec![Value::Int(1), Value::Int(2)])));
+    let set_a = Value::Set(Rc::new(RefCell::new(
+        (vec![Value::Int(1), Value::Int(2)]).into(),
+    )));
+    let set_b = Value::Set(Rc::new(RefCell::new(
+        (vec![Value::Int(1), Value::Int(2)]).into(),
+    )));
     let set_ref = set_a.clone();
 
     // Structural equality
@@ -137,7 +146,7 @@ fn test_set_prelude_operations() {
 
 #[test]
 fn test_bytes_packing_and_unpacking_little_endian() {
-    let buffer = Value::Bytes(Rc::new(RefCell::new(vec![0u8; 16])));
+    let buffer = Value::Bytes(Rc::new(RefCell::new((vec![0u8; 16]).into())));
 
     // write_i8 / read_i8
     bytes::bytes_write_i8(&buffer, &[Value::Int(0), Value::Int(-42)]).unwrap();
@@ -176,7 +185,7 @@ fn test_bytes_packing_and_unpacking_little_endian() {
 
     // write_f64 / read_f64
     let f_val = std::f64::consts::PI;
-    let buf8 = Value::Bytes(Rc::new(RefCell::new(vec![0u8; 8])));
+    let buf8 = Value::Bytes(Rc::new(RefCell::new((vec![0u8; 8]).into())));
     bytes::bytes_write_f64(&buf8, &[Value::Int(0), Value::Float(f_val)]).unwrap();
     assert_eq!(
         bytes::bytes_read_f64(&buf8, &[Value::Int(0)]).unwrap(),
@@ -184,7 +193,7 @@ fn test_bytes_packing_and_unpacking_little_endian() {
     );
 
     // Little-endian check: 0x0102 in u16 writes [0x02, 0x01]
-    let buf2 = Value::Bytes(Rc::new(RefCell::new(vec![0u8; 2])));
+    let buf2 = Value::Bytes(Rc::new(RefCell::new((vec![0u8; 2]).into())));
     bytes::bytes_write_u16(&buf2, &[Value::Int(0), Value::Int(0x0102)]).unwrap();
     if let Value::Bytes(b) = &buf2 {
         assert_eq!(&*b.borrow(), &[0x02, 0x01]);
@@ -215,7 +224,7 @@ fn test_bytes_decode_and_string_encode() {
     assert_eq!(decoded, text);
 
     // Invalid UTF-8 produces Failure
-    let invalid_bytes = Value::Bytes(Rc::new(RefCell::new(vec![0xFF, 0xFE])));
+    let invalid_bytes = Value::Bytes(Rc::new(RefCell::new((vec![0xFF, 0xFE]).into())));
     let fail = bytes::bytes_decode(&invalid_bytes, &[]).unwrap();
     assert!(matches!(fail, Value::Failure(_)));
 }
@@ -252,7 +261,9 @@ fn test_duration_operations() {
 
 #[test]
 fn test_sequence_lazy_creation() {
-    let list = Value::List(Rc::new(RefCell::new(vec![Value::Int(1), Value::Int(2)])));
+    let list = Value::List(Rc::new(RefCell::new(
+        (vec![Value::Int(1), Value::Int(2)]).into(),
+    )));
     let seq = collections::list_lazy(&list, &[]).unwrap();
 
     if let Value::Sequence(pipeline) = &seq {
@@ -262,7 +273,7 @@ fn test_sequence_lazy_creation() {
         panic!("expected Value::Sequence");
     }
 
-    let set = Value::Set(Rc::new(RefCell::new(vec![Value::Int(10)])));
+    let set = Value::Set(Rc::new(RefCell::new((vec![Value::Int(10)]).into())));
     let set_seq = collections::set_lazy(&set, &[]).unwrap();
     if let Value::Sequence(pipeline) = &set_seq {
         assert!(matches!(pipeline.source, SequenceSource::Set(_)));
