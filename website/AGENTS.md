@@ -1,0 +1,16 @@
+# Aipo website — scope for coding agents
+
+This folder is the new editorial home for Aipo documentation. Its contents must **not** silently override the repository's canonical language decisions or implementation. Read `content/engineering/agents/reading.md` and `content/engineering/decisions/conflicts.md` first.
+
+## Editing contract
+- Reader tutorials: `content/learn`, guided by `content/_meta/chapters.json`.
+- Task-oriented: `content/guides`.
+- Reference facts: `content/reference`.
+- Architecture: `content/engineering`.
+- Original repository docs and `docs/conformance`: preserve until downstream consumers have migrated.
+- Every example must distinguish proposed target syntax from implemented surface.
+- Only claim tests passed when executed on the current commit with logged commands/results.
+- Accessibility: keyboard navigation, contrast, readable code, reduced motion, cognitive load.
+- Run `npm run check` and `npm run build` in `website`; execute CLI example gates when appropriate.
+
+Do not duplicate the whole Prumo workforce. Follow [the source catalog](https://github.com/poppy-lat/prumo/tree/main/src/prumo/resources/workforce) selectively with task-appropriate permissions.
