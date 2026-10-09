@@ -1,5 +1,7 @@
 # Current Project State
 
+> **Revisão adicional P07-G01 (DRAFT), 2026-10-09:** correções de runtime e estudos reconstruídos sobre `488905ff`, integrados à `main` `bcbc4c9`, com documentação completa e publicação autorizada em draft. Testes não executados nesta reconstrução a pedido do usuário; nenhuma transição Prumo foi simulada. A fase/goal histórica abaixo é preservada. Veja [guia](docs/development/runtime-hardening-guide.md) e [evidência](docs/evidence/P07-G01-runtime-hardening.md).
+
 - Project: **aipo**
 - Prumo: **0.6.0**
 - Current phase: **P06 — WebAssembly Execution Substrate & Self-Hosting Foundation (ADP-013)**

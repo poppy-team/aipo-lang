@@ -84,13 +84,9 @@ struct FailureGlobals {
 
 /// Helper containing function indices of built-in async runtime functions and host I/O helpers.
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 struct AsyncHelpers {
     task_create_idx: u32,
-    task_drive_idx: u32,
     await_idx: u32,
-    task_sleep_idx: u32,
-    task_cancel_idx: u32,
     host_io: Option<HostIoHelpers>,
     /// Failure status/message globals implementing the hybrid failure model.
     fail_globals: FailureGlobals,
@@ -520,10 +516,7 @@ pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
 
     let async_helpers = AsyncHelpers {
         task_create_idx: task_create_func_idx,
-        task_drive_idx: task_drive_func_idx,
         await_idx: await_func_idx,
-        task_sleep_idx: task_sleep_func_idx,
-        task_cancel_idx: task_cancel_func_idx,
         host_io,
         fail_globals: failure_globals,
     };
@@ -4751,31 +4744,6 @@ fn compile_attempt_stmt(
 
     func.instruction(&Instruction::End);
     Ok(())
-}
-
-/// Helper to get span from statement.
-#[allow(dead_code)]
-fn program_stmt_span(stmt: &HirStmt) -> SourceSpan {
-    match stmt {
-        HirStmt::Let(_, _, span)
-        | HirStmt::Var(_, _, span)
-        | HirStmt::Assign(_, _, span)
-        | HirStmt::CompoundAssign(_, _, _, span)
-        | HirStmt::Loop(_, span)
-        | HirStmt::While(_, _, span)
-        | HirStmt::Repeat(_, _, _, span)
-        | HirStmt::Each(_, _, _, span)
-        | HirStmt::Break(span)
-        | HirStmt::Continue(span)
-        | HirStmt::Return(_, span)
-        | HirStmt::Fail(_, span)
-        | HirStmt::AwaitDo(_, span) => *span,
-        HirStmt::If(s) => s.span,
-        HirStmt::Match(s) => s.span,
-        HirStmt::Attempt(s) => s.span,
-        HirStmt::FnDecl(f) => f.span,
-        HirStmt::Expr(e) => e.span(),
-    }
 }
 
 /// Compresses a slice of local types into run-length encoded `(count, ValType)` pairs.

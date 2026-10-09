@@ -15,6 +15,37 @@ pub const MAX_SAFE_INT: i64 = 9_007_199_254_740_991;
 /// Minimum safe integer in Aipo: -(2^53 - 1).
 pub const MIN_SAFE_INT: i64 = -9_007_199_254_740_991;
 
+/// Reads one Unicode scalar without allocating a temporary character vector.
+/// Negative indices count from the end; even `i64::MIN` fails without overflow.
+pub(crate) fn string_char_at(text: &str, index: i64) -> Result<String, VmFault> {
+    let character = if text.is_ascii() {
+        let position = if index < 0 {
+            usize::try_from(index.unsigned_abs())
+                .ok()
+                .and_then(|distance| text.len().checked_sub(distance))
+        } else {
+            usize::try_from(index).ok()
+        };
+        position
+            .and_then(|position| text.as_bytes().get(position).copied())
+            .map(char::from)
+    } else if index < 0 {
+        usize::try_from(index.unsigned_abs() - 1)
+            .ok()
+            .and_then(|distance| text.chars().nth_back(distance))
+    } else {
+        usize::try_from(index)
+            .ok()
+            .and_then(|position| text.chars().nth(position))
+    };
+    character
+        .map(|character| character.to_string())
+        .ok_or_else(|| VmFault::IndexOutOfRange {
+            index,
+            len: text.chars().count(),
+        })
+}
+
 /// Validates that an integer is within the normative ±(2^53 - 1) boundary.
 ///
 /// # Errors

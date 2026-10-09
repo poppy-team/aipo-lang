@@ -9,7 +9,7 @@
 The stable command surface comprises (`run`/`check`/`fmt` stable since Wave 1,
 `build` stable since Wave 2, `disasm` stable since Wave 4, `test` and Wasm targets stable since v0.1.0/ADP-013):
 
-- `aipo run <file.aipo> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test]`: Compiles and executes an Aipo source file via Stack VM or WebAssembly JIT engine (`--wasm` / `-t wasm`). `--ahs` makes the described host surface available to checking; it does not install host implementations or grant capabilities.
+- `aipo run <file.aipo> [--engine=<vm|reg>] [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test]`: Compiles and executes an Aipo source file via Stack VM or WebAssembly JIT engine (`--wasm` / `-t wasm`). `--ahs` makes the described host surface available to checking; it does not install host implementations or grant capabilities.
 - `aipo run <file.aibc|file.wasm>`: Loads, verifies and executes a pre-compiled bytecode file or WebAssembly binary.
 - `aipo test [path] [--filter <pattern>] [--package-cache <dir>]`: Discovers and executes isolated unit tests (`*_test.aipo`, `test_*.aipo`) with temporal freezing and PRNG seed reset.
 - `aipo check <file.aipo> [--wasm] [--package-cache <dir>] [--ahs=<file>] [--host=headless-test]`: Runs the frontend and semantic analysis without execution, emitting diagnostics. `--ahs` loads a validated Aipo Host Schema (AHS) JSON description for this invocation; described host modules and callable signatures (unknown member, arity with optional parameters, named arguments, literal contract violations) are available to static checking.
@@ -20,6 +20,16 @@ The stable command surface comprises (`run`/`check`/`fmt` stable since Wave 1,
 - `aipo package audit <package-dir>`: Resolves a local package graph and verifies the existing `aipo.lock` without rewriting it.
 - `aipo package cache verify <cache-dir>`: Audits every existing GitHub cache entry without network access or filesystem mutation.
 - `aipo package cache prune <cache-dir> --lock <lockfile> [--apply]`: Removes only verified cache entries not referenced by the explicit lockfile; dry-run is the default.
+
+## Backend experimental de registradores
+
+`aipo run <file.aipo> --engine=reg` escolhe o emissor/VM de registradores; `--engine=vm` preserva o backend de referência. O RegVM continua experimental. Async/closures, hooks e contratos de interface com operações ainda não têm paridade completa. Instruções que o emissor não representa geram `AIPO_COMPILE_REG_UNSUPPORTED` com título EN/PT-BR, razão técnica e ajuda para usar `--engine=vm`.
+
+Falha recuperável não tratada no topo é reportada como `AIPO_RT_FAILURE_UNCAUGHT` e saída `1`. Aritmética usa os helpers compartilhados de Value; `each key in dict` projeta chaves em ordem de inserção.
+
+Orçamentos novos são APIs Rust: `RegVm::set_instruction_budget` e `execute_wasm_with_options`/`WasmExecutionOptions`. Não existe uma flag CLI nova para fuel nesta revisão. `wasm` habilita o compilador; `wasmtime-runner` habilita o JIT.
+
+Veja o [guia completo](../development/runtime-hardening-guide.md) para limites, integração, migração e validação pendente.
 
 ## Host surface descriptions
 

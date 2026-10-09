@@ -80,7 +80,7 @@ pub enum RegOpCode {
     Call = 40,
     /// Stream pipe call for `|>` pipelines: `R[A]` receives stream from `R[B]` with arg `R[C]`.
     CallPipe = 41,
-    /// Return `B` values starting at register `R[A]`.
+    /// Return `R[A]`; B and C are reserved.
     Return = 42,
     /// Instantiate / load function: `R[A] = Function[Bx]`.
     MakeFunction = 43,
@@ -90,15 +90,15 @@ pub enum RegOpCode {
     GetGlobal = 50,
     /// Write global: `Globals[Names[Bx]] = R[A]`.
     SetGlobal = 51,
-    /// Read struct field by fixed slot index: `R[A] = R[B].fields[C]`.
+    /// Read named field in place: `R[A] = R[A].field(Names[Bx])`.
     GetField = 52,
-    /// Write struct field by fixed slot index: `R[A].fields[B] = R[C]`.
+    /// Write named field: `R[A].field(Names[B]) = R[C]` (B is a pool index).
     SetField = 53,
     /// Indexed read: `R[A] = R[B][R[C]]`.
     GetIndex = 54,
     /// Indexed write: `R[A][R[B]] = R[C]`.
     SetIndex = 55,
-    /// Read element during iteration: `R[A] = iter_at(R[B], R[C >> 1], mode: C & 1)`.
+    /// Legacy iteration: index register is `C >> 2`, projection is `C & 3`.
     IterAt = 56,
 
     // --- Data Structures & Composite Types ---
@@ -130,6 +130,20 @@ pub enum RegOpCode {
     PushHandler = 72,
     /// Pop exception/failure handler from handler stack.
     PopHandler = 73,
+    /// Primary iteration projection: full index register C.
+    IterPrimary = 74,
+    /// Key iteration projection: full index register C.
+    IterKey = 75,
+    /// Value iteration projection: full index register C.
+    IterValue = 76,
+    /// Guard structural mutation of collection `R[A]` during iteration.
+    IterGuard = 77,
+    /// End the current activation's innermost iteration guard.
+    IterGuardEnd = 78,
+    /// Assert contract on `R[A]`; adjacent pool strings Bx and Bx+1 are type and position.
+    AssertContract = 79,
+    /// Nullable contract assertion with the same encoding.
+    AssertContractNullable = 80,
 }
 
 impl RegOpCode {
@@ -186,6 +200,13 @@ impl RegOpCode {
             71 => Some(Self::LoadUnset),
             72 => Some(Self::PushHandler),
             73 => Some(Self::PopHandler),
+            74 => Some(Self::IterPrimary),
+            75 => Some(Self::IterKey),
+            76 => Some(Self::IterValue),
+            77 => Some(Self::IterGuard),
+            78 => Some(Self::IterGuardEnd),
+            79 => Some(Self::AssertContract),
+            80 => Some(Self::AssertContractNullable),
             _ => None,
         }
     }
