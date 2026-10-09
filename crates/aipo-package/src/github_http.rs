@@ -1962,7 +1962,7 @@ mod tests {
             .store(&source, GitHubArtifact::new(manifest(), entry()))
             .expect("store");
         assert!(cache.remove_verified(&source).expect("remove succeeds"));
-        assert!(!cache.load(&source).expect("load after remove").is_some());
+        assert!(cache.load(&source).expect("load after remove").is_none());
         assert!(
             !cache
                 .remove_verified(&source)

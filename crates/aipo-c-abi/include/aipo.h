@@ -314,10 +314,12 @@ aipo_status_t aipo_runtime_set_instruction_budget(
 );
 
 /**
- * \brief Returns the total number of instructions executed on this runtime.
+ * \brief Returns the instruction counter maintained while a budget is enabled.
  *
  * \param rt Runtime pointer.
- * \return Number of instructions executed since creation or last reset.
+ * Budgeted calls retain consumption until reset. An unbudgeted execution may reset
+ * the counter and does not count instructions unless VM metrics are enabled.
+ * \return Current counter value, or 0 for a null runtime.
  */
 uint64_t aipo_runtime_instruction_count(const aipo_runtime_t *rt);
 

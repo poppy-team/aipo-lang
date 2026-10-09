@@ -110,6 +110,10 @@ next()
 
 A sessão compila a unidade nova, mantém um catálogo de declarações, reloca seu bytecode e executa somente a nova entrada. Corpos antigos permanecem disponíveis para valores Function/Closure que ainda os referenciam. Declarações antigas podem ser compiladas para o catálogo atual, mas statements antigos não são repetidos; o REPL não reproduz todo o histórico para reconstruir estado.
 
+`run_persistent_at` preserva Tasks, resultados, filas, waiters, joins, grupos, IDs e tempo virtual entre unidades. Assim, uma tarefa criada em uma unidade pode ser aguardada em outra. `run_at` continua sendo a entrada independente que reinicializa o scheduler. A entrada persistente exige bytecode ligado append-only, mantendo os offsets antigos válidos.
+
+O snapshot de definições inclui o scheduler. O heap snapshot também acompanha resultados, argumentos de tarefas de host, journals e células de upvalue retidas por tarefas, preservando aliases no rollback. Resultados/tarefas e código antigo ainda podem crescer em sessões longas; coleta de alcance e ciclos Rc permanece trabalho futuro.
+
 | Comando REPL | Uso |
 |---|---|
 | `:help` | Exibe comandos |
@@ -140,11 +144,11 @@ aipo watch src/main.aipo
 
 `Session::reload_with` executa estas etapas:
 
-1. Captura definições e heap guest alcançável antes de remover declarações do arquivo.
+1. Captura definições, scheduler e heap guest alcançável antes de remover declarações do arquivo.
 2. Compila, liga e inicializa a candidata. Remoção de função/tipo deixa de expor a declaração antiga.
 3. Mantém globals não chamáveis existentes que continuam declarados.
 4. Chama a função de migração do host e verifica layouts de instâncias retidas, incluindo nomes, ordem e campos `fixed`.
-5. Atualiza caches e confirma a geração, ou restaura código, catálogo, globals e heap.
+5. Atualiza caches e confirma a geração, ou restaura código, catálogo, globals, scheduler e heap.
 
 ```rust
 use aipo_cli::Session;
@@ -181,6 +185,8 @@ Um runtime pertence a uma thread. `Value` usa Rc/RefCell e não é `Send`; não 
 - `RegVm::set_instruction_budget(Some(n))` configura orçamento cumulativo e zera seu contador; `None` desliga a contagem. `reset_instruction_count` reinicia explicitamente.
 - Na VM canônica, execuções budgetadas preservam consumo entre entradas; `reset_instruction_count` reinicia. `Session` reinicia antes de cada avaliação, oferecendo orçamento por unidade.
 
+O contador C canônico acompanha execução quando budget ou métricas estão habilitados. Execução sem budget pode reiniciar o contador e não contabiliza opcodes com métricas desligadas; não é um contador universal de toda a vida do runtime.
+
 Budget de instruções mede trabalho guest, não memória total, duração de callback nativo ou wall-clock. O host deve limitar operações externas separadamente.
 
 ### C: execução síncrona e cooperativa
@@ -211,6 +217,10 @@ Strings/Bytes retornados pela ABI canônica são snapshots do runtime. Libere co
 ## 8. Wasm: semântica e recursos
 
 O teste `is` usa tipo semântico conhecido, não o tipo de armazenamento Wasm. `i32` pode armazenar Bool ou pointer; `i64` não prova Int. None em `is T?` corresponde; demais valores usam comparação fundamental/nominal. Expressões, parâmetros sem prova, nullable, chamadas ambíguas ou bindings de elementos com tipo desconhecido geram diagnóstico orientando usar a VM.
+
+Foi removido um ramo antecipado legado que usava tipos físicos e tornava a checagem semântica posterior inalcançável. Agora há um único caminho: provar o valor, resolver um destino estático não sombreado e avaliar o lado esquerdo uma vez, preservando seus efeitos. O catálogo de funções acompanha bindings globais e tipos declarados para não confundir nomes com o prelude.
+
+Aliases como `let T = Int`, parâmetros/globals/funções que sombreiam `Int`, destinos desconhecidos e expressões dinâmicas no lado direito são rejeitados no Wasm com orientação para usar `--engine=vm`. `Function` não foi inventado como TypeTag: o nome de diagnóstico de um valor chamável não é um tipo fundamental disponível no prelude. Provas de chamadas `String`/`task.spawn` também exigem nomes não sombreados. Operações numéricas com operandos desconhecidos e concatenação de strings não recebem fatos de tipo falsos.
 
 Para ampliar suporte, propague fatos de tipo pelo HIR e seus joins ou implemente tags dinâmicas reais. Não volte ao fallback que assume Int para qualquer expressão. A rejeição de um caso sem prova é uma limitação explícita, não um resultado `true` inventado.
 

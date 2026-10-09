@@ -61,6 +61,7 @@ def main():
     report = {
         'schema': 1, 'workload': '20000 native Reg calls; nine-instruction caller; one live callee register',
         'baseline_commit': 'f0a0d70d176be031cd4b600fde1df6179429fb9a',
+        'candidate_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
         'candidate_tracked_diff_sha256': hashlib.sha256(subprocess.check_output(['git', 'diff', 'HEAD', '--', 'crates'], cwd=root)).hexdigest(),
         'candidate_source_inventory_sha256': hashlib.sha256(b''.join(
             path.encode() + bytes.fromhex(digest(root / path)) for path in sorted(set(

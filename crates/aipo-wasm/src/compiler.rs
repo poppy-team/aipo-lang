@@ -10,7 +10,8 @@ use aipo_hir::{
 };
 use aipo_lexer::{parse_float_literal, parse_int_literal};
 use aipo_source::SourceSpan;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::ops::{Deref, DerefMut};
 use wasm_encoder::{BlockType, ConstExpr, Function, GlobalType, Instruction, MemArg, ValType};
 
 /// Represents a frame in the WebAssembly structured control stack.
@@ -46,6 +47,57 @@ enum LocalKind {
     List,
     /// A `Dict` value produced by a dict literal.
     Dict,
+}
+
+/// Function symbols and module bindings relevant to static semantic proofs.
+struct FunctionTable {
+    symbols: HashMap<String, (u32, u32, WasmFnType)>,
+    global_bindings: HashSet<String>,
+    declared_types: HashSet<String>,
+}
+
+impl FunctionTable {
+    fn new(program: &HirProgram) -> Self {
+        Self {
+            symbols: HashMap::new(),
+            global_bindings: program
+                .statements
+                .iter()
+                .filter_map(|statement| match statement {
+                    HirStmt::Let(name, ..) | HirStmt::Var(name, ..) => Some(name.clone()),
+                    _ => None,
+                })
+                .collect(),
+            declared_types: program
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    HirItem::Struct(declaration) => Some(declaration.name.clone()),
+                    HirItem::Enum(declaration) => Some(declaration.name.clone()),
+                    _ => None,
+                })
+                .collect(),
+        }
+    }
+
+    fn builtin_is_unshadowed(&self, name: &str) -> bool {
+        !self.symbols.contains_key(name)
+            && !self.global_bindings.contains(name)
+            && !self.declared_types.contains(name)
+    }
+}
+
+impl Deref for FunctionTable {
+    type Target = HashMap<String, (u32, u32, WasmFnType)>;
+    fn deref(&self) -> &Self::Target {
+        &self.symbols
+    }
+}
+
+impl DerefMut for FunctionTable {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.symbols
+    }
 }
 
 fn annotated_kind(
@@ -138,7 +190,7 @@ struct AsyncHelpers {
 /// or type mismatch is encountered.
 pub fn compile_hir(program: &HirProgram) -> Result<Vec<u8>, WasmCompileError> {
     let mut emitter = WasmEmitter::new();
-    let mut functions = HashMap::new();
+    let mut functions = FunctionTable::new(program);
     let mut structs = HashMap::new();
 
     // Pass 0: Collect Struct and Enum definitions and compute layouts
@@ -2279,7 +2331,7 @@ fn resolve_return_type(
     annot: &Option<aipo_ast::TypeAnnotation>,
     params: &[HirParam],
     body: &[HirStmt],
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     structs: &HashMap<String, StructLayout>,
 ) -> Option<WasmType> {
     if let Some(ty) = annot {
@@ -2313,7 +2365,7 @@ fn resolve_return_type(
 fn infer_body_return_type(
     body: &[HirStmt],
     locals: &mut HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     structs: &HashMap<String, StructLayout>,
     table_indices: &HashMap<String, u32>,
     anon_map: &HashMap<SourceSpan, String>,
@@ -2423,7 +2475,7 @@ fn pre_scan_stmts(
     params_count: usize,
     locals: &mut HashMap<String, (u32, WasmType, LocalKind)>,
     declared_locals: &mut Vec<WasmType>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     structs: &HashMap<String, StructLayout>,
     table_indices: &HashMap<String, u32>,
     anon_map: &HashMap<SourceSpan, String>,
@@ -2728,7 +2780,7 @@ fn pre_scan_stmts(
 fn infer_expr_kind(
     expr: &HirExpr,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     table_indices: &HashMap<String, u32>,
     anon_map: &HashMap<SourceSpan, String>,
 ) -> LocalKind {
@@ -2742,6 +2794,8 @@ fn infer_expr_kind(
         HirExpr::Identifier(name, _) => {
             if let Some((_, _, k)) = locals.get(name) {
                 k.clone()
+            } else if functions.global_bindings.contains(name) {
+                LocalKind::Unknown
             } else if table_indices.contains_key(name) {
                 if let Some((_, type_idx, _)) = functions.get(name) {
                     LocalKind::Fn(*type_idx)
@@ -2775,14 +2829,13 @@ fn infer_expr_kind(
         HirExpr::Binary(BinaryOp::Add, left, right, _) => {
             let lk = infer_expr_kind(left, locals, functions, table_indices, anon_map);
             let rk = infer_expr_kind(right, locals, functions, table_indices, anon_map);
-            if matches!(lk, LocalKind::String) || matches!(rk, LocalKind::String) {
-                LocalKind::String
-            } else if lk == LocalKind::Float || rk == LocalKind::Float {
-                LocalKind::Float
-            } else if lk == LocalKind::Int && rk == LocalKind::Int {
-                LocalKind::Int
-            } else {
-                LocalKind::Unknown
+            match (lk, rk) {
+                (LocalKind::Int, LocalKind::Int) => LocalKind::Int,
+                (LocalKind::Int | LocalKind::Float, LocalKind::Int | LocalKind::Float) => {
+                    LocalKind::Float
+                }
+                // The numeric lowering does not prove string concatenation or dynamic operands.
+                _ => LocalKind::Unknown,
             }
         }
         HirExpr::Binary(
@@ -2801,17 +2854,23 @@ fn infer_expr_kind(
         HirExpr::Call(callee, _, _) => {
             if let HirExpr::Identifier(name, _) = &**callee
                 && name == "String"
+                && !locals.contains_key(name)
+                && functions.builtin_is_unshadowed(name)
             {
                 return LocalKind::String;
             }
             if let HirExpr::Dot(receiver, method_name, _) = &**callee
                 && let HirExpr::Identifier(rec_name, _) = &**receiver
                 && rec_name == "task"
+                && !locals.contains_key(rec_name)
+                && functions.builtin_is_unshadowed(rec_name)
                 && method_name == "spawn"
             {
                 return LocalKind::Task;
             }
             if let HirExpr::Identifier(name, _) = &**callee
+                && !locals.contains_key(name)
+                && !functions.global_bindings.contains(name)
                 && let Some((_, _, fn_type)) = functions.get(name)
                 && fn_type.results.first() == Some(&WasmType::F64)
             {
@@ -2820,7 +2879,17 @@ fn infer_expr_kind(
             // I64 also represents `none`; storage type alone proves no semantic type.
             LocalKind::Unknown
         }
-        HirExpr::Binary(BinaryOp::Div, ..) => LocalKind::Float,
+        HirExpr::Binary(BinaryOp::Div, left, right, _) => {
+            let left = infer_expr_kind(left, locals, functions, table_indices, anon_map);
+            let right = infer_expr_kind(right, locals, functions, table_indices, anon_map);
+            if matches!(left, LocalKind::Int | LocalKind::Float)
+                && matches!(right, LocalKind::Int | LocalKind::Float)
+            {
+                LocalKind::Float
+            } else {
+                LocalKind::Unknown
+            }
+        }
         HirExpr::Binary(
             BinaryOp::Sub | BinaryOp::Mul | BinaryOp::IntDiv | BinaryOp::Mod,
             left,
@@ -2864,7 +2933,7 @@ fn compile_function_body(
     params: &[HirParam],
     return_type: Option<WasmType>,
     body: &[HirStmt],
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
     table_indices: &HashMap<String, u32>,
@@ -3005,7 +3074,7 @@ fn compile_stmts(
     stmts: &[HirStmt],
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -3791,7 +3860,7 @@ fn compile_if_stmt(
     if_stmt: &HirIfStmt,
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -3936,7 +4005,7 @@ fn compile_while_stmt(
     loop_body: &[HirStmt],
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -4023,7 +4092,7 @@ fn compile_loop_stmt(
     loop_body: &[HirStmt],
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -4086,7 +4155,7 @@ fn compile_repeat_stmt(
     loop_body: &[HirStmt],
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -4202,7 +4271,7 @@ fn compile_each_stmt(
     loop_body: &[HirStmt],
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -4354,7 +4423,7 @@ fn compile_match_stmt(
     match_stmt: &HirMatchStmt,
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -4670,7 +4739,7 @@ fn compile_match_condition(
     target_ty: WasmType,
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -4734,7 +4803,7 @@ fn compile_attempt_stmt(
     attempt: &HirAttemptStmt,
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -4867,7 +4936,7 @@ fn compile_print_arg(
     expr: &HirExpr,
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -4992,7 +5061,7 @@ fn compile_expr(
     expr: &HirExpr,
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -5130,7 +5199,70 @@ fn compile_expr(
         }
         HirExpr::Binary(op, left, right, span) => {
             if matches!(op, BinaryOp::Is | BinaryOp::IsNullable) {
-                let l_ty = compile_expr(
+                let kind = infer_expr_kind(left, locals, functions, table_indices, anon_map);
+                let HirExpr::Identifier(type_name, _) = &**right else {
+                    return Err(WasmCompileError::UnsupportedExpr {
+                        message:
+                            "Wasm type tests require an unshadowed static type; use --engine=vm"
+                                .into(),
+                        span: *span,
+                    });
+                };
+                let fundamental = matches!(
+                    type_name.as_str(),
+                    "Int"
+                        | "Float"
+                        | "Bool"
+                        | "Byte"
+                        | "String"
+                        | "List"
+                        | "Dict"
+                        | "Bytes"
+                        | "Set"
+                        | "Duration"
+                );
+                let nominal = structs.contains_key(type_name)
+                    || structs.keys().any(|name| {
+                        name.split_once('.')
+                            .is_some_and(|(parent, _)| parent == type_name)
+                    });
+                if locals.contains_key(type_name)
+                    || functions.contains_key(type_name)
+                    || functions.global_bindings.contains(type_name)
+                    || (fundamental && functions.declared_types.contains(type_name))
+                    || !(fundamental || nominal)
+                {
+                    return Err(WasmCompileError::UnsupportedExpr {
+                        message: "Wasm cannot resolve a dynamic, aliased or shadowed type target; use --engine=vm".into(),
+                        span: *span,
+                    });
+                }
+                if kind == LocalKind::Unknown {
+                    return Err(WasmCompileError::UnsupportedExpr {
+                        message:
+                            "Wasm cannot prove the semantic type of this value; use --engine=vm"
+                                .into(),
+                        span: *span,
+                    });
+                }
+                let matches = match (&kind, type_name.as_str()) {
+                    (LocalKind::Int, "Int")
+                    | (LocalKind::Float, "Float")
+                    | (LocalKind::Bool, "Bool")
+                    | (LocalKind::String, "String")
+                    | (LocalKind::List, "List")
+                    | (LocalKind::Dict, "Dict") => true,
+                    (LocalKind::Struct(name), expected) => {
+                        name == expected
+                            || name
+                                .split_once('.')
+                                .is_some_and(|(parent, _)| parent == expected)
+                    }
+                    (LocalKind::None, _) => *op == BinaryOp::IsNullable,
+                    _ => false,
+                };
+                // Evaluate the left side once, preserving its effects, even for a constant proof.
+                compile_expr(
                     left,
                     func,
                     locals,
@@ -5147,16 +5279,7 @@ fn compile_expr(
                     call_depth,
                 )?;
                 func.instruction(&Instruction::Drop);
-                let matches = match &**right {
-                    HirExpr::Identifier(type_name, _) => match type_name.as_str() {
-                        "Int" => l_ty == WasmType::I64,
-                        "Float" => l_ty == WasmType::F64,
-                        "Bool" => l_ty == WasmType::I32,
-                        _ => true,
-                    },
-                    _ => true,
-                };
-                func.instruction(&Instruction::I32Const(if matches { 1 } else { 0 }));
+                func.instruction(&Instruction::I32Const(i32::from(matches)));
                 return Ok(WasmType::I32);
             }
 
@@ -5478,62 +5601,6 @@ fn compile_expr(
                     coerce_type(func, r_ty, WasmType::I64);
                     let (range_fn_idx, _, _) = functions["__aipo_range_new"];
                     func.instruction(&Instruction::Call(range_fn_idx));
-                    Ok(WasmType::I32)
-                }
-                BinaryOp::Is | BinaryOp::IsNullable => {
-                    let l_ty = compile_expr(
-                        left,
-                        func,
-                        locals,
-                        functions,
-                        control_stack,
-                        structs,
-                        static_strings,
-                        table_indices,
-                        anon_map,
-                        indirect_sigs,
-                        alloc_func_idx,
-                        async_helpers,
-                        struct_depth,
-                        call_depth,
-                    )?;
-                    func.instruction(&Instruction::Drop);
-                    let _ = l_ty;
-                    let kind = infer_expr_kind(left, locals, functions, table_indices, anon_map);
-                    let HirExpr::Identifier(type_name, _) = &**right else {
-                        return Err(WasmCompileError::UnsupportedExpr {
-                            message: "Wasm type tests require a statically known type".into(),
-                            span: *span,
-                        });
-                    };
-                    if kind == LocalKind::Unknown {
-                        return Err(WasmCompileError::UnsupportedExpr {
-                            message:
-                                "Wasm cannot prove the semantic type of this value; use --engine=vm"
-                                    .into(),
-                            span: *span,
-                        });
-                    }
-                    let matches = match (&kind, type_name.as_str()) {
-                        (LocalKind::Int, "Int")
-                        | (LocalKind::Float, "Float")
-                        | (LocalKind::Bool, "Bool")
-                        | (LocalKind::String, "String")
-                        | (LocalKind::List, "List")
-                        | (LocalKind::Dict, "Dict")
-                        | (LocalKind::Range, "Range")
-                        | (LocalKind::Task, "Task")
-                        | (LocalKind::Fn(_), "Function") => true,
-                        (LocalKind::Struct(name), expected) => {
-                            name == expected
-                                || name
-                                    .split_once('.')
-                                    .is_some_and(|(parent, _)| parent == expected)
-                        }
-                        (LocalKind::None, _) => *op == BinaryOp::IsNullable,
-                        _ => false,
-                    };
-                    func.instruction(&Instruction::I32Const(if matches { 1 } else { 0 }));
                     Ok(WasmType::I32)
                 }
                 other => Err(WasmCompileError::UnsupportedExpr {
@@ -6829,7 +6896,7 @@ fn compile_logical_short_circuit(
     right: &HirExpr,
     func: &mut Function,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     control_stack: &mut Vec<ControlFrame>,
     structs: &HashMap<String, StructLayout>,
     static_strings: &HashMap<String, i32>,
@@ -7100,7 +7167,7 @@ fn expr_may_fail(expr: &HirExpr) -> bool {
 fn infer_expr_is_range(
     expr: &HirExpr,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     _structs: &HashMap<String, StructLayout>,
     table_indices: &HashMap<String, u32>,
 ) -> bool {
@@ -7124,7 +7191,7 @@ fn infer_expr_is_range(
 fn infer_expr_type(
     expr: &HirExpr,
     locals: &HashMap<String, (u32, WasmType, LocalKind)>,
-    functions: &HashMap<String, (u32, u32, WasmFnType)>,
+    functions: &FunctionTable,
     structs: &HashMap<String, StructLayout>,
     table_indices: &HashMap<String, u32>,
 ) -> Result<WasmType, WasmCompileError> {

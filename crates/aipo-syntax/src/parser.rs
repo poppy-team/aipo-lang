@@ -975,10 +975,7 @@ impl<'a> Parser<'a> {
         // `init` builds the instance, so its implicit receiver is mutable; every other
         // method keeps an immutable implicit receiver and must write `var self` to mutate.
         let implicit_mutable = is_init;
-        if !params
-            .first()
-            .is_some_and(|param| param.name.name == "self")
-        {
+        if params.first().is_none_or(|param| param.name.name != "self") {
             params.insert(
                 0,
                 Param {

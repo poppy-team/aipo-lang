@@ -23,3 +23,20 @@ fn untyped_parameters_and_mixed_joins_do_not_get_a_fabricated_int_tag() {
 fn semantic_bool_and_nullable_none_can_be_proven() {
     assert!(compile("fn yes() { return true is Bool }\nfn no() { return true is Int }\nfn nullable() { return none is Int? }\n").is_ok());
 }
+
+#[test]
+fn aliased_shadowed_and_unknown_type_targets_are_rejected() {
+    for source in [
+        "fn alias() { let T = Int\nreturn 1 is T }\n",
+        "fn shadow(Int) { return 1 is Int }\n",
+        "var Int = 1\nfn shadow() { return 1 is Int }\n",
+        "fn Int() { return 1 }\nfn shadow() { return 1 is Int }\n",
+        "fn unknown() { return 1 is Missing }\n",
+        "fn String(value) { return 1 }\nfn shadow() { return String(1) is Int }\n",
+    ] {
+        assert!(
+            compile(source).is_err(),
+            "accepted unproven type target: {source}"
+        );
+    }
+}
