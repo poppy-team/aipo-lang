@@ -59,7 +59,7 @@ test('rejects TODO if any criterion is complete', () => {
 })
 test('rejects incomplete status if all criteria complete', () => {
   const data=clone()
-  data.tasks[1].checkpoints.forEach(c => { c.completed = true; c.evidence = 'release' })
+  data.tasks[1].checkpoints.forEach(c => { c.completed = true; c.evidence = 'syntax-spec' })
   assert.throws(() => validateProgress(data), /IN PROGRESS inconsistent/)
 })
 test('rejects duplicate IDs, dates, invalid branches and traversal', () => {
