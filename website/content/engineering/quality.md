@@ -33,3 +33,8 @@ Documentação, implementação e testes devem evoluir juntos, mas não são a m
 - [Evidência da revisão P07-G01](https://github.com/poppy-team/aipo-lang/blob/main/docs/evidence/P07-G01-runtime-hardening.md).
 
 **Limite desta entrega:** a documentação foi criada em uma branch separada. Não reivindicar execução da suite Rust, conformance ou build do website até esses comandos serem efetivamente executados.
+
+
+## Contrato de progresso nos PRs
+
+Além de checar `website/`, a CI executa `Aipo progress sync` para alterações de código, contratos e fixtures. O script `website/scripts/progress_delta.py` exige o diff do JSON do progresso no mesmo PR. Não equivale a execução dos testes Rust nem transforma evidência histórica em resultado atual. [Protocolo](/engineering/progress-protocol).
