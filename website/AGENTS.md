@@ -14,3 +14,7 @@ This folder is the new editorial home for Aipo documentation. Its contents must 
 - Run `npm run check` and `npm run build` in `website`; execute CLI example gates when appropriate.
 
 Do not duplicate the whole Prumo workforce. Follow [the source catalog](https://github.com/poppy-lat/prumo/tree/main/src/prumo/resources/workforce) selectively with task-appropriate permissions.
+
+## Protocolo de progresso (obrigatório)
+
+Antes de qualquer slice, ler [progresso](content/progress/index.md), [protocolo](content/engineering/progress-protocol.md) e [auditoria legado](content/engineering/legacy-audit.md). No mesmo PR, atualizar `public/progress/tasks.json` (IDs afetados, checkpoints, gates, evidência e datas). Nunca apresentar teste antigo ou presença de crate como nova validação. Rodar `npm run check` e `npm run build` a partir de `website/`. É vedado excluir `docs/` antes de cumprir os gates de paridade e consumidores descritos na auditoria.

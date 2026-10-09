@@ -49,6 +49,8 @@ const engineering = [
  {text:'Decisões',link:'/engineering/decisions/'},
  {text:'Conflitos conhecidos',link:'/engineering/decisions/conflicts'},
  {text:'Estudos',link:'/engineering/studies'},
+ {text:'Protocolo de progresso',link:'/engineering/progress-protocol'},
+ {text:'Auditoria de documentos antigos',link:'/engineering/legacy-audit'},
  {text:'Agentes',link:'/engineering/agents/'},
  {text:'Arquivo histórico',link:'/archive/'}
 ]
@@ -63,6 +65,7 @@ export default defineConfig({
     search: { provider: 'local' },
     nav: [
       {text:'Aprender',link:'/learn/'},
+      {text:'Progresso',link:'/progress/'},
       {text:'Guias',link:'/guides/'},
       {text:'Referência',link:'/reference/'},
       {text:'Conceitos',link:'/concepts/'},
@@ -70,7 +73,12 @@ export default defineConfig({
     ],
     sidebar: {
       '/learn/':book, '/guides/':guides, '/reference/':reference,
-      '/concepts/':concepts, '/engineering/':engineering, '/archive/':engineering
+      '/concepts/':concepts, '/engineering/':engineering, '/archive/':engineering,
+      '/progress/':[
+        {text:'Painel de progresso',link:'/progress/'},
+        {text:'Protocolo de atualização',link:'/engineering/progress-protocol'},
+        {text:'Auditoria da documentação antiga',link:'/engineering/legacy-audit'}
+      ]
     },
     socialLinks:[{icon:'github',link:'https://github.com/poppy-team/aipo-lang'}],
     editLink:{pattern:'https://github.com/poppy-team/aipo-lang/edit/main/website/content/:path',text:'Editar esta página'},

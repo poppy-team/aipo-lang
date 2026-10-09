@@ -32,3 +32,8 @@
 
 ## Guidelines
 Select one task domain, read only its boundary and applicable decision, inspect relevant code and tests, then establish a measurable delta. Preserve legacy documentation until its references and authority conflicts are reconciled.
+
+# Progresso auditável
+- /progress/ — tabela de processos, checkpoints e evidências.
+- /engineering/progress-protocol — regras obrigatórias de atualização.
+- /engineering/legacy-audit — auditoria e critérios de exclusão de docs antigas.

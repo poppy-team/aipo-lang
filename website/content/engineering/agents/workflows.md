@@ -36,3 +36,7 @@ title: Workflow de implementação e evidência
 - `INFERENCE`: hipótese sem prova.
 
 Nenhuma evidência antiga valida automaticamente um HEAD novo.
+
+## Sincronização obrigatória do progresso
+
+Toda implementação ou refatoração que altere funcionalidades, testes ou documentação deve localizar os processos afetados em [Progresso](/progress/) e atualizar `website/public/progress/tasks.json` no **mesmo PR**. Feche checkpoints somente com evidência rastreável, registre `not-run` explicitamente e reabra DONE em regressão. [Protocolo completo](/engineering/progress-protocol).

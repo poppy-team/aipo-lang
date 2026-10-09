@@ -7,11 +7,13 @@
     "dev": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview",
-    "check": "node scripts/check-docs.mjs",
+    "check": "node scripts/check-docs.mjs && npm run check:progress && npm run test:progress",
     "check:examples": "node scripts/check-examples.mjs",
     "docs:build": "vitepress build",
     "docs:dev": "vitepress dev",
-    "docs:preview": "vitepress preview"
+    "docs:preview": "vitepress preview",
+    "check:progress": "node scripts/verify-progress.mjs",
+    "test:progress": "node --test tests/progress.test.mjs"
   },
   "devDependencies": {
     "vitepress": "1.6.4",

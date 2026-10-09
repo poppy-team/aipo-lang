@@ -17,6 +17,9 @@ hero:
     - theme: alt
       text: Engenharia
       link: /engineering/
+    - theme: alt
+      text: Progresso
+      link: /progress/
 features:
   - title: Aprenda progressivamente
     details: 26 capítulos ordenados por pré-requisitos e exercícios pequenos.
@@ -35,3 +38,5 @@ features:
 > **Aipo evolui continuamente.** Não confunda a sintaxe V1 aprovada com a gramática implementada em todos os backends. Consulte a [matriz de suporte](/reference/status).
 
 Também há [guias práticos](/guides/) e [explicações conceituais](/concepts/).
+
+**Acompanhe a implementação:** [progresso verificável por etapa](/progress/) e [regras de atualização das evidências](/engineering/progress-protocol).
