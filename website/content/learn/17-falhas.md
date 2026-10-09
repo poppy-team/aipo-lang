@@ -1,53 +1,26 @@
 ---
 title: "Falhas recuperáveis"
-description: "Separar falhas esperadas de faults de programação."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Falhas recuperáveis
 
-**III · Construir** · Capítulo 17 de 26 · [Índice do livro](/learn/)
+Recupere problemas esperados com Failure, or_else e attempt.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/failures) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Separar falhas esperadas de faults de programação.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/11_failures_or_else_attempt.aipo)
 
-Aipo distingue falhas recuperáveis e faults. `attempt ... failed` trata falhas recuperáveis; use `or_else` quando um valor alternativo explícito for suficiente.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-fn dividir(a, b) {
-    if b == 0 {
-        fail "divisor zero"
-    }
-    return a / b
-}
-attempt {
-    io.println(dividir(6, 0))
-} failed erro {
-    io.println("Não foi possível dividir")
-}
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Execute com divisor zero e depois divisor válido.
-
-**Critério de conclusão:** A recuperação não deve esconder faults fatais.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/11_failures_or_else_attempt.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Transformando coleções](/learn/16-transformacoes) · [Testes e diagnósticos →](/learn/18-testes)
+[← Transformando coleções](/learn/16-transformacoes) · [Índice do livro](/learn/) · [Testes e diagnósticos →](/learn/18-testes)

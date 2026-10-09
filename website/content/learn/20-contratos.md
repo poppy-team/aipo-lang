@@ -1,46 +1,26 @@
 ---
 title: "Contratos de assinatura"
-description: "Explicitar requisitos de argumentos e retorno."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Contratos de assinatura
 
-**IV · Avançado** · Capítulo 20 de 26 · [Índice do livro](/learn/)
+Declare contratos de parâmetros e valores retornados.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/interfaces) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Explicitar requisitos de argumentos e retorno.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/03_contracts_and_interfaces.aipo)
 
-Contratos opcionais em assinaturas tornam interfaces mais claras. Eles não implicam que toda expressão tenha inferência estática ou que o runtime dispense validações.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-fn quadrado(n: Int) -> Int {
-    return n * n
-}
-io.println(quadrado(5))
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Passe um argumento incompatível e compare `check` e `run`.
-
-**Critério de conclusão:** Observe em qual fase a incompatibilidade aparece.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/03_contracts_and_interfaces.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Miniaplicação organizada](/learn/19-projeto) · [Interfaces estruturais →](/learn/21-interfaces)
+[← Miniaplicação organizada](/learn/19-projeto) · [Índice do livro](/learn/) · [Interfaces estruturais →](/learn/21-interfaces)

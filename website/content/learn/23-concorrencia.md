@@ -1,49 +1,26 @@
 ---
 title: "Tarefas e async"
-description: "Distinguir suspender uma tarefa e executar em paralelo."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Tarefas e async
 
-**IV · Avançado** · Capítulo 23 de 26 · [Índice do livro](/learn/)
+Crie tarefas, aguarde resultados e compreenda as regras do scheduler.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/async) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Distinguir suspender uma tarefa e executar em paralelo.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/docs/conformance/README.md)
 
-O scheduler Aipo é cooperativo. `async fn`, `await do` e combinadores do módulo `task` seguem contratos próprios, não uma promessa de paralelismo em threads.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-async fn valor() {
-    return 42
-}
-let tarefa = valor()
-await do {
-    io.println(tarefa)
-}
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Investigue cancelamento, término e propagação de falhas.
-
-**Critério de conclusão:** Consulte o corpus específico de async; alguns backends diferem.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/docs/conformance/README.md)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Invariantes e transações](/learn/22-invariantes) · [Pacotes e lockfiles →](/learn/24-pacotes)
+[← Invariantes e transações](/learn/22-invariantes) · [Índice do livro](/learn/) · [Pacotes e lockfiles →](/learn/24-pacotes)

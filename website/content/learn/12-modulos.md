@@ -1,51 +1,26 @@
 ---
 title: "Módulos e arquivos"
-description: "Compartilhar funções entre arquivos."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Módulos e arquivos
 
-**II · Fundamentos** · Capítulo 12 de 26 · [Índice do livro](/learn/)
+Separe um programa em módulos com import e export explícitos.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/modules-packages) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Compartilhar funções entre arquivos.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/05_modules/main.aipo)
 
-Cada arquivo `.aipo` é um módulo. `export` declara o que está disponível para outros módulos; a resolução de nomes importados possui regras específicas e não deve ser presumida igual à de Python.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-# utils.aipo
-fn dobro(n) { return n * 2 }
-export dobro
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-# main.aipo (arquivo separado)
-import utils
-io.println(dobro(5))
-```
-
-Os dois nomes de arquivos nos comentários indicam **arquivos separados**. Não execute este bloco inteiro como um único arquivo.
-
-
-
-
-
-## Exercício
-
-Separe os dois arquivos e experimente importar uma função não exportada.
-
-**Critério de conclusão:** Os comentários indicam arquivos distintos, não um script único.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/05_modules/main.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Escopo e mutabilidade](/learn/11-escopo) · [Estruturas →](/learn/13-estruturas)
+[← Escopo e mutabilidade](/learn/11-escopo) · [Índice do livro](/learn/) · [Estruturas →](/learn/13-estruturas)

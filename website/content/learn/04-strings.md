@@ -1,45 +1,26 @@
 ---
 title: "Texto e interpolação"
-description: "Criar mensagens legíveis com strings."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Texto e interpolação
 
-**I · Começar** · Capítulo 4 de 26 · [Índice do livro](/learn/)
+Construa mensagens com strings Unicode e interpolação.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/text) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Criar mensagens legíveis com strings.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/09_strings_unicode_and_formatting.aipo)
 
-Strings usam aspas duplas. O prefixo `f` permite interpolar expressões. Comentários comuns começam com `#`; não use `//` como comentário.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-let nome = "Lia"
-let nivel = 3
-io.println(f"Jogador: {nome} | nível: {nivel}")
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Acrescente uma variável `vidas` à mensagem.
-
-**Critério de conclusão:** Os três valores aparecem sem concatenações extensas.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/09_strings_unicode_and_formatting.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Números e booleanos](/learn/03-numeros) · [Condições →](/learn/05-condicoes)
+[← Números e booleanos](/learn/03-numeros) · [Índice do livro](/learn/) · [Condições →](/learn/05-condicoes)

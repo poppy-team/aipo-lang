@@ -1,46 +1,26 @@
 ---
 title: "Testes e diagnósticos"
-description: "Verificar comportamentos usando o CLI."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Testes e diagnósticos
 
-**III · Construir** · Capítulo 18 de 26 · [Índice do livro](/learn/)
+Execute testes, examine diagnósticos e registre o resultado.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/testing) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Verificar comportamentos usando o CLI.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/18_small_statistics.aipo)
 
-`aipo check` analisa fonte sem executar. `aipo test` reúne testes descobertos pelo projeto. Uma mensagem de erro é uma pista sobre a fase que falhou.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-fn soma(a, b) {
-    return a + b
-}
-io.println(soma(2, 3))
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Teste o arquivo com `check` e consulte o guia de execução de testes.
-
-**Critério de conclusão:** Anote comando, saída e versão do CLI para reproduzir problemas.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/18_small_statistics.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Falhas recuperáveis](/learn/17-falhas) · [Miniaplicação organizada →](/learn/19-projeto)
+[← Falhas recuperáveis](/learn/17-falhas) · [Índice do livro](/learn/) · [Miniaplicação organizada →](/learn/19-projeto)

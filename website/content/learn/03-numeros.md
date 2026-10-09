@@ -1,48 +1,26 @@
 ---
 title: "Números e booleanos"
-description: "Realizar cálculos e testar condições."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Números e booleanos
 
-**I · Começar** · Capítulo 3 de 26 · [Índice do livro](/learn/)
+Use inteiros, decimais e conversões explícitas sem ignorar limites.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/numbers) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Realizar cálculos e testar condições.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/20_safe_numeric_boundaries.aipo)
 
-Números inteiros e de ponto flutuante possuem regras específicas. Uma comparação devolve `true` ou `false`. Não presuma coerção automática de strings.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-let preco = 120
-let desconto = 20
-let total = preco - desconto
-let permitido = total <= 100
-io.println(total)
-io.println(permitido)
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Altere o desconto para 15 e explique o resultado.
-
-**Critério de conclusão:** O valor passa a ser 105 e a condição é falsa.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/20_safe_numeric_boundaries.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Valores e variáveis](/learn/02-variaveis) · [Texto e interpolação →](/learn/04-strings)
+[← Valores e variáveis](/learn/02-variaveis) · [Índice do livro](/learn/) · [Texto e interpolação →](/learn/04-strings)

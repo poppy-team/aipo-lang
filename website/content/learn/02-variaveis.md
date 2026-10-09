@@ -1,47 +1,26 @@
 ---
 title: "Valores e variáveis"
-description: "Distinguir valores imutáveis e variáveis reatribuíveis."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Valores e variáveis
 
-**I · Começar** · Capítulo 2 de 26 · [Índice do livro](/learn/)
+Aprenda a diferença entre um valor fixo e um estado que muda.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/variables) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Distinguir valores imutáveis e variáveis reatribuíveis.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/06_variables_and_values.aipo)
 
-`let` cria um vínculo imutável; `var` permite reatribuir. Use `let` quando o valor não muda. Uma variável não transforma automaticamente valores de outros tipos.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-let nome = "Ana"
-var pontos = 10
-pontos = pontos + 5
-io.println(nome)
-io.println(pontos)
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Mude `var pontos` para `let pontos` e compare os diagnósticos.
-
-**Critério de conclusão:** Uma tentativa de reatribuição imutável deve ser identificada.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/06_variables_and_values.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Seu primeiro programa](/learn/01-primeiro-programa) · [Números e booleanos →](/learn/03-numeros)
+[← Seu primeiro programa](/learn/01-primeiro-programa) · [Índice do livro](/learn/) · [Números e booleanos →](/learn/03-numeros)

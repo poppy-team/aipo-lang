@@ -1,45 +1,26 @@
 ---
 title: "Embedding e host APIs"
-description: "Compreender a relação entre um host e um script."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Embedding e host APIs
 
-**V · Integrações** · Capítulo 26 de 26 · [Índice do livro](/learn/)
+Use a linguagem dentro de aplicações por meio das APIs do host.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/hosts) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Compreender a relação entre um host e um script.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/crates/aipo-host/README.md)
 
-O hospedeiro governa capacidades, funções exportadas, handles e limites. AHS descreve uma superfície: não instala implementações nem concede privilégios.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```bash
-aipo run script.aipo --ahs host.json
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-Este bloco é um comando de terminal; não salve como arquivo `.aipo`.
-
-
-
-## Exercício
-
-Separe o que o arquivo AHS declara do que o host efetivamente implementa.
-
-**Critério de conclusão:** Perfil shell mínimo ainda depende de decisões e validações.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/crates/aipo-host/README.md)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← VM, JavaScript e Wasm](/learn/25-backends) · [Guias →](/guides/)
+[← VM, JavaScript e Wasm](/learn/25-backends) · [Índice do livro](/learn/) · [Exemplos completos →](/examples/)

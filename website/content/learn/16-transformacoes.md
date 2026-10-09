@@ -1,47 +1,26 @@
 ---
 title: "Transformando coleções"
-description: "Utilizar funções para filtrar coleções."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Transformando coleções
 
-**III · Construir** · Capítulo 16 de 26 · [Índice do livro](/learn/)
+Transforme e filtre listas sem escrever laços repetitivos.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/collections) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Utilizar funções para filtrar coleções.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/24_idiomatic_aipo_showcase.aipo)
 
-Métodos de alta ordem descrevem a transformação desejada. Considere legibilidade, ordem e custos de alocação antes de encadear várias operações.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-let numeros = [1, 2, 3, 4]
-let pares = numeros.filter(fn (n) { return n % 2 == 0 })
-each n in pares {
-    io.println(n)
-}
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Filtre os valores maiores que dois.
-
-**Critério de conclusão:** A condição de filtro devolve booleanos.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/24_idiomatic_aipo_showcase.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Closures](/learn/15-closures) · [Falhas recuperáveis →](/learn/17-falhas)
+[← Closures](/learn/15-closures) · [Índice do livro](/learn/) · [Falhas recuperáveis →](/learn/17-falhas)

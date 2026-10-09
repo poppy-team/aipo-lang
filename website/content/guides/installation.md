@@ -11,7 +11,7 @@ title: Instalação e primeiro programa
 ## Compilar
 
 ```bash
-git clone https://github.com/poppy-team/aipo-lang.git
+git clone https://github.com/poppyTM/aipo-lang.git
 cd aipo-lang
 cargo build -p aipo-cli
 ```

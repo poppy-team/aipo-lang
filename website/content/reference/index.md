@@ -1,16 +1,20 @@
 ---
-title: Referência da linguagem
+title: Referência do Aipo
+description: Comandos, sintaxe e APIs consultáveis, sem misturar propostas e recursos implementados.
 ---
+
 # Referência
 
-Esta área serve para consulta rápida, não para ensinar conceitos em ordem. Para aprendizado use o [Livro](/learn/).
+Use esta seção quando já souber o que quer fazer e precisar confirmar uma regra, um comando ou o suporte a um recurso.
 
-- [Sintaxe e superfície canônica](/reference/syntax) — formas, operadores e diferenças conhecidas.
-- [CLI](/reference/cli) — execução, análise, build, teste, formatação e pacote.
-- [Biblioteca padrão](/reference/stdlib) — organização de módulos e API existente.
-- [Suporte de backends](/reference/status) — implementação, experimentos e propostas.
-- [Diagnósticos](/reference/diagnostics) — erros e fontes de autoridade.
+| Assunto | Abrir |
+| --- | --- |
+| Formas de escrita, operadores e diferenças | [Sintaxe](/reference/syntax) |
+| Comandos, parâmetros e opções | [CLI](/reference/cli) |
+| Biblioteca padrão e módulos | [Stdlib](/reference/stdlib) |
+| Compatibilidade VM, RegVM, JS e Wasm | [Suporte por backend](/reference/status) |
+| Erros de compilação e execução | [Diagnósticos](/reference/diagnostics) |
 
-## Regra de leitura
+Para aprender do zero, o [manual](/manual/) é mais simples. Para ver o comportamento em um programa completo, use [exemplos reais](/examples/).
 
-**Decisão aprovada** descreve o projeto-alvo. **Código e fixtures** sustentam afirmações sobre a implementação. **Execução registrada no commit correto** sustenta afirmações de verificação. Saiba mais em [Governança técnica](/engineering/decisions/).
+**Precisão:** a presença de uma API no repositório não significa que ela esteja disponível em todos os destinos. O [código-fonte](https://github.com/poppyTM/aipo-lang) e os testes de conformidade esclarecem o comportamento de cada implementação.

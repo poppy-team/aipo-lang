@@ -1,49 +1,26 @@
 ---
 title: "Seu primeiro programa"
-description: "Escrever um arquivo e executá-lo."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Seu primeiro programa
 
-**I · Começar** · Capítulo 1 de 26 · [Índice do livro](/learn/)
+Execute um arquivo Aipo, entenda o comando run e modifique uma saída.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/start/) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Escrever um arquivo e executá-lo.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/01_fizzbuzz.aipo)
 
-Um programa Aipo é uma sequência de instruções. `io.println` escreve uma linha na saída padrão. Não é preciso declarar uma função principal para iniciar um script.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-io.println("Olá, Aipo!")
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-Salve como `hello.aipo` e execute, na raiz do repositório:
-
-```bash
-cargo run -q -p aipo-cli -- run hello.aipo
-```
-
-
-
-
-## Exercício
-
-Mude a frase e execute outra vez.
-
-**Critério de conclusão:** O terminal deve imprimir exatamente a nova frase.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/01_fizzbuzz.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Livro da Linguagem](/learn/) · [Valores e variáveis →](/learn/02-variaveis)
+[← Começar](/start/) · [Índice do livro](/learn/) · [Valores e variáveis →](/learn/02-variaveis)

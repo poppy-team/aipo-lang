@@ -1,51 +1,26 @@
 ---
 title: "Métodos e comportamento"
-description: "Associar operações a uma estrutura."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Métodos e comportamento
 
-**III · Construir** · Capítulo 14 de 26 · [Índice do livro](/learn/)
+Adicione comportamento a structs e controle mutação com var self.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/structs) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Associar operações a uma estrutura.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/24_idiomatic_aipo_showcase.aipo)
 
-Aipo favorece dados e operações explícitas em vez de uma hierarquia de classes. Métodos usam `Tipo:nome`; operações que mutam o receptor declaram `var self`.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-struct Contador {
-    var valor = 0
-}
-Contador:incrementar(var self) {
-    self.valor += 1
-}
-var c = Contador{}
-c.incrementar()
-io.println(c.valor)
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Adicione um método `somar_dois`.
-
-**Critério de conclusão:** Mutação não deve ficar oculta na assinatura.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/24_idiomatic_aipo_showcase.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Estruturas](/learn/13-estruturas) · [Closures →](/learn/15-closures)
+[← Estruturas](/learn/13-estruturas) · [Índice do livro](/learn/) · [Closures →](/learn/15-closures)

@@ -1,54 +1,26 @@
 ---
 title: "Invariantes e transações"
-description: "Entender regras de integridade e rollback."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Invariantes e transações
 
-**IV · Avançado** · Capítulo 22 de 26 · [Índice do livro](/learn/)
+Proteja dados com invariantes e rollback de mutações inválidas.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/failures) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Entender regras de integridade e rollback.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/13_mutation_and_rollback.aipo)
 
-Invariantes protegem o estado em fronteiras suportadas. Blocos de recuperação podem reverter alterações de acordo com a semântica do runtime; não generalize a atomicidade sem consultar fixtures.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-struct Carteira {
-    var saldo = 10
-}
-Carteira:invariant {
-    self.saldo >= 0
-}
-var c = Carteira{}
-attempt {
-    c.saldo = -1
-} failed err {
-    io.println("Operação recusada")
-}
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Identifique qual regra deve permanecer válida.
-
-**Critério de conclusão:** A validade do saldo é mais importante que esconder a falha.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/13_mutation_and_rollback.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Interfaces estruturais](/learn/21-interfaces) · [Tarefas e async →](/learn/23-concorrencia)
+[← Interfaces estruturais](/learn/21-interfaces) · [Índice do livro](/learn/) · [Tarefas e async →](/learn/23-concorrencia)

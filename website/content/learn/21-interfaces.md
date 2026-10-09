@@ -1,49 +1,26 @@
 ---
 title: "Interfaces estruturais"
-description: "Descrever contratos de comportamento."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Interfaces estruturais
 
-**IV · Avançado** · Capítulo 21 de 26 · [Índice do livro](/learn/)
+Exija operações por interface estrutural em vez de herança.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/interfaces) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Descrever contratos de comportamento.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/14_interfaces_and_satisfy.aipo)
 
-Uma interface declara operações exigidas. Aipo busca conformidade estrutural; a diretiva `#!satisfies` pertence à sintaxe-alvo e deve ser conferida antes de uso corrente.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-interface Nomeavel {
-    nome() -> String
-}
-struct Pessoa { texto }
-Pessoa:nome() -> String {
-    return self.texto
-}
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Enumere as operações que a estrutura deve oferecer.
-
-**Critério de conclusão:** Não confunda uma diretiva-alvo com uma verificação executada.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/14_interfaces_and_satisfy.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Contratos de assinatura](/learn/20-contratos) · [Invariantes e transações →](/learn/22-invariantes)
+[← Contratos de assinatura](/learn/20-contratos) · [Índice do livro](/learn/) · [Invariantes e transações →](/learn/22-invariantes)

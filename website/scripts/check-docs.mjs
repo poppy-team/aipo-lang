@@ -23,7 +23,7 @@ function routePath(route) {
   const item = normalized.startsWith('/') ? normalized.slice(1) : normalized
   const pathname = resolve(contentDir, item)
   if (pathname !== contentDir && !pathname.startsWith(contentDir + '/')) return null
-  const candidates = [pathname, pathname + '.md', join(pathname, 'index.md')]
+  const candidates = normalized.endsWith('/') ? [join(pathname, 'index.md')] : [pathname, pathname + '.md', join(pathname, 'index.md')]
   return candidates.find(file => file.endsWith('.md') && existsSync(file)) || null
 }
 function checkLinks(file, source) {

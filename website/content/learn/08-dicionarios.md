@@ -1,45 +1,26 @@
 ---
 title: "Dicionários"
-description: "Consultar valores a partir de chaves."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Dicionários
 
-**II · Fundamentos** · Capítulo 8 de 26 · [Índice do livro](/learn/)
+Associe chaves a valores e recupere dados de modo seguro.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/collections) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Consultar valores a partir de chaves.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/08_lists_dicts_and_slices.aipo)
 
-Um dicionário associa chaves e valores. Para procurar uma chave use `get(chave)`; a API atual não aceita argumento extra de valor padrão.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-let pessoa = {"nome": "Ana", "nivel": 2}
-io.println(pessoa.get("nome"))
-io.println(pessoa.get("ausente") == none)
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Adicione a chave `ativo` e consulte o valor.
-
-**Critério de conclusão:** O caso de uma chave ausente fica explícito.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/08_lists_dicts_and_slices.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Listas](/learn/07-listas) · [Primeiras funções →](/learn/09-funcoes)
+[← Listas](/learn/07-listas) · [Índice do livro](/learn/) · [Primeiras funções →](/learn/09-funcoes)
