@@ -8,7 +8,10 @@
     "build": "vitepress build",
     "preview": "vitepress preview",
     "check": "node scripts/check-docs.mjs",
-    "check:examples": "node scripts/check-examples.mjs"
+    "check:examples": "node scripts/check-examples.mjs",
+    "docs:build": "vitepress build",
+    "docs:dev": "vitepress dev",
+    "docs:preview": "vitepress preview"
   },
   "devDependencies": {
     "vitepress": "1.6.4",
