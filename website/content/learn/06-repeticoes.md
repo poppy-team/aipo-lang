@@ -1,50 +1,26 @@
 ---
 title: "Repetições"
-description: "Repetir ações com uma condição de parada."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Repetições
 
-**II · Fundamentos** · Capítulo 6 de 26 · [Índice do livro](/learn/)
+Use repeat, each, while, break e continue quando fizerem sentido.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/control-flow) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Repetir ações com uma condição de parada.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/16_ranges_repeat_each.aipo)
 
-`while` testa uma expressão a cada iteração. `each` percorre uma coleção. Um laço precisa de uma forma clara de terminar.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-var n = 0
-while n < 3 {
-    io.println(n)
-    n += 1
-}
-each nome in ["Ana", "Rui"] {
-    io.println(nome)
-}
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Mude o limite para 5 e conte as linhas.
-
-**Critério de conclusão:** O contador para após atingir o limite; cada nome aparece uma vez.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/16_ranges_repeat_each.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Condições](/learn/05-condicoes) · [Listas →](/learn/07-listas)
+[← Condições](/learn/05-condicoes) · [Índice do livro](/learn/) · [Listas →](/learn/07-listas)

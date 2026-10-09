@@ -1,48 +1,26 @@
 ---
 title: "Estruturas"
-description: "Representar dados por campos nomeados."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Estruturas
 
-**III · Construir** · Capítulo 13 de 26 · [Índice do livro](/learn/)
+Modele dados com struct e campos.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/structs) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Representar dados por campos nomeados.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/24_idiomatic_aipo_showcase.aipo)
 
-Uma `struct` agrupa valores relacionados. Campos sem anotações são usados pelo corpus atual; os contratos tipados de campo ainda precisam ser confrontados com a gramática-alvo.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-struct Pessoa {
-    nome
-    idade
-}
-let p = Pessoa{nome: "Lia", idade: 22}
-io.println(p.nome)
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Acrescente um campo `cidade`.
-
-**Critério de conclusão:** A construção e a leitura usam os mesmos nomes.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/24_idiomatic_aipo_showcase.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Módulos e arquivos](/learn/12-modulos) · [Métodos e comportamento →](/learn/14-metodos)
+[← Módulos e arquivos](/learn/12-modulos) · [Índice do livro](/learn/) · [Métodos e comportamento →](/learn/14-metodos)

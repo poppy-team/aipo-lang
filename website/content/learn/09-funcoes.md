@@ -1,47 +1,26 @@
 ---
 title: "Primeiras funções"
-description: "Reutilizar operações sem copiar código."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Primeiras funções
 
-**II · Fundamentos** · Capítulo 9 de 26 · [Índice do livro](/learn/)
+Dê nomes a operações pequenas com fn.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/functions) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Reutilizar operações sem copiar código.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/02_local_functions.aipo)
 
-Defina funções livres com `fn`. Nomeie funções pela operação que fazem. Os parâmetros recebem valores do chamador.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-fn saudar(nome) {
-    io.println(f"Olá, {nome}!")
-}
-saudar("Ana")
-saudar("Rui")
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Escreva uma função para imprimir o dobro de um número.
-
-**Critério de conclusão:** Cada chamada produz o resultado de seu argumento.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/02_local_functions.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Dicionários](/learn/08-dicionarios) · [Parâmetros e retornos →](/learn/10-retornos)
+[← Dicionários](/learn/08-dicionarios) · [Índice do livro](/learn/) · [Parâmetros e retornos →](/learn/10-retornos)

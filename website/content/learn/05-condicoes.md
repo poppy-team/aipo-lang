@@ -1,48 +1,26 @@
 ---
 title: "Condições"
-description: "Escolher ações usando expressões booleanas."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Condições
 
-**II · Fundamentos** · Capítulo 5 de 26 · [Índice do livro](/learn/)
+Escolha um caminho com if e elif, sem ramificações desnecessárias.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/control-flow) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Escolher ações usando expressões booleanas.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/docs/conformance/programs/03_control_flow.aipo)
 
-`if` executa seu bloco quando a condição é verdadeira. `elif` e `else` permitem alternativas; o escopo dos blocos é explícito.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-let idade = 17
-if idade >= 18 {
-    io.println("Maior")
-} else {
-    io.println("Menor")
-}
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Teste com idades 10, 18 e 50.
-
-**Critério de conclusão:** Apenas uma alternativa é executada em cada caso.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/docs/conformance/programs/03_control_flow.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Texto e interpolação](/learn/04-strings) · [Repetições →](/learn/06-repeticoes)
+[← Texto e interpolação](/learn/04-strings) · [Índice do livro](/learn/) · [Repetições →](/learn/06-repeticoes)

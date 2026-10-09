@@ -1,46 +1,26 @@
 ---
 title: "Listas"
-description: "Agrupar valores em ordem e acessá-los por índice."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Listas
 
-**II · Fundamentos** · Capítulo 7 de 26 · [Índice do livro](/learn/)
+Organize valores numa lista e use índices, fatias e métodos.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/collections) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Agrupar valores em ordem e acessá-los por índice.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/08_lists_dicts_and_slices.aipo)
 
-Listas são coleções ordenadas. O índice inicial é zero; índices inexistentes não devem ser tratados como valores normais.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-var frutas = ["maçã", "pera"]
-frutas.add("uva")
-io.println(frutas[0])
-io.println(len(frutas))
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Mostre o último elemento depois de adicionar um item.
-
-**Critério de conclusão:** A lista passa a conter três elementos.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/08_lists_dicts_and_slices.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Repetições](/learn/06-repeticoes) · [Dicionários →](/learn/08-dicionarios)
+[← Repetições](/learn/06-repeticoes) · [Índice do livro](/learn/) · [Dicionários →](/learn/08-dicionarios)

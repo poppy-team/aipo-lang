@@ -1,47 +1,26 @@
 ---
 title: "VM, JavaScript e Wasm"
-description: "Escolher um backend pela cobertura demonstrada."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # VM, JavaScript e Wasm
 
-**IV · Avançado** · Capítulo 25 de 26 · [Índice do livro](/learn/)
+Escolha entre VM, JavaScript e Wasm de acordo com suporte real.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/backends) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Escolher um backend pela cobertura demonstrada.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/docs/reference/cli.md)
 
-Stack VM é o caminho de referência. Register VM permanece experimental; JavaScript e Wasm possuem suportes e limites que devem ser medidos separadamente.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```bash
-aipo run app.aipo
-aipo check app.aipo
-aipo build app.aipo --target js --out dist/
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-Este bloco é um comando de terminal; não salve como arquivo `.aipo`.
-
-
-
-## Exercício
-
-Compare as opções com `aipo --help` do binário local.
-
-**Critério de conclusão:** O bloco contém comandos de terminal, não fonte Aipo.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/docs/reference/cli.md)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Pacotes e lockfiles](/learn/24-pacotes) · [Embedding e host APIs →](/learn/26-embedding)
+[← Pacotes e lockfiles](/learn/24-pacotes) · [Índice do livro](/learn/) · [Embedding e host APIs →](/learn/26-embedding)

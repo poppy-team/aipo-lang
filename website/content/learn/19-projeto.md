@@ -1,51 +1,26 @@
 ---
 title: "Miniaplicação organizada"
-description: "Reunir coleções, funções e dados."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Miniaplicação organizada
 
-**III · Construir** · Capítulo 19 de 26 · [Índice do livro](/learn/)
+Organize funções e módulos em um exemplo um pouco maior.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/modules-packages) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Reunir coleções, funções e dados.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/24_idiomatic_aipo_showcase.aipo)
 
-Projetos pequenos ajudam a integrar conceitos. Defina a entrada, o estado, a transformação e a saída antes de adicionar abstrações.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-struct Tarefa {
-    titulo
-    var concluida = false
-}
-var tarefas = []
-tarefas.add(Tarefa{titulo: "Aprender Aipo"})
-each tarefa in tarefas {
-    io.println(tarefa.titulo)
-}
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Crie uma função para concluir a primeira tarefa.
-
-**Critério de conclusão:** Uma mudança deve poder ser testada sem reescrever o sistema.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/24_idiomatic_aipo_showcase.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Testes e diagnósticos](/learn/18-testes) · [Contratos de assinatura →](/learn/20-contratos)
+[← Testes e diagnósticos](/learn/18-testes) · [Índice do livro](/learn/) · [Contratos de assinatura →](/learn/20-contratos)

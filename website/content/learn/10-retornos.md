@@ -1,47 +1,26 @@
 ---
 title: "Parâmetros e retornos"
-description: "Produzir valores reutilizáveis usando `return`."
+description: "Lição breve que aponta ao manual atualizado e ao código-fonte real."
 ---
+
 # Parâmetros e retornos
 
-**II · Fundamentos** · Capítulo 10 de 26 · [Índice do livro](/learn/)
+Defina argumentos, defaults, retorno e chamadas nomeadas.
 
-> **Verificação:** trecho didático ainda não executado nesta migração. A [referência de sintaxe](/reference/syntax) diferencia o alvo da implementação atual.
+## Aprenda pelo manual
 
-## Objetivo
+O [manual deste assunto](/manual/functions) explica o recurso com um exemplo curto e orientações práticas. Leia apenas o necessário para resolver seu problema; não precisa terminar todo o livro antes de programar.
 
-Produzir valores reutilizáveis usando `return`.
+## Veja no código real
 
-## Entenda o conceito
+[**Abrir o exemplo de referência**](https://github.com/poppyTM/aipo-lang/blob/main/examples/07_functions_defaults_named_args.aipo)
 
-Uma função retorna um valor que pode alimentar outra expressão. Anotações de assinatura restringem argumentos e retorno; não são um convite a coerções implícitas.
+O arquivo é mantido no repositório Aipo. Ele é uma fonte da implementação, **não comprova que esta lição foi executada e validada no commit atual**.
 
-## Experimente
+## Pratique
 
-```aipo
-fn dobro(n: Int) -> Int {
-    return n * 2
-}
-let resposta = dobro(21)
-io.println(resposta)
-```
+1. Leia o exemplo do manual e explique em uma frase o que ele faz.
+2. Abra o programa completo vinculado acima e procure onde o recurso aparece.
+3. Altere um valor ou uma condição em sua cópia local e execute o programa com a VM principal.
 
-
-
-
-
-## Exercício
-
-Escreva `triplo` e utilize seu resultado.
-
-**Critério de conclusão:** O dobro de 21 é 42.
-
-## Aprofundamento
-
-- [Código existente ou contrato relacionado](https://github.com/poppy-team/aipo-lang/blob/main/examples/07_functions_defaults_named_args.aipo)
-- [Referência de sintaxe](/reference/syntax)
-- [Como ler mensagens de erro](/guides/troubleshooting)
-
----
-
-[← Primeiras funções](/learn/09-funcoes) · [Escopo e mutabilidade →](/learn/11-escopo)
+[← Primeiras funções](/learn/09-funcoes) · [Índice do livro](/learn/) · [Escopo e mutabilidade →](/learn/11-escopo)
