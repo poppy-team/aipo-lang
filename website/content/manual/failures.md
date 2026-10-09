@@ -49,4 +49,4 @@ No [exemplo completo de rollback](/examples/13-mutation-and-rollback), uma mudan
 
 **Pratique:** experimente um texto inválido em `Int(text)` e troque a mensagem de recuperação.
 
-[Interfaces e contratos](/manual/interfaces/) · [Diagnósticos](/reference/diagnostics).
+[Interfaces e contratos](/manual/interfaces) · [Diagnósticos](/reference/diagnostics).

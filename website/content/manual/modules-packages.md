@@ -48,4 +48,4 @@ Para detalhes de manifesto, opções de cache e segurança, consulte o [contrato
 
 **Pratique:** transforme um pequeno cálculo em `utils.aipo` e importe-o a partir de `main.aipo`.
 
-[Próximo: CLI](/manual/cli/) · [Exemplos](/examples/).
+[Próximo: CLI](/manual/cli) · [Exemplos](/examples/).

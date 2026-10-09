@@ -38,4 +38,4 @@ cargo run -q -p aipo-cli -- fmt examples/06_variables_and_values.aipo --check
 
 **Se aparecer um erro:** rode `check` primeiro. Um erro de parser, um contrato estático inválido e uma falha em tempo de execução pedem correções diferentes.
 
-[Primeiros passos](/start/) · [Diagnósticos](/reference/diagnostics) · [Targets](/manual/backends/).
+[Primeiros passos](/start/) · [Diagnósticos](/reference/diagnostics) · [Targets](/manual/backends).

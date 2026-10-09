@@ -38,4 +38,4 @@ Para executar uma sequência de espera, a linguagem tem `await do { ... }`. Veja
 
 **Atenção:** o backend de registradores ainda apresenta lacunas conhecidas para async. [Confira a cobertura](/reference/status).
 
-[Próximo: módulos](/manual/modules-packages/) · [Testes](/manual/testing/).
+[Próximo: módulos](/manual/modules-packages) · [Testes](/manual/testing).

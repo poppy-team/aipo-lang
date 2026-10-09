@@ -50,4 +50,4 @@ Este segundo trecho aparece em [pipelines e blocos](/examples/15-pipelines-and-t
 
 **Pratique:** selecione apenas números maiores que 2 na primeira lista.
 
-[Próximo: fluxo](/manual/control-flow/) · [Mais coleções](/manual/standard-library/).
+[Próximo: fluxo](/manual/control-flow) · [Mais coleções](/manual/standard-library).

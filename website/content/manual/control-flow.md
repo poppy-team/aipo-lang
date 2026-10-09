@@ -50,4 +50,4 @@ O [exemplo idiomático](/examples/24-idiomatic-aipo-showcase) mostra `match` em 
 
 **Pratique:** modifique `repeat 4` para `repeat 5` e explique o resultado.
 
-[Próximo: funções](/manual/functions/) · [Controle de fluxo em código real](/examples/01-fizzbuzz).
+[Próximo: funções](/manual/functions) · [Controle de fluxo em código real](/examples/01-fizzbuzz).

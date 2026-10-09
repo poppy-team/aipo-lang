@@ -57,4 +57,4 @@ Nesse trecho `parse_age` é uma função externa definida no [exemplo completo d
 
 **Pratique:** combine `or_else` com uma conversão numérica.
 
-[Voltar ao manual](/manual/) · [Falhas](/manual/failures/).
+[Voltar ao manual](/manual/) · [Falhas](/manual/failures).

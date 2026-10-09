@@ -41,4 +41,4 @@ Uma *closure* pode captar variáveis do escopo externo. O [exemplo de closures c
 
 **Pratique:** crie `greet("ana", greeting = "olá")`.
 
-[Próximo: estruturas](/manual/structs/) · [Exemplo completo](/examples/07-functions-defaults-named-args).
+[Próximo: estruturas](/manual/structs) · [Exemplo completo](/examples/07-functions-defaults-named-args).

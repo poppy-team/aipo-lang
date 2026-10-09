@@ -27,4 +27,4 @@ Além de `fn`, a implementação contém testes para lambdas `=>`, funções loc
 
 Uma feature nova não deve obrigar você a aprender dez recursos ao mesmo tempo. Comece por um exemplo pequeno, execute a VM de referência e aumente a complexidade apenas quando seu programa exigir.
 
-[Usar testes](/manual/testing/) · [Enums e padrões](/manual/enums-patterns/) · [Operadores](/manual/operators/).
+[Usar testes](/manual/testing) · [Enums e padrões](/manual/enums-patterns) · [Operadores](/manual/operators).

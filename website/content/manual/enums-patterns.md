@@ -48,4 +48,4 @@ O `when` pode reconhecer valores, variantes e estruturas, e `if` pode acrescenta
 
 **Pratique:** acrescente outra variante com dados e um braço de `match` apropriado.
 
-[Voltar ao manual](/manual/) · [Fluxo de controle](/manual/control-flow/).
+[Voltar ao manual](/manual/) · [Fluxo de controle](/manual/control-flow).

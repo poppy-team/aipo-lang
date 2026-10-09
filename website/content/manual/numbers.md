@@ -25,7 +25,7 @@ io.println(data[0])
 io.println(len(data[0..3]))
 ```
 
-Este programa aparece em [`10_bytes.aipo`](/examples/10-bytes). `Bytes(8)` cria um buffer com oito bytes inicializados em zero. Para leitura, escrita e codificação, consulte [biblioteca padrão](/manual/standard-library/).
+Este programa aparece em [`10_bytes.aipo`](/examples/10-bytes). `Bytes(8)` cria um buffer com oito bytes inicializados em zero. Para leitura, escrita e codificação, consulte [biblioteca padrão](/manual/standard-library).
 
 ## Cuidados
 
@@ -36,4 +36,4 @@ Este programa aparece em [`10_bytes.aipo`](/examples/10-bytes). `Bytes(8)` cria 
 
 **Pratique:** altere `Bytes(8)` para `Bytes(4)` e confira o valor de `len(data)`.
 
-[Próximo: coleções](/manual/collections/) · [Limites numéricos](/examples/20-safe-numeric-boundaries).
+[Próximo: coleções](/manual/collections) · [Limites numéricos](/examples/20-safe-numeric-boundaries).
