@@ -21,3 +21,9 @@ Antes de qualquer slice, ler [progresso](content/progress/index.md), [protocolo]
 
 
 **CI de sincronização:** o workflow `.github/workflows/progress-sync.yml` verifica PRs que mudam código/fixtures e exige `website/public/progress/tasks.json` no mesmo diff. Documentar IDs afetados e evidências; apenas alterar o JSON para contornar o gate não conclui o trabalho.
+
+## Documentação centrada na pessoa
+
+A entrada pública deve seguir **Começar → Manual → Exemplos → Referência**. Não colocar implementação, status interno ou diretivas de agentes na navegação do leitor comum. O manual vive em `content/manual/`, com uma pergunta principal por página; exemplos completos de `content/examples/` devem reproduzir exatamente `examples/*.aipo`. A referência de APIs é derivada do registro Rust (não de especulação de LLM). Não apagar o corpus de conformidade. A revisão editorial deve cumprir `content/engineering/accessibility.md`: leitura linear, títulos previsíveis, navegação curta, teclado, reduced motion, preferência de foco/texto maior e ausência de distrações.
+
+Gates locais no diretório `website`: `npm run check` e `npm run build`; a verificação `check:usage` confere paridade textual dos 26 exemplos. Ela não executa programas Aipo, não certifica WCAG e não substitui validação com leitor de tela.

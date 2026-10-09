@@ -1,57 +1,50 @@
 ---
-title: Livro da Linguagem Aipo
-description: Um percurso progressivo da primeira linha à integração em hosts
+title: Livro opcional de aprendizagem
+description: Um roteiro de 26 passos com links para o manual e os exemplos reais.
 ---
-# Livro da Linguagem Aipo
 
-O livro começa com programas pequenos e introduz conceitos na ordem em que são necessários. Você pode estudar capítulo a capítulo ou usar a [referência](/reference/) para consultar um assunto específico.
+# Um roteiro de aprendizagem
 
-> **Estado dos exemplos:** a revisão do website não executou os trechos novos do livro. A sintaxe-alvo V1 possui divergências conhecidas em relação ao compilador. Antes de adotar um recurso, consulte a [matriz de compatibilidade](/reference/status) e os exemplos existentes no repositório.
+Se preferir estudar **um assunto de cada vez**, use os 26 capítulos abaixo como percurso. Cada lição agora aponta ao assunto correspondente no [manual](/manual/) e a um arquivo real do Aipo.
 
-## Como estudar
+Não é necessário seguir a ordem: você pode começar diretamente pelo [manual por assunto](/manual/) ou pelos [programas completos](/examples/).
 
-1. Siga o [guia de instalação](/guides/installation) e execute seu primeiro programa.
-2. Leia apenas um capítulo de cada vez.
-3. Experimente o código e modifique algum valor.
-4. Faça o exercício de conclusão antes de avançar.
-5. Em caso de erro, use [Diagnósticos](/reference/diagnostics) e [Resolver problemas](/guides/troubleshooting).
+## Começar
 
-## I · Começar
-- [Seu primeiro programa](/learn/01-primeiro-programa)
-- [Valores e variáveis](/learn/02-variaveis)
-- [Números e booleanos](/learn/03-numeros)
-- [Texto e interpolação](/learn/04-strings)
+1. [Seu primeiro programa](/learn/01-primeiro-programa)
+2. [Valores e variáveis](/learn/02-variaveis)
+3. [Números](/learn/03-numeros)
+4. [Texto](/learn/04-strings)
 
-## II · Fundamentos
-- [Condições](/learn/05-condicoes)
-- [Repetições](/learn/06-repeticoes)
-- [Listas](/learn/07-listas)
-- [Dicionários](/learn/08-dicionarios)
-- [Primeiras funções](/learn/09-funcoes)
-- [Parâmetros e retornos](/learn/10-retornos)
-- [Escopo e mutabilidade](/learn/11-escopo)
-- [Módulos e arquivos](/learn/12-modulos)
+## Praticar os fundamentos
 
-## III · Construir
-- [Estruturas](/learn/13-estruturas)
-- [Métodos e comportamento](/learn/14-metodos)
-- [Closures](/learn/15-closures)
-- [Transformando coleções](/learn/16-transformacoes)
-- [Falhas recuperáveis](/learn/17-falhas)
-- [Testes e diagnósticos](/learn/18-testes)
-- [Miniaplicação organizada](/learn/19-projeto)
+5. [Condições](/learn/05-condicoes)
+6. [Repetições](/learn/06-repeticoes)
+7. [Listas](/learn/07-listas)
+8. [Dicionários](/learn/08-dicionarios)
+9. [Funções](/learn/09-funcoes)
+10. [Parâmetros e retornos](/learn/10-retornos)
+11. [Escopo e mutabilidade](/learn/11-escopo)
+12. [Módulos](/learn/12-modulos)
 
-## IV · Avançado
-- [Contratos de assinatura](/learn/20-contratos)
-- [Interfaces estruturais](/learn/21-interfaces)
-- [Invariantes e transações](/learn/22-invariantes)
-- [Tarefas e async](/learn/23-concorrencia)
-- [Pacotes e lockfiles](/learn/24-pacotes)
-- [VM, JavaScript e Wasm](/learn/25-backends)
+## Construir
 
-## V · Integrações
-- [Embedding e host APIs](/learn/26-embedding)
+13. [Structs](/learn/13-estruturas)
+14. [Métodos](/learn/14-metodos)
+15. [Closures](/learn/15-closures)
+16. [Transformações](/learn/16-transformacoes)
+17. [Falhas recuperáveis](/learn/17-falhas)
+18. [Testes](/learn/18-testes)
+19. [Miniaplicação](/learn/19-projeto)
 
-## Depois do livro
+## Aprofundar quando precisar
 
-Os [guias práticos](/guides/) cobrem tarefas reais; [Conceitos](/concepts/) explicam o porquê; [Engenharia](/engineering/) documenta a implementação da linguagem.
+20. [Contratos](/learn/20-contratos)
+21. [Interfaces](/learn/21-interfaces)
+22. [Invariantes](/learn/22-invariantes)
+23. [Async](/learn/23-concorrencia)
+24. [Pacotes](/learn/24-pacotes)
+25. [Backends](/learn/25-backends)
+26. [Embedding](/learn/26-embedding)
+
+**Nota:** os capítulos antigos foram convertidos em rotas de aprendizagem, sem snippets hipotéticos. O verificador do website não compila trechos de código Aipo. Para uma fonte executável, utilize [os exemplos do repositório](/examples/).

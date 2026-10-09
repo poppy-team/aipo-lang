@@ -37,3 +37,10 @@ Select one task domain, read only its boundary and applicable decision, inspect 
 - /progress/ — tabela de processos, checkpoints e evidências.
 - /engineering/progress-protocol — regras obrigatórias de atualização.
 - /engineering/legacy-audit — auditoria e critérios de exclusão de docs antigas.
+
+# Practical documentation (primary reader path)
+- /start/ — build the CLI and run your first Aipo program.
+- /manual/ — 20 topics grouped by learning goals.
+- /examples/ — 26 complete examples with original source and commands.
+- /reference/stdlib — index of Rust-registered modules.
+- /reference/status — backend coverage, historical limits and verification guidance.
