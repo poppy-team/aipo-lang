@@ -256,3 +256,7 @@ recorded below.
 `programs/` 27 `.aipo` + 27 `.stdout`, `diagnostics/` 29 `.aipo` + 29 `.code`,
 `formatting/` 8 `.input.aipo` + 8 `.expected.aipo`, `modules/` 3 entry points
 (`basic`, `cycle`, `missing`).
+
+## Delta P07-G02 — implementação sem execução de testes
+
+Fixtures `35_register_profile_shared_services` e `36_semantic_type_tests` acrescentam captures/scheduler no perfil Reg e testes fundamentais/nullable de tipo. Os stdout são expectativas do canon revisadas, não resultados regenerados. `reg_conformance.rs` inclui ambos os engines; `persistent_session.rs`, `guest_transactions.rs`, `reg_verifier.rs` e `type_proofs.rs` registram regressões para futura execução. Nenhuma suite foi executada nesta rodada por pedido do usuário. Consulte [guia](../development/runtime-and-tooling-guide.md) e [evidência](../evidence/P07-G02/README.md).

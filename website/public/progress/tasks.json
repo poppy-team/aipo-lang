@@ -373,6 +373,207 @@
         "website/content/_meta/chapters.json",
         "website/scripts/check-examples.mjs"
       ]
+    },
+    "p07g02-a03": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Perfis/MSRV e distribuição manual implementados; release pública e certificação multiplataforma continuam pendentes. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "scripts/release/package.py",
+        ".github/workflows/package-artifacts.yml",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-r02": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "RegVerifier valida operandos, pools, CFG, inicialização e scopes; linker append-only verifica candidatas. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-bytecode/src/reg_verifier.rs",
+        "crates/aipo-bytecode/src/linker.rs",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-r03": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Collection/Dict têm revisão estrutural; HeapSnapshot restaura aliases, layout, journal e células. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-vm/src/collection.rs",
+        "crates/aipo-vm/src/snapshot.rs",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-r04": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "ExecutionPlan usa Reg verificado ou VM canônica com razão; janelas vivas, Rc e constantes por módulo implementados. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-bytecode/src/execution_plan.rs",
+        "crates/aipo-vm/src/reg_vm.rs",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-r05": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Scheduler/tasks/resultados/IDs e upvalues preservados entre unidades; rollback inclui raízes de tarefas. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-vm/src/vm/task.rs",
+        "crates/aipo-vm/src/vm/mod.rs",
+        "crates/aipo-cli/tests/persistent_session.rs",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-r06": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Payloads de coleções migrados, guards em callbacks e serviços de shell ampliados; std permanece obrigatória. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-stdlib/src/collections.rs",
+        "crates/aipo-stdlib/src/sh.rs",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-b02": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Ramo físico de is removido; provas semânticas rejeitam aliases/shadowing; limites/cache Wasm separados. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-wasm/src/compiler.rs",
+        "crates/aipo-wasm/src/runner.rs",
+        "crates/aipo-wasm/tests/type_proofs.rs",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-b03": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Plano explícito separa cobertura do perfil e subset Reg nativo; fixtures 35/36 escritas, não executadas. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-bytecode/src/execution_plan.rs",
+        "docs/conformance/programs/35_register_profile_shared_services.aipo",
+        "docs/conformance/programs/36_semantic_type_tests.aipo",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-i01": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "new/watch/profile/debug/plan/LSP básico e Session persistente implementados; testes de protocolo não executados. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-cli/src/tooling.rs",
+        "crates/aipo-cli/src/lsp.rs",
+        "crates/aipo-cli/src/session.rs",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-i03": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Vendor offline exige lock/cache verificáveis, recusa symlinks e exporta manifest/lock locais mais SHA-256. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-cli/src/vendor.rs",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-i05": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "C begin/pump/abort, linker/offsets, budgets/erros Reg e busy/reentry; header compilável C11/C++17. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-c-abi/src/c_api.rs",
+        "crates/aipo-c-abi/src/runtime.rs",
+        "crates/aipo-c-abi/include/aipo.h",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-i07": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Shell/REPL persistente, multilinha/histórico/completion e migração; perfis sem JIT ou embedded com std. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-cli/src/repl.rs",
+        "crates/aipo-cli/src/sh_main.rs",
+        "crates/aipo-cli/Cargo.toml",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-q01": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Regressões e fixtures novas escritas/compiladas, sem execução por instrução explícita do usuário. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-bytecode/tests/reg_verifier.rs",
+        "crates/aipo-vm/tests/guest_transactions.rs",
+        "crates/aipo-cli/tests/persistent_session.rs",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-q02": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Fronteiras Reg/C/Wasm verificadas e instalador rejeita traversal/symlinks; fuzz/Miri/ASan/audit não executados. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "crates/aipo-bytecode/src/reg_verifier.rs",
+        "scripts/release/install.py",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
+    },
+    "p07g02-q03": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "Driver pareado e coleta final Rust 1.96 com 480 amostras: 4,80x Int e 4,55x String neste microbenchmark; dados brutos/hashes publicados, sem claim global. Checkpoint de fonte/medição limitada; conformance e outros gates continuam não executados.",
+      "sourcePaths": [
+        "scripts/perf/reg_calls.py",
+        "crates/aipo-vm/examples/reg_calls_bench.rs",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md",
+        "docs/evidence/P07-G02/performance.json",
+        "docs/evidence/P07-G02/reg-calls-paired.csv"
+      ]
+    },
+    "p07g02-q04": {
+      "revision": "33d524b59caecd8b0d33f48f385a64010e14a3c1",
+      "kind": "source-inspection",
+      "document": "/engineering/runtime-and-tooling",
+      "summary": "MSRV 1.96, perfis/packaging workflows e checksum/instalador definidos; outras plataformas não certificadas. Fonte inspecionada; compilação não equivale a testes executados.",
+      "sourcePaths": [
+        "Cargo.toml",
+        ".github/workflows/profiles.yml",
+        ".github/workflows/package-artifacts.yml",
+        "docs/development/runtime-and-tooling-guide.md",
+        "docs/evidence/P07-G02/README.md"
+      ]
     }
   },
   "tasks": [
@@ -464,10 +665,11 @@
       "description": "Fechar critérios reais de release da linguagem sem impor GUI, engine ou registry.",
       "document": "/engineering/decisions/",
       "documents": [
-        "/engineering/decisions/"
+        "/engineering/decisions/",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Decisão ADP-008 publicada; release não certificada.",
-      "next": "Checklist de release assinado e artefatos reproduzíveis.",
+      "baseline": "Decisão ADP-008 publicada; release não certificada. P07-G02: Perfis/MSRV e distribuição manual implementados; release pública e certificação multiplataforma continuam pendentes.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -478,8 +680,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-a03"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -765,10 +967,11 @@
       "description": "Formato AIBC, pools, limites, erros e resistência a entradas hostis.",
       "document": "/engineering/ir-bytecode",
       "documents": [
-        "/engineering/ir-bytecode"
+        "/engineering/ir-bytecode",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Tests/hostile presente, sem execução recente aqui.",
-      "next": "Corpus hostil executado sem crash e formato versionado validado.",
+      "baseline": "Tests/hostile presente, sem execução recente aqui. P07-G02: RegVerifier valida operandos, pools, CFG, inicialização e scopes; linker append-only verifica candidatas.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -779,8 +982,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-r02"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -808,10 +1011,11 @@
       "description": "Execução, valores, funções, rollback e publicação de capacidades.",
       "document": "/engineering/runtime",
       "documents": [
-        "/engineering/runtime"
+        "/engineering/runtime",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "VM presente; cobertura integral não foi reexecutada.",
-      "next": "Semântica de runtime, segurança e regressões comprovadas.",
+      "baseline": "VM presente; cobertura integral não foi reexecutada. P07-G02: Collection/Dict têm revisão estrutural; HeapSnapshot restaura aliases, layout, journal e células.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -822,8 +1026,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-r03"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -851,10 +1055,11 @@
       "description": "Eliminar gaps de closures, async, host, journal, métodos e interfaces.",
       "document": "/engineering/runtime",
       "documents": [
-        "/engineering/runtime"
+        "/engineering/runtime",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Relatório P07-G01 descreve lacunas reais na RegVM.",
-      "next": "Paridade completa nas features anunciadas, sem regressões.",
+      "baseline": "Relatório P07-G01 descreve lacunas reais na RegVM. P07-G02: ExecutionPlan usa Reg verificado ou VM canônica com razão; janelas vivas, Rc e constantes por módulo implementados.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -865,8 +1070,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-r04"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -894,10 +1099,11 @@
       "description": "Tasks, grupos, cancelamento, awaits, propagação de falhas e virtual time.",
       "document": "/engineering/runtime",
       "documents": [
-        "/engineering/runtime"
+        "/engineering/runtime",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Wave 3 tem histórico; regressões atuais pendentes.",
-      "next": "Paridade sob cancelamento, budget e backend verificada.",
+      "baseline": "Wave 3 tem histórico; regressões atuais pendentes. P07-G02: Scheduler/tasks/resultados/IDs e upvalues preservados entre unidades; rollback inclui raízes de tarefas.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -908,8 +1114,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-r05"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -937,10 +1143,11 @@
       "description": "Coleções, math, random, JSON, encoding, path, time, binary e APIs.",
       "document": "/engineering/stdlib-packages",
       "documents": [
-        "/engineering/stdlib-packages"
+        "/engineering/stdlib-packages",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Implementação existe mas referência nova ainda é resumida.",
-      "next": "Assinaturas e exemplos certificados na referência pública.",
+      "baseline": "Implementação existe mas referência nova ainda é resumida. P07-G02: Payloads de coleções migrados, guards em callbacks e serviços de shell ampliados; std permanece obrigatória.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -951,8 +1158,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-r06"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -1023,10 +1230,11 @@
       "description": "HIR→Wasm, WASI, fuel, limites e contrato de erros.",
       "document": "/engineering/backends",
       "documents": [
-        "/engineering/backends"
+        "/engineering/backends",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Aipo Wasm possui compilador, emissor e runner; P07 registra gates pendentes.",
-      "next": "Evidência de execução WASI/hostile e limitações documentadas.",
+      "baseline": "Aipo Wasm possui compilador, emissor e runner; P07 registra gates pendentes. P07-G02: Ramo físico de is removido; provas semânticas rejeitam aliases/shadowing; limites/cache Wasm separados.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1037,8 +1245,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-b02"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -1066,10 +1274,11 @@
       "description": "Suporte por recurso, divergências, fixtures e semântica de falhas.",
       "document": "/reference/status",
       "documents": [
-        "/reference/status"
+        "/reference/status",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Testes existem; não pressupor cobertura universal.",
-      "next": "Matriz gerada de testes diferenciais executados.",
+      "baseline": "Testes existem; não pressupor cobertura universal. P07-G02: Plano explícito separa cobertura do perfil e subset Reg nativo; fixtures 35/36 escritas, não executadas.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1080,8 +1289,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-b03"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -1109,10 +1318,11 @@
       "description": "check/run/build/disasm/test/package, exit codes e mensagens acessíveis.",
       "document": "/reference/cli",
       "documents": [
-        "/reference/cli"
+        "/reference/cli",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Entrada CLI delega a aipo_cli::run.",
-      "next": "Testes CLI/cross platform e exemplos publicáveis reexecutados.",
+      "baseline": "Entrada CLI delega a aipo_cli::run. P07-G02: new/watch/profile/debug/plan/LSP básico e Session persistente implementados; testes de protocolo não executados.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1123,8 +1333,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-i01"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -1195,10 +1405,11 @@
       "description": "Manifest/lockfile, URLs GitHub pinadas, política de cache e segurança.",
       "document": "/engineering/stdlib-packages",
       "documents": [
-        "/engineering/stdlib-packages"
+        "/engineering/stdlib-packages",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Implementação de package resolver e testes de integração existem.",
-      "next": "Resolução offline/online, cache hostil e lock reproducível verificados.",
+      "baseline": "Implementação de package resolver e testes de integração existem. P07-G02: Vendor offline exige lock/cache verificáveis, recusa symlinks e exporta manifest/lock locais mais SHA-256.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1209,8 +1420,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-i03"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -1281,10 +1492,11 @@
       "description": "Versão ABI, ownership, lifetime, erros e consumidores Rust/C.",
       "document": "/engineering/embedding",
       "documents": [
-        "/engineering/embedding"
+        "/engineering/embedding",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Crate C ABI e testes Rust/C estão presentes.",
-      "next": "Harness compilado e testado com consumidores reais.",
+      "baseline": "Crate C ABI e testes Rust/C estão presentes. P07-G02: C begin/pump/abort, linker/offsets, budgets/erros Reg e busy/reentry; header compilável C11/C++17.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1295,8 +1507,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-i05"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -1367,10 +1579,11 @@
       "description": "Escopos opcionais (egui, game host, shell) sem fundir core e UI.",
       "document": "/engineering/architecture",
       "documents": [
-        "/engineering/architecture"
+        "/engineering/architecture",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Presença das crates não comprova maturidade ou escopo de release.",
-      "next": "Contrato de embedding de cada adaptador e gates definidos.",
+      "baseline": "Presença das crates não comprova maturidade ou escopo de release. P07-G02: Shell/REPL persistente, multilinha/histórico/completion e migração; perfis sem JIT ou embedded com std.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1381,8 +1594,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-i07"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -1410,10 +1623,11 @@
       "description": "Corpus ativo de programas, diagnósticos, ABI e snapshots.",
       "document": "/engineering/quality",
       "documents": [
-        "/engineering/quality"
+        "/engineering/quality",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "docs/conformance é parte da estratégia de teste; não remover.",
-      "next": "Suite completa e trilha de resultados para commit corrente.",
+      "baseline": "docs/conformance é parte da estratégia de teste; não remover. P07-G02: Regressões e fixtures novas escritas/compiladas, sem execução por instrução explícita do usuário.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1424,8 +1638,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-q01"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -1453,10 +1667,11 @@
       "description": "Hardening de parser, bytecode, pacotes e política de dependências.",
       "document": "/engineering/quality",
       "documents": [
-        "/engineering/quality"
+        "/engineering/quality",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Políticas e histórico existem; reexecução não feita neste trabalho.",
-      "next": "Fuzz/deny/cargo audit atualizados e relatórios ligados.",
+      "baseline": "Políticas e histórico existem; reexecução não feita neste trabalho. P07-G02: Fronteiras Reg/C/Wasm verificadas e instalador rejeita traversal/symlinks; fuzz/Miri/ASan/audit não executados.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1467,8 +1682,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-q02"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -1496,10 +1711,11 @@
       "description": "Baselines, benchmark diferencial, ruído, alocação e throughput.",
       "document": "/engineering/quality",
       "documents": [
-        "/engineering/quality"
+        "/engineering/quality",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Histórico de medições não pode ser extrapolado ao HEAD.",
-      "next": "Benchmark reproduzido com ambiente e variância.",
+      "baseline": "Histórico de medições não pode ser extrapolado ao HEAD. P07-G02: Driver pareado e coleta final Rust 1.96 com 480 amostras: 4,80x Int e 4,55x String neste microbenchmark; dados brutos/hashes publicados, sem claim global.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1510,8 +1726,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-q03"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",
@@ -1539,10 +1755,11 @@
       "description": "MSRV, platforms, lockfile, versionamento, artefatos e segurança.",
       "document": "/reference/status",
       "documents": [
-        "/reference/status"
+        "/reference/status",
+        "/engineering/runtime-and-tooling"
       ],
-      "baseline": "Estado P06/P07 histórico não prova release estável.",
-      "next": "Checklist de certificação por target executado.",
+      "baseline": "Estado P06/P07 histórico não prova release estável. P07-G02: MSRV 1.96, perfis/packaging workflows e checksum/instalador definidos; outras plataformas não certificadas.",
+      "next": "Executar os gates pertinentes quando autorizado; conservar os limites e casos negativos documentados em P07-G02.",
       "updated": "2026-10-09",
       "status": "IN PROGRESS",
       "checkpoints": [
@@ -1553,8 +1770,8 @@
         },
         {
           "title": "Gaps de integração e testes reconhecidos e relacionados a evidências",
-          "completed": false,
-          "evidence": null
+          "completed": true,
+          "evidence": "p07g02-q04"
         },
         {
           "title": "Suite pertinente executada e resultado vinculado ao SHA atual",

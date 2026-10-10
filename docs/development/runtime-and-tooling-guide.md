@@ -1,35 +1,33 @@
 # Runtime, embedding e ferramentas: uso e reimplementação
 
 **Rodada:** P07-G02 · **Data:** 2026-10-09 · **Base:** `f0a0d70d176be031cd4b600fde1df6179429fb9a`.
-**Status desta publicação:** documentação de recuperação; implementação local ainda não publicada.
 
-> O ambiente de desenvolvimento desconectou com `409 environment_offline` antes de enviar o código. Este commit preserva o guia e o registro de trabalho; **não contém a implementação descrita abaixo**. Os comandos/APIs novos só estarão disponíveis depois da recuperação e publicação do checkout. O objetivo permanece DRAFT. Testes não foram executados, por instrução explícita do usuário. Não usar esta PR como prova de implementação concluída ou autorização de merge.
+Este guia descreve a implementação das cinco frentes solicitadas após a revisão P07-G01. A implementação está disponível para revisão; o objetivo Prumo permanece `DRAFT`. **Os testes não foram executados, por instrução explícita do usuário.** Compilar os alvos de testes confirma que eles compilam; não confirma seus resultados. Os exemplos abaixo são instruções de uso, não relatos de execução.
 
-Este guia registra o que foi implementado no checkout local, os motivos, como usar/reimplementar e os limites conhecidos. O [registro de recuperação](../evidence/P07-G02/README.md) distingue checagens anteriores, o último snapshot compilado e o trabalho ainda necessário. O [guia anterior](runtime-hardening-guide.md) documenta a P07-G01 já presente na base.
+Leia também a [evidência desta rodada](../evidence/P07-G02/README.md), o [estudo de fontes](../studies/runtime-and-tooling-follow-up.md), os [perfis reais](../architecture/embedded-and-shell-profile.md) e o [guia anterior](runtime-hardening-guide.md). A documentação é Markdown dentro do repositório, disponível pelo GitHub.
 
-## 1. As cinco frentes e seu estado
+## 1. Entrega das cinco frentes
 
-| Frente | Trabalho realizado no checkout | Limite/pendência |
+| Frente | Implementação | Limite relevante |
 |---|---|---|
-| 1. Correção e segurança | RegVerifier para operandos, CFG, inicialização e escopos; revisão estrutural de coleções; prova semântica conservadora para `is` Wasm | Revisão adicional de aliases/shadowing do tipo à direita no Wasm; testes e fuzz não executados |
-| 2. Cobertura e embedding | ExecutionPlan explícito Reg/canônico; linker; budgets Reg/C; begin/pump/abort C; limites e cache Wasm | Código não enviado; Reg nativo continua subconjunto; callbacks externos não são limitados pelo budget guest |
-| 3. Sessão, shell e perfis | REPL persistente, multilinha/histórico/completion; recarga com migração/rollback; scheduler preservado entre unidades; aliases de features | Novo scheduler compilado com Clippy/Rust 1.99, ainda sem repetição final do check 1.96; nenhum porte MCU |
-| 4. Performance | Janelas vivas, corpos de função Rc e constantes preparadas por módulo; driver de benchmark pareado | Dados locais não recuperados; medição final do último snapshot ficou pendente |
-| 5. Ferramentas/distribuição | new/watch/profile/debug/plan, LSP básico, vendor offline, empacotador/instalador e workflows | Código e scripts ainda não enviados; workflows não executados; nenhuma release publicada |
+| 1. Correção e segurança | Verifier Reg completo para os operandos existentes, inicialização definida e escopos; revisões estruturais de coleções; `is` conservador no Wasm | Não constitui certificação por fuzzing/Miri ou execução da conformance |
+| 2. Cobertura e embedding | `ExecutionPlan` explícito; linker canônico; budgets Reg/C; execução cooperativa C; limites e cache Wasm | Closures, async, hooks e interfaces continuam nos serviços canônicos quando o Reg nativo não os suporta |
+| 3. Sessão, shell e perfis | REPL persistente, entrada multilinha, histórico, completion por comando, recarga com migração e rollback; aliases de features | Shell usa o SO; não implementa job control POSIX completo; `embedded` usa `std` |
+| 4. Performance | Janelas de registradores vivos, funções compartilhadas, constantes preparadas por módulo; benchmark pareado reproduzível | Ganho medido apenas nos workloads descritos na evidência |
+| 5. Ferramentas e distribuição | `new`, `watch`, `profile`, `debug`, `plan`, LSP stdio, vendor offline, empacotador, instalador e workflows | LSP básico; workflows não certificam plataformas antes de rodar; nenhuma release pública publicada |
 
-O plano Reg fornece a superfície compartilhada por seleção explícita da VM canônica. Isso não significa paridade nativa de closures, async, interfaces, hooks, invariantes e journal no RegVM.
+## 2. Instalação e perfis
 
-## 2. Build e perfis previstos na implementação
-
-O checkout elevou o MSRV de Rust 1.85 para **1.96**, porque o lock existente inclui Wasmtime 49.0.2 e Cranelift 0.136.2, que declaram 1.96. Não se alterou a sintaxe da linguagem nem se criaram crates por perfil. A atualização ativou simplificações exigidas pelo Clippy; os lints foram preservados.
+O MSRV passa de **Rust 1.85 para 1.96**. O lockfile existente inclui Wasmtime 49.0.2 e Cranelift 0.136.2, que declaram Rust 1.96. A declaração anterior não representava esse grafo de dependências. A mudança também exigiu ajustes de estilo apontados pelo Clippy, principalmente simplificação de condicionais; os lints não foram enfraquecidos.
 
 ```sh
+# Toolchain mínimo do workspace
 rustup toolchain install 1.96.0 --profile minimal
 
-# Completo, incluindo Wasmtime
+# CLI completa: formatter, JS, emissor Wasm, runner Wasmtime, regex e Unicode extra
 cargo +1.96.0 build --locked -p aipo-cli --release
 
-# Shell com formatter, regex e Unicode extra, sem JIT
+# Shell sem JIT, com formatter, regex e Unicode extra
 cargo +1.96.0 build --locked -p aipo-cli --release \
     --no-default-features --features profile-shell
 
@@ -42,13 +40,11 @@ cargo +1.96.0 build --locked -p aipo-cli --profile nano \
     --no-default-features --features profile-embedded
 ```
 
-Esses aliases ainda não estão neste commit de recuperação. `--no-default-features` é necessário: acrescentar uma feature não remove defaults. `nano` é perfil Cargo de size optimization/LTO/strip/panic abort; não é `no_std`. A CLI mínima ainda tem serviços de SO da stdlib. Normalização fundamental segue o canon; `unicode` habilita operações adicionais.
+Use `--no-default-features` para remover o perfil completo. Acrescentar `profile-shell` aos defaults não remove o JIT. `nano` é um perfil Cargo de otimização do binário; não é um backend nem um porte para microcontrolador. As normalizações fundamentais continuam seguindo o canon; a feature `unicode` habilita operações adicionais.
 
-Não há promessa de Value com 16 bytes, RAM mínima ou startup em milissegundos. O exemplo existente `layout_probe` e o alvo real devem produzir essas medidas.
+Não há promessa de tamanho de `Value`, RAM mínima ou startup em milissegundos. Use `crates/aipo-vm/examples/layout_probe.rs` e medições do alvo real para obter esses números.
 
-## 3. ExecutionPlan e verificação Reg
-
-Uso depois da publicação do código:
+## 3. Escolha de execução: VM e Reg
 
 ```sh
 aipo run src/main.aipo
@@ -56,35 +52,36 @@ aipo run src/main.aipo --engine=reg
 aipo plan src/main.aipo
 ```
 
-`plan` compila sem executar e informa JSON com `engine` e `reason`. Reg nativo só é selecionado quando todo o IR é suportado e verificado. Construção/acesso a membros seleciona serviços canônicos compartilhados; emitter sem uma capacidade gera motivo explícito para seleção canônica. Nenhum IR é descartado para simular suporte.
+`aipo plan` compila sem executar e escreve JSON com `engine` e `reason`. O plano usa Reg nativo somente quando o emitter e o verifier aceitam todo o IR. Construção e acesso a membros usam o plano canônico para compartilhar contratos, métodos e serviços da VM. A ausência de uma capacidade Reg gera uma razão explícita para o plano canônico; nenhuma instrução é descartada para simular suporte.
 
-A API `analyze_to_reg_module` permanece estrita. `analyze_to_execution_plan` devolve enum Register ou Canonical. Host callbacks dependentes do contexto Vm, como o headless test host, selecionam a VM mesmo no perfil Reg.
+`analyze_to_reg_module` continua sendo a API estrita: retorna erro quando falta suporte nativo. `analyze_to_execution_plan` retorna a alternativa explicitamente tipada. Hosts como `--host=headless-test` usam o contexto canônico mesmo no perfil Reg, porque seus callbacks dependem desse contexto.
 
-### Algoritmo do verifier
+Isso entrega cobertura ao **perfil de execução**, preservando a semântica da linguagem. Não significa que async, closures/upvalues, interfaces operacionais, invariantes e journal foram reimplementados no interpretador Reg nativo. A VM canônica continua sendo a referência dessas capacidades.
 
-O novo `aipo-bytecode/src/reg_verifier.rs` implementa:
+### Verificação Reg
 
-1. Inspeção de todos os operandos, inclusive unreachable: registradores, janelas, pools, constantes String exigidas, referências de função, targets e projeções de iteração. Pools numéricos devem respeitar Int seguro e Float finito.
-2. Análise do CFG com 256 fatos booleanos de inicialização, stack de handlers e profundidade de guards. Parâmetros começam inicializados; joins usam interseção. Toda leitura deve estar inicializada em todos os caminhos.
-3. Aresta excepcional conservadora na instalação do handler, com registrador de erro inicializado e escopo anterior preservado. Underflow/inconsistência de scopes e fallthrough alcançável sem Return são erros.
-4. Verificação nas fronteiras emitter, run_module, run_function, invoke_function e raw run, antes de efeitos guest. A entrada raw trata registradores do host como inicializados, inclusive quando contêm none.
-5. Reutilização da prova somente durante o módulo correspondente, protegida por RAII inclusive durante unwind.
+`crates/aipo-bytecode/src/reg_verifier.rs` faz duas análises:
 
-Para reimplementar um opcode, atualize formato, emitter, verifier, CFG, runtime e conformance. A palavra Reg é u32: opcode 7 bits, A 8, B 9, C 8; Bx/sBx usa 17 bits, sBx com bias 65536. Registradores continuam limitados a 0–255. B pode representar índice/imediato conforme opcode; não o trate sempre como registrador.
+1. Valida todos os operandos, inclusive instruções inalcançáveis: índices de registrador, janelas de argumentos, pools, constantes String exigidas, referências de função, saltos e projeções de iteração. Também rejeita constantes fora dos números seguros da linguagem.
+2. Percorre o CFG com um estado de inicialização por registrador e escopos de handlers/iterações. Parâmetros começam inicializados; joins usam interseção. Um registrador lido deve estar inicializado em todos os caminhos. As entradas excepcionais são conservadoras e recuperam o escopo instalado pelo handler. Underflow de escopo e fallthrough alcançável sem retorno são erros.
 
-## 4. Coleções com revisão estrutural
+`RegEmitter::compile_module` verifica o resultado. `RegVm::run_module`, `run_function`, `invoke_function` e a entrada raw verificam suas respectivas fronteiras antes de efeitos guest. Na entrada raw os registradores do host começam inicializados, inclusive os que contêm `none`. A prova de um módulo é reutilizada apenas durante sua execução; um guard RAII restaura esse estado também durante unwind.
 
-Comparar apenas comprimento perdia mutação remove+insert em uma fronteira de callback. `Collection<T>` acrescenta revisão estrutural para List, Set e Bytes; DictMap possui revisão equivalente.
+Para adicionar um opcode: atualize o formato, emitter, operandos do verifier, efeitos sobre o CFG, execução e casos de conformance. Não confunda posição em bytes do bytecode de pilha com índice de instrução Reg. Cada instrução Reg ocupa `u32`; o formato usa opcode de 7 bits, A de 8 bits, B de 9 bits e C de 8 bits, ou Bx/sBx de 17 bits conforme a instrução.
+
+## 4. Coleções e mutação durante iteração
+
+Antes, comparar somente comprimento permitia que remoção seguida de inserção passasse despercebida em uma fronteira de callback. Agora `Collection<T>` acompanha revisão estrutural. `DictMap` possui revisão equivalente.
 
 | Operação | Revisão |
 |---|---|
-| Inserção, remoção, clear e reorganização estrutural | Incrementa |
-| Substituição de elemento existente ou valor de chave existente | Preserva |
-| Igualdade com mesmos elementos/ordem, mesmo após mutações | Ignora revisão |
+| Inserir/remover elemento ou chave, limpar coleção, reorganizar sua estrutura | Incrementa |
+| Substituir valor em posição existente ou valor de uma chave já presente | Preserva |
+| Comparar duas coleções com os mesmos elementos e ordem | Ignora a revisão |
 
-Guards guardam identidade e revisão. Retornos, handlers e scheduler conservam as profundidades corretas. Métodos de ordem superior verificam inclusive a volta de callback nativo. Substituição de elemento continua permitida pelo canon.
+Os guards guardam identidade e revisão. A VM canônica preserva o estado por task e remove guards nos retornos e unwinds; os métodos de ordem superior verificam também o retorno de callbacks nativos. O Reg preserva a profundidade de guards nos handlers. Elementos já existentes continuam podendo ser substituídos conforme o canon.
 
-**Migração Rust planejada no código local:** payloads List/Set/Bytes tornam-se `Rc<RefCell<Collection<_>>>`, não `Rc<RefCell<Vec<_>>>`. Use `.into()` na construção manual ou os construtores:
+**Migração da API Rust:** `List`, `Set` e `Bytes` passaram de `Rc<RefCell<Vec<_>>>` para `Rc<RefCell<Collection<_>>>`. Use os construtores ou converta um `Vec` com `.into()`:
 
 ```rust
 use aipo_vm::Value;
@@ -93,11 +90,13 @@ let bytes = Value::bytes(vec![1, 2, 3]);
 let text = Value::string("Aipo");
 ```
 
-`Value::set` pressupõe elementos deduplicados. O acesso mutável é por slice, sem DerefMut de Vec que permita resize fora da revisão. Hosts devem usar métodos estruturais de Collection. A tabela de funções Reg passa a `Vec<Rc<RegCompiledFunction>>`.
+`Value::set` recebe elementos já deduplicados. O acesso mutável expõe elementos de uma slice, sem permitir redimensionar por um `DerefMut<Vec<_>>`. Extensões do host devem usar os métodos estruturais de `Collection`. A tabela pública de funções Reg usa `Vec<Rc<RegCompiledFunction>>`; adapte clientes que a construíam manualmente.
 
-## 5. Sessão persistente e linker
+## 5. Sessão persistente e REPL
 
-A Session local guarda Vm, imagem BytecodeModule ligada, catálogo HIR, mutabilidade, ownership por arquivo e geração. Cada unidade compila statements novos; declarações anteriores compõem o catálogo. O histórico não é reexecutado para reconstruir estado.
+```sh
+aipo-sh
+```
 
 ```aipo
 var count = 0
@@ -109,71 +108,92 @@ next()
 next()
 ```
 
-A última correção preserva Tasks, resultados, filas, joins, grupos, ids e tick entre unidades. Uma tarefa vinculada em uma unidade pode ser aguardada em outra. O snapshot captura também scheduler, resultados e células de upvalue retidas por tasks. `run_persistent_at` exige imagem append-only com offsets antigos válidos; `run_at` conserva a entrada de execução nova independente.
+A sessão compila a unidade nova, mantém um catálogo de declarações, reloca seu bytecode e executa somente a nova entrada. Corpos antigos permanecem disponíveis para valores Function/Closure que ainda os referenciam. Declarações antigas podem ser compiladas para o catálogo atual, mas statements antigos não são repetidos; o REPL não reproduz todo o histórico para reconstruir estado.
+
+`run_persistent_at` preserva Tasks, resultados, filas, waiters, joins, grupos, IDs e tempo virtual entre unidades. Assim, uma tarefa criada em uma unidade pode ser aguardada em outra. `run_at` continua sendo a entrada independente que reinicializa o scheduler. A entrada persistente exige bytecode ligado append-only, mantendo os offsets antigos válidos.
+
+O snapshot de definições inclui o scheduler. O heap snapshot também acompanha resultados, argumentos de tarefas de host, journals e células de upvalue retidas por tarefas, preservando aliases no rollback. Resultados/tarefas e código antigo ainda podem crescer em sessões longas; coleta de alcance e ciclos Rc permanece trabalho futuro.
+
+| Comando REPL | Uso |
+|---|---|
+| `:help` | Exibe comandos |
+| `:history` | Exibe unidades anteriores |
+| `:complete PREFIXO` | Lista globals com esse prefixo |
+| `:load CAMINHO` | Avalia uma unidade |
+| `:reload CAMINHO` | Substitui declarações desse arquivo e preserva estado compatível |
+| `:reset` | Limpa a sessão |
+| `:quit` | Encerra |
+
+O lexer controla balanceamento de delimitadores, ignorando strings e comentários, para entrada multilinha. Em entrada redirecionada não há prompts; falhas resultam em exit code diferente de zero. `aipo-sh --engine=reg` usa a sessão canônica persistente e identifica essa escolha no banner.
+
+O histórico usa JSONL, até 1.000 unidades e limite de leitura de 8 MiB. Arquivos maiores são ignorados. O caminho padrão usa `XDG_STATE_HOME`, ou `HOME/.local/state`, seguido de `aipo/history.jsonl`. `AIPO_HISTORY_FILE` troca o caminho; valor vazio desliga a persistência. A gravação usa temporário, sync e rename; em Unix o arquivo nasce com modo `0600`. A interface ainda não inclui editor de linha com navegação por setas e completion por Tab.
 
 ### Linker
 
-`append_unit` verifica a unidade, trabalha em candidata clonada, deduplica nomes/constantes, reloca referências de funções/closures/contratos e desloca entradas/spans. Saltos relativos não mudam. Limites do formato e imagem ligada são verificados antes do commit. `function_by_name` busca a definição mais recente.
+`append_unit`, em `aipo-bytecode/src/linker.rs`, verifica o novo módulo, trabalha em uma cópia candidata, deduplica pools e reloca índices de nomes, constantes, funções, closures e contratos. Atualiza entradas de funções e spans. Saltos relativos internos não mudam. Verifica limites do formato e o módulo ligado antes de substituir a imagem original. `function_by_name` busca a definição mais recente.
 
-Índices publicados não podem ser compactados enquanto Function/Closure/Task ainda referencia código antigo. Imagem, tasks e resultados podem crescer em sessões longas; coleta de unidades/tasks e ciclos Rc permanece futura. Deduplicação linear pode ser substituída por índices de interning após medição.
+Para reimplementar, preserve índices de código publicados: compactar/remover unidades antigas invalida referências ainda vivas. A imagem ligada cresce durante a sessão; recolher unidades antigas requer uma política de alcance/identidade futura. A deduplicação atual percorre pools linearmente, podendo ser melhorada com índices de interning após medição.
 
-### REPL
+## 6. Hot reload e migração
 
-| Comando | Uso |
-|---|---|
-| `:help` | Ajuda |
-| `:history` | Unidades anteriores |
-| `:complete PREFIX` | Globals com prefixo |
-| `:load PATH` | Avalia unidade |
-| `:reload PATH` | Substitui declarações do arquivo e preserva estado compatível |
-| `:reset` | Limpa sessão |
-| `:quit` | Encerra |
+```sh
+aipo watch src/main.aipo
+```
 
-Balanceamento usa lexer, ignorando comentários/strings. Entrada redirecionada não emite prompts e informa falhas pelo exit code. REPL com `--engine=reg` identifica o uso da sessão canônica.
+`watch` acompanha arquivos `.aipo`, `.toml`, `.lock` e `.ahs` na árvore do pacote que contém a entrada, ou no diretório da entrada sem manifest. Ignora symlinks, `.git`, `target` e `node_modules`; limita profundidade a 64 e quantidade a 10.000 arquivos. Usa hashes de conteúdo e polling de 250 ms. Dependências de caminho fora dessa árvore exigem outro watcher ou chamada explícita à API de recarga.
 
-Histórico JSONL: até 1.000 unidades; leitura limitada a 8 MiB, arquivo maior ignorado. Caminho XDG_STATE_HOME ou HOME/.local/state seguido de aipo/history.jsonl. AIPO_HISTORY_FILE troca caminho; vazio desliga. Escrita usa temporário, sync e rename, com 0600 em Unix. Editor de linha com setas/Tab ainda é evolução futura.
+`Session::reload_with` executa estas etapas:
 
-## 6. Reload, rollback e migração
-
-`aipo watch src/main.aipo` acompanha a árvore do manifest mais próximo ou da entrada sem manifest. Hashes de conteúdo, polling 250 ms; extensões aipo/toml/lock/ahs; ignora symlinks/.git/target/node_modules; limites de 64 níveis e 10.000 arquivos. Imports de caminho fora da árvore exigem watcher adicional/recarga explícita.
-
-`Session::reload_with`:
-
-1. Captura definições, scheduler e heap alcançável.
-2. Remove catálogo público do arquivo antigo; compila, liga e inicializa candidata.
-3. Preserva globals não chamáveis existentes que continuam declarados.
-4. Executa migração fornecida pelo host e valida campos, ordem e flags fixed das instâncias retidas.
-5. Confirma geração/caches ou restaura globals, código, catálogo, ownership, scheduler e heap.
+1. Captura definições, scheduler e heap guest alcançável antes de remover declarações do arquivo.
+2. Compila, liga e inicializa a candidata. Remoção de função/tipo deixa de expor a declaração antiga.
+3. Mantém globals não chamáveis existentes que continuam declarados.
+4. Chama a função de migração do host e verifica layouts de instâncias retidas, incluindo nomes, ordem e campos `fixed`.
+5. Atualiza caches e confirma a geração, ou restaura código, catálogo, globals, scheduler e heap.
 
 ```rust
 use aipo_cli::Session;
+use aipo_vm::Value;
 use std::path::Path;
+
 let mut session = Session::new();
 session.set_instruction_budget(Some(100_000));
 let status = session.reload_with(
     "var count = 0\n", Path::new("counter.aipo"),
     &mut std::io::stdout(), &mut std::io::stderr(),
-    |_globals| Ok(()),
+    |globals| {
+        globals.entry("count".into()).or_insert(Value::Int(0));
+        Ok(())
+    },
 );
+assert_eq!(status, 0);
 ```
 
-HeapSnapshot percorre coleções, Dict, Bytes, structs, receivers, Failure.payload, upvalue cells e dados/caches de Sequence. Restaura as próprias alocações Rc, preservando aliases mantidos pelo host. Clonar somente o mapa de globals não basta. Captura adicional de células/results do scheduler cobre tarefas retidas.
+`HeapSnapshot` percorre o grafo uma vez por alocação: coleções, Dict, Bytes, structs, células de upvalue, receivers de métodos, payloads de Failure e dados/caches de Sequence. O rollback restaura **as próprias alocações Rc**, preservando aliases mantidos pelo host. Clonar somente o mapa de globals não bastava.
 
-Tipo removido com instância viva exige migração. Inicializador pode mutar estado anterior; em falha isso é revertido, em sucesso faz parte do estado confirmado. Snapshot não é GC: ciclos Rc e retenção de tarefas/código continuam problemas de lifecycle.
+Uma migração incompatível precisa substituir ou adaptar instâncias alcançáveis, inclusive os seus campos `fixed`. Tipo removido com instância ainda viva é rejeitado. Inicializadores podem mutar estado antigo; isso é revertido se a candidata falhar. Em uma recarga bem-sucedida essas mutações participam do estado confirmado.
 
-**Limite externo:** arquivos, rede, processos, callbacks e recursos opacos do host não são revertidos. O host precisa coordenar suas próprias transações. Os streams out/err da Session carregam diagnósticos; o sink io da stdlib tem seu contrato próprio e não deve ser anunciado como isolamento automático por Session.
+**Limite da transação:** arquivos, processos, rede, callbacks nativos e recursos opacos do host não são desfeitos por `HeapSnapshot`. Inicializadores devem evitar efeitos externos irreversíveis, ou o host deve oferecer sua própria transação. Não há coleta de ciclos Rc; snapshot não é garbage collector.
 
-## 7. Embedding Rust/C
+## 7. Embedding e budgets
 
-Runtime pertence a uma thread: Value usa Rc/RefCell e não é Send. Reentrada durante callback C é recusada. Pointers C continuam exigindo lifetime, tamanho e alinhamento válidos; checar null não valida um pointer arbitrário.
+Um runtime pertence a uma thread. `Value` usa Rc/RefCell e não é `Send`; não compartilhe uma instância mutavelmente entre threads. O host registra capacidades explicitamente. A fronteira C recusa reentrada durante callbacks.
 
-### Budgets
+### Rust
 
-RegVm configura orçamento cumulativo por `set_instruction_budget(Some(n))`, reiniciando consumo; None desliga contagem. VM canônica preserva consumo em entradas budgetadas e oferece reset explícito. Session reinicia por avaliação. Opcode budget não limita memória total, duração de nativo nem wall-clock.
+- `Session` oferece avaliação persistente, limite por unidade, leitura de globals, completion e migração.
+- `Vm` oferece `run_at`, `start_at`, `debug_step`, `take_completion`, métricas e budget.
+- `RegVm::set_instruction_budget(Some(n))` configura orçamento cumulativo e zera seu contador; `None` desliga a contagem. `reset_instruction_count` reinicia explicitamente.
+- Na VM canônica, execuções budgetadas preservam consumo entre entradas; `reset_instruction_count` reinicia. `Session` reinicia antes de cada avaliação, oferecendo orçamento por unidade.
 
-### C cooperativo
+O contador C canônico acompanha execução quando budget ou métricas estão habilitados. Execução sem budget pode reiniciar o contador e não contabiliza opcodes com métricas desligadas; não é um contador universal de toda a vida do runtime.
 
-O runtime liga módulos e soma offsets corretos para chamar funções de unidades anteriores. Carga com erro guest recuperável restaura definições/heap/scheduler; instâncias com layout incompatível são rejeitadas.
+Budget de instruções mede trabalho guest, não memória total, duração de callback nativo ou wall-clock. O host deve limitar operações externas separadamente.
+
+### C: execução síncrona e cooperativa
+
+O header é `crates/aipo-c-abi/include/aipo.h`. A ABI canônica mantém `aipo_runtime_load_module` e `aipo_runtime_call`; o runtime liga unidades e usa offsets relocados para evitar chamar código do módulo errado. Uma carga com erro recuperável restaura definições e heap. Layouts retidos incompatíveis são rejeitados.
+
+As APIs adicionais permitem dividir a execução:
 
 ```c
 bool completed = false;
@@ -181,84 +201,102 @@ aipo_value_t result;
 aipo_status_t status = aipo_runtime_begin(rt, "demo", "main", NULL, 0);
 while (status == AIPO_OK && !completed) {
     status = aipo_runtime_pump(rt, 1000, &completed, &result);
-    /* Retorne ao event loop entre pumps. */
+    /* Devolva controle ao event loop do host entre pumps. */
 }
 if (status == AIPO_OK && completed) {
     aipo_value_release(rt, result);
 }
 ```
 
-Begin prepara função como computação principal cooperativa, exige argumentos compatíveis e ausência de captures na entrada selecionada. Pump limita quanta; callback ainda pode bloquear. O resultado só vale quando completed é true. Load/call/begin recusam runtime ocupado. Abort cancela a computação e conserva mutações/I/O concluídos, sem rollback. Falha recuperável e cancelamento continuam distintos.
+`begin` prepara a função como computação principal cooperativa, exige argumentos compatíveis e ausência de captures na entrada selecionada. `pump` executa no máximo a quantidade de quanta pedida; callbacks ainda podem bloquear. O valor só é válido quando `completed` é true. Load/call/begin recusam runtime ocupado. `aipo_runtime_abort` cancela essa computação e mantém mutações e I/O já concluídos; não faz rollback. Falhas e cancelamento mantêm sua distinção canônica. Panics unwind são contidos na fronteira; builds com `panic=abort` não podem ser recuperados por `catch_unwind`.
 
-Reg raw ganha budget/count/reset e copy_last_error. O copy devolve tamanho necessário incluindo NUL; buffer nulo com capacidade zero consulta tamanho; buffer curto recebe cópia truncada terminada. Int fora da faixa segura ou retorno diferente de Int quando out_int é pedido gera erro, sem conversão silenciosa para zero.
+Para Reg raw, o header agora cobre lifecycle, int set/get, run, budget, contador/reset e `aipo_reg_vm_copy_last_error`. O último devolve o tamanho necessário incluindo NUL e permite consultar com buffer nulo/capacidade zero. Um buffer menor recebe uma cópia truncada com NUL. Int fora do intervalo seguro ou retorno diferente de Int quando `out_int` é solicitado gera erro; não há coerção silenciosa para zero.
 
-String/Bytes C são snapshots do runtime, liberados por aipo_value_release, nunca free. Não reter depois de destruir runtime. Unwind panic é contido; panic=abort não pode ser recuperado.
+Strings/Bytes retornados pela ABI canônica são snapshots do runtime. Libere com `aipo_value_release`. Não libere com `free`, não retenha após destruir o runtime e não passe pointers expirados, buffers curtos ou desalinhados. Checagens de null e tamanho não comprovam validade arbitrária de pointers C.
 
-## 8. Wasm
+## 8. Wasm: semântica e recursos
 
-O código local deixou de aceitar `is` por tipo físico de armazenamento: i32 pode ser Bool/pointer; i64 não prova Int. None corresponde ao nullable; tipos fundamentais/nominais conhecidos usam prova semântica. Parâmetros/joins/calls sem prova são rejeitados com orientação para usar VM.
+O teste `is` usa tipo semântico conhecido, não o tipo de armazenamento Wasm. `i32` pode armazenar Bool ou pointer; `i64` não prova Int. None em `is T?` corresponde; demais valores usam comparação fundamental/nominal. Expressões, parâmetros sem prova, nullable, chamadas ambíguas ou bindings de elementos com tipo desconhecido geram diagnóstico orientando usar a VM.
 
-**Revisão ainda necessária antes de publicar:** RHS aliases/shadowing podem exigir rejeição explícita ou fatos de tipo. A análise conservadora do lado esquerdo não resolve sozinha um tipo de destino dinâmico. Completar esses casos e sua conformance antes de certificar a mudança.
+Foi removido um ramo antecipado legado que usava tipos físicos e tornava a checagem semântica posterior inalcançável. Agora há um único caminho: provar o valor, resolver um destino estático não sombreado e avaliar o lado esquerdo uma vez, preservando seus efeitos. O catálogo de funções acompanha bindings globais e tipos declarados para não confundir nomes com o prelude.
 
-WasmExecutionOptions acrescenta fuel, memory_bytes por memória linear e output_bytes no buffer. Excesso de saída é rejeitado antes de crescer buffer; grow excessivo gera trap. Limites não representam toda a memória do processo JIT nem trabalho externo.
+Aliases como `let T = Int`, parâmetros/globals/funções que sombreiam `Int`, destinos desconhecidos e expressões dinâmicas no lado direito são rejeitados no Wasm com orientação para usar `--engine=vm`. `Function` não foi inventado como TypeTag: o nome de diagnóstico de um valor chamável não é um tipo fundamental disponível no prelude. Provas de chamadas `String`/`task.spawn` também exigem nomes não sombreados. Operações numéricas com operandos desconhecidos e concatenação de strings não recebem fatos de tipo falsos.
 
-WasmRunner reutiliza Engine e cache LRU limitado por número de módulos; Store independente por execução conserva isolamento de memória/globals/fuel/saída. Reduzir capacidade remove módulos menos recentes; zero desliga cache. Helper de conveniência continua disponível. Não houve mudança para WAMR/wasmi nem certificação de MCU.
+Para ampliar suporte, propague fatos de tipo pelo HIR e seus joins ou implemente tags dinâmicas reais. Não volte ao fallback que assume Int para qualquer expressão. A rejeição de um caso sem prova é uma limitação explícita, não um resultado `true` inventado.
 
-## 9. Ferramentas
+Com `wasmtime`, `WasmExecutionOptions` oferece `fuel`, `memory_bytes` por memória linear e `output_bytes` para saída bufferizada. O excesso de saída é rejeitado antes de estender o buffer; memory grow excessivo gera trap. A execução entrega saída com checagem do writer. Esses limites não cobrem recursos externos do host ou toda a memória do processo JIT.
 
-| Comando após publicação do código | Resultado |
+`WasmRunner` reutiliza Engine e módulos compilados em cache LRU limitado por quantidade. Cada execução cria um Store independente para memória, globals, fuel e saída. `set_cache_capacity(0)` desliga cache; `execute_wasm_with_options` permanece a entrada de conveniência. O runner opcional é Wasmtime nesta entrega; não houve troca por WAMR/wasmi nem certificação em MCU.
+
+## 9. Ferramentas de desenvolvimento
+
+| Comando | O que faz |
 |---|---|
-| `aipo new demo` | Manifest, src/main.aipo e README sem sobrescrever diretório |
-| `aipo plan src/main.aipo` | Plano/razão em JSON, sem executar |
-| `aipo profile src/main.aipo --budget 100000 --json` | Tempo, instructions, calls, native calls e field cache |
-| `aipo debug src/main.aipo` | step/continue/break BYTE_OFFSET/globals/quit |
-| `aipo watch src/main.aipo` | Candidata com última geração válida preservada |
-| `aipo lsp` | LSP sobre stdin/stdout |
+| `aipo new demo` | Cria manifest, `src/main.aipo` e README; não sobrescreve diretório existente |
+| `aipo profile src/main.aipo --budget 100000 --json` | Executa na VM e informa tempo, instruções, calls, native calls e field cache |
+| `aipo debug src/main.aipo` | Depurador terminal: `step`, `continue`, `break BYTE_OFFSET`, `globals`, `quit` |
+| `aipo plan src/main.aipo` | Mostra engine e razão do plano, sem executar |
+| `aipo watch src/main.aipo` | Recompila/recarga candidata mantendo a última geração válida |
+| `aipo lsp` | Servidor LSP em stdin/stdout |
 
-Debugger usa byte offsets e quantum do scheduler; pode alternar tasks. Falha não capturada não resulta em sucesso. DAP, stepping por linha, avaliação no frame e inspeção lexical completa permanecem futuros.
+O depurador usa offsets de bytecode e um quantum do scheduler por passo, podendo alternar tasks. Mostra IP, span e stack. Uma falha de execução ou Failure não capturada resulta em exit code 1. Não implementa ainda DAP, inspeção lexical de todos os locals, stepping por linha ou avaliação de expressões no frame.
 
-LSP: initialize/shutdown/exit, full sync com versões, diagnósticos UTF-16, completion de keywords/prelude/declarações e formatação opcional. Analisa documento aberto e usa resolução de pacote. Diag de outra fonte é contextualizado por caminho/linha, sem inventar offsets do documento atual. Headers limitados a 8 KiB e mensagens a 8 MiB; JSON inválido/request inválido são distintos. Métodos ausentes têm erro explícito.
+O LSP oferece `initialize`, shutdown/exit, full document sync, diagnósticos com posições UTF-16, completion de palavras/prelude/declarações e formatação quando a feature existe. Analisa o texto aberto, não apenas o arquivo salvo, e respeita versões de documento. Imports usam o resolvedor do projeto. Diagnósticos de outro arquivo são contextualizados por caminho/linha, sem fingir offsets do documento aberto.
 
-Não há ainda hover, rename, definitions, semantic tokens, sync incremental ou cancelamento real de trabalho em andamento. Stdout deve conter somente frames do protocolo.
+O transporte verifica Content-Length, limita headers a 8 KiB e mensagens a 8 MiB. JSON inválido e request inválido têm respostas distintas. Métodos não suportados retornam erro explícito. Hover, rename, go-to-definition, semantic tokens, alterações incrementais e cancelamento de trabalho em andamento permanecem evolução futura. Configure o editor para iniciar `aipo lsp`; nunca envie logs pela stdout do protocolo.
 
-## 10. Vendor e distribuição
+## 10. Vendor offline e distribuição
 
 ```sh
-aipo package lock caminho/pacote
-aipo package vendor caminho/pacote --out vendor-demo
-aipo package vendor caminho/pacote --cache caminho/cache --out vendor-demo
+aipo package lock caminho/do/pacote
+aipo package vendor caminho/do/pacote --out vendor-demo
+# Dependências GitHub já verificadas no cache:
+aipo package vendor caminho/do/pacote --cache caminho/do/cache --out vendor-demo
 aipo run vendor-demo/root/src/main.aipo
 ```
 
-Vendor exige lock existente e grafo verificável, sem buscar rede. Copia root/dependências, recusa symlinks, reescreve sources para paths locais e produz lock local. Manifest de exportação conserva lock original e inventário SHA-256. Ignora arquivos ocultos/target/node_modules; assets nesses locais precisam de empacotamento explícito. Diretório novo só é publicado depois do stage completo. Registry, publicação e ranges SemVer continuam fora desse resolvedor exato/pinado.
+Vendor exige lock existente e grafo verificável. Não busca rede. Copia root/dependências para diretório novo, recusa symlinks, reescreve dependências para caminhos locais e produz lock local. `vendor-manifest.json` conserva o lock original e um inventário SHA-256. Ignora arquivos ocultos, `target` e `node_modules`; projetos que dependem desses assets devem empacotá-los por outro processo explícito. O stage vira destino por rename; erro remove o stage criado pela operação.
 
-Empacotador local: builds full/shell/web/embedded/nano em checkout limpo; arquivo tar.gz, SHA-256, licença e build.json com commit/target/compiler/perfil. Full inclui header/libs C. Ordem/timestamps são determinísticos para os mesmos payloads, com SOURCE_DATE_EPOCH, sem prometer binário idêntico entre máquinas.
+O resolvedor existente continua usando versões exatas e fontes pinadas. Vendor não acrescenta registry, publicação de pacotes ou solver de ranges SemVer.
 
-Instalador: checksum antes da extração; paths seguros, uma raiz, somente arquivos regulares; rejeita duplicatas, traversal e symlinks. Prefixo explícito; força exigida para substituir arquivos. Prepara/backup/replace por arquivo e rollback em exceção. Não baixa nem executa scripts; não é transação contra crash do SO entre várias substituições.
+```sh
+# Execute em checkout limpo, depois do commit
+python3 scripts/release/package.py --profile shell
 
-Workflows definidos no checkout: matriz compile-only Linux/macOS/Windows × Rust mínimo/stable × shell/web/embedded, mais packaging manual por perfil/SO. Não foram executados nem enviados. Não houve release pública.
+# Verifique o SHA-256 e instale o arquivo local em prefixo explícito
+python3 scripts/release/install.py target/dist/ARQUIVO.tar.gz --prefix /caminho/aipo
+```
 
-## 11. Performance e reimplementação
+O empacotador constrói CLI, inclui licença e `build.json` com commit, target, compiler e perfil; `full` inclui header e bibliotecas C. Produz `.tar.gz` e checksum. Timestamp e ordem dos membros são controlados por `SOURCE_DATE_EPOCH`; isso torna a montagem do arquivo determinística para os mesmos payloads, sem prometer binários bit a bit idênticos entre máquinas.
 
-O trabalho Reg substitui cópia de 256 slots por move/restore da janela viva; corpos ficam Rc e constantes guest são preparadas por módulo. Chamadas internas reutilizam a prova correspondente, entradas externas verificam. Raw host conserva janela total. Depth limit permanece. Não foi implementado NaN boxing, arena gerenciadora completa ou threaded dispatch.
+O instalador verifica SHA-256 antes de extrair, aceita somente arquivos regulares em uma raiz, rejeita traversal, entradas duplicadas, symlinks e destinos symlink. Prepara arquivos, preserva backups e usa substituição por arquivo com rollback de falhas. `--force` permite substituir arquivos existentes. Não baixa nem executa scripts do pacote. Isso não é uma transação contra crash do SO entre várias substituições.
 
-Benchmark local: base pinada versus candidata, 20 mil calls, caller de nove instruções e um registrador no callee, casos Int/String usados. Driver alterna builds, fixa CPU opcional, remove warmup, usa três lotes de cinco pares e registra hashes/compiler. Medição final do snapshot com scheduler preservado não foi concluída; CSV locais não foram recuperados. Não extrapolar números preliminares para linguagem/startup/RSS/MCU.
+`profiles.yml` define compilação em Linux/macOS/Windows, Rust mínimo e stable, para shell/web/embedded. `package-artifacts.yml` é manual, gera artifacts por SO/perfil e não publica uma release. A execução desses workflows não foi observada nesta entrega; o resultado local não certifica as outras plataformas.
 
-Reimplemente na ordem: verifier/coleções → linker/snapshot/scheduler → Session/reload → embedding → ferramentas → distribuição. Preserve diagnósticos, identidade, efeitos, ownership e scopes de unwind. Reutilize Value e serviços canônicos, sem fork semântico por perfil.
+## 11. Performance: o que mudou e como reproduzir
 
-## 12. Próximos passos e critérios
+O gargalo Reg era copiar todos os 256 registradores e clonar corpos de função/pools repetidamente. A ativação agora move e restaura somente a janela necessária ao caller e callee. Corpos usam Rc e constantes guest são preparadas ao carregar o módulo. Chamadas internas reaproveitam a prova do módulo; fronteiras externas continuam verificadas.
 
-| Prioridade | Trabalho | Critério |
+A entrada raw mantém janela completa para preservar registradores do host. O limite de profundidade permanece para proteger stack/RAM. A mudança não implementa uma arena compacta, NaN boxing ou dispatch threaded.
+
+Use [os dados brutos e o procedimento](../evidence/P07-G02/README.md). O exemplo `reg_calls_bench` executa 20 mil chamadas com caller de nove instruções e um registrador no callee; casos Int e String realmente usados. O driver alterna baseline/candidata, fixa CPU quando solicitado, remove warmup e registra pelo menos dois lotes, compiler e hashes. Não extrapole o resultado para toda a linguagem, cold start, memória ou workloads de structs/async.
+
+## 12. O que ainda melhorar e ordem sugerida
+
+| Prioridade | Trabalho | Por que e critério de conclusão |
 |---|---|---|
-| P0 | Recuperar checkout/patch e publicar código; fechar RHS Wasm; repetir checks finais | Conteúdo completo e comparável no GitHub, tree/commit verificados |
-| P0 para certificar | Executar conformance/fuzz/Miri/ASan e matriz quando autorizado | Resultados reais, não inferidos de cargo check; respeitar instrução atual de não executar testes |
-| P1 | Reg nativo captures/async/hooks via serviços compartilhados | Diferencial VM e erro fechado por capacidade |
-| P1 | GC de ciclos e retenção de tasks/unidades antigas | Lifecycle/identidade definidos; memória de sessão longa medida |
-| P1 | Recursos externos em reload e imports fora da árvore | Hooks transacionais do host e watcher completo |
-| P2 | LSP/DAP/editor de linha completos | Scopes, locations, stepping/cancelamento reais |
-| P2 | Heap/compilação/deadline de nativos | Limites do allocator/host separados de opcode budget |
-| P2 | Registry/publicação/ranges SemVer | Política própria, não solver exato tratado como ranges |
-| P3 | no_std/allocator/HAL/XIP | Porte e medidas em alvo concreto |
-| P3 | Mais otimizações e engine Wasm alternativa | Baseline controlada, paridade e evidência reproduzível |
+| P0, antes de certificar | Executar conformance, regressões, fuzz, Miri/ASan e matriz multiplataforma quando autorizado | Compilação não comprova efeitos, unwind, aliases, callbacks ou protocolo; registrar resultados reais por cenário |
+| P1 | Reg nativo: captures, scheduler e hooks via contratos/serviços compartilhados | Reduzir fallback sem duplicar semântica; cada capacidade exige diferencial com VM e erro fechado enquanto incompleta |
+| P1 | Ciclos Rc e retenção de unidades antigas | Sessões longas ainda podem acumular heap/código; definir identidade, alcance e lifecycle antes de compactar |
+| P1 | Hot reload de recursos externos e migrações estruturais ergonomicamente tipadas | Guest snapshot não desfaz I/O; coordenar transaction hooks do host e imports fora da árvore |
+| P2 | LSP/DAP completos e editor de linha | Navegação, scopes, locations, locals e cancelamento real tornam as ferramentas adequadas a IDEs grandes |
+| P2 | Limites totais de heap/compilação e callback deadline | Budget de opcodes não é sandbox de memória ou CPU externa; instrumentar o allocator/host por perfil |
+| P2 | Registry, publicação e resolução SemVer | O pacote atual é exato/pinado/offline; ranges e distribuição pública precisam política própria |
+| P3 | `no_std`, allocator/arena real, HAL e XIP | Embedded atual é nativo com std; medir RAM/Flash e adaptar serviços em um alvo concreto antes de prometer MCU |
+| P3 | Otimizações adicionais e backend alternativo Wasm | Exigem baseline ociosa, critérios funcionais e evidência; não escolher engine apenas pelo nome ou benchmark de outro projeto |
 
-Casos de regressão foram escritos/compilados localmente para RegVerifier, aliases/rollback, Session/tasks e provas Wasm. Fixtures 35/36 foram criadas com stdout esperado do canon, sem regenerar ou executar. Não marcar goal DONE, não declarar gate de testes aprovado e não fazer merge desta recuperação como se fosse a implementação.
+## 13. Reimplementação e revisão
+
+Comece pelas fronteiras observáveis: resultado/diagnóstico, ordem de efeitos, identidade e lifespan dos valores, budget e comportamento em falha. Reutilize a semântica de `Value` e os serviços canônicos. Implemente na ordem: verifier/coleções → linker/snapshot → Session/reload → embedding → ferramentas → distribuição.
+
+Confira os casos adicionados em `reg_verifier.rs`, `guest_transactions.rs`, `persistent_session.rs`, as fixtures 35/36 e as provas Wasm. Eles foram escritos para futuras execuções, **não executados nesta rodada**. Não reescreva snapshots para encobrir divergência. Os comandos efetivamente realizados e suas limitações estão na evidência; o objetivo não deve passar a `DONE` sem os gates e aprovações reais.

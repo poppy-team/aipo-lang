@@ -21,18 +21,23 @@ impl Vm {
     /// # Errors
     /// Returns `VmError` on runtime fault or invalid instruction.
     pub fn step(&mut self, module: &BytecodeModule) -> Result<bool, VmError> {
+        if self
+            .iteration_revisions
+            .iter()
+            .any(|(value, revision, _)| value.structural_revision() != *revision)
+        {
+            return Err(VmFault::MutationDuringIteration.into());
+        }
         if self.metrics_enabled || self.max_instructions.is_some() {
             self.metrics.instructions = self.metrics.instructions.saturating_add(1);
         }
-        if let Some(limit) = self.max_instructions {
-            if self.metrics.instructions > limit {
-                return Err(VmFault::Overflow {
-                    details: format!(
-                        "execution budget exceeded: instruction limit of {limit} reached"
-                    ),
-                }
-                .into());
+        if let Some(limit) = self.max_instructions
+            && self.metrics.instructions > limit
+        {
+            return Err(VmFault::Overflow {
+                details: format!("execution budget exceeded: instruction limit of {limit} reached"),
             }
+            .into());
         }
         if self.host_task.is_some() {
             return self.drive_host_task();
@@ -398,6 +403,7 @@ impl Vm {
                 // which is outside the scope a host callback ran in.
                 self.publish_check(&ret_val, || "a return value".to_string())?;
                 if let Some(frame) = self.frames.pop() {
+                    self.unwind_iterations(self.frames.len());
                     self.refresh_frame_base();
                     self.upvalue_frames.pop();
                     self.mutation_journal.truncate(frame.journal_start);
@@ -617,10 +623,11 @@ impl Vm {
                     }
                     drop(instance);
 
-                    if published && guarded {
-                        if let Some(previous) = entry_value {
-                            self.journal_mutation(Rc::clone(inst), field_name.clone(), previous);
-                        }
+                    if published
+                        && guarded
+                        && let Some(previous) = entry_value
+                    {
+                        self.journal_mutation(Rc::clone(inst), field_name.clone(), previous);
                     }
                 } else {
                     return Err(VmFault::TypeMismatch {
@@ -648,7 +655,7 @@ impl Vm {
                         let items = l.borrow().clone();
                         let (from, to) = normalize_range(r.start, r.end, items.len());
                         let slice: Vec<Value> = items[from..to].to_vec();
-                        self.push(Value::List(Rc::new(RefCell::new(slice))))?;
+                        self.push(Value::List(Rc::new(RefCell::new((slice).into()))))?;
                     }
                     (Value::String(s), Value::Range(r)) => {
                         let chars: Vec<char> = s.chars().collect();
@@ -660,7 +667,7 @@ impl Vm {
                         let bytes = b.borrow();
                         let (from, to) = normalize_range(r.start, r.end, bytes.len());
                         self.push(Value::Bytes(Rc::new(RefCell::new(
-                            bytes[from..to].to_vec(),
+                            (bytes[from..to].to_vec()).into(),
                         ))))?;
                     }
                     (Value::Range(r), Value::Int(i)) => {
@@ -832,7 +839,7 @@ impl Vm {
                 for item in &items {
                     self.publish_check(item, || "a list element".to_string())?;
                 }
-                self.push(Value::List(Rc::new(RefCell::new(items))))?;
+                self.push(Value::List(Rc::new(RefCell::new((items).into()))))?;
             }
             OpCode::BuildDict => {
                 let count = self.read_u16(module)? as usize;
@@ -904,13 +911,11 @@ impl Vm {
 
                 // While `init` still has to run, the invariant is evaluated at seal time
                 // instead, so it observes the fields `init` assigned.
-                if !defer_fixed {
-                    if let Some(validator) = self.struct_invariants.get(type_name) {
-                        validator(&instance).map_err(|msg| VmFault::InvariantViolation {
-                            type_name: type_name.clone(),
-                            message: msg,
-                        })?;
-                    }
+                if !defer_fixed && let Some(validator) = self.struct_invariants.get(type_name) {
+                    validator(&instance).map_err(|msg| VmFault::InvariantViolation {
+                        type_name: type_name.clone(),
+                        message: msg,
+                    })?;
                 }
 
                 self.push(Value::Struct(Rc::new(RefCell::new(instance))))?;
@@ -1219,8 +1224,12 @@ impl Vm {
                 // real collection id, so the mutation guard ignores it.
                 self.active_iterations
                     .push(collection_identity(&value).unwrap_or(usize::MAX));
+                let revision = value.structural_revision();
+                self.iteration_revisions
+                    .push((value, revision, self.frames.len()));
             }
             OpCode::IterGuardEnd => {
+                self.iteration_revisions.pop();
                 self.active_iterations.pop();
             }
             OpCode::IterAt => {
@@ -1292,11 +1301,11 @@ impl Vm {
                     }
                     .into());
                 }
-                self.handlers.push(HandlerFrame::new(
-                    target as usize,
-                    self.stack.len(),
-                    self.frames.len(),
-                ));
+                let mut handler =
+                    HandlerFrame::new(target as usize, self.stack.len(), self.frames.len());
+                handler.iteration_depth = self.iteration_revisions.len();
+                handler.active_iteration_depth = self.active_iterations.len();
+                self.handlers.push(handler);
             }
             OpCode::PopHandler => {
                 self.handlers.pop();

@@ -5,7 +5,7 @@ title: Instalação e primeiro programa
 
 ## Pré-requisitos
 
-- Rust e Cargo instalados; o projeto declara Rust 1.85 como MSRV, com dependências opcionais que podem exigir validação adicional.
+- Rust e Cargo instalados; o workspace exige Rust 1.96; o lockfile completo inclui Wasmtime/Cranelift com esse mínimo.
 - Git para obter o código; Node.js apenas quando for executar o JavaScript emitido ou desenvolver o site.
 
 ## Compilar

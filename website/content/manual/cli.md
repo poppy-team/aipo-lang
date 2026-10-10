@@ -11,7 +11,13 @@ Você pode utilizar o Aipo diretamente pela CLI gerada com Rust. O comando mais 
 
 | O que quero fazer | Comando |
 | --- | --- |
+| Criar projeto | `aipo new demo` |
 | Executar | `aipo run main.aipo` |
+| Ver o plano sem executar | `aipo plan main.aipo` |
+| Medir com limite | `aipo profile main.aipo --budget 100000 --json` |
+| Recarregar ao editar | `aipo watch main.aipo` |
+| Depurar | `aipo debug main.aipo` |
+| Integrar editor | `aipo lsp` |
 | Analisar sem executar | `aipo check main.aipo` |
 | Formatar | `aipo fmt main.aipo` |
 | Conferir formatação | `aipo fmt main.aipo --check` |
@@ -34,7 +40,7 @@ cargo run -q -p aipo-cli -- fmt examples/06_variables_and_values.aipo --check
 
 ## Backends alternativos
 
-`--engine=vm` é a VM de referência. `--engine=reg` seleciona a VM experimental de registradores: ela **não oferece paridade completa** de closures, tarefas e contratos. `--wasm` e `--target wasm` envolvem o destino WebAssembly e suas restrições.
+`--engine=vm` é a VM de referência. `--engine=reg` escolhe Reg nativo quando todo o programa é suportado e verificado; os demais casos usam serviços canônicos com razão explícita. Use `aipo plan main.aipo` para consultar a escolha. O interpretador Reg nativo continua um subconjunto. `--wasm` e `--target wasm` envolvem o destino WebAssembly e suas restrições.
 
 **Se aparecer um erro:** rode `check` primeiro. Um erro de parser, um contrato estático inválido e uma falha em tempo de execução pedem correções diferentes.
 

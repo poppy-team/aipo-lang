@@ -1,12 +1,12 @@
 # Aipo — Guia Master para LLMs: Estudo Profundo e Implementação
 
-**Versão:** 2.1 · **Data:** 2026-10-09 · **Status:** normativo-operacional
+**Versão:** 2.2 · **Data:** 2026-10-09 · **Status:** normativo-operacional
 **Público:** qualquer LLM que for executar estudo aprofundado e implementação neste repositório.
 **Pré-requisito:** ler este documento INTEIRO, nesta ordem, antes de qualquer ação.
 **Base estudada:** commit `488905ffb0b83ebbff458939542350d7280ad79b`.
 **Base de integração:** `bcbc4c991dee1d9f853c597aaed2790e8981b8b9`, após incorporar a atualização de dependência já publicada na `main`.
 
-**Rodada atual:** [guia de uso/reimplementação](runtime-hardening-guide.md) e [evidência](../evidence/P07-G01-runtime-hardening.md). Testes não executados nesta reconstrução por pedido explícito do usuário; PR autorizado em rascunho. Resultados da cópia temporária perdida não certificam estes arquivos.
+**Rodada atual P07-G02:** [guia completo de uso/reimplementação](../development/runtime-and-tooling-guide.md), [continuidade dos estudos](runtime-and-tooling-follow-up.md) e [evidência reproduzível](../evidence/P07-G02/README.md). Base: `f0a0d70d176be031cd4b600fde1df6179429fb9a`, após merge da P07-G01. Testes explicitamente não executados; goal permanece DRAFT sem aprovações/gates simulados. A documentação anterior é histórica.
 
 ---
 
@@ -49,7 +49,7 @@ perfil; trocar o Modelo B de falhas; adicionar dependências pesadas sem ADP.
 ## 2. Snapshot do projeto
 
 Pipeline: `lexer → syntax → hir → sema → ir → bytecode → {stack-VM, RegVm, JS, Wasm}`.
-Toolchain: Rust 1.85 é o MSRV declarado, não certificado por todos os grafos; Wasmtime 49.0.2 demanda toolchain compatível. Reconstrução com Rust 1.99.0; Node >= 20 para suítes JS.
+Toolchain: MSRV Rust 1.96, alinhado ao lock Wasmtime 49.0.2/Cranelift 0.136.2. Compilação local com Rust 1.96 e revisão Clippy com 1.99; Node >= 20 para suítes JS. Testes não executados nesta rodada.
 24 crates no workspace (`unsafe_code = "forbid"`, clippy `deny` em tudo).
 
 | Crate | Papel |
@@ -62,7 +62,7 @@ Toolchain: Rust 1.85 é o MSRV declarado, não certificado por todos os grafos; 
 | `aipo-wasm` | `compile_hir`, `WasmEmitter`, `execute_wasm`/`execute_wasm_with_options` (wasmtime feature-gated) |
 | `aipo-cli` | Bins `aipo` (full) e `aipo-sh` (shell, REPL); subcomando `test` |
 | `aipo-host` | `Capability`/`CapabilitySet` (deny-by-default), `HostValue` (7 variantes), `Handle` |
-| `aipo-c-abi` | 22 exports C + `include/aipo.h` (ver §8.5) |
+| `aipo-c-abi` | C ABI síncrona/cooperativa + Reg raw; exports devem coincidir com `include/aipo.h` (ver §8.5) |
 | `aipo-diagnostics` | Catálogo normativo + JSONL + locale En/PtBr |
 | demais | `runtime, stdlib (módulo sh: run/cd/pwd/env/which), formatter, package, poppy, testkit, bench, game-host, egui` |
 
@@ -104,16 +104,18 @@ diagnósticos §4bis + narrowing; batch `Tipo::[...]`; RegVm (aritmética, salto
 chamadas, defaults, `each`, `TypeIs`, coleções/structs, falhas, handlers);
 Wasm (enum por tag-pointer, `[]/{}` vazios, `.len()`); `aipo-sh --engine=reg`.
 
-### 4.2 Correções reconstruídas e lacunas
+### 4.2 Implementação atual e limites
 
-- `RegEmitter` agora retorna `Result`, rejeita IR sem suporte e calcula alturas pelo CFG. RegVM continua experimental.
-- `AssertContract` (tipos fundamentais/nominais/nullable) e `IterGuardEnd` têm lowering e execução. Interfaces com operações exigem Stack VM.
-- Closures/upvalues, async/await, hooks, invariantes e journal de mutações continuam sem paridade Reg completa.
-- `invoke_function` ainda salva/troca 256 registradores; janelas não foram implementadas.
-- `Value`/frames devem ser medidos pelo `layout_probe`; tamanho em um alvo não é promessa multiplataforma.
-- RegVM possui `set_instruction_budget`; Wasm possui fuel opt-in pela API Rust. Limites de memória/output e interrupção de host continuam abertos.
-- Indexação de um escalar String compartilha helper sem `Vec<char>` temporário. Sem benchmark novo nesta reconstrução.
-- `no_std` Aipo não foi implementado; a arena segue baseada em `std` e reservada no RegVM.
+- RegEmitter estrito + RegVerifier: operandos/pools/jumps/functions, inicialização definida pelo CFG e escopos de handlers/iterações. Entradas externas são verificadas antes de efeitos.
+- `ExecutionPlan` representa Reg nativo ou bytecode canônico com razão. O perfil Reg executa a superfície compartilhada; captures, async, interfaces, hooks e journal não ganharam paridade no interpretador Reg nativo.
+- Chamadas Reg movem/restauram janelas vivas; corpos usam Rc e pools guest preparados por módulo. Microbenchmark Int/String contra base pinada, três lotes, está na evidência P07-G02; não extrapolar para toda a linguagem.
+- Coleções usam revisão estrutural, independente de comprimento. Snapshot guest preserva aliases/ciclos por restauração em lugar; não é GC e não reverte recursos externos do host.
+- Session mantém globals/catálogo/linker, multilinha/histórico e recarga com migração/rollback. `new`, `watch`, `plan`, `profile`, `debug`, LSP básico e vendor offline estão implementados.
+- Reg/C têm budgets e erros explícitos; C oferece begin/pump/abort. Wasm oferece fuel/memory/output e Engine/cache reutilizáveis. Callback nativo não é limitado pelo budget de opcodes.
+- `is` Wasm compara tipo semântico conhecido; tipos desconhecidos/joins ambíguos são rejeitados.
+- `Value`/frames são medidos por alvo, não há promessa multiplataforma de 16 bytes.
+- `no_std`, GC de ciclos, allocator guest plenamente limitado e porte MCU permanecem evolução futura. `profile-embedded` e `nano` usam `std`.
+- Testes novos e conformance foram escritos/compilados, não executados. A matriz OS está definida, não certificada por resultados locais.
 
 ### 4.3 Estudos disponíveis
 
@@ -183,8 +185,7 @@ Perguntas fechadas / Lição → Ação (com crates)*. Sem "Lição → Ação",
 Formato de cada item: *O quê / Por quê (fonte) / Onde / Pronto-quando.*
 
 ### 8.1 Performance
-- **P1 Janelas de registrador (LuaJIT):** trocar cópia de 256 regs por base
-  de frame + slots em `reg_vm.rs`. *Pronto: bench `call` ≥2× melhor, 2 lotes.*
+- **P1 Janelas de registrador (Lua/LuaJIT):** implementada janela viva com move/restore e constantes compartilhadas em `reg_vm.rs`; evidência P07-G02 com três lotes. Não é ainda uma stack única de frames sem cópia; conformance executada continua pendente.
 - **P2 Dispatch:** threaded/`goto` computado (Wren c/ fallback, WAMR
   classic-vs-fast) + estreitar `Result` do hot path (cf. ADP-011, piso ~100ns).
 - **P3 Acesso a campo:** acabar com busca linear (`value.rs:93,109`) via
@@ -205,7 +206,7 @@ Formato de cada item: *O quê / Por quê (fonte) / Onde / Pronto-quando.*
 
 ### 8.3 Velocidade/startup
 - **V1** Baseline de cold start por perfil (meta: shell <2 ms).
-- **V2** Feature-sets que removem wasmtime (`shell-core`, `nano`) — a receita que falta.
+- **V2** Aliases `profile-shell`, `profile-web`, `profile-embedded` com `--no-default-features` implementados; `nano` é perfil Cargo. Default continua incluindo Wasmtime.
 - **V3** Registro lazy de stdlib/natives (medir custo eager atual).
 - **V4** `.aibc` pré-compilado + cache (verificar/estender serialização).
 - **V5** AOT **não** é estratégia de startup (custo de compilação); startup rápido = interpretador (spike WAMR).
@@ -221,10 +222,11 @@ Formato de cada item: *O quê / Por quê (fonte) / Onde / Pronto-quando.*
 - **S7** Manter `unsafe_code = "forbid"` + Miri p/ RegVm no CI.
 - **S8** Varredura de segredos (cf. threat-model) — verificar hook e estender.
 
-### 8.5 Interop C (superfície atual: 22 exports)
-Grupos: version(1), lifecycle runtime+regvm(4), load/call(2), host_fn(1),
-capabilities(2), budget(3), handles(4), values/errors(2), reg-int/run(3).
-- **C1 Gaps:** sem API async/poll, sem streaming, sem teste de pin da ABI.
+### 8.5 Interop C (header como fonte da superfície)
+Grupos: lifecycle, carga/chamada, capacidades, handles/values, budgets/erros,
+Reg raw e begin/pump/abort cooperativos. Compare os símbolos de `c_api.rs`
+com `include/aipo.h`; não manter contagem textual desatualizada.
+- **C1 Entregue/limites:** begin/pump/abort e budget/erro Reg; header compilado como C/C++ na evidência. Streaming, versionamento de callbacks e provas nativas executadas continuam pendentes.
 - **C2 Padrões verificados:** Wren slots+handles (`wrenEnsureSlots`,
   `WrenHandle`); QuickJS runtime/context + `Dup/Free` (ownership explícita);
   WAMR `exec_env`+`custom_data`+natives por módulo; Lua `lua_State` por thread.
@@ -250,7 +252,7 @@ capabilities(2), budget(3), handles(4), values/errors(2), reg-int/run(3).
 ## 9. Síntese + P2/P3/P4
 
 - Gap→estudo: cada item da §8 referencia a lição que o informa.
-- **P2:** nano = Linux pequeno+boot rápido AGORA; MCU depois, com `no_std` desenhado já.
+- **P2:** nano = build nativo com size optimization; tamanho/startup exigem medição real. MCU/`no_std` não estão implementados.
 - **P3:** wasmtime feature-gated; comparar spikes WAMR e wasmi antes de escolher engine.
 - **P4:** 1 semântica/N emissores; tiers 1/2/3 com erro amigável; conformance como
   árbitro; perfis via features+`[profile.*]`, nunca crates novas; CI `full/shell/nano`.
@@ -260,7 +262,7 @@ capabilities(2), budget(3), handles(4), values/errors(2), reg-int/run(3).
 ## 10. Receitas de implementação
 
 **Nova instrução na RegVm:** `RegOpCode` (+`from_u8`) → lowering no `RegEmitter`
-(A/B/C + `top`, sem quebrar `core_to_reg`) → handler em `RegVm::run` → unit em
+(A/B/C + `top`, sem quebrar `core_to_reg`) → operandos/CFG no `RegVerifier` → handler em `RegVm::run_verified` → unit em
 `reg_vm.rs` → e2e em `shell_tests.rs` (`eval_source_reg`) → conformance → fmt+clippy.
 **Nova construção no Wasm:** layout (Pass 0) → string estática → `compile_expr` →
 slots em `pre_scan_stmts` → teste Wasmtime real.
@@ -293,3 +295,7 @@ slots em `pre_scan_stmts` → teste Wasmtime real.
 Use símbolos, não números de linha antigos: `RegEmitter::stack_heights/compile_function`, `RegVm::run/invoke_function/set_instruction_budget`, `value::string_char_at`, `execute_wasm_with_options` e `studies/refs.json`. Os links dos estudos incluem SHA upstream e regiões efetivamente lidas.
 
 A seção 11 conserva os gates de certificação futura. A publicação atual é draft, com dispensa explícita da execução de testes; não equivale à aprovação de todas as fases deste guia.
+
+## Continuidade P07-G02
+
+O [guia de reimplementação](../development/runtime-and-tooling-guide.md) detalha as cinco frentes, a migração dos payloads Rust para `Collection`, a seleção explícita do engine, o linker/snapshot e os limites de distribuição. As receitas e metas futuras desta página não devem ser anunciadas como recursos entregues. Aprovação para commit/push/PR foi dada pelo usuário; execução de testes foi explicitamente dispensada. Nenhum resultado histórico ou perdido certifica os arquivos atuais.

@@ -163,10 +163,9 @@ pub fn convert_bytes(value: &Value) -> Result<Value, VmFault> {
             "Bytes({count}) is outside the constructible range 0..={BYTES_MAX_ALLOCATION}"
         )));
     }
-    Ok(Value::Bytes(Rc::new(RefCell::new(vec![
-        0u8;
-        *count as usize
-    ]))))
+    Ok(Value::Bytes(Rc::new(RefCell::new(
+        (vec![0u8; *count as usize]).into(),
+    ))))
 }
 
 /// Explicit conversion to `Set`: deduplicates a `List`, keeping first-occurrence
@@ -183,7 +182,7 @@ pub fn convert_set(value: &Value) -> Result<Value, VmFault> {
                     unique.push(item.clone());
                 }
             }
-            Ok(Value::Set(Rc::new(RefCell::new(unique))))
+            Ok(Value::Set(Rc::new(RefCell::new((unique).into()))))
         }
         Value::Failure(f) => Ok(Value::Failure(Rc::clone(f))),
         other => Err(type_error("List for Set(list)", other)),
